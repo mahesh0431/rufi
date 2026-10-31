@@ -1,8 +1,10 @@
 // The chat's transcript as the screens hold it: the latest page and the older
 // pages loaded since, and how each line of the live stream and each older
-// page change it. Each entry and turn keeps the chat's revision it was read
-// at, so a read that comes late never replaces a newer one.
+// page change it, and what it shows in order. Each entry and turn keeps the
+// chat's revision it was read at, so a read that comes late never replaces a
+// newer one.
 import type { Chat, Entry, Page, StreamLine, Turn } from "@rufi/contracts";
+import { dayOf } from "./dates.ts";
 
 export interface Transcript {
   chat: Chat | null;
@@ -102,3 +104,106 @@ const inOrder = (entries: readonly Entry[]) =>
 /** Whether a reply is running in the chat. */
 export const isRunning = (state: Transcript) =>
   Object.values(state.turns).some((turn) => turn.status === "running");
+
+/** A reply that ended without completing says how. */
+const cut = (turn: Turn) =>
+  turn.status !== "running" && turn.status !== "completed";
+
+/**
+ * Whether an entry is part of its reply's Activity: the AI's thinking, its
+ * notes and its steps; not a compaction (a quiet line of its own) or a
+ * picture the reply shows.
+ */
+export const inActivity = (entry: Entry) =>
+  entry.kind === "reasoning" ||
+  (entry.kind === "activity" &&
+    entry.activity !== "compaction" &&
+    !(
+      entry.activity === "picture" &&
+      entry.status === "done" &&
+      entry.detail !== null
+    ));
+
+/**
+ * What the transcript shows, in order, each as a key: "d:" a day's line
+ * before an entry, "a:" a new thread started for a turn, "k:" a compaction
+ * running, "c:" a compaction completed, "e:" an entry, "s:" a turn's
+ * Activity, "x:" how a turn ended. A turn's Activity takes the place of its
+ * first line while it runs, and sits under its answer once it ended, also
+ * when its steps are gone. Keys, so the list draws again only when what it
+ * shows changes.
+ */
+export function lines(state: Transcript): string[] {
+  const { order, entries } = state;
+  const first = new Map<string, string>();
+  const last = new Map<string, string>();
+  const lastReply = new Map<string, string>();
+  const firstStep = new Map<string, string>();
+  for (const id of order) {
+    const entry = entries[id];
+    if (!entry?.turnId) continue;
+    if (!first.has(entry.turnId)) first.set(entry.turnId, id);
+    last.set(entry.turnId, id);
+    if (entry.kind === "reply") lastReply.set(entry.turnId, id);
+    if (inActivity(entry) && !firstStep.has(entry.turnId)) {
+      firstStep.set(entry.turnId, id);
+    }
+  }
+  /** Lines before an entry, and after one ("": before them all). */
+  const before = new Map<string, string[]>();
+  const after = new Map<string, string[]>();
+  const add = (to: Map<string, string[]>, at: string, line: string) => {
+    to.set(at, [...(to.get(at) ?? []), line]);
+  };
+  const turns = Object.values(state.turns).toSorted((a, b) =>
+    a.startedAt < b.startedAt ? -1 : a.startedAt > b.startedAt ? 1 : 0,
+  );
+  for (const turn of turns) {
+    const opens = first.get(turn.id);
+    const closes = last.get(turn.id);
+    if (opens === undefined || closes === undefined) {
+      // Nothing of it was stored: its lines go where it started.
+      const at =
+        order.findLast(
+          (id) => (entries[id]?.createdAt ?? "") <= turn.startedAt,
+        ) ?? "";
+      if (turn.newThread) add(after, at, `a:${turn.id}`);
+      if (turn.cause) add(after, at, `w:${turn.id}`);
+      if (cut(turn)) add(after, at, `x:${turn.id}`);
+      continue;
+    }
+    if (turn.newThread) add(before, opens, `a:${turn.id}`);
+    if (turn.cause) add(before, opens, `w:${turn.id}`);
+    const step = firstStep.get(turn.id);
+    const answer = lastReply.get(turn.id);
+    if (turn.status !== "running" && answer !== undefined) {
+      // Its steps went with the agent database: its Activity says so.
+      if (step !== undefined || turn.stepsGone === true) {
+        add(after, answer, `s:${turn.id}`);
+      }
+    } else if (step !== undefined) add(before, step, `s:${turn.id}`);
+    if (cut(turn)) add(after, closes, `x:${turn.id}`);
+  }
+  const shown = [...(after.get("") ?? [])];
+  let day = "";
+  for (const id of order) {
+    const entry = entries[id];
+    if (!entry) continue;
+    shown.push(...(before.get(id) ?? []));
+    // A line of a turn's Activity shows in it.
+    const stepOf = entry.turnId !== null && state.turns[entry.turnId];
+    if (!(stepOf && inActivity(entry))) {
+      const today = dayOf(entry.createdAt);
+      if (today !== day) shown.push(`d:${id}`);
+      day = today;
+      if (entry.activity === "compaction") {
+        // One running shows until it ends; one cut (a Stop, a crash) shows
+        // nothing.
+        if (entry.status === "running") shown.push(`k:${id}`);
+        if (entry.status === "done") shown.push(`c:${id}`);
+      } else shown.push(`e:${id}`);
+    }
+    shown.push(...(after.get(id) ?? []));
+  }
+  return shown;
+}
