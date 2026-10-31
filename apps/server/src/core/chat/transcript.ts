@@ -289,11 +289,11 @@ const toEntry = (
  * input's id, the agent, its name then, why it came and its own words.
  */
 export interface AgentMessage {
-  id: string;
+  input: string;
   agent: string;
   title: string;
   about: AgentAbout;
-  text: string;
+  said: string;
 }
 
 /** An agent's message's agent and its name and why, from its stored facts. */
@@ -301,7 +301,7 @@ export function senderOf(
   details: string | null,
 ): Pick<Entry, "agent" | "from"> {
   const { agent, title, about } = JSON.parse(details ?? "{}") as Partial<
-    Omit<AgentMessage, "id" | "text">
+    Omit<AgentMessage, "input" | "said">
   >;
   return agent === undefined || title === undefined || about === undefined
     ? {}
@@ -827,7 +827,7 @@ export function transcripts(
     for (const input of inputs) {
       const row = rows.find((one) => one.id === input);
       if (row) entries.push(...(await sent(trx, chat, revision, [row], id)));
-      const message = messages.find((one) => one.id === input);
+      const message = messages.find((one) => one.input === input);
       const made =
         message && (await agentEntry(trx, chat, revision, message, id));
       if (made !== undefined) entries.push(made);
@@ -850,17 +850,17 @@ export function transcripts(
       await trx
         .selectFrom("transcript_entries")
         .select("id")
-        .where("id", "=", message.id)
+        .where("id", "=", message.input)
         .executeTakeFirst()
     ) {
       return undefined;
     }
-    const { id, text, ...sender } = message;
+    const { input, said, ...sender } = message;
     return insertEntry(trx, chat, revision, {
-      id,
+      id: input,
       turnId,
       kind: "agent",
-      text,
+      text: said,
       details: JSON.stringify(sender),
     });
   }

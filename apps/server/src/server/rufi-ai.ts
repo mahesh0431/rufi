@@ -402,28 +402,6 @@ export async function startRufiAi(
     return `A new conversation started. Your earlier turns are available through read_agent with "self".\n\nYour last turns, oldest first:\n\n${lines.join("\n\n")}`;
   };
 
-  /**
-   * The messages from agents among a root's inputs: only its own agents
-   * write to it. Each with the agent's name now, which it had when it sent
-   * it, and its own words.
-   */
-  const messagesOf = (inputs: readonly string[]): AgentMessage[] =>
-    inputs.flatMap((id) => {
-      const input = system.agents.input(id);
-      const title = input?.about && system.agents.get(input.sender)?.title;
-      return input?.about && title !== undefined && title !== null
-        ? [
-            {
-              id,
-              agent: input.sender,
-              title,
-              about: input.about,
-              text: input.said ?? "",
-            },
-          ]
-        : [];
-    });
-
   // The package keeps out what an older conversation reports: what comes
   // is the agent's open conversation's.
   const live = (
@@ -452,8 +430,9 @@ export async function startRufiAi(
         return;
       }
     }
+    // The messages of its agents it took, with their own words.
     const messages =
-      event.type === "turnStarted" ? messagesOf(event.inputs) : [];
+      event.type === "turnStarted" ? system.agents.messages(event.inputs) : [];
     const started =
       event.type === "step"
         ? screens.logs?.started(agent, {
@@ -487,21 +466,24 @@ export async function startRufiAi(
     const payload = event.payload as {
       input: string;
       ref?: string | null;
+      /** From another agent: what it is. */
+      message?: AgentMessage;
       held: Hold;
       text: string;
     };
     switch (event.type) {
       case "turn.started": {
-        const { ref, inputs } = event.payload as {
+        const { ref, inputs, messages } = event.payload as {
           ref: string;
           inputs: string[];
+          messages?: AgentMessage[];
         };
         await transcripts.applyStart(
           row,
           ref,
           { id: row.threadId ?? "", model: row.model ?? row.threadModel ?? "" },
           inputs,
-          messagesOf(inputs),
+          messages ?? [],
           advance,
         );
         break;
@@ -524,7 +506,7 @@ export async function startRufiAi(
       }
       case "input.delivered": {
         // One of its agents' messages, steered into its turn, shows there.
-        const [message] = messagesOf([payload.input]);
+        const { message } = payload;
         await (message
           ? transcripts.applyAgentMessage(
               row,

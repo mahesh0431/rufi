@@ -135,6 +135,19 @@ export interface Sent {
 /** Why an input from one agent to another came. */
 export type About = "done" | "stopped" | "failed" | "asked" | "wrote";
 
+/**
+ * A message from another agent among what an agent took, as its events
+ * carry it: its input, who sent it, by the name they had then, why, and
+ * what they said in their own words.
+ */
+export interface AgentMessage {
+  input: string;
+  agent: string;
+  title: string;
+  about: About;
+  said: string;
+}
+
 /** An input waiting for its agent, as `waiting` lists it. */
 export interface WaitingInput {
   id: string;
@@ -260,8 +273,7 @@ export interface Agents {
   ) => { turns: KeptTurn[]; earlier: string | null };
   /**
    * Where an input is in its agent's queue, who sent it and, from another
-   * agent, why and what it said in its own words; nothing when the queue
-   * has none.
+   * agent, why; nothing when the queue has none.
    */
   input: (id: string) =>
     | {
@@ -270,9 +282,10 @@ export interface Agents {
         held: Hold | null;
         sender: string;
         about: About | null;
-        said: string | null;
       }
     | undefined;
+  /** The messages from other agents among these inputs, in their order. */
+  messages: (inputs: readonly string[]) => AgentMessage[];
   /** What waits for the agent, held too, in the order it goes. */
   waiting: (agent: string) => WaitingInput[];
   /** The agent's turn now, if one starts or runs. */
@@ -931,30 +944,13 @@ export function createAgents(options: {
       db.prepare(
         "UPDATE agents SET status = 'running', stopped_by = NULL, updated_at = ? WHERE id = ?",
       ).run(at, live.id);
-      // It took only messages from other agents: the first one's, and why.
-      const taken = db
-        .prepare(
-          "SELECT queue.sender, queue.about, agents.title FROM queue LEFT JOIN agents ON agents.id = queue.sender WHERE queue.id IN (SELECT value FROM json_each(?)) ORDER BY queue.position",
-        )
-        .all(JSON.stringify(inputs)) as {
-        sender: string;
-        about: About | null;
-        title: string | null;
-      }[];
-      const [first] = taken;
-      const from =
-        first?.about &&
-        first.title !== null &&
-        taken.length === inputs.length &&
-        taken.every((input) => input.about !== null)
-          ? { agent: first.sender, title: first.title, about: first.about }
-          : undefined;
+      const messages = messagesIn(inputs);
       event("turn.started", live.id, {
         turn: id,
         ref,
         inputs,
         by: starting ? "package" : "provider",
-        ...(from && { from }),
+        ...(messages.length > 0 && { messages }),
       });
       return id;
     });
@@ -1199,6 +1195,20 @@ export function createAgents(options: {
         "SELECT id, kind, sender, parts FROM queue WHERE agent_id = ? AND state = 'waiting' AND held IS NULL ORDER BY position",
       )
       .all(agent) as unknown as Waiting[];
+  /** The messages from other agents among some inputs, in their order. */
+  const messagesIn = (inputs: readonly string[]): AgentMessage[] =>
+    (
+      db
+        .prepare(
+          "SELECT queue.id AS input, queue.sender AS agent, agents.title, queue.about, queue.said FROM queue JOIN agents ON agents.id = queue.sender WHERE queue.id IN (SELECT value FROM json_each(?)) AND queue.about IS NOT NULL",
+        )
+        .all(JSON.stringify(inputs)) as unknown as (Omit<
+        AgentMessage,
+        "said"
+      > & { said: string | null })[]
+    )
+      .map(({ said, ...message }) => ({ ...message, said: said ?? "" }))
+      .sort((a, b) => inputs.indexOf(a.input) - inputs.indexOf(b.input));
   const stateOf = (input: string) =>
     (
       db.prepare("SELECT state FROM queue WHERE id = ?").get(input) as
@@ -1250,7 +1260,8 @@ export function createAgents(options: {
         ).run(start);
       }
       const { state, ...rest } = to;
-      // Delivered names its turn by the provider's reference too.
+      // Delivered names its turn by the provider's reference too, and
+      // another agent's message by what it is.
       const ref =
         to.state === "delivered"
           ? (
@@ -1259,7 +1270,13 @@ export function createAgents(options: {
                 .get(to.turn) as { ref: string | null } | undefined
             )?.ref
           : undefined;
-      event(`input.${state}`, live.id, { input, ...rest, ref });
+      const [message] = to.state === "delivered" ? messagesIn([input]) : [];
+      event(`input.${state}`, live.id, {
+        input,
+        ...rest,
+        ref,
+        ...(message && { message }),
+      });
     });
   }
 
@@ -1656,7 +1673,7 @@ export function createAgents(options: {
     input: (id) =>
       db
         .prepare(
-          "SELECT agent_id AS agent, state, held, sender, about, said FROM queue WHERE id = ?",
+          "SELECT agent_id AS agent, state, held, sender, about FROM queue WHERE id = ?",
         )
         .get(id) as
         | {
@@ -1665,9 +1682,10 @@ export function createAgents(options: {
             held: Hold | null;
             sender: string;
             about: About | null;
-            said: string | null;
           }
         | undefined,
+
+    messages: messagesIn,
 
     waiting: (agent) =>
       (
