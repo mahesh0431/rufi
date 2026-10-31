@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./provider": "./src/provider.ts",
-    "./contract": "./tests/contract.ts"
+    "./contract": "./tests/contract.ts",
+    "./store": "./src/store.ts"
   }
 }
