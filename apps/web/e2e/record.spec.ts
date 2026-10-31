@@ -414,6 +414,7 @@ test("a reading that ends, with nothing saved, shows in Needs you on an open Ove
         sort("lab_report", [
           {
             page: 1,
+            reading: "$reading",
             test_name: "Haemoglobin",
             value_text: "13.2",
             unit: "g/dL",

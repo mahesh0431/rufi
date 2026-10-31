@@ -174,10 +174,13 @@ export function messageText(
 /**
  * How a turn ended. Only `completed` counts as success. `limits` is the
  * latest usage snapshot Codex sent, for a usage limit's reset time.
+ * `signedOut`: the token door gave no token during the turn because Rufi is
+ * signed out. Codex fails such a turn with only the command's words.
  */
 export function endOf(
   turn: Pick<Turn, "status" | "error">,
   limits?: RateLimitSnapshot,
+  signedOut = false,
 ): TurnEnd {
   switch (turn.status) {
     case "completed":
@@ -185,7 +188,7 @@ export function endOf(
     case "interrupted":
       return { status: "interrupted", reason: "stopped", text: "Stopped." };
     case "failed":
-      return failure(turn.error, limits);
+      return failure(turn.error, limits, signedOut);
     case "inProgress":
       return {
         status: "failed",
@@ -203,8 +206,10 @@ export function endOf(
 function failure(
   error: TurnError | null,
   limits: RateLimitSnapshot | undefined,
+  signedOut: boolean,
 ): TurnEnd {
-  const reason = reasonOf(error?.codexErrorInfo ?? null);
+  const known = reasonOf(error?.codexErrorInfo ?? null);
+  const reason = signedOut && known === "provider_failed" ? "sign_in" : known;
   const resetsAt = reason === "usage_limit" ? resetOf(limits) : undefined;
   return {
     status: "failed",
@@ -218,9 +223,15 @@ function reasonOf(info: CodexErrorInfo | null): TurnEnd["reason"] {
   if (info === "unauthorized") return "sign_in";
   if (info === "usageLimitExceeded") return "usage_limit";
   if (info === "rateLimitExceeded") return "rate_limit";
-  // A connection that failed, with the HTTP status when there was one.
+  // A connection that failed, with the HTTP status when there was one. A
+  // 401 comes after Codex asked its door for a fresh token and OpenAI
+  // refused that one too: the sign-in isn't accepted.
   if (typeof info === "object" && info !== null) {
-    return "activeTurnNotSteerable" in info ? "provider_failed" : "connection";
+    if ("activeTurnNotSteerable" in info) return "provider_failed";
+    const status = Object.values(info).map(
+      (value) => (value as { httpStatusCode?: unknown } | null)?.httpStatusCode,
+    );
+    return status.includes(401) ? "sign_in" : "connection";
   }
   return "provider_failed";
 }

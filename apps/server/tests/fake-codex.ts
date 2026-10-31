@@ -4,7 +4,9 @@
 // does. What a turn does is chosen by its message's text, the
 // same words the fake model uses for the real Codex (tests/fake-model.ts):
 // "hang" never ends, "partial" writes "ok:part" and then never ends, "slow"
-// answers after 300 ms, "fail" fails, "quiet" makes no tool call and runs no
+// answers after 300 ms, "renew" runs Rufi's provider auth command for a
+// fresh token as Codex does after a 401 (failing the turn as Codex does when
+// the command fails), "fail" fails, "quiet" makes no tool call and runs no
 // command, "command"
 // starts a long command ("background command": and the turn ends while it
 // runs), "drip" streams its answer in five parts 100 ms
@@ -25,7 +27,7 @@
 // answers a resume of a thread it has no record of with "no rollout found
 // for thread id <id>". The test passes a scenario in FAKE_CODEX and reads
 // what happened from the JSON lines written to FAKE_CODEX_LOG.
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   appendFileSync,
@@ -118,7 +120,9 @@ export interface Scenario {
    * `id` is Codex's call id (`call-<n>`; `exec-…` for a call made from exec).
    * The text "$document" in a call's arguments becomes the document the
    * turn's input names: in Rufi's note on what its reader copied
-   * ("(document <id>)"), or else the first document chip.
+   * ("(document <id>)"), or else the first document chip. A draft's
+   * reading "$reading" becomes the reading of its page's copy, which the
+   * fake reads with get_documents first, as the model would (not a step).
    */
   calls?: {
     id?: string;
@@ -167,7 +171,6 @@ record({
   started: process.argv.slice(2),
   pid: process.pid,
   env: Object.keys(process.env).sort(),
-  token: process.env["ACCESS_TOKEN"],
   codexHome: process.env["CODEX_HOME"],
 });
 
@@ -295,7 +298,11 @@ for (const [id, known] of Object.entries(scenario.threads ?? {})) {
 const USAGE_LIMIT =
   "You’ve hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again later.";
 
-const turnObject = (id: string, status: string) => ({
+const turnObject = (
+  id: string,
+  status: string,
+  failed?: { message: string; codexErrorInfo: string },
+) => ({
   id,
   items: [],
   itemsView: "notLoaded",
@@ -303,11 +310,12 @@ const turnObject = (id: string, status: string) => ({
   error:
     status === "failed"
       ? {
-          message: scenario.failMessage ?? USAGE_LIMIT,
+          message: failed?.message ?? scenario.failMessage ?? USAGE_LIMIT,
           codexErrorInfo:
-            scenario.failInfo === undefined
+            failed?.codexErrorInfo ??
+            (scenario.failInfo === undefined
               ? "usageLimitExceeded"
-              : scenario.failInfo,
+              : scenario.failInfo),
           additionalDetails: null,
           misalignment: null,
         }
@@ -361,7 +369,12 @@ function steer(thread: Thread, entry: Queued) {
   persist();
 }
 
-function complete(thread: Thread, turnId: string, status: string) {
+function complete(
+  thread: Thread,
+  turnId: string,
+  status: string,
+  failed?: { message: string; codexErrorInfo: string },
+) {
   const turn = thread.history.find((t) => t.id === turnId);
   if (turn) turn.status = status;
   if (thread.running?.turnId !== turnId) {
@@ -372,7 +385,36 @@ function complete(thread: Thread, turnId: string, status: string) {
   persist();
   send({
     method: "turn/completed",
-    params: { threadId: thread.id, turn: turnObject(turnId, status) },
+    params: { threadId: thread.id, turn: turnObject(turnId, status, failed) },
+  });
+}
+
+/**
+ * Like Codex, runs the auth command of Rufi's provider (its config.toml) for
+ * a token. Its words when it fails, as Codex 0.163.0 gives them.
+ */
+async function authToken(): Promise<{ token: string } | { failed: string }> {
+  const config = readFileSync(
+    join(process.env["CODEX_HOME"] ?? "", "config.toml"),
+    "utf8",
+  );
+  const auth = config.split("[model_providers.openai_chatgpt_plan.auth]")[1];
+  const command = /^command = (".*")$/m.exec(auth ?? "")?.[1];
+  const args = /^args = (\[.*\])$/m.exec(auth ?? "")?.[1];
+  if (command === undefined || args === undefined) {
+    return { failed: "Rufi's provider has no auth command." };
+  }
+  const file = JSON.parse(command) as string;
+  return new Promise((resolve) => {
+    execFile(file, JSON.parse(args) as string[], (error, stdout, stderr) => {
+      resolve(
+        error
+          ? {
+              failed: `provider auth command \`${file}\` exited with status exit status: 1: ${stderr}`,
+            }
+          : { token: stdout.trim() },
+      );
+    });
   });
 }
 
@@ -416,6 +458,20 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
   }
   event("item/started", { item: userItem(entry) });
   if (text.includes("crash")) process.exit(1);
+  // Like Codex after OpenAI refuses its token (a 401): it runs the auth
+  // command again, and fails the turn with the command's words when that
+  // fails (Codex first tries five times more).
+  if (text.includes("renew")) {
+    const renewed = await authToken();
+    record({ renewed: "token" in renewed ? renewed.token : null });
+    if ("failed" in renewed) {
+      complete(thread, turnId, "failed", {
+        message: renewed.failed,
+        codexErrorInfo: "other",
+      });
+      return;
+    }
+  }
   const turnIndex = thread.history.findIndex((turn) => turn.id === turnId);
   const byText = Object.entries(scenario.callsByText ?? {}).find(([words]) =>
     text.includes(words),
@@ -439,6 +495,33 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
               JSON.stringify(scripted.arguments).replaceAll("$document", named),
             ) as unknown,
           };
+    const drafts = (call.arguments as { drafts?: unknown } | null)?.drafts;
+    if (
+      thread.mcp &&
+      named !== undefined &&
+      Array.isArray(drafts) &&
+      JSON.stringify(drafts).includes('"$reading"')
+    ) {
+      const read = await callTool(thread.mcp, {
+        name: "get_documents",
+        arguments: { document: named, copies: true },
+        callId: `${id ?? `call-${String(i)}`}-copies`,
+        threadId,
+        turnId,
+      });
+      const [text] = (read.result?.["content"] ?? []) as { text: string }[];
+      const copies =
+        (
+          JSON.parse(text?.text ?? "{}") as {
+            result?: { copies?: { page: number; reading?: string }[] };
+          }
+        ).result?.copies ?? [];
+      for (const draft of drafts as { page: number; reading?: string }[]) {
+        if (draft.reading === "$reading") {
+          draft.reading = copies.find((c) => c.page === draft.page)?.reading;
+        }
+      }
+    }
     // Like Codex: the item starts, then the call goes to Rufi's MCP server.
     const item = {
       id: id ?? `call-${String(i)}`,
