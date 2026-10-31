@@ -206,6 +206,18 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
     app.rpc.request<T>(method, params, deadlines.requestMs);
 
   /**
+   * The app-server that last said Codex is signed in. It is asked again only
+   * when it hasn't said so: after its sign-in changed (`account/updated`) or
+   * a reply was refused it. So a reply doesn't ask, as the screens' sign-in
+   * doesn't (server/signin.ts).
+   */
+  let signedInOn: AppServer | undefined;
+  const heard = (app: AppServer, answer: GetAccountResponse) => {
+    signedInOn = signedOut(answer) ? undefined : app;
+    return answer;
+  };
+
+  /**
    * Codex, once it says it is signed in: signed out, nothing is sent. Thread
    * preparation and its hand-over share a signal: a new thread has no saved
    * rollout to resume if a second decision replaces its server.
@@ -217,8 +229,13 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
       return previous;
     }
     const app = await up(signal);
-    const answer = await request<GetAccountResponse>(app, "account/read", {});
-    if (signedOut(answer)) throw new SignedOut(SIGNED_OUT);
+    if (signedInOn !== app) {
+      const answer = heard(
+        app,
+        await request<GetAccountResponse>(app, "account/read", {}),
+      );
+      if (signedOut(answer)) throw new SignedOut(SIGNED_OUT);
+    }
     if (signal?.aborted) throw new Stopped();
     if (signal) prepared.set(signal, app);
     return app;
@@ -424,6 +441,9 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
         else login.reject(new Error(error ?? "The sign-in didn't finish."));
         return;
       }
+      case "account/updated":
+        signedInOn = undefined;
+        return;
       case "thread/closed":
         if (typeof threadId === "string") {
           loaded.delete(threadId);
@@ -470,10 +490,14 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
       // Nothing after a Stop was kept, so a stopped reply isn't whole even
       // when Codex finished it first.
       const stopped = running.stopping && turn.status === "completed";
-      finish(
-        running,
-        endOf(stopped ? { ...turn, status: "interrupted" } : turn, limits),
+      const end = endOf(
+        stopped ? { ...turn, status: "interrupted" } : turn,
+        limits,
       );
+      if (end.status === "failed" && end.reason === "sign_in") {
+        signedInOn = undefined;
+      }
+      finish(running, end);
       return;
     }
     // Nothing of a stopped turn is shown or saved after the Stop, except the
@@ -930,10 +954,10 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
     codexHome,
 
     account: async () => {
-      const answer = await request<GetAccountResponse>(
-        await up(),
-        "account/read",
-        {},
+      const app = await up();
+      const answer = heard(
+        app,
+        await request<GetAccountResponse>(app, "account/read", {}),
       );
       const { account } = answer;
       return {

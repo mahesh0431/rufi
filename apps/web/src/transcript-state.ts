@@ -3,7 +3,15 @@
 // page change it, and what it shows in order. Each entry and turn keeps the
 // chat's revision it was read at, so a read that comes late never replaces a
 // newer one.
-import type { Chat, Entry, Page, StreamLine, Turn } from "@rufi/contracts";
+import type {
+  Chat,
+  Entry,
+  Page,
+  Queue,
+  QueueItem,
+  StreamLine,
+  Turn,
+} from "@rufi/contracts";
 import { dayOf } from "./dates.ts";
 
 export interface Transcript {
@@ -105,6 +113,93 @@ const inOrder = (entries: readonly Entry[]) =>
 export const isRunning = (state: Transcript) =>
   Object.values(state.turns).some((turn) => turn.status === "running");
 
+/**
+ * What the AI is doing for you, from the moment you send until the reply
+ * ends: a reply running, or one starting (your send on its way, or a
+ * message Rufi is giving to the AI, which isn't held). Null: nothing. A
+ * running reply comes first, so a message you queue meanwhile is its.
+ */
+export type Working =
+  | { kind: "turn"; id: string; startedAt: string }
+  | { kind: "starting" }
+  | null;
+
+export function workingOf(
+  state: Pick<Transcript, "turns"> & { queue: Queue },
+  sending: boolean,
+): Working {
+  const turn = Object.values(state.turns).find(
+    (one) => one.status === "running",
+  );
+  if (turn) return { kind: "turn", id: turn.id, startedAt: turn.startedAt };
+  return sending || state.queue.items.some((item) => item.held === null)
+    ? { kind: "starting" }
+    : null;
+}
+
+/**
+ * Your messages Rufi is giving to the AI now, which show as sent, not as
+ * waiting: one being handed over, or, when no reply runs, the first that
+ * waits free. Not one the chat shows already.
+ */
+export function goingNow(
+  state: Pick<Transcript, "turns" | "entries"> & { queue: Queue },
+): QueueItem[] {
+  const idle = !Object.values(state.turns).some(
+    (turn) => turn.status === "running",
+  );
+  const first = state.queue.items.find(
+    (item) => item.state === "waiting" && item.held === null,
+  );
+  return state.queue.items.filter(
+    (item) =>
+      item.origin === "person" &&
+      item.held === null &&
+      !(item.id in state.entries) &&
+      (item.state === "handing_over" || (idle && item === first)),
+  );
+}
+
+/** When the working status shown now started: for a reply, or "starting". */
+export interface Clock {
+  key: string;
+  since: string;
+}
+
+/**
+ * The working status's clock, from the one before: it counts on while the
+ * same reply runs; a reply that follows its own start keeps the start's
+ * time, so the timer never goes back; a reply or start after another
+ * reply counts from its own start. After a reload it starts from what the
+ * server says: the reply's start, or now.
+ */
+export function clockOf(
+  before: Clock | null,
+  working: Working,
+  now: string,
+): Clock | null {
+  if (working === null) return null;
+  const key = working.kind === "turn" ? working.id : "starting";
+  if (before?.key === key) return before;
+  if (working.kind === "starting") return { key, since: now };
+  return {
+    key,
+    since:
+      before?.key === "starting" && before.since < working.startedAt
+        ? before.since
+        : working.startedAt,
+  };
+}
+
+/**
+ * The reply ran on another model or effort than the reply before it in the
+ * chat. A reply from before replies kept their effort says only a new model.
+ */
+const modelChanged = ({ model, effort, before }: Turn) =>
+  before !== null &&
+  (before.model !== model ||
+    (before.effort !== null && effort !== null && before.effort !== effort));
+
 /** A reply that ended without completing says how. */
 const cut = (turn: Turn) =>
   turn.status !== "running" && turn.status !== "completed";
@@ -126,10 +221,11 @@ export const inActivity = (entry: Entry) =>
 
 /**
  * What the transcript shows, in order, each as a key: "d:" a day's line
- * before an entry, "a:" a new thread started for a turn, "k:" a compaction
+ * before an entry, "m:" the model or effort changed for a turn, "k:" a compaction
  * running, "c:" a compaction completed, "e:" an entry, "s:" a turn's
  * Activity, "x:" how a turn ended. A turn's Activity takes the place of its
- * first line while it runs, and sits under its answer once it ended, also
+ * first line while it runs, or comes after its last one before it has a
+ * step (its working line), and sits under its answer once it ended, also
  * when its steps are gone. Keys, so the list draws again only when what it
  * shows changes.
  */
@@ -167,11 +263,12 @@ export function lines(state: Transcript): string[] {
         order.findLast(
           (id) => (entries[id]?.createdAt ?? "") <= turn.startedAt,
         ) ?? "";
-      if (turn.newThread) add(after, at, `a:${turn.id}`);
+      if (modelChanged(turn)) add(after, at, `m:${turn.id}`);
+      if (turn.status === "running") add(after, at, `s:${turn.id}`);
       if (cut(turn)) add(after, at, `x:${turn.id}`);
       continue;
     }
-    if (turn.newThread) add(before, opens, `a:${turn.id}`);
+    if (modelChanged(turn)) add(before, opens, `m:${turn.id}`);
     const step = firstStep.get(turn.id);
     const answer = lastReply.get(turn.id);
     if (turn.status !== "running" && answer !== undefined) {
@@ -180,6 +277,7 @@ export function lines(state: Transcript): string[] {
         add(after, answer, `s:${turn.id}`);
       }
     } else if (step !== undefined) add(before, step, `s:${turn.id}`);
+    else if (turn.status === "running") add(after, closes, `s:${turn.id}`);
     if (cut(turn)) add(after, closes, `x:${turn.id}`);
   }
   const shown = [...(after.get("") ?? [])];

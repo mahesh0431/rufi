@@ -208,6 +208,9 @@ export interface KeptTurn {
    * (all, and of those, from the cache) and the tokens written.
    */
   used: { input: number; cached: number; output: number } | null;
+  /** The model and effort it ran on. */
+  model: string;
+  effort: string;
   startedAt: string;
   endedAt: string | null;
   /** What it took, in order: who sent each, and its words, unless the host keeps them. */
@@ -1802,7 +1805,7 @@ export function createAgents(options: {
       const found = db
         .prepare(
           `SELECT id, provider_turn AS ref, status, reason, result, used,
-             started_at AS startedAt, ended_at AS endedAt
+             model, effort, started_at AS startedAt, ended_at AS endedAt
            FROM turns WHERE agent_id = ?
              AND (? IS NULL OR rowid < (SELECT rowid FROM turns WHERE id = ? AND agent_id = ?))
            ORDER BY rowid DESC LIMIT ?`,

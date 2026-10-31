@@ -38,9 +38,13 @@ beforeEach(async () => {
 });
 
 /** One whole reply: the message, a thought, a command and the answer. */
-async function reply(n: number, thread = "thread-1"): Promise<void> {
+async function reply(
+  n: number,
+  thread = "thread-1",
+  ranOn: { model: string; effort?: string } = { model: "gpt-6-astra" },
+): Promise<void> {
   const turn = `turn-${String(n)}`;
-  await transcripts.startTurn(chat, turn, { id: thread, model: "gpt-6-astra" });
+  await transcripts.startTurn(chat, turn, { id: thread, ...ranOn });
   await transcripts.addMessage(chat, {
     id: `m-${String(n)}`,
     kind: "message",
@@ -188,6 +192,43 @@ describe("the chat's pages", () => {
       false,
       true,
     ]);
+  });
+
+  it("give each reply its model and effort, and what the reply before it ran on, also when that one is on an older page", async () => {
+    await reply(1, "thread-1", { model: "gpt-6-astra" });
+    await reply(2, "thread-1", { model: "gpt-6-astra", effort: "xhigh" });
+    for (let n = 3; n <= 40; n++) {
+      await reply(n, "thread-1", { model: "claude-opus-5-5", effort: "high" });
+    }
+    const [latest, ...older] = await allPages();
+    expect(older.length).toBeGreaterThan(0);
+    const all = [...older.reverse(), latest].flatMap(
+      (page) => page?.turns ?? [],
+    );
+    expect(
+      all
+        .slice(0, 3)
+        .map(({ model, effort, before }) => ({ model, effort, before })),
+    ).toEqual([
+      { model: "gpt-6-astra", effort: null, before: null },
+      {
+        model: "gpt-6-astra",
+        effort: "xhigh",
+        before: { model: "gpt-6-astra", effort: null },
+      },
+      {
+        model: "claude-opus-5-5",
+        effort: "high",
+        before: { model: "gpt-6-astra", effort: "xhigh" },
+      },
+    ]);
+    // The latest page's first reply names the one before it, on a page not read.
+    const first = latest?.turns[0];
+    const earlier = all[all.findIndex((turn) => turn.id === first?.id) - 1];
+    expect(first?.before).toEqual({
+      model: earlier?.model,
+      effort: earlier?.effort,
+    });
   });
 
   it("are empty for a new chat", async () => {
