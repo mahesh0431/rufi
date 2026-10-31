@@ -255,11 +255,16 @@ async function openConversation(
   const ref = open.resume ?? randomUUID();
   const stopMs = options.stopMs ?? STOP_MS;
   const idleMs = options.idleMs ?? IDLE_MS;
-  /** Closes the open process once it has rested long enough. */
+  /**
+   * Closes the open process once it has rested long enough: not while a
+   * turn runs (one Claude began by itself), whose end rests it again.
+   */
   let resting: NodeJS.Timeout | undefined;
   const rest = () => {
     clearTimeout(resting);
-    resting = setTimeout(() => void closeProcess(), idleMs);
+    resting = setTimeout(() => {
+      if (running === undefined && out.size === 0) void closeProcess();
+    }, idleMs);
     resting.unref();
   };
   let model = open.model;
