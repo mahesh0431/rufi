@@ -216,8 +216,13 @@ export function TestPage({
           </ul>
         )}
       </section>
-      <section className="mt-3 rounded-xl border border-line bg-surface">
-        <RowDetail personId={person.id} row={test} />
+      <section aria-labelledby="this-test" className="mt-6">
+        <h3 id="this-test" className="mb-1 font-semibold">
+          This test
+        </h3>
+        <div className="rounded-xl border border-line bg-surface">
+          <RowDetail personId={person.id} row={test} />
+        </div>
       </section>
     </div>
   );

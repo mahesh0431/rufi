@@ -114,7 +114,7 @@ A test's page shows:
 
 - its name, its section and its unit, with **Ask Rufi**;
 - every current value, newest first by when its sample was taken, then those with no date: the date, the value and unit as the lab printed them, its name as the lab printed it, the lab (or **Typed in the chat**), the lab's range, and the lab's note and context. When the AI saved the value's number in the test's unit as another number, it shows under the value, for example "97 µmol/L" and "= 1.1 mg/dL";
-- the test's own **Sources** and **History**: when it was added, and each time it was renamed or given another section or unit.
+- **This test**: its own **Sources** and **History**, when it was added, and each time it was renamed or given another section or unit.
 
 Click a value's date to open it in place: its sources, its history and, for an amended result, **Replaces** (see [Open a row](#open-a-row)). A link to a lab result, such as a follow-up's **About**, opens its test's page with that value open.
 
