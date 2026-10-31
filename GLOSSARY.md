@@ -216,7 +216,7 @@ How hard the AI thinks before it answers: Low, Medium or High, chosen for the ch
 _Avoid_: reasoning level, thinking mode
 
 **Shortlist**:
-The models the AI and its agents may run on, ticked in **Settings** › **Models**: GPT-6-Astra and GPT-6.1-Sol until the user chooses. The ticked ones come first there, in the order they were ticked. The chat's menu offers those Codex or Claude offers, as each last told Rufi, and a new chat uses the first; an agent runs on its model's provider. An agent starts on one of them or is moved to one; any other is refused. An old `models.json` in the data folder is left as it is and not used.
+The models the AI and its agents may run on, ticked in **Settings** › **Models**: GPT-6-Astra and GPT-6.1-Sol until the user chooses. The ticked ones come first there, in the order they were ticked. The chat's menu offers those Codex or Claude offers now, and a new chat uses the first; an agent runs on its model's provider. An agent starts on one of them or is moved to one; any other is refused. An old `models.json` in the data folder is left as it is and not used.
 _Avoid_: allowlist, whitelist
 
 ## Coming back to things
