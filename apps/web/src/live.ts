@@ -138,14 +138,20 @@ function open(personId: string): Opened {
       documentsChanged();
       return;
     }
+    if (line.type === "agents") {
+      void queries.invalidateQueries({ queryKey: ["agents", personId] });
+      return;
+    }
     const next = apply(store.getState(), line);
     if (line.type === "snapshot") {
       // A reconnect: the latest page only; an older page on its way is dropped.
       store.setState({ ...next, status: "open", older: "idle" });
       void readQueue();
       // A save may have landed while the stream was down, its receipt maybe
-      // not on the latest page: everything that shows saved data reads again.
+      // not on the latest page: everything that shows saved data reads again,
+      // and what the sub-agents did.
       recordChanged();
+      void queries.invalidateQueries({ queryKey: ["agents", personId] });
     } else {
       store.setState({ ...next, status: "open" });
       if (line.entries.some((entry) => entry.kind === "receipt")) {

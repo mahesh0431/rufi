@@ -3593,6 +3593,12 @@ describe("the chat, on the scripted Codex", () => {
       entries.filter(([kind]) => kind === "message").map(([, text]) => text),
     ).toEqual(["first", "waiting B"]);
     expect(turns.map((turn) => turn.newThread)).toEqual([false, false, true]);
+    // The first reply's steps went with the agent database: it says so.
+    expect(turns.map((turn) => turn.stepsGone ?? false)).toEqual([
+      true,
+      true,
+      false,
+    ]);
   });
 
   it("saves nothing of a reply after its Stop", async () => {

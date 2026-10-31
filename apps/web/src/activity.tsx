@@ -7,7 +7,6 @@ import { EntryDetails } from "@rufi/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { read } from "./api.ts";
-import { chatPath } from "./live.ts";
 import { ScanText } from "lucide-react";
 import { openReading } from "./reading.tsx";
 import { Button, Problem } from "./ui.tsx";
@@ -55,25 +54,21 @@ export function took(ms: number): string {
 /** The step's details, as the agent gave them; read again when it changes. */
 export function StepDetails({
   personId,
-  id,
+  path,
   version,
   reading,
 }: {
   personId: string;
-  id: string;
+  /** Where the core gives them. */
+  path: string;
   /** When the step last changed: its details may have grown. */
   version: string;
   /** A reading step's document, while it isn't deleted. */
   reading?: string | undefined;
 }) {
   const details = useQuery({
-    queryKey: ["entry", personId, id, version],
-    queryFn: () =>
-      read(
-        EntryDetails,
-        "GET",
-        `${chatPath(personId)}/entries/${encodeURIComponent(id)}`,
-      ),
+    queryKey: ["entry", path, version],
+    queryFn: () => read(EntryDetails, "GET", path),
   });
   if (details.error) {
     return (

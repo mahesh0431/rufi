@@ -487,6 +487,7 @@ export const startCore = (options: CoreOptions) =>
         ...(options.now && { now: options.now }),
       }),
       readings,
+      agents: agentSystem.logs,
       items: draftItems(writer, readings.changed),
       pages: pageService,
       files: aiFiles({

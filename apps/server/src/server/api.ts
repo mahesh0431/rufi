@@ -30,6 +30,7 @@ import { APPEARANCE_HEADER } from "@rufi/contracts/app";
 import type { Brief } from "@rufi/contracts/briefs";
 import { KeepValues, type DeviceData } from "@rufi/contracts/devices";
 import type { Overview } from "@rufi/contracts/record";
+import type { AgentLogs } from "./agent-logs.ts";
 import { createReadStream } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { Readable } from "node:stream";
@@ -117,6 +118,8 @@ export interface ApiDeps {
   deletions: Deletions;
   /** Their readings: what waits and runs, and each one's work. */
   readings: Readings;
+  /** What the chat's sub-agents did. */
+  agents: Pick<AgentLogs, "list" | "log" | "step" | "subscribe">;
   /** A document's draft items, and the person's fixes. */
   items: DraftItems;
   /** A document's pages as the reader saw them. */
@@ -921,6 +924,37 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       ),
     );
   });
+  // The chat's sub-agents, each as its line shows it.
+  app.get(`${one}/agents`, async (c) => {
+    const found = await chatOf(c);
+    return c.json({ agents: await deps.agents.list(found.id) });
+  });
+  // A sub-agent's last lines (`last`, at most 10,000), when its line opens.
+  app.get(`${one}/agents/log`, async (c) => {
+    const found = await chatOf(c);
+    const last = c.req.query("last") ?? "50";
+    if (!/^[1-9]\d{0,3}$/.test(last)) {
+      throw new HttpError(400, "That request isn't valid.");
+    }
+    const log = await deps.agents.log(
+      found.id,
+      c.req.query("agent") ?? "",
+      Number(last),
+    );
+    if (!log) throw new HttpError(404, "Not found.");
+    return c.json(log);
+  });
+  // Everything a sub-agent gave about one of its steps, when it opens.
+  app.get(`${one}/agents/step`, async (c) => {
+    const found = await chatOf(c);
+    const step = await deps.agents.step(
+      found.id,
+      c.req.query("agent") ?? "",
+      c.req.query("step") ?? "",
+    );
+    if (!step) throw new HttpError(404, "Not found.");
+    return c.json(step);
+  });
   // Everything the agent gave about one step of Activity, when it opens:
   // never sent with the chat, so a long chat stays light.
   app.get(`${one}/entries/:entryId`, async (c) => {
@@ -1059,6 +1093,9 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       const unread = deps.readings.subscribe(found.personId, () => {
         push({ type: "documents" });
       });
+      const unagents = deps.agents.subscribe(found.id, () => {
+        push({ type: "agents" });
+      });
       out.onAbort(() => {
         state.open = false;
         wake?.();
@@ -1093,6 +1130,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
         unsubscribe();
         unwatch();
         unread();
+        unagents();
       }
     });
   });

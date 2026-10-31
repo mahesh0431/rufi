@@ -191,17 +191,32 @@ export interface KeptTurn {
   startedAt: string;
   endedAt: string | null;
   /** What it took, in order: who sent each, and its words, unless the host keeps them. */
-  inputs: { id: string; sender: string; parts: string[] | null }[];
+  inputs: {
+    id: string;
+    sender: string;
+    parts: string[] | null;
+    /** When it was delivered: at the turn's start, or as it was steered in. */
+    at: string;
+  }[];
   /** What it reported, in order. */
   items: Item[];
   /** What it asked, kept apart from the items they came with, in order. */
-  questions: { item: string; title: string; options: string[] }[];
+  questions: {
+    item: string;
+    /** Its order among its item's questions: 1, 2... */
+    number: number;
+    title: string;
+    options: string[];
+    at: string;
+  }[];
 }
 
 /** One thing a turn reported, as the package kept it. */
 export interface Item {
   /** The provider's reference for its turn. */
   turn: string;
+  /** The number of the agent's conversation its turn ran in. */
+  conversation: number;
   /** The provider's item id. */
   id: string;
   /** Its place in its turn, from when the turn first reported it. */
@@ -259,6 +274,8 @@ export interface Agents {
    * Text, a note or a reasoning still streaming is there as far as it came.
    */
   items: (agent: string, turns: readonly string[]) => Item[];
+  /** Which of these turns of the agent, by the provider's references, it keeps. */
+  known: (agent: string, turns: readonly string[]) => string[];
   /** One item, with everything the provider gave about it. */
   item: (
     agent: string,
@@ -359,7 +376,7 @@ export interface Agents {
 }
 
 /** An item's columns, as `Item`. */
-const ITEM = `turns.provider_turn AS turn, items.id, items.position, items.type, items.kind,
+const ITEM = `turns.provider_turn AS turn, turns.conversation, items.id, items.position, items.type, items.kind,
   items.title, items.detail, items.status, items.text,
   items.created_at AS createdAt, items.updated_at AS updatedAt`;
 
@@ -1669,10 +1686,10 @@ export function createAgents(options: {
         (item) => item.turn,
       );
       const inputs = db.prepare(
-        "SELECT id, sender, parts FROM queue WHERE turn_id = ? ORDER BY position",
+        "SELECT id, sender, parts, updated_at AS at FROM queue WHERE turn_id = ? ORDER BY position",
       );
       const questions = db.prepare(
-        "SELECT item_id AS item, title, options FROM questions WHERE turn_id = ? ORDER BY rowid",
+        "SELECT item_id AS item, number, title, options, created_at AS at FROM questions WHERE turn_id = ? ORDER BY rowid",
       );
       return {
         turns: page.map((turn) => ({
@@ -1682,10 +1699,10 @@ export function createAgents(options: {
               id: string;
               sender: string;
               parts: string | null;
+              at: string;
             }[]
           ).map((input) => ({
-            id: input.id,
-            sender: input.sender,
+            ...input,
             parts:
               input.parts === null
                 ? null
@@ -1695,8 +1712,10 @@ export function createAgents(options: {
           questions: (
             questions.all(turn.id) as {
               item: string;
+              number: number;
               title: string;
               options: string;
+              at: string;
             }[]
           ).map((question) => ({
             ...question,
@@ -1728,6 +1747,7 @@ export function createAgents(options: {
         return [
           {
             turn: running,
+            conversation: live.number,
             id: stream.item,
             position,
             type: stream.type,
@@ -1746,6 +1766,17 @@ export function createAgents(options: {
         last(a) && last(b) ? a.position - b.position : last(a) - last(b),
       );
     },
+
+    known: (agent, turns) =>
+      turns.length === 0
+        ? []
+        : (
+            db
+              .prepare(
+                "SELECT provider_turn AS ref FROM turns WHERE agent_id = ? AND provider_turn IN (SELECT value FROM json_each(?))",
+              )
+              .all(agent, JSON.stringify(turns)) as { ref: string }[]
+          ).map((turn) => turn.ref),
 
     item: (agent, turn, id) => {
       const found = db
