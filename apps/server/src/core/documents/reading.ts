@@ -704,7 +704,7 @@ export function readings(
       }
       if (lines.length === 0) return undefined;
       return [
-        "Files the user sent that aren't read yet: nothing of these pages is copied, so they are read before they are sorted (the sorting-documents skill).",
+        "Files the user sent that aren't read yet: these pages are read before they are sorted (the sorting-documents skill).",
         ...lines,
       ].join("\n");
     },

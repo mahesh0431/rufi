@@ -5,8 +5,8 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
-import { readPage, scriptedReader } from "../../server/tests/fake-reader.ts";
-import { expect, sendFiles, test } from "./rufi.ts";
+import { readOf, readThen } from "../../server/tests/readers.ts";
+import { expect, FILE_WORK_MS, sendFiles, test } from "./rufi.ts";
 
 async function accessible(page: Page) {
   const { violations } = await new AxeBuilder({ page }).analyze();
@@ -367,34 +367,8 @@ test("a reading that ends, with nothing saved, shows in Needs you on an open Ove
   rufi,
   context,
 }) => {
-  const reader = scriptedReader([
-    async (turn) => {
-      await turn.look(1);
-      await turn.save(1, readPage());
-      return undefined;
-    },
-    // A blurred photo: the reading completes, with its page unreadable.
-    async (turn) => {
-      await turn.look(1);
-      await turn.save(1, {
-        outcome: "unreadable",
-        why: "The print is blurred.",
-        copy: "",
-      });
-      return undefined;
-    },
-    // Read again: a letter, cleanly read, with nothing to save.
-    async (turn) => {
-      await turn.look(1);
-      await turn.save(1, {
-        outcome: "read",
-        copy: "Dear Asha,\n\nYour results were normal.",
-      });
-      return undefined;
-    },
-  ]);
-  // Rufi AI sorts the report and the letter in the replies that bring them;
-  // the blurred photo has nothing to sort.
+  // Rufi AI has each file read, and sorts the report and the letter when
+  // their readings wake it; the blurred photo has nothing to sort.
   const sort = (kind: string, drafts: unknown[]) => [
     {
       id: `sort-${kind}`,
@@ -408,22 +382,50 @@ test("a reading that ends, with nothing saved, shows in Needs you on an open Ove
   ];
   await rufi.family();
   await rufi.start({
-    reader: reader.run,
     scenario: {
-      callsByTurn: [
-        sort("lab_report", [
-          {
-            page: 1,
-            reading: "$reading",
-            test_name: "Haemoglobin",
-            value_text: "13.2",
-            unit: "g/dL",
-            quote: "Haemoglobin | 13.2 | g/dL",
-          },
-        ]),
-        [],
-        sort("letter", []),
-      ],
+      callsByText: {
+        ...readThen(
+          "Sort the lab report",
+          [readOf(1)],
+          sort("lab_report", [
+            {
+              page: 1,
+              reading: "$reading",
+              test_name: "Haemoglobin",
+              value_text: "13.2",
+              unit: "g/dL",
+              quote: "Haemoglobin | 13.2 | g/dL",
+            },
+          ]),
+        ),
+        // A blurred photo: the reading completes, with its page unreadable.
+        ...readThen(
+          "Sort the letter",
+          [
+            {
+              page: 1,
+              outcome: "unreadable",
+              why: "The print is blurred.",
+              copy: "",
+            },
+          ],
+          [],
+          "Photo",
+        ),
+        // Read again: a letter, cleanly read, with nothing to save.
+        ...readThen(
+          "Read it again",
+          [
+            {
+              page: 1,
+              outcome: "read",
+              copy: "Dear Asha,\n\nYour results were normal.",
+            },
+          ],
+          sort("letter", []),
+          "Letter",
+        ),
+      },
     },
   });
   await page.goto(rufi.link());
@@ -437,24 +439,49 @@ test("a reading that ends, with nothing saved, shows in Needs you on an open Ove
   const other = await context.newPage();
   await other.goto(rufi.link());
   await sidebar(other).getByRole("link", { name: "Documents" }).click();
-  const add = async (name: string, mimeType: string, file: string) => {
-    await sendFiles(other, {
-      name,
-      mimeType,
-      buffer: await readFile(
-        join(
-          import.meta.dirname,
-          "../../server/tests/fixtures/documents",
-          file,
+  const replies = chat(other)
+    .getByRole("log", { name: "Messages" })
+    .locator(".reply");
+  /** Sends a file with `words`; Rufi AI's two replies on it end. */
+  const add = async (
+    name: string,
+    mimeType: string,
+    file: string,
+    words: string,
+  ) => {
+    const before = await replies.count();
+    await sendFiles(
+      other,
+      {
+        name,
+        mimeType,
+        buffer: await readFile(
+          join(
+            import.meta.dirname,
+            "../../server/tests/fixtures/documents",
+            file,
+          ),
         ),
-      ),
-    });
+      },
+      words,
+    );
+    await expect(replies).toHaveCount(before + 2, { timeout: FILE_WORK_MS });
   };
-  await add("lotus-labs.pdf", "application/pdf", "ravi-lipid-panel.pdf");
+  await add(
+    "lotus-labs.pdf",
+    "application/pdf",
+    "ravi-lipid-panel.pdf",
+    "Sort the lab report",
+  );
   await expect(needsYou).toContainText(
     /lotus-labs\.pdf · \d+ results? read, not saved/,
   );
-  await add("clinic-letter.heic", "image/heic", "sideways.heic");
+  await add(
+    "clinic-letter.heic",
+    "image/heic",
+    "sideways.heic",
+    "Sort the letter",
+  );
   await expect(needsYou.getByRole("listitem")).toHaveText([
     /clinic-letter\.heic · couldn't be read · try a clearer scan/,
     /lotus-labs\.pdf · \d+ results? read, not saved/,
@@ -471,6 +498,7 @@ test("a reading that ends, with nothing saved, shows in Needs you on an open Ove
     .getByRole("row", { name: /clinic-letter\.heic/ })
     .getByRole("button", { name: "Retry" })
     .click();
+  await box(other).fill("Read it again");
   await other
     .getByRole("region", { name: "Chat" })
     .getByRole("button", { name: "Send" })

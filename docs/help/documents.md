@@ -1,6 +1,6 @@
 # Documents
 
-You can add lab reports and other documents to Rufi as PDFs or photos. Rufi keeps each original exactly as it came, so you can always look at it again, and reads each document when you send it, so you don't have to type its results: Rufi's reader copies each page, then Rufi AI sorts the file into documents and drafts their results. This page says how to add documents, how Rufi reads and sorts them, how to check the drafts, how to save the results to your health record, how to look at an original, and how to delete a document.
+You can add lab reports and other documents to Rufi as PDFs or photos. Rufi keeps each original exactly as it came, so you can always look at it again. When you send a document, Rufi AI has it read, so you don't have to type its results: a reader, an agent Rufi AI starts, copies each page, then Rufi AI sorts the file into documents and drafts their results. This page says how to add documents, how Rufi reads and sorts them, how to check the drafts, how to save the results to your health record, how to look at an original, and how to delete a document.
 
 You can also ask the AI about a document in the chat, and it looks at the pages it needs (see [Your data and the AI](your-data-and-the-ai.md#the-pages-the-ai-looks-at)).
 
@@ -10,7 +10,7 @@ Files always go through the chat, and nothing starts until you send them:
 
 1. In the sidebar, click **Documents**.
 2. Click **Add…** and choose one or more files. You can also drop files on the page. The chat opens, and each file's chip goes in its box (see [Adding to a message](chat.md#adding-to-a-message)).
-3. Type what you want to know or do with them, or nothing, and send. Rufi then reads the files, and Rufi AI sorts them and answers you in one reply.
+3. Type what you want to know or do with them, or nothing, and send. Rufi AI then has the files read, sorts them and answers you.
 
 Rufi takes PDFs and photos in JPEG, PNG or HEIC (the format of iPhone photos). It knows a file by its content, not by its name.
 
@@ -52,52 +52,48 @@ To show one kind only, choose it in the list at the top left.
 
 | Status              | What it means                                                                                                                   |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| **Not read yet**    | Sent, but not read (an older file, or a reading that never began); **Retry** reads it                                           |
-| **Reading**         | Rufi's reader copies it now, or waits for another reading; it shows the pages copied so far, for example **Reading · 13 of 40** |
+| **Not read yet**    | Sent, but no reading of it is saved yet: a reader may be at work on it (see the chat), or it was never read; **Retry** reads it |
 | **Not sorted yet**  | Read, but Rufi AI hasn't sorted it (see [When a file isn't sorted](#when-a-file-isnt-sorted))                                   |
 | **Not saved**       | Results wait for you to check and save in the chat (also values from a column of earlier results)                               |
 | **To check**        | No results wait, but a page needs **Retry**                                                                                     |
 | **Saved**           | Nothing waits, and results were saved to your health record; it counts the results saved, for example **Saved · 2 results**     |
 | **Set aside**       | Nothing waits, and every result was set aside: none was saved to your health record                                             |
 | **Nothing to save** | Read, and no results were found (a letter, for example)                                                                         |
-| **Failed**          | The reading stopped before the end; **Retry** continues it                                                                      |
+| **Failed**          | A reading by an earlier version of Rufi stopped before the end; **Retry** reads it again                                        |
 
 ## How Rufi reads a document
 
-Rufi reads a file in two steps. First its **reader**, an AI that sees one file at a time, copies each page, exactly as printed, as text with its tables: every value (`<5` stays `<5`, `1,25` stays `1,25`), unit, range, the lab's own flag, the dates, names and everything else on the page. Where something is unclear, such as a smudged digit, handwriting or a crossed-out value, it marks it in the copy, for example `1[0?]4`. The reader decides nothing: not what the file is, not its date, not which values are results. It saves nothing to your health record.
+Rufi reads a file in two steps. First a **reader** copies each page, exactly as printed, as text with its tables: every value (`<5` stays `<5`, `1,25` stays `1,25`), unit, range, the lab's own flag, the dates, names and everything else on the page. Where something is unclear, such as a smudged digit, handwriting or a crossed-out value, it marks it in the copy, for example `1[0?]4`. The reader decides nothing: not what the file is, not its date, not which values are results. It saves nothing to your health record.
 
-The reader reads each page from its image. When a PDF also has its own text, the reader uses that text as extra help with the exact characters; a scan or a photo is read from its image alone, with the same care. The reader sees only that file's pages. It doesn't see whose document it is, your health record, your chat, other documents or the internet.
+A reader is an agent that **Rufi AI**, the AI you chat with, starts for a file, with Rufi's instructions for copying pages (see [When the AI starts agents of its own](chat.md#when-the-ai-starts-agents-of-its-own)). It reads each page from its image. When a PDF also has its own text, the reader uses that text as extra help with the exact characters; a scan or a photo is read from its image alone, with the same care. When it has copied every page it was asked to read, it saves the copies with Rufi's tools, all at once.
 
-Then **Rufi AI**, the AI you chat with, sorts the file, in the same reply (see [How Rufi AI sorts a file](#how-rufi-ai-sorts-a-file)).
+Then Rufi AI sorts the file (see [How Rufi AI sorts a file](#how-rufi-ai-sorts-a-file)).
 
-Rufi reads each document when you send it, as the first part of your reply: **Rufi's part**. It sends the document's pages to the AI you signed in with (your ChatGPT plan) to read them, and their copies to Rufi AI to sort them. The first run tells you this once. A document that was already read isn't read again when you send it again; only a page you ask to read again is (see [Retry](#retry)).
+The reader sends the document's pages to the AI you signed in with (your ChatGPT plan) to read them, and Rufi AI gets their copies to sort them. The first run tells you this once. A document that was already read isn't read again when you send it again; only a page you ask to read again is (see [Retry](#retry)).
 
-### The reader's model and effort
+### How Rufi AI has files read
 
-In **Settings** → **Documents**, choose the **Reader model**: **GPT-6.1-Sol** (the start) or **GPT-5.5**. These are the models where Rufi can lock the reader down to its two tools, with no files and no internet (see [Your data and the AI](your-data-and-the-ai.md#reading-your-documents)).
+When your message brings files that aren't read yet, Rufi tells Rufi AI which ones, and which of their pages to read. How to have them read is Rufi AI's choice:
 
-Then choose its **Effort**: **Low**, **Medium** (the start) or **High**. Higher effort thinks longer on each page, and uses more of your plan.
-
-Your choice is used by the next reading that starts. A reading that runs keeps the model and effort it started with; if it stops and goes on later (with **Retry**), it goes on with the ones chosen then.
+- It can start a reader for each file, or give a file to a reader that is still at work. A long document can go to several readers.
+- It chooses each reader's model and effort among the models you ticked in **Settings** › **Models**: a clear printed PDF may need less than handwriting or a blurred photo. It can look at how much of your plan is left first.
+- When a reading fails or stops, it can start a reader again, on the same model or another, or tell you what happened and let you choose.
 
 ### While a document is read
 
-- Your reply starts at once, with your message. Its Activity is open (see [Activity](chat.md#activity)) and shows a step for each file, **Rufi's reader · thyrocare-aug.pdf**, with how far it is (**13 of 60 pages**). Files are copied one after another, in the order you sent them. Rufi AI starts when all are copied.
-- A reading waits when another reading is at work, also another person's: the step says **waiting for another reading**.
-- The chat bar shows the turning circle, and **Steer**, **Queue** and **Stop** are where the send button was (see [While the AI replies](chat.md#while-the-ai-replies)).
-- On the Documents page, the file's row says **Reading · 13 of 60**, with **View reading**. It has no **Ask Rufi** meanwhile.
-- Click **View reading** to see the reader's work as it goes: each page's copy as the reader saved it, with its marks, what couldn't be read and why, and how much of your plan it used. **View reading** shows only; you check and fix the drafts on the document's page (see [Check a report](#check-a-report)).
-- A message you send meanwhile goes as you choose: steered, it goes into this reply once Rufi AI starts; queued, it waits for a reply of its own (see [While the AI replies](chat.md#while-the-ai-replies)).
+- Your reply starts at once, with your message. In its Activity (see [Activity](chat.md#activity)), each reader Rufi AI started is one line, such as **Reading thyrocare-aug.pdf**, with its status. Click it to see what the reader did.
+- Rufi AI may tell you what is being read and end its reply. Each reader's result wakes it: a reply starts by itself, with a small line above it such as "Reading thyrocare-aug.pdf: done", and Rufi AI sorts the file and tells you what it found.
+- **Stop** ends the reply, not its readers. To stop a reader, ask Rufi AI.
+- On the Documents page, the file says **Not read yet** until its reading is saved, then **Not sorted yet** until Rufi AI sorts it.
+- A message you send meanwhile goes as you choose: steered, it goes into the reply that runs; queued, it waits for a reply of its own (see [While the AI replies](chat.md#while-the-ai-replies)). A message with files goes the same way.
 
 ### When the reading ends
 
-The step ends with the pages copied, for example **60 pages · 1 couldn't be read**. When a page couldn't be read or wasn't looked at, Rufi AI is told which, and says so in its answer. Rufi writes no line in the chat for a reading: the step in Activity is its record.
-
-When the reading doesn't finish, your reply ends before Rufi AI starts (see [When a reading stops](#when-a-reading-stops)).
+The reader saves its copies of the pages it was asked to read, with the ones it couldn't read marked. A page that no reading has copied yet shows as not looked at. Rufi AI sees which pages couldn't be read or weren't looked at, and says so in its answer. Rufi shows no receipt for a reading: the reader's line in Activity is its record, and **View reading** on the Documents page shows the copies.
 
 ## How Rufi AI sorts a file
 
-When a reading ends, Rufi gives your message to Rufi AI with a short note: which documents were just copied, and which pages couldn't be read. Rufi AI reads the page copies, sorts the new files, and then answers what you wrote. If you sent files and no words, it tells you in a few lines what it found. It can't save anything to your health record, set anything aside or write a visit brief until you say yes in the chat.
+When a reader's result comes back, Rufi AI reads the page copies and sorts the file, at once or together with your other files, and tells you what it found, beside its answer to what you wrote. It can't save anything to your health record, set anything aside or write a visit brief until you say yes in the chat.
 
 - **It splits the file into documents**, one for each report or paper, and gives each its kind, its date and, for a report, its lab and report number as printed. A report's pages stay together, also a page that goes on with its table and prints no lab or date. A prescription or a letter is a document of its own. Each one has its own row on the Documents page, with its pages: **mixed-pile.pdf · pages 1–2 of 5**, **pages 3–4 of 5**, **page 5 of 5**.
 - **It drafts the results**: every current lab result, and measurements such as a blood pressure taken at a visit, each with its date and the words it came from on its page. A column of earlier results isn't drafted. A prescription's medicines and advice aren't drafted: they go in its visit (see [A visit's paper](#a-visits-paper)).
@@ -115,9 +111,9 @@ The drafts are kept as **draft items**: they wait for you and stay across restar
 A file that was read and not sorted shows **Not sorted yet** on the Documents page and on its own page, and has **Ask Rufi**:
 
 - **Rufi AI asked you about it.** Answer in the chat, and Rufi AI sorts it then.
-- **The AI's part of the reply failed or was stopped** after the reading. The copies are kept, and nothing is copied again. Send the file's chip again (**Ask Rufi** on its row), or say "sort it", and Rufi AI sorts it.
+- **Rufi AI's reply failed or was stopped** after the reading. The copies are kept, and nothing is copied again. Send the file's chip again (**Ask Rufi** on its row), or say "sort it", and Rufi AI sorts it.
 
-Rufi doesn't sort a file on its own, and doesn't try again by itself: a file is sorted in a reply to a message of yours. A file Rufi sorted in an earlier version, and could not finish, shows the same.
+Rufi AI sorts a file when its reading comes back. If that reply doesn't finish, nothing tries again by itself. A file that an earlier version of Rufi read, and didn't finish sorting, shows the same.
 
 ### A file sorted wrong
 
@@ -136,7 +132,7 @@ Marks show you where to look. A mark never changes a value:
 
 ## Save results to your health record
 
-1. Add the document to a message (**Ask Rufi** on its row on the Documents page, **Save in chat** on its page, or its chip from the paperclip), and say "save it". A new file is read and sorted first, in the same reply, and the AI asks you before it saves. To save only some results, add them on the document's page (see [Add some results to the chat](#add-some-results-to-the-chat)) and say "save these".
+1. Add the document to a message (**Ask Rufi** on its row on the Documents page, **Save in chat** on its page, or its chip from the paperclip), and say "save it". A new file is read and sorted first, and the AI asks you before it saves. To save only some results, add them on the document's page (see [Add some results to the chat](#add-some-results-to-the-chat)) and say "save these".
 2. The AI reads all the document's draft items and the results you already saved for the same tests and dates. Then it says, in a few lines, how many results are new, which are lab results and which are measurements, and names each one that isn't plainly new. It asks you about:
    - **another source**: the same result is already in your health record, for example because you told the AI, or you added another copy of the report. The saved result stays as it is, and this page becomes one more source of it. When you say a result is a duplicate, the AI asks in one question whether to add this page as another source or to set the result aside.
    - **a correction**: the lab amended a result you saved. The new result replaces the old one, and the old one stays in its history, marked as replaced.
@@ -179,23 +175,18 @@ You can also tell the AI about a visit with no paper, such as a video call with 
 
 ## When a reading stops
 
-Your reply stops in Rufi's part, before Rufi AI starts on your message. Its last line says why and how far it got, with **Retry**. The pages already copied are kept, and Rufi AI never gets half a message.
+A reader can fail or be stopped before it saves its copies. Its line in the reply's Activity says how it ended, and the reader's result wakes Rufi AI as when it finishes: Rufi AI tells you what happened, and may start a reader again (see [How Rufi AI has files read](#how-rufi-ai-has-files-read)). A reader saves its copies all at once, so a reader that stopped saved none of them, and the file still says **Not read yet**.
 
-- **You clicked Stop:** the step says **stopped · 13 of 60**, and the reply ends **Stopped. · read 13 of 60**. As after any Stop, nothing more goes by itself until you send a message.
-- **You're signed out, your sign-in has ended, or your plan's usage limit is reached:** the reading stops at once. The line says why, in Rufi's or the service's words, for example **Couldn't read scan-2024.pdf · Not signed in. Sign in with ChatGPT: in Rufi, or with pnpm rufi signin. · read 13 of 60**. Sign in, or wait until the limit resets, then click **Retry**. Rufi doesn't try again by itself.
-- **The AI connection was lost or restarted, or ChatGPT can't renew your sign-in just now:** Rufi tries again by itself, up to three times: after 30 seconds, then 1 minute, then 2 minutes. Meanwhile the step says **waiting to copy again**.
-- **It took too long, or failed again:** the line says **Couldn't read … · read 3 of 5**. Between them is why: "the reading took too long", or the AI service's error as the service reported it, such as "exceeded retry limit, last status: 429 Too Many Requests".
-- **Rufi closed while reading:** when Rufi starts again, the reply ends **Rufi closed while reading.**, with **Retry**. The reading doesn't go on by itself after a restart.
+- **You're signed out, your sign-in has ended, or your plan's usage limit is reached:** the reader can't go on, and neither can Rufi AI. Sign in, or wait until the limit resets, then ask Rufi AI to read the file again, or use **Retry**.
+- **Rufi closed while a reader worked:** when Rufi starts again, the reader carries on (see [After a restart](chat.md#after-a-restart)).
 
-**View reading** and the document's page also say why a reading failed, in full. On the Documents page, the file shows **Failed**.
+A reading by an earlier version of Rufi that stopped shows **Failed** on the Documents page, and **View reading** and the document's page say why, in full.
 
 ### Retry
 
-**Retry** on a reply's last line sends the same message again, without showing it twice, and the reading goes on from the next page not copied. You must be signed in, as for any send.
+A file whose reading failed has **Retry** on the Documents page and on its own page, and so does a file that was never read. A page that couldn't be read or wasn't looked at has it on its heading. These put the document's chip in the chat box, marked **· read again**, and open the chat. Nothing is read until you send; if you take the chip out, nothing was queued. When you send, Rufi tells Rufi AI which pages to read: only the pages that couldn't be read or weren't looked at. Rufi AI has them read and sorts just those pages into their document: the drafts already made, and any you changed, stay as they are. Sending a document's chip again, without that mark, doesn't ask for its unreadable pages again, so "save it" never waits for a page that can't be read.
 
-A file whose reading failed also has **Retry** on the Documents page and on its own page, and a page that couldn't be read or wasn't looked at has it on its heading. These put the document's chip in the chat box, marked **· read again**, and open the chat. Nothing is read until you send; if you take the chip out, nothing was queued. When you send, Rufi reads only the pages that couldn't be read or weren't looked at, in your reply, and Rufi AI sorts just those pages into their document: the drafts already made, and any you changed, stay as they are. Sending a document's chip again, without that mark, doesn't read its unreadable pages again, so "save it" never waits for a page that can't be read.
-
-You can also ask the AI in the chat about a document that wasn't read; it tells you to press **Retry**.
+You can also ask Rufi AI in the chat to read a document, or a page of it, again.
 
 ## Check a report
 
