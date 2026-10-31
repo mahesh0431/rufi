@@ -21,6 +21,7 @@ import {
   kindNamed,
   literal,
   Position,
+  TestRef,
   type Field,
   type Kind,
   type Row,
@@ -92,6 +93,24 @@ export const ItemSave = Schema.Struct({
     Schema.Literals(["lab", "measurement"]).annotate({
       description:
         "What the item is, chosen with the user: lab (a test of a sample) or measurement (blood pressure, pulse, weight, height, temperature, SpO2). Needed for new; a correction keeps the corrected result's category unless you give one; never for another_source.",
+    }),
+  ),
+  in_test: Schema.optionalKey(
+    TestRef.annotate({
+      description:
+        "Which of the user's tests the result is in: a test's id from get_records (kind test), or {ref} of a test a change of this save adds, whatever the lab printed. Needed for new; a correction keeps the corrected result's test unless you give one; never for another_source.",
+    }),
+  ),
+  test_number: Schema.optionalKey(
+    Schema.Finite.annotate({
+      description:
+        "The result's number in its test's unit: the same number when its unit means the test's unit, converted when it doesn't and you know how, left out when you aren't sure or it has no number. For new and correction; never for another_source.",
+    }),
+  ),
+  test_second_number: Schema.optionalKey(
+    Schema.Finite.annotate({
+      description:
+        "A two-number result's second number (a blood pressure's 84) in its test's unit, as test_number.",
     }),
   ),
   value_number: Schema.optionalKey(
@@ -167,6 +186,36 @@ interface Context {
   problem: (path: string, got: unknown, fix: string) => void;
   /** Records the save already changes, "kind:id", and where. */
   touched: Map<string, string>;
+  /** The refs of the records the save's changes add. */
+  named: ReadonlyMap<string, Kind>;
+}
+
+/** A test as a result names it: its id, or the ref of a test this save adds. */
+export type TestGiven = string | { ref: string };
+
+/** Why a result can't be in the test it names, or undefined when it can. */
+export async function testProblem(
+  trx: Transaction<Tables>,
+  personId: string,
+  given: TestGiven,
+  named: ReadonlyMap<string, Kind>,
+): Promise<string | undefined> {
+  if (typeof given !== "string") {
+    const kind = named.get(given.ref);
+    if (kind?.name === "test") return undefined;
+    return kind
+      ? `${given.ref} is a ${kind.noun} this save adds, not a test.`
+      : `No earlier change of this save adds a record with ref ${given.ref}: add the test first, with that ref.`;
+  }
+  const test = await trx
+    .selectFrom("tests")
+    .select("id")
+    .where("person_id", "=", personId)
+    .where("id", "=", given)
+    .executeTakeFirst();
+  return test
+    ? undefined
+    : "No test with this id is in this person's record: read the tests with get_records, kind test.";
 }
 
 /**
@@ -343,6 +392,14 @@ export async function planItems(
         );
         continue;
       }
+      if (save.in_test === undefined) {
+        problem(
+          `${at}.in_test`,
+          undefined,
+          "Give the new result's test: one of the user's tests from get_records (kind test), or {ref} of a test a change of this save adds.",
+        );
+        continue;
+      }
       if (save.record !== undefined) {
         problem(
           `${at}.record`,
@@ -396,6 +453,17 @@ export async function planItems(
       }
       context.touched.set(key, at);
       if (save.as === "another_source") {
+        const own = (
+          ["in_test", "test_number", "test_second_number"] as const
+        ).find((name) => save[name] !== undefined);
+        if (own !== undefined) {
+          problem(
+            `${at}.${own}`,
+            save[own],
+            "Another source keeps the saved result as it is, its test and numbers too: leave them out. To move the result to another test, change it in a save of its own after this one.",
+          );
+          continue;
+        }
         if (save.category !== undefined) {
           problem(
             `${at}.category`,
@@ -431,9 +499,25 @@ export async function planItems(
     // result's category unless the AI gives one.
     const category = save.category ?? before?.["category"];
     const measurement = category === "measurement";
+    // Its test: the AI's, or the corrected result's.
+    if (save.in_test !== undefined) {
+      const wrong = await testProblem(
+        trx,
+        personId,
+        save.in_test,
+        context.named,
+      );
+      if (wrong) {
+        problem(`${at}.in_test`, save.in_test, wrong);
+        continue;
+      }
+    }
     let source: Source | undefined;
     const columns: Row = {
       category,
+      test_id: save.in_test ?? before?.["test_id"],
+      test_number: save.test_number ?? null,
+      test_second_number: save.test_second_number ?? null,
       test_name: fields.test_name,
       value_text: fields.value_text,
       // A value fixed on the page has no number of its own: the AI's.

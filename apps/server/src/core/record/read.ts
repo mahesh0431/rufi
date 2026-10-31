@@ -38,6 +38,8 @@ function given(field: Field, row: Row): unknown {
       return { kind: row["linked_kind"], id: value };
     case "amount":
       return { value, unit: row[unitColumn(field)] ?? undefined };
+    case "test":
+      return value;
   }
 }
 

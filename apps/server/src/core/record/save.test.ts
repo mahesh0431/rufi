@@ -2024,6 +2024,132 @@ describe("a visit and the records saved from it", () => {
   });
 });
 
+describe("a result's test", () => {
+  it("is added with its results in one save, by its ref; a save naming another person's test writes nothing", async () => {
+    await say(
+      "My creatinine at Lakeview was 1.2 mg/dl and my urine creatinine 80 mg/dL, on 20 Sep",
+    );
+    const counts = () =>
+      rows(
+        "SELECT (SELECT count(*) FROM tests) AS tests, (SELECT count(*) FROM results) AS results, (SELECT count(*) FROM operations) AS saves",
+      );
+    const before = counts();
+    const creatinine = [
+      {
+        kind: "test",
+        action: "add",
+        ref: "t1",
+        fields: { name: "Creatinine", section: "Kidney", unit: "mg/dL" },
+      },
+      {
+        kind: "result",
+        action: "add",
+        fields: {
+          test: "Creatinine",
+          value: "1.2",
+          number: 1.2,
+          unit: "mg/dl",
+          category: "lab",
+          measured: { date: "2026-09-20", words: "20 Sep" },
+          in_test: { ref: "t1" },
+          test_number: 1.2,
+        },
+      },
+    ];
+    // Ravi's test, in Asha's chat.
+    const refused = await save([
+      ...creatinine,
+      {
+        kind: "result",
+        action: "add",
+        fields: {
+          test: "Urine creatinine",
+          value: "80",
+          category: "lab",
+          in_test: "tst-ldl",
+        },
+      },
+    ]);
+    expect(refused.ok).toBe(false);
+    expect(refused.body.issues).toEqual([
+      expect.objectContaining({
+        path: "changes.2.fields.in_test",
+        fix: expect.stringContaining("No test with this id") as unknown,
+      }),
+    ]);
+    expect(counts()).toEqual(before);
+
+    const saved = await save(creatinine, "call-2");
+    expect(saved.ok).toBe(true);
+    const [test, result] = saved.body.result.changes;
+    expect(row("tests", test?.id ?? "")).toMatchObject({
+      person_id: "asha",
+      name: "Creatinine",
+      section: "Kidney",
+      unit: "mg/dL",
+    });
+    expect(row("results", result?.id ?? "")).toMatchObject({
+      test_name: "Creatinine",
+      unit: "mg/dl",
+      test_id: test?.id,
+      test_number: 1.2,
+    });
+  });
+
+  it("moves a document's result to another test in place, with its numbers, and the reverse puts both back; a test is never removed", async () => {
+    const printed = { ...row("results", "res-a3") };
+    await say("That CRP is high-sensitivity CRP: keep it apart, in mg/dL");
+    const moved = await save([
+      {
+        kind: "test",
+        action: "add",
+        ref: "t1",
+        fields: { name: "hs-CRP", section: "Inflammation", unit: "mg/dL" },
+      },
+      {
+        kind: "result",
+        action: "change",
+        id: "res-a3",
+        fields: { in_test: { ref: "t1" }, test_number: 0.5 },
+      },
+    ]);
+    expect(moved.ok).toBe(true);
+    const test = moved.body.result.changes[0]?.id ?? "";
+    expect(row("results", "res-a3")).toEqual({
+      ...printed,
+      test_id: test,
+      test_number: 0.5,
+    });
+
+    await say("Undo that");
+    const back = await save(
+      [
+        {
+          kind: "result",
+          action: "change",
+          id: "res-a3",
+          fields: { in_test: "tst-crp", test_number: 5 },
+        },
+      ],
+      "call-2",
+    );
+    expect(back.ok).toBe(true);
+    expect(row("results", "res-a3")).toEqual(printed);
+    expect(
+      rows(
+        "SELECT action FROM record_changes WHERE record_id = 'res-a3' ORDER BY rowid",
+      ),
+    ).toEqual([{ action: "change" }, { action: "change" }]);
+
+    const gone = await save(
+      [{ kind: "test", action: "remove", id: test }],
+      "call-3",
+    );
+    expect(gone.ok).toBe(false);
+    expect(row("tests", test)["removed"]).toBe(0);
+  });
+});
+
 describe("a crash during a save", () => {
   it.each(["before", "after"] as const)(
     "%s its commit leaves the records and the receipt together, or neither",

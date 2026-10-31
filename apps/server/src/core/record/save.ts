@@ -15,7 +15,13 @@ import { sql, type Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
 import type { Tables } from "../store/tables.ts";
 import { localTime, shownDate } from "./dates.ts";
-import { ItemSave, planItems, type Earlier } from "./items.ts";
+import {
+  ItemSave,
+  planItems,
+  testProblem,
+  type Earlier,
+  type TestGiven,
+} from "./items.ts";
 import { recordVersions } from "./read.ts";
 import {
   columnsOf,
@@ -165,6 +171,16 @@ function changeOf(kind: Kind) {
           issues.push({
             path: ["action"],
             issue: `The ${kind.noun} is never ${DONE[change.action]}: change its fields, and null clears one.`,
+          });
+          return issues;
+        }
+        if (
+          kind.kept &&
+          (change.action === "remove" || change.action === "restore")
+        ) {
+          issues.push({
+            path: ["action"],
+            issue: `A ${kind.noun} is never ${DONE[change.action]}: one with no current results isn't shown. Move a result to another ${kind.noun} by changing the result.`,
           });
           return issues;
         }
@@ -575,6 +591,15 @@ export async function saveChanges(
           );
         }
       }
+      if (field.type === "test") {
+        const wrong = await testProblem(
+          trx,
+          where.personId,
+          value as TestGiven,
+          named,
+        );
+        if (wrong) problem(path, value, wrong);
+      }
       if (kind.name === "result" && name === "replaces") {
         const wrong =
           change.action === "add"
@@ -633,6 +658,7 @@ export async function saveChanges(
             refs: where.refs ?? [],
             problem,
             touched,
+            named,
           },
           input.items,
         );
@@ -680,6 +706,15 @@ export async function saveChanges(
         cite.type === "visit" && cite.ref !== undefined
           ? { ...cite, id: added.get(cite.ref) }
           : cite,
+      ),
+      // A test this save added, named by its ref, is in its column by id.
+      columns: Object.fromEntries(
+        Object.entries(planning.columns).map(([column, value]) => [
+          column,
+          typeof value === "object" && value !== null && "ref" in value
+            ? added.get(String(value.ref))
+            : value,
+        ]),
       ),
     };
     const done = await write(trx, where, id, change);
@@ -866,10 +901,16 @@ async function recordOf(
 }
 
 /**
- * What a change may set on a result read from a report: its category. What
- * it prints and its date change only by amendment.
+ * What a change may set on a result read from a report: its category, and
+ * its test with its numbers in the test's unit. What it prints and its date
+ * change only by amendment.
  */
-const UNPRINTED: readonly string[] = ["category"];
+const UNPRINTED: readonly string[] = [
+  "category",
+  "in_test",
+  "test_number",
+  "test_second_number",
+];
 
 /** Why the record can't take this action now. */
 function stateProblem(
@@ -884,7 +925,7 @@ function stateProblem(
     action === "change" &&
     Object.keys(given).some((name) => !UNPRINTED.includes(name))
   ) {
-    return "This result was read from a document, so what it prints and its date change only by amendment: add a new result with replaces set to this id. Only its category changes in place, in a change of its own.";
+    return "This result was read from a document, so what it prints and its date change only by amendment: add a new result with replaces set to this id. Only its category, its test and its numbers in the test's unit change in place, in a change of their own.";
   }
   const removed = row["removed"] === 1;
   if (action === "change" && removed) {
@@ -1293,6 +1334,19 @@ async function linksOf(
       if (row) links.set(linkKey("visit", id), visitWords(row));
     }
   }
+  const test = kindNamed("test") as Kind;
+  for (const { before, after, kind } of written) {
+    // A result names its test by the test's name; a test added, by its own.
+    const ids =
+      kind.name === "test"
+        ? [after["id"]]
+        : [before?.["test_id"], after["test_id"]];
+    for (const id of ids) {
+      if (typeof id !== "string" || links.has(linkKey("test", id))) continue;
+      const row = await recordOf(trx, test, personId, id);
+      if (row) links.set(linkKey("test", id), test.label(row));
+    }
+  }
   for (const { before, after } of written) {
     // An amended result names the one it replaces by its label.
     const replaced = after["replaces_id"];
@@ -1353,6 +1407,8 @@ function shownField(field: Field, row: Row, links: Links): string | undefined {
       );
     case "amount":
       return `${String(Number(value))} ${String(row[unitColumn(field)])}`;
+    case "test":
+      return links.get(linkKey("test", value)) ?? (value as string);
     case "value":
       if (field.column === "replaces_id") {
         return links.get(linkKey("replaces", value)) ?? (value as string);
@@ -1450,6 +1506,13 @@ function receiptText(written: readonly Written[], links: Links): string {
         const now = shownField(field, after, links);
         if (now === undefined || now === "unknown") continue;
         if (kind.inLabel.includes(key)) continue;
+        // A number in the test's unit shows where it isn't the printed one.
+        const printedAs = {
+          test_number: "value_number",
+          test_second_number: "second_number",
+        }[key];
+        if (printedAs !== undefined && after[key] === after[printedAs])
+          continue;
         details.push(
           field.shown === "status"
             ? literal(cut(now))
@@ -1480,12 +1543,16 @@ function receiptText(written: readonly Written[], links: Links): string {
   const items = written.filter((w) => w.item);
   if (items.length === 0) return `**Saved**\n\n${lines.join("\n")}`;
   const count = (as: string) => items.filter((w) => w.item?.as === as).length;
-  const others = written.length - items.length;
+  const tests = written.filter(
+    (w) => w.kind.name === "test" && w.action === "add",
+  ).length;
+  const others = written.length - items.length - tests;
   const parts = [
     count("new") > 0 && `${String(count("new"))} new`,
     count("another_source") > 0 &&
       plural(count("another_source"), "more source", "more sources"),
     count("correction") > 0 && plural(count("correction"), "correction"),
+    tests > 0 && plural(tests, "new test"),
     others > 0 && plural(others, "other change"),
   ].filter((part) => part !== false);
   const what =

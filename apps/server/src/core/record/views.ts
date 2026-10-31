@@ -32,7 +32,14 @@ import { sql, type Kysely, type RawBuilder } from "kysely";
 import { documentName } from "../documents/naming.ts";
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
-import { KINDS, kindNamed, visitWords, type Kind, type Row } from "./kinds.ts";
+import {
+  KINDS,
+  dateColumn,
+  kindNamed,
+  visitWords,
+  type Kind,
+  type Row,
+} from "./kinds.ts";
 import { classify, dueSpan } from "./due.ts";
 import { changed, fieldsOf, isCurrent } from "./read.ts";
 
@@ -109,8 +116,8 @@ function grouped(kind: Kind, personId: string, category?: ResultCategory) {
       keys: sql`SELECT ${gid} AS gid, ${date} AS d FROM results r LEFT JOIN reports p ON p.person_id = r.person_id AND p.id = r.report_id WHERE ${mine}`,
     };
   }
-  const field = kind.fields[kind.dated];
-  const dated = sql.ref(`r.${field?.column ?? kind.dated}`);
+  // Every page's kind has a date.
+  const dated = sql.ref(`r.${dateColumn(kind) ?? "rowid"}`);
   // Allergies with no reaction date sort by the day the user said them.
   const date = kind.asserted ? sql`coalesce(${dated}, r.asserted)` : dated;
   const gid = sql<string>`${kind.name} || ':' || r.id`;
