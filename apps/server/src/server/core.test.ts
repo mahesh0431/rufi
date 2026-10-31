@@ -2302,6 +2302,7 @@ describe("first run", () => {
     // Blood group and height were left empty: only what was given is saved.
     expect((await page.api("GET", `/api/people/${id}/profile`)).body).toEqual({
       values: {
+        name: "Asha Fictional",
         birth_date: { date: "1990-03", words: "March 1990" },
         sex_for_ranges: "female",
         blood_group: null,
