@@ -12,7 +12,7 @@ If a document's file is missing from your data folder, or has changed, the backu
 
 A backup doesn't hold:
 
-- your ChatGPT sign-in: a restored copy starts signed out;
+- Codex's and Claude's sign-ins: a restored copy starts signed out;
 - the AI's own files, such as its own copy of the chat;
 - the AI's folder, with its programs, notes and research files (see [Your data and the AI](your-data-and-the-ai.md#what-the-ai-can-do-in-its-folder));
 - the JPEG copies Rufi makes to show HEIC photos: Rufi makes them again when they are needed;
@@ -55,7 +55,7 @@ To make a backup now, click **Back up**. When it is done, Settings says **Backed
 
 A restore puts a backup into a new folder. Your current data folder doesn't change. You then start Rufi on the new folder.
 
-A restore brings back your record as it was when the backup was made, signed out. To put your data on another disk as it is now, with your sign-in and all your backups, move it instead (see [Move your data](your-data-and-the-ai.md#move-your-data)).
+A restore brings back your record as it was when the backup was made, signed out. To put your data on another disk as it is now, with all your backups, move it instead (see [Move your data](your-data-and-the-ai.md#move-your-data)).
 
 1. Find the backup you want: open the `backups` folder in your data folder (**Settings** › **Data folder** › **Show in Finder**). For example, in the terminal, for the data folder that Rufi made:
 
@@ -79,7 +79,7 @@ A restore brings back your record as it was when the backup was made, signed out
    RUFI_HOME=/Users/you/Rufi-restored pnpm start
    ```
 
-4. Sign in with ChatGPT again: the copy starts signed out (see [Signing in with ChatGPT](signing-in.md)).
+4. Sign in again: the copy starts signed out (see [Signing in](signing-in.md)).
 
 The copy is a Rufi of its own: it can run next to the Rufi of your current data folder. To use the copy from now on, set `RUFI_HOME` to the new folder each time you start Rufi (see [Start Rufi on another folder](your-data-and-the-ai.md#start-rufi-on-another-folder)).
 

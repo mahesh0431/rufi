@@ -15,6 +15,7 @@ import {
 import { type Cause, SIGNED_OUT } from "@rufi/contracts";
 import { type AgentEvent, type Model, type TurnEnd } from "../agent/runtime.ts";
 import { chatAgents, sentAs } from "../core/chat/agents.ts";
+import { UNKNOWN_PROVIDER } from "../core/chat/models.ts";
 import type { ChatRow, Step, Transcripts } from "../core/chat/transcript.ts";
 import { startAgents, type AgentSystem, type Apply } from "./agents.ts";
 import { agentLogs, type AgentLogs } from "./agent-logs.ts";
@@ -199,7 +200,10 @@ function endOf(end: Ended): TurnEnd {
 }
 
 /** A provider event as one of today's agent events, in `threadId`. */
-function eventOf(threadId: string, event: ProviderEvent): RufiAiEvent {
+function eventOf(
+  threadId: string,
+  event: Exclude<ProviderEvent, { type: "turnUsage" }>,
+): RufiAiEvent {
   const turnId = event.turn;
   switch (event.type) {
     case "turnStarted":
@@ -395,6 +399,8 @@ export async function startRufiAi(
       screens.logs?.changed(agent);
       return;
     }
+    // A turn's own usage is for the usage tool; the chat shows the context.
+    if (event.type === "turnUsage") return;
     if (event.type === "turnEnded") {
       const own = ends.get(event.turn);
       ends.delete(event.turn);
@@ -583,8 +589,6 @@ export async function startRufiAi(
     },
   });
 
-  /** Each model's provider, as the providers last listed them. */
-  const providers = new Map<string, string>();
   /** Every provider's models now; one that can't say is left out, unless all fail. */
   const models = async (signal?: AbortSignal): Promise<OfferedModel[]> => {
     const settled = await Promise.allSettled(
@@ -607,7 +611,6 @@ export async function startRufiAi(
     const offered = settled.flatMap((one) =>
       one.status === "fulfilled" ? one.value : [],
     );
-    for (const { id, provider } of offered) providers.set(id, provider);
     return offered;
   };
 
@@ -624,16 +627,14 @@ export async function startRufiAi(
         const agent = await system.root(row.id);
         const now = agents.get(agent);
         if (!now) return;
-        const model = row.model ?? now.model;
-        // Rufi AI runs on its model's provider, also when it was made anew
-        // on another. The menu and the choice listed the models already;
-        // only a model unknown since Rufi started is looked up.
-        const provider =
-          providers.get(model) ??
-          (await models()).find((one) => one.id === model)?.provider;
+        // Rufi AI runs on its model's provider, kept with the choice, also
+        // when it was made anew on another; never on another one's.
+        if (row.model !== null && row.modelProvider === null) {
+          throw new Error(UNKNOWN_PROVIDER);
+        }
         agents.configure(agent, {
-          ...(provider !== undefined && { provider }),
-          model,
+          ...(row.modelProvider !== null && { provider: row.modelProvider }),
+          model: row.model ?? now.model,
           effort: row.effort,
         });
       },

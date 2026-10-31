@@ -44,7 +44,7 @@ import { ICON, type Icon } from "./ui.tsx";
 const TITLES: Record<string, string> = {
   settings: "Settings",
   help: "Help",
-  "sign-in": "Sign in with ChatGPT",
+  "sign-in": "Sign in",
 };
 
 /** Whether the address is a person's chat page. */
@@ -340,18 +340,16 @@ function Place({
   );
 }
 
-/** The ChatGPT sign-in, at the bottom of the sidebar only when it needs you. */
+/** Codex's sign-in, at the bottom of the sidebar only when it needs you. */
 function Account() {
-  const account = useStatus().data?.account;
+  const account = useStatus().data?.codex.state;
   if (account === undefined || account === "signed_in") return null;
   return (
     <Link
       to="/sign-in"
       className="px-2 pt-2 text-xs text-accent-ink hover:underline"
     >
-      {account === "signed_out"
-        ? "Not signed in"
-        : "ChatGPT plan can't be used"}
+      {account === "signed_out" ? "Not signed in" : "Codex can't start"}
     </Link>
   );
 }

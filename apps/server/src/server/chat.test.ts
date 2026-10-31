@@ -2,15 +2,21 @@
 // scripted fake Codex and against the real Codex binary (on a local fake
 // model, offline). What a reply does is chosen by the message's words: see
 // tests/fake-codex.ts and tests/fake-model.ts.
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { SIGNED_OUT, type Entry } from "@rufi/contracts";
+import {
+  CLAUDE_SIGNED_OUT,
+  SIGNED_OUT,
+  type Entry,
+  type ProviderStatus,
+} from "@rufi/contracts";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Scenario } from "../../tests/fake-codex.ts";
 import {
+  codexArgs,
   fakeModel,
   NOTE,
   THINKING,
@@ -18,6 +24,11 @@ import {
 } from "../../tests/fake-model.ts";
 import { callTool, type McpServerConfig } from "../../tests/mcp-client.ts";
 import { rufiAiFor } from "../../tests/rufi-ai.ts";
+import { fakeClaude } from "../../tests/fake-claude.ts";
+import type { Options } from "@anthropic-ai/claude-agent-sdk";
+import { ANSWER } from "@rufi/agents/contract";
+import { claudeAdapter } from "../agent/claude/adapter.ts";
+import { claudeFolder } from "../agent/claude/executable.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
 import { fakeProvider } from "@rufi/agents/fake";
 import type { OpenOptions, ProviderAdapter } from "@rufi/agents/provider";
@@ -58,7 +69,7 @@ import { shortlist, SHORTLIST_SETTING } from "../core/chat/models.ts";
 import { agentsPath } from "./agents.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
 import { subAgents } from "./sub-agents.ts";
-import { agentSetup } from "./core.ts";
+import { agentSetup, claudeSetup } from "./core.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "./mcp.ts";
 
 const FAKE = join(import.meta.dirname, "../../tests/fake-codex.ts");
@@ -72,11 +83,9 @@ let chat: Chat | undefined;
 let ai: Awaited<ReturnType<typeof rufiAiFor>> | undefined;
 /** The chat's Codex, behind the provider boundary. */
 let codex: ProviderAdapter | undefined;
-/** Whether the person is signed in, as the chat asks it. */
-let signedIn: boolean;
+/** Each provider's sign-in as the chat asks it; signed in when not set. */
+let signIns: Record<string, ProviderStatus>;
 let model: FakeModel | undefined;
-let token: string;
-let tokenGate: Promise<void> | undefined;
 /** Calls of Rufi's tools the chat admitted, as they start. */
 let admitted: string[];
 /** Rufi's MCP server for this run of the chat, as the core serves it. */
@@ -94,9 +103,7 @@ beforeEach(async () => {
   `);
   transcripts = openTranscripts(store);
   queue = chatQueue(store);
-  signedIn = true;
-  token = "token";
-  tokenGate = undefined;
+  signIns = {};
   admitted = [];
 });
 afterEach(async () => {
@@ -139,8 +146,6 @@ async function startChat(
     shortlist?: string[];
     /** Names this Rufi's rules: another one is an update. */
     rules?: string;
-    /** The sign-in's token decision, at the external edge. */
-    tokenProvider?: () => Promise<string>;
     /** What Rufi's reader does in each run (tests/fake-reader.ts). */
     reader?: Script[];
     /** The agent database is lost while Rufi is closed. */
@@ -186,13 +191,7 @@ async function startChat(
   const command =
     backend === "fake"
       ? { file: process.execPath, args: [FAKE] }
-      : {
-          file: await codexBinary(),
-          args: [
-            "-c",
-            `model_providers.openai_chatgpt_plan.base_url="${model?.url ?? ""}"`,
-          ],
-        };
+      : { file: await codexBinary(), args: codexArgs(model?.url) };
   const reads = readings(store);
   const fakeReader = scriptedReader(options.reader ?? []);
   readerRuns = fakeReader.runs;
@@ -213,10 +212,6 @@ async function startChat(
       PATH: process.env["PATH"] ?? "",
       FAKE_CODEX: JSON.stringify(options.scenario ?? {}),
       FAKE_CODEX_LOG: join(home, "fake.jsonl"),
-    },
-    token: async () => {
-      await tokenGate;
-      return options.tokenProvider?.() ?? token;
     },
     version: "0.0.0",
     deadlines: { requestMs: 10_000, ...options.deadlines },
@@ -243,7 +238,14 @@ async function startChat(
     ...(options.reader && {
       reading: { readings: reads, read: documentReader.read },
     }),
-    signedIn: () => Promise.resolve(signedIn),
+    signIn: (provider) =>
+      Promise.resolve(
+        signIns[provider] ?? {
+          state: "signed_in",
+          account: "asha@example.com",
+          text: null,
+        },
+      ),
     agent: ai.agent,
     shortlist: () => shortlist(transcripts.setting),
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp`, keys },
@@ -477,6 +479,38 @@ const chatRow = async (_id?: string): Promise<ChatRow> => {
 
 const newChat = () => chatRow();
 
+/**
+ * Claude as Rufi runs it (claudeSetup), on the scripted Claude: what each
+ * of its sessions was given, and each conversation it opened.
+ */
+async function scriptedClaude(script: { signedIn?: boolean } = {}) {
+  const fake = fakeClaude(script);
+  const asked: Options[] = [];
+  const opened: OpenOptions[] = [];
+  const adapter = claudeAdapter({
+    claude: () =>
+      Promise.resolve({ path: "/fictional/claude", version: "2.1.314" }),
+    ...(await claudeSetup(home, {})),
+    query: (run) => {
+      asked.push(run.options ?? {});
+      return fake.query(run);
+    },
+    sessions: fake.sessions,
+  });
+  return {
+    adapter: {
+      ...adapter,
+      open: (options: OpenOptions) => {
+        opened.push(options);
+        return adapter.open(options);
+      },
+    },
+    /** The sessions Claude ran a conversation in, not those Rufi asked about it. */
+    sessions: () => asked.filter((options) => options.sessionId !== undefined),
+    opened,
+  };
+}
+
 /** The transcript as [kind, text] pairs, and the turns' statuses. */
 async function transcript(id: string) {
   const snapshot = await transcripts.page(await chatRow(id));
@@ -523,85 +557,6 @@ const running = (id: string) =>
 describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
   const backend = backendOf(name);
   const timeout = { timeout: 60_000 };
-
-  it.each(["before its first turn", "between messages"])(
-    "sends once in the same thread when the sign-in renews %s, with its record tools",
-    timeout,
-    async (when) => {
-      // A selected model makes thread creation the first readiness decision.
-      await transcripts.setModel(await chatRow(), "gpt-6.1-sol");
-      let tokenCalls = 0;
-      await startChat(name, {
-        tokenProvider: () =>
-          Promise.resolve(
-            when === "before its first turn"
-              ? ++tokenCalls === 1
-                ? "token"
-                : "renewed-token"
-              : token,
-          ),
-        scenario: {
-          callsByTurn: [
-            [{ id: "read-first", tool: "get_overview", arguments: {} }],
-            [{ id: "read-second", tool: "get_overview", arguments: {} }],
-          ],
-        },
-      });
-      const c = await newChat();
-      await say(c, "overview first");
-      await until(
-        async () =>
-          (await transcript(c.id)).turns.length > 0 ||
-          (await queue.list(c)).items.some((item) => item.held !== null),
-      );
-      expect((await queue.list(c)).items.map((item) => item.heldText)).toEqual(
-        [],
-      );
-      await ended(c.id);
-      const thread = (await chatRow()).threadId;
-      expect(thread).not.toBeNull();
-
-      token = "renewed-token";
-      await say(await chatRow(), "overview second");
-      await until(async () => {
-        const waiting = await queue.list(await chatRow());
-        return (
-          (await transcript(c.id)).turns.length === 2 ||
-          waiting.items.some((item) => item.held !== null)
-        );
-      });
-      // A failed hand-over reports its reason here instead of answering.
-      expect(
-        (await queue.list(await chatRow())).items.map((item) => item.heldText),
-      ).toEqual([]);
-      await ended(c.id, 2);
-      expect((await chatRow()).threadId).toBe(thread);
-      const { all, turns } = await transcript(c.id);
-      expect(
-        all
-          .filter((entry) => entry.kind === "message" || entry.kind === "reply")
-          .map((entry) => [entry.kind, entry.text]),
-      ).toEqual([
-        ["message", "overview first"],
-        ["reply", "ok:overview first"],
-        ["message", "overview second"],
-        ["reply", "ok:overview second"],
-      ]);
-      expect(turns.map((turn) => [turn.status, turn.newThread])).toEqual([
-        ["completed", false],
-        ["completed", false],
-      ]);
-      // Each reply read the overview with Rufi's tools.
-      expect(
-        store.db
-          .prepare(
-            "SELECT turn_id FROM tool_calls WHERE tool = 'get_overview' AND ok = 1 ORDER BY started_at",
-          )
-          .all()
-          .map((row) => row["turn_id"]),
-      ).toEqual(turns.map((turn) => turn.id));
-    },
-  );
 
   it("stores each part of a reply before it is shown", timeout, async () => {
     await startChat(name);
@@ -825,15 +780,17 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       const c = await newChat();
       await rufiReply(c);
       await say(c, "B", "queue");
-      await say(c, "C", "queue");
+      // The reply runs on with the steer: the model answers it no more than
+      // the note.
+      await say(c, "C: hang", "queue");
       const { items } = await queue.list(c);
       await chat?.queue.steer(
         c,
-        items.find((item) => item.text === "C")?.id ?? "",
+        items.find((item) => item.text === "C: hang")?.id ?? "",
       );
       await until(async () =>
         (await transcript(c.id)).entries.some(
-          ([kind, text]) => kind === "steer" && text === "C",
+          ([kind, text]) => kind === "steer" && text === "C: hang",
         ),
       );
       expect(await waiting()).toEqual([["B", "waiting", null]]);
@@ -844,26 +801,30 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
           .filter(([kind]) => kind === "message" || kind === "steer")
           .map(([kind, text]) => [kind, text]),
       ).toEqual([
-        ["steer", "C"],
+        ["steer", "C: hang"],
         ["message", "B"],
       ]);
     },
   );
 
-  it(
+  // Only the scripted Codex can hold its sign-in check.
+  it.runIf(name === "fake")(
     "a message sent while a reply starts or runs goes into that reply; one sent after goes as a new message",
     timeout,
     async () => {
-      await startChat(name);
+      const hold = join(home, "hold");
+      await startChat(name, {
+        scenario: { held: { methods: ["account/read"], file: hold } },
+      });
       const c = await newChat();
       await chat?.selectModel(c, "gpt-6.1-sol");
-      // Its conversation opens: Codex waits for a token, and the reply starts.
-      const gate = Promise.withResolvers<undefined>();
-      tokenGate = gate.promise;
+      // Its conversation opens: Codex holds its sign-in check, then the reply
+      // starts.
+      await writeFile(hold, "");
       await say(await chatRow(c.id), "slow");
       await until(async () => (await chat?.agent.busy(c)) === true);
       await say(await chatRow(c.id), "the latest one");
-      gate.resolve(undefined);
+      await rm(hold);
       await running(c.id);
       await say(await chatRow(c.id), "shorter please");
       await ended(c.id);
@@ -884,20 +845,23 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     },
   );
 
-  it(
+  // Only the scripted Codex can hold its sign-in check.
+  it.runIf(name === "fake")(
     "hands nothing over when Stop comes while the message is getting ready; it waits, not sent, and goes once sent",
     timeout,
     async () => {
-      await startChat(name);
+      const hold = join(home, "hold");
+      await startChat(name, {
+        scenario: { held: { methods: ["account/read"], file: hold } },
+      });
       const c = await newChat();
       await chat?.selectModel(c, "gpt-6.1-sol");
-      // Its conversation opens: Codex waits for a token.
-      const gate = Promise.withResolvers<undefined>();
-      tokenGate = gate.promise;
+      // Its conversation opens: Codex holds its sign-in check.
+      await writeFile(hold, "");
       await say(await chatRow(c.id), "Hello");
       await until(async () => (await chat?.agent.busy(c)) === true);
       const stopping = chat?.stop(c);
-      gate.resolve(undefined);
+      await rm(hold);
       await stopping;
       await until(async () => (await waiting())[0]?.[2] === "stopped");
       expect((await transcript(c.id)).entries).toEqual([]);
@@ -1712,7 +1676,7 @@ describe("the chat, on the scripted Codex", () => {
   it("takes nothing the person sends while signed out", async () => {
     await startChat("fake");
     const c = await newChat();
-    signedIn = false;
+    signIns["codex"] = { state: "signed_out", account: null, text: null };
     await expect(say(c, "Hello")).rejects.toThrow(SIGNED_OUT);
     expect(await waiting()).toEqual([]);
     store.db.exec(`
@@ -1848,6 +1812,34 @@ describe("the chat, on the scripted Codex", () => {
       ["reply", "ok:Show results"],
       ["reply", "**Whose results?**\n- Asha\n- Ravi"],
     ]);
+  });
+
+  it("keeps a reading's refused calls, of any shape, without their page text", async () => {
+    const row = "| LDL cholesterol | 142 | mg/dL |";
+    const reading = (document: string, pages: unknown) => ({
+      tool: "save_reading",
+      arguments: { document, pages },
+    });
+    await startChat("fake", {
+      scenario: {
+        calls: [
+          // Page text as the document and as the pages.
+          reading(row, row),
+          // In a field Rufi doesn't know, and as the name of one.
+          reading("doc-asha-aug", [
+            { page: 1, outcome: "read", text: row, [row]: true },
+          ]),
+        ],
+      },
+    });
+    const c = await newChat();
+    await say(c, "Read it");
+    await ended(c.id);
+    const kept = store.db
+      .prepare("SELECT ok, input, answer FROM tool_calls")
+      .all();
+    expect(kept.map((call) => call["ok"])).toEqual([0, 0]);
+    expect(JSON.stringify(kept)).not.toContain("LDL cholesterol");
   });
 
   it("keeps everything each activity sent and got back, the AI's reasoning, and each call to Rufi's tools as answered", async () => {
@@ -3235,6 +3227,120 @@ describe("the chat, on the scripted Codex", () => {
       await say(await chatRow(c.id), "Thanks", "queue");
       await until(() => Promise.resolve(continues(root()) === 0));
     });
+  });
+
+  it("starts a helper on Claude, which answers Rufi AI through the package", async () => {
+    const claude = await scriptedClaude();
+    await startChat("fake", {
+      shortlist: [...ALLOWED, "claude-fictional-1"],
+      other: claude.adapter,
+      scenario: {
+        callsByText: {
+          "Ask a helper": [
+            {
+              id: "call-start",
+              tool: "start_agent",
+              arguments: {
+                title: "Helper",
+                task: "Read the March report.",
+                model: "claude-fictional-1",
+                effort: "low",
+              },
+            },
+          ],
+        },
+      },
+    });
+    const c = await newChat();
+    await say(c, "Ask a helper");
+    const helper = ownCall("call-start");
+    // Its result wakes Rufi AI, which replies.
+    await ended(c.id, 2);
+    await settled(c.id);
+    const [row] = agentRows(
+      `SELECT provider, model, result FROM agents WHERE id = '${helper}'`,
+    );
+    expect(row).toMatchObject({
+      provider: "claude",
+      model: "claude-fictional-1",
+    });
+    expect(String(row?.["result"])).toContain(ANSWER);
+  });
+
+  it("opens a chat switched from Codex to Claude afresh there, hearing the chat, and Claude answers as Rufi runs it", async () => {
+    const claude = await scriptedClaude();
+    await startChat("fake", {
+      shortlist: [...ALLOWED, "claude-fictional-1"],
+      other: claude.adapter,
+    });
+    const c = await newChat();
+    await say(c, "Hello");
+    await ended(c.id);
+    await chat?.selectModel(await chatRow(c.id), "claude-fictional-1");
+    await say(await chatRow(c.id), "Again");
+    await ended(c.id, 2);
+
+    expect(claude.opened).toHaveLength(1);
+    expect(claude.opened[0]).toMatchObject({ model: "claude-fictional-1" });
+    expect(claude.opened[0]?.seed).toContain("Hello");
+    expect(agentRows("SELECT provider FROM agents")).toEqual([
+      { provider: "claude" },
+    ]);
+    expect(
+      (await transcript(c.id)).entries.filter(([kind]) => kind === "reply"),
+    ).toEqual([
+      ["reply", "ok:Hello"],
+      ["reply", ANSWER],
+    ]);
+    // In Claude's own folder in the data folder, with Rufi's skills, which
+    // its commands and file tools can read.
+    const [session, ...more] = claude.sessions();
+    expect(more).toEqual([]);
+    expect(session?.env).toMatchObject({
+      CLAUDE_CONFIG_DIR: claudeFolder(home),
+    });
+    const plugin = session?.plugins?.[0]?.path ?? "";
+    expect(plugin).not.toBe("");
+    const settings =
+      typeof session?.settings === "object" ? session.settings : {};
+    expect(
+      (settings.sandbox?.filesystem?.denyRead ?? []).filter(
+        (denied) => plugin === denied || plugin.startsWith(`${denied}/`),
+      ),
+    ).toEqual([]);
+  });
+
+  it("keeps a chat on Claude with Claude, also after a restart: signed out of Claude, it takes nothing and says so; signed in, it sends while Codex is signed out", async () => {
+    const shortlist = [...ALLOWED, "claude-fictional-1"];
+    await startChat("fake", {
+      shortlist,
+      other: (await scriptedClaude()).adapter,
+    });
+    const c = await newChat();
+    await chat?.selectModel(c, "claude-fictional-1");
+
+    // Rufi restarts before the chat's first message, with Claude signed out:
+    // its models aren't listed now.
+    const out = await scriptedClaude({ signedIn: false });
+    await startChat("fake", { shortlist, other: out.adapter });
+    signIns["claude"] = { state: "signed_out", account: null, text: null };
+    await expect(say(await chatRow(c.id), "Hello")).rejects.toThrow(
+      CLAUDE_SIGNED_OUT,
+    );
+    expect(await waiting()).toEqual([]);
+    // Neither provider got it.
+    expect(out.opened).toEqual([]);
+    expect(agentRows("SELECT count(*) AS n FROM queue")).toEqual([{ n: 0 }]);
+    expect(agentRows("SELECT count(*) AS n FROM turns")).toEqual([{ n: 0 }]);
+
+    const claude = await scriptedClaude();
+    await startChat("fake", { shortlist, other: claude.adapter });
+    delete signIns["claude"];
+    signIns["codex"] = { state: "signed_out", account: null, text: null };
+    await say(await chatRow(c.id), "Hello");
+    await ended(c.id);
+    expect((await transcript(c.id)).entries.at(-1)).toEqual(["reply", ANSWER]);
+    expect(claude.opened).toHaveLength(1);
   });
 
   it("gives a sub-agent only the tools it was given, and its own sub-agent no more than those", async () => {

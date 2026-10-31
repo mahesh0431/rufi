@@ -5,7 +5,7 @@
 import { mkdir, rm } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
-import type { Status } from "@rufi/contracts";
+import type { Provider, ProviderStatus, Status } from "@rufi/contracts";
 import type { PersonNotices } from "@rufi/contracts/app";
 import { serve, type ServerType } from "@hono/node-server";
 import type { ProviderAdapter } from "@rufi/agents/provider";
@@ -24,6 +24,7 @@ import { documents } from "../core/documents/documents.ts";
 import { fileGate } from "../core/documents/gate.ts";
 import { copies } from "../core/documents/copies.ts";
 import { copyReader } from "../core/documents/copy-reader.ts";
+import { saveReading } from "../core/documents/save-reading.ts";
 import { sorting as openSorting } from "../core/documents/sorting.ts";
 import {
   CLOSED_WHILE_READING,
@@ -31,6 +32,7 @@ import {
 } from "../core/documents/reading.ts";
 import { draftItems } from "../core/documents/items.ts";
 import { backupJob } from "../core/store/backup.ts";
+import { workCleaner } from "../core/store/work.ts";
 import {
   databasePath,
   openReadOnly,
@@ -61,8 +63,9 @@ import { errorCode, type Log } from "../platform/logs.ts";
 import { agentsPath } from "./agents.ts";
 import { api, LAUNCHER_HEADER } from "./api.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
+import { claudeEnvironment, claudeFolder } from "../agent/claude/executable.ts";
+import { prepareClaudePlugin } from "../agent/claude/session.ts";
 import { generatedImages } from "../agent/codex/settings.ts";
-import { doorFolder } from "../agent/codex/token-door.ts";
 import { aiFiles } from "./files.ts";
 import { mcpEndpoint, mcpKeys, skillResources } from "./mcp.ts";
 import { reader as openReader, readerChoice } from "./reader.ts";
@@ -70,7 +73,7 @@ import { startRufiAi, type OfferedModel } from "./rufi-ai.ts";
 import { converter as openConverter } from "./converter.ts";
 import { secret, sessions } from "./session.ts";
 import { subAgents } from "./sub-agents.ts";
-import { signInFlow, type SignIn } from "./signin.ts";
+import { signInFlow, type ProviderSignIn } from "./signin.ts";
 
 export interface CoreOptions {
   /** Rufi's data folder. */
@@ -92,10 +95,11 @@ export interface CoreOptions {
   log: Log;
   /** Updates a screen may fall behind by before its stream is closed. */
   behindMax?: number;
-  /** The ChatGPT sign-in; signed out when not given. */
-  account?: () => Promise<Status>;
-  /** Signs in with ChatGPT from the screens; not offered when not given. */
-  signIn?: SignIn;
+  /**
+   * Each provider's sign-in, the chat's (Codex) first: as each reports it,
+   * and started from the screens. One not given is signed out.
+   */
+  signIns?: Partial<Record<Provider, ProviderSignIn>>;
   /** The built screens' folder (apps/web/dist). */
   screens?: string;
   /**
@@ -127,8 +131,9 @@ export function aiSandbox(home: string): AgentSandbox {
       coreFile(home),
       // Its temp copy while it is written: Codex denies a glob too.
       tempPattern(coreFile(home)),
-      // The keys of the chat's Codex and the reader's to their token doors.
-      doorFolder(home),
+      // Codex's sign-in, and Claude's folder with its own.
+      join(home, "codex", "auth.json"),
+      claudeFolder(home),
     ],
   };
 }
@@ -137,6 +142,20 @@ export function aiSandbox(home: string): AgentSandbox {
 export const agentSetup = (home: string) => ({
   sandbox: aiSandbox(home),
   skills: SKILLS,
+});
+
+/**
+ * What Claude needs from Rufi to run its agents: the same sandbox, its own
+ * folder in the data folder in its environment (`env`, the child's), and
+ * Rufi's skills as its plugin, written afresh.
+ */
+export const claudeSetup = async (
+  home: string,
+  env: Readonly<Record<string, string>>,
+) => ({
+  sandbox: aiSandbox(home),
+  env: claudeEnvironment(home, env),
+  plugin: await prepareClaudePlugin(home, SKILLS),
 });
 
 /** Where Rufi's MCP server takes the chat's calls, and the reader's. */
@@ -246,6 +265,10 @@ export const startCore = (options: CoreOptions) =>
     );
     // Before anything uses the files: what a delete left when Rufi stopped.
     yield* attempt(() => sweepFiles(writer, home));
+    yield* Effect.acquireRelease(
+      Effect.sync(() => workCleaner(writer, home, log, options.now)),
+      (cleaner) => Effect.promise(() => cleaner.close()),
+    );
     const gate = fileGate();
     yield* attempt(() => cleanExportStaging(home));
     const backups = yield* Effect.acquireRelease(
@@ -300,9 +323,23 @@ export const startCore = (options: CoreOptions) =>
     const chatKeys = mcpKeys();
     const readerKeys = mcpKeys();
     const mcpUrl = (path: string) => `http://127.0.0.1:${String(port)}${path}`;
-    const account =
-      options.account ??
-      (() => Promise.resolve<Status>({ account: "signed_out", email: null }));
+    const signIns = options.signIns ?? {};
+    const signedOut: ProviderStatus = {
+      state: "signed_out",
+      account: null,
+      text: null,
+    };
+    const statusOf = (provider: Provider) =>
+      signIns[provider]?.status() ?? Promise.resolve(signedOut);
+    const isProvider = (id: string): id is Provider =>
+      id === "codex" || id === "claude";
+    const account = async (): Promise<Status> => {
+      const [codex, claude] = await Promise.all([
+        statusOf("codex"),
+        statusOf("claude"),
+      ]);
+      return { codex, claude };
+    };
     // The document reader, one reading at a time, for the replies that
     // read what their message sent.
     const pageService = pages(reader ?? writer, home, gate);
@@ -327,7 +364,10 @@ export const startCore = (options: CoreOptions) =>
         openChat({
           transcripts,
           queue,
-          signedIn: async () => (await account()).account === "signed_in",
+          signIn: (provider) =>
+            isProvider(provider)
+              ? statusOf(provider)
+              : Promise.resolve(signedOut),
           agent: agentSystem.rufiAi,
           shortlist: () => shortlist(transcripts.setting),
           mcp: { url: () => mcpUrl(MCP_CHAT), keys: chatKeys },
@@ -363,6 +403,12 @@ export const startCore = (options: CoreOptions) =>
                 models: (): Promise<readonly OfferedModel[]> =>
                   chat.shortlisted(),
               }),
+              {
+                run: saveReading(options.now),
+                done: (personId) => {
+                  readings.changed(personId);
+                },
+              },
             ),
           },
           log,
@@ -448,7 +494,7 @@ export const startCore = (options: CoreOptions) =>
         folder: aiSandbox(home).folder,
         generated: generatedImages(home),
       }),
-      signIn: signInFlow(options.signIn, log),
+      signIn: signInFlow(signIns, log),
       launcher,
       launchUrl,
       ...(options.screens !== undefined && { screens: options.screens }),

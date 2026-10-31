@@ -20,8 +20,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { memorySecrets } from "../../../tests/fakes.ts";
-import { status } from "../../agent/chatgpt/session.ts";
 import { holdRufiLock, writePrivateJson } from "../../platform/files.ts";
 import { documents } from "../documents/documents.ts";
 import { backupsPath, makeBackup } from "./backup.ts";
@@ -36,7 +34,6 @@ import { databasePath, openWritable } from "./database.ts";
 import { cancelMove, finishMove, moveData } from "./move.ts";
 
 const FIXTURES = join(import.meta.dirname, "../../../tests/fixtures/documents");
-const HOST = "urn:uuid:0b6f2c3e-1f1a-4c55-9a43-0d6c1f3f9e10";
 
 let userHome: string;
 let root: string;
@@ -48,7 +45,6 @@ const disks = async () =>
   `/dev/disk3s1s1 on / (apfs, sealed, local, read-only, journaled)
 //asha@nas.local/Health on ${await realpath(userHome)}/Health (smbfs, nodev, nosuid, mounted by asha)
 `;
-const secrets = memorySecrets();
 const releases: (() => Promise<void>)[] = [];
 
 afterEach(async () => {
@@ -57,7 +53,8 @@ afterEach(async () => {
 
 /**
  * A data folder as Rufi leaves it: a person and her chat on an AI thread, a
- * document's original, a backup, the sign-in, the AI's and workspace files,
+ * document's original, a backup, Codex's and Claude's sign-ins, the AI's and
+ * workspace files,
  * a log, and a running Rufi's address; Amir was saved last, still in the
  * database's WAL, as a crash leaves it.
  */
@@ -82,28 +79,12 @@ beforeEach(async () => {
   );
   store.close();
   await makeBackup(from, new Date("2026-10-08T09:14:03Z"));
-  await writePrivateJson(join(from, "chatgpt.json"), {
-    hostId: HOST,
-    clientId: "oaiapp_fictional",
-    subject: "user-fictional",
-    email: "asha@example.com",
-  });
-  secrets.values.set(
-    HOST,
-    JSON.stringify({
-      clientId: "oaiapp_fictional",
-      subject: "user-fictional",
-      scopes: ["openid"],
-      accessToken: "access",
-      refreshToken: "refresh",
-      idToken: "id",
-      expiresAt: Date.now() + 3_600_000,
-    }),
-  );
   for (const [path, text] of [
     ["workspace/notes.md", "fictional notes"],
     ["logs/rufi.log", '{"event":"core.started"}\n'],
     ["codex/sessions/rollout.jsonl", "{}"],
+    ["codex/auth.json", '{"fictional": true}'],
+    ["claude/.claude.json", '{"fictional": true}'],
     ["agents.sqlite", "fictional agent log"],
     ["core.json", '{"port":1}'],
   ] as const) {
@@ -176,17 +157,11 @@ describe("a move", () => {
     expect((await stat(join(to, "workspace/readonly.md"))).mode & 0o777).toBe(
       0o444,
     );
-    // Still signed in: the Keychain entry is under the host id, not the folder.
-    const now = await status({
-      home: to,
-      secrets,
-      issuer: "",
-      sleep: () => Promise.resolve(),
-    });
-    expect(now).toMatchObject({ signedIn: true, email: "asha@example.com" });
-    // The AI's own files and the old Rufi's address stay behind; the chat
-    // goes on in a fresh AI thread.
+    // The AI's own files, Codex's and Claude's sign-ins and the old Rufi's
+    // address stay behind: the chat goes on in a fresh AI thread, once
+    // each provider is signed in again.
     expect(await readdir(to)).not.toContain("codex");
+    expect(await readdir(to)).not.toContain("claude");
     expect(await readdir(to)).not.toContain("ai");
     expect(await readdir(to)).not.toContain("agents.sqlite");
     expect(await readdir(to)).not.toContain("core.json");

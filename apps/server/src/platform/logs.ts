@@ -50,6 +50,7 @@ const EVENTS = new Set([
   "documents.added",
   "documents.deleted",
   "documents.cleanup_failed",
+  "work.cleanup_failed",
   "devices.batch_failed",
   "devices.failed",
   "devices.cleaned",

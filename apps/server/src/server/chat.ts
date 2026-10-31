@@ -13,13 +13,19 @@
 // calls Rufi's tools through Rufi's MCP server, with a key for its chat;
 // each call is bound to the reply it was made in.
 import {
+  CLAUDE_SIGNED_OUT,
   SIGNED_OUT,
   type Chip,
   type Effort,
   type Pointer,
+  type ProviderStatus,
 } from "@rufi/contracts";
 import { Stopped, type Model } from "../agent/runtime.ts";
-import { allowedModels, NOT_SHORTLISTED } from "../core/chat/models.ts";
+import {
+  allowedModels,
+  NOT_SHORTLISTED,
+  UNKNOWN_PROVIDER,
+} from "../core/chat/models.ts";
 import {
   QueueRefusal,
   type ChatQueue,
@@ -51,8 +57,8 @@ const NEW_THREAD_MESSAGES = 10;
 export interface ChatDeps {
   transcripts: Transcripts;
   queue: ChatQueue;
-  /** Whether the AI can be reached with the person's sign-in now. */
-  signedIn: () => Promise<boolean>;
+  /** A provider's sign-in now, as it reports it. */
+  signIn: (provider: string) => Promise<ProviderStatus>;
   /** Rufi AI, given where its events go. */
   agent: (host: RufiAiHost) => RufiAi;
   /** The person's shortlist of models, as Settings keeps it now. */
@@ -205,7 +211,8 @@ export function chat(deps: ChatDeps) {
     const startedAt = transcripts.now();
     const answer = await caller.call(tool, input, callId);
     // Kept before the AI has it: Rufi keeps every answer the AI got (a
-    // write keeps its own, with what it changed).
+    // write keeps its own, with what it changed; a reading not saved, without
+    // its page text).
     try {
       if (!answer.kept) {
         await transcripts.recordToolCall(
@@ -216,10 +223,10 @@ export function chat(deps: ChatDeps) {
             ref,
             callId,
             tool,
-            input,
+            input: answer.keep?.input ?? input,
             startedAt,
           },
-          answer,
+          answer.keep?.answer ?? answer,
         );
       }
     } catch (error) {
@@ -408,7 +415,14 @@ export function chat(deps: ChatDeps) {
   const carry = (chat: ChatRow) =>
     inLane(chat, async (stored) => {
       let fresh = stored;
-      if (closed || !(await deps.signedIn())) return;
+      if (closed) return;
+      const provider = await providerOf(stored).catch(() => undefined);
+      if (
+        provider === undefined ||
+        (await deps.signIn(provider)).state !== "signed_in"
+      ) {
+        return;
+      }
       // Rufi's part reads a message's files: what comes after waits.
       for (const id of await queue.reading(fresh)) {
         if (agent.input(id) === undefined) return;
@@ -441,12 +455,12 @@ export function chat(deps: ChatDeps) {
       if (!first) return;
       try {
         if (fresh.model === null) {
-          const model = (await offered())[0]?.id;
-          if (model === undefined) {
+          const start = (await offered())[0];
+          if (start === undefined) {
             throw new ChatRefusal("None of the allowed models is offered now.");
           }
-          await transcripts.setModel(fresh, model);
-          fresh = { ...fresh, model };
+          await transcripts.setModel(fresh, start.id, start.provider);
+          fresh = { ...fresh, model: start.id, modelProvider: start.provider };
         }
         await agent.configure(fresh);
       } catch (error) {
@@ -825,7 +839,7 @@ export function chat(deps: ChatDeps) {
       refs: readonly Pointer[] = [],
       kind: "steer" | "queue" = "steer",
     ) => {
-      await mustBeSignedIn();
+      await mustBeSignedIn(chat);
       await accept(chat, id, text, refs, kind);
       return { id };
     },
@@ -855,14 +869,14 @@ export function chat(deps: ChatDeps) {
       },
       /** The person steers a waiting row into the running reply. */
       steer: async (chat: ChatRow, id: string) => {
-        await mustBeSignedIn();
+        await mustBeSignedIn(chat);
         await refused(() => queue.steer(chat, id));
         agent.steer(id);
         next(chat);
       },
       /** The person sends a row Rufi didn't: first in line. */
       send: async (chat: ChatRow, id: string) => {
-        await mustBeSignedIn();
+        await mustBeSignedIn(chat);
         await refused(() => queue.send(chat, id));
         next(chat);
       },
@@ -878,7 +892,7 @@ export function chat(deps: ChatDeps) {
         hold: string,
         choice: "retry" | "new_thread",
       ) => {
-        await mustBeSignedIn();
+        await mustBeSignedIn(chat);
         await inLane(chat, async (fresh) => {
           const newThread = choice === "new_thread";
           // Never while a reply runs: it would lose that reply's thread. The
@@ -900,7 +914,7 @@ export function chat(deps: ChatDeps) {
        * changes nothing.
        */
       retry: async (chat: ChatRow, id: string, hold: string) => {
-        await mustBeSignedIn();
+        await mustBeSignedIn(chat);
         await inLane(chat, async (fresh) => {
           await refused(() => queue.retry(fresh, id, hold));
         });
@@ -935,12 +949,12 @@ export function chat(deps: ChatDeps) {
      */
     selectModel: (chat: ChatRow, model: string) =>
       inLane(chat, async (chat) => {
-        const models = await offered();
-        if (!models.some((m) => m.id === model)) {
-          throw new ChatRefusal(NOT_SHORTLISTED);
-        }
+        const chosen = (await offered()).find((m) => m.id === model);
+        if (!chosen) throw new ChatRefusal(NOT_SHORTLISTED);
         await idle(chat, "the model");
-        await transcripts.setModel(chat, model);
+        // Its provider stays with it: after a restart the providers may not
+        // list it.
+        await transcripts.setModel(chat, model, chosen.provider);
       }),
 
     /**
@@ -986,9 +1000,37 @@ export function chat(deps: ChatDeps) {
     return allowedModels(await agent.models(), await deps.shortlist());
   }
 
-  /** Without a sign-in, nothing the person sends is taken. */
-  async function mustBeSignedIn(): Promise<void> {
-    if (!(await deps.signedIn())) throw new ChatRefusal(SIGNED_OUT);
+  /**
+   * The provider the chat's next turn runs on: its model's, kept with the
+   * choice; before it has one, that of the model it would start on. A
+   * chosen model whose provider Rufi doesn't know goes nowhere else.
+   */
+  async function providerOf(chat: ChatRow): Promise<string> {
+    if (chat.model === null) {
+      const start = (await offered().catch(() => undefined))?.[0];
+      return start?.provider ?? agent.provider;
+    }
+    if (chat.modelProvider === null) throw new ChatRefusal(UNKNOWN_PROVIDER);
+    return chat.modelProvider;
+  }
+
+  /**
+   * Without a sign-in, nothing the person sends is taken: signed out when
+   * the chat's provider says so, else its error as it came.
+   */
+  async function mustBeSignedIn(chat: ChatRow): Promise<void> {
+    const provider = await providerOf(chat);
+    const { state, text } = await deps.signIn(provider);
+    if (state === "signed_out") {
+      throw new ChatRefusal(
+        provider === "claude" ? CLAUDE_SIGNED_OUT : SIGNED_OUT,
+      );
+    }
+    if (state === "unavailable") {
+      throw new ChatRefusal(
+        text ?? "Rufi couldn't ask the AI how it's signed in.",
+      );
+    }
   }
 
   /** A change to the queue; its refusals are the chat's. */

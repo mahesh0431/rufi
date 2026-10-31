@@ -190,7 +190,6 @@ export async function managedFolder(root: string): Promise<DataFolder> {
  */
 const FIRST_START = new Set([
   "rufi.lock",
-  "credentials.lock",
   "rufi.sqlite",
   "rufi.sqlite-wal",
   "rufi.sqlite-shm",

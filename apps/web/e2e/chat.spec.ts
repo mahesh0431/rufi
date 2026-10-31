@@ -17,7 +17,7 @@ import {
   openWritable,
 } from "../../server/src/core/store/database.ts";
 import { runningLink } from "../../server/src/server/core.ts";
-import { expect, test, type Rufi } from "./rufi.ts";
+import { expect, SIGNED_OUT, test, type Rufi } from "./rufi.ts";
 
 async function accessible(page: Page) {
   const { violations } = await new AxeBuilder({ page }).analyze();
@@ -443,7 +443,7 @@ test("while a reply runs, Enter steers a message into it, as your message; with 
 });
 
 test("signed out, the model's menu signs in", async ({ page, rufi }) => {
-  rufi.account = { account: "signed_out", email: null };
+  rufi.codex = SIGNED_OUT;
   // The core can't list the models without the sign-in.
   await page.route("**/api/models", (route) =>
     route.fulfill({
@@ -590,6 +590,36 @@ test("the models ticked in Settings are the chat menu's, the first ticked is a n
     "Medium",
     "High",
   ]);
+});
+
+test("Settings › Models says how to get Claude's models when Claude isn't signed in or isn't on the Mac, and keeps Codex's", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi);
+  await sidebar(page).getByRole("link", { name: "Settings" }).click();
+  const section = page.getByRole("region", { name: "Models" });
+
+  // Codex's models; Claude isn't signed in.
+  await expect(section.getByRole("checkbox")).toHaveCount(3);
+  await expect(section).toContainText(
+    "Claude's models show here once it's signed in. Sign in",
+  );
+  await section.getByRole("link", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/\/sign-in$/);
+
+  // Claude isn't on this Mac: its own words say what to do.
+  rufi.claude = {
+    state: "unavailable",
+    account: null,
+    text: "Claude Code isn't installed on this Mac. Install it, then try again.",
+  };
+  await page.goBack();
+  await page.reload();
+  await expect(section).toContainText(
+    "Claude Code isn't installed on this Mac. Install it, then try again.",
+  );
+  await expect(section.getByRole("checkbox")).toHaveCount(3);
 });
 
 test("a draft is saved as you type, silently; it survives a reload and a restart, and is never sent by itself", async ({

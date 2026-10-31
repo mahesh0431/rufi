@@ -44,6 +44,8 @@ interface Receipted {
 export interface ChatRow extends Chat {
   id: string;
   personId: string;
+  /** The provider its model runs on, kept with the choice. */
+  modelProvider: string | null;
   threadId: string | null;
   threadProvider: string | null;
   /** The model the thread started with; each turn keeps its own. */
@@ -320,6 +322,7 @@ const toChat = (row: Selectable<Tables["chats"]>): ChatRow => ({
   id: row.id,
   personId: row.person_id,
   model: row.model,
+  modelProvider: row.model_provider,
   effort: (row.effort as Effort | null) ?? DEFAULT_EFFORT,
   context: contextOf(row),
   threadId: row.thread_id,
@@ -903,6 +906,7 @@ export function transcripts(
             id: uuid(),
             person_id: id,
             model: null,
+            model_provider: null,
             effort: null,
             thread_id: null,
             thread_provider: null,
@@ -993,11 +997,12 @@ export function transcripts(
           : { entries: [], turns: [], chat: true };
       }),
 
-    setModel: (chat: ChatRow, model: string) =>
+    /** The chat's model, with the provider it runs on. */
+    setModel: (chat: ChatRow, model: string, provider: string) =>
       change(chat.id, async (trx) => {
         await trx
           .updateTable("chats")
-          .set({ model })
+          .set({ model, model_provider: provider })
           .where("id", "=", chat.id)
           .execute();
         return { entries: [], turns: [], chat: true };

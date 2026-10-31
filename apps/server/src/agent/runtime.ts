@@ -2,6 +2,8 @@
 // behind it (Codex now) can change without the rest of Rufi changing. The
 // agent keeps its own threads; Rufi keeps the chat and what waits to go to
 // the AI (core/chat), and starts one turn at a time.
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { Effect } from "effect";
 
 /** What one line of activity is about. */
@@ -157,6 +159,9 @@ export class NotReloaded extends NotOpened {
  */
 export class NotSent extends Error {}
 
+/** The provider says it isn't signed in: only signing in again ends it. */
+export class SignedOut extends Error {}
+
 export interface Model {
   id: string;
   name: string;
@@ -177,6 +182,28 @@ export interface AgentSandbox {
   folder: string;
   unreadable: readonly string[];
 }
+
+/**
+ * The sandbox with the person's own keychains denied too, under the HOME
+ * the AI's commands get (else this account's): Claude keeps its sign-in in
+ * one, and a command reading a keychain opens its file itself (ADR 0016).
+ * On macOS only, where the Keychain is: on Linux there is no such folder,
+ * and Codex's sandbox there (bubblewrap) can't deny a path whose folder
+ * isn't there, so no conversation would open.
+ */
+export const withKeychains = (
+  sandbox: AgentSandbox,
+  userHome: string | undefined,
+): AgentSandbox =>
+  process.platform === "darwin"
+    ? {
+        ...sandbox,
+        unreadable: [
+          ...sandbox.unreadable,
+          join(userHome ?? homedir(), "Library", "Keychains"),
+        ],
+      }
+    : sandbox;
 
 /**
  * One of Rufi's skills, as the agent reads it: its SKILL.md, by name, and
@@ -290,10 +317,8 @@ export interface AgentHost {
 }
 
 /**
- * How long Rufi waits for a stopped call to end. It covers the slowest path
- * with its own deadlines: renewing the sign-in (Keychain reads and writes up
- * to 60 s each, OpenAI up to three tries of 20 s), whose new token must be
- * saved before Rufi exits. Reaching it means a bug; the agent is then closed
+ * How long Rufi waits for a stopped call to end. Each agent's own Stop has
+ * deadlines well within it; reaching it means a bug. The agent is then closed
  * with the scope that holds it.
  */
 const STOP_LIMIT_MS = 5 * 60_000;
