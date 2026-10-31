@@ -244,7 +244,6 @@ export interface Tables {
     error: string | null;
     usage: string | null;
     reader: string | null;
-    sorted_at: string | null;
     created_at: string;
   };
   medicine_uses: {
@@ -289,6 +288,7 @@ export interface Tables {
     copy: string;
     why: string | null;
     saved_at: string;
+    sorted_at: string | null;
   };
   people: {
     id: string;

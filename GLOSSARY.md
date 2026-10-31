@@ -41,7 +41,7 @@ The reader's copy of one page of a document, as Markdown, exactly as printed, wi
 _Avoid_: extraction, transcription, OCR text
 
 **Sorting**:
-Rufi AI's work on a file once it is read, usually when its reader's result wakes it: it splits the file into documents and drafts their results from the page copies, in one call that is kept whole or not at all, then answers what the user wrote, or tells them what it found when they wrote nothing. It saves nothing without the user's yes. A file read and not sorted shows **Not sorted yet** (Rufi AI asked the user, or its reply failed or was stopped) with **Ask Rufi**; nothing tries again by itself. The user can ask Rufi AI to sort a file again in the chat.
+Rufi AI's work on a file once it is read, usually when its reader's result wakes it: it splits the file into documents and drafts their results from the page copies, as much of it at once as it chooses, each call kept whole or not at all, then answers what the user wrote, or tells them what it found when they wrote nothing. It saves nothing without the user's yes. A file read and not sorted shows **Not sorted yet** (Rufi AI asked the user, or its reply failed or was stopped) with **Ask Rufi**; nothing tries again by itself. The user can ask Rufi AI to sort a file again in the chat.
 _Avoid_: classification, grouping, parsing
 
 **Draft item**:

@@ -1183,8 +1183,8 @@ describe("the chat, on the scripted Codex", () => {
         ('asha', 'doc-1', 1, 'f-1', 1, 'Sunrise Labs August.pdf'),
         ('ravi', 'doc-r', 1, 'f-1', 1, 'Ravi lipid panel.pdf');
       -- Read long ago: nothing of it is read again.
-      INSERT INTO jobs (id, person_id, kind, document_id, state, targets, sorted_at, created_at)
-        VALUES ('job-1', 'asha', 'document_read', 'doc-1', 'done', '[1]', '2026-10-01T09:00:00Z', '2026-10-01T09:00:00Z');
+      INSERT INTO jobs (id, person_id, kind, document_id, state, targets, created_at)
+        VALUES ('job-1', 'asha', 'document_read', 'doc-1', 'done', '[1]', '2026-10-01T09:00:00Z');
       INSERT INTO results (id, person_id, category, test_name, value_text, unit, measured_at, entered_at)
         VALUES ('res-1', 'asha', 'lab', 'HbA1c', '6.8', '%', '2026-08-12', '2026-08-13T00:00:00Z');
       INSERT INTO reports (id, person_id, document_id, issuer, collected) VALUES
@@ -1200,10 +1200,10 @@ describe("the chat, on the scripted Codex", () => {
         VALUES ('f-correction', 1, 'application/pdf', '2026-10-01T09:00:00Z');
       INSERT INTO document_pages (person_id, document_id, position, file_id, page_in_file, file_name, state)
         VALUES ('asha', 'doc-correction', 1, 'f-correction', 1, 'Corrected report.pdf', 'read');
-      INSERT INTO jobs (id, person_id, kind, document_id, state, targets, sorted_at, created_at)
-        VALUES ('job-correction', 'asha', 'document_read', 'doc-correction', 'done', '[1]', '2026-10-01T09:00:00Z', '2026-10-01T09:00:00Z');
-      INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at)
-        VALUES ('asha', 'f-correction', 1, 'job-correction', 1, 'read', 'Sunrise Labs · CORRECTED · Collected 12/08/2026 · CRP 4 mg/L', '2026-10-01T09:00:00Z');
+      INSERT INTO jobs (id, person_id, kind, document_id, state, targets, created_at)
+        VALUES ('job-correction', 'asha', 'document_read', 'doc-correction', 'done', '[1]', '2026-10-01T09:00:00Z');
+      INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at, sorted_at)
+        VALUES ('asha', 'f-correction', 1, 'job-correction', 1, 'read', 'Sunrise Labs · CORRECTED · Collected 12/08/2026 · CRP 4 mg/L', '2026-10-01T09:00:00Z', '2026-10-01T09:00:00Z');
       INSERT INTO draft_items (id, person_id, document_id, page, seq, job_id, kind, fields, original, quote, created_at)
         VALUES ('item-correction', 'asha', 'doc-correction', 1, 1, 'job-correction', 'lab_result',
           '{"test_name":"CRP","value_text":"4","unit":"mg/L","date":{"label":"Collected","date":"12/08/2026","iso":"2026-08-12"}}',

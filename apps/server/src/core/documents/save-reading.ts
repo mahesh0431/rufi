@@ -210,10 +210,17 @@ export function saveReading(
             .exists(
               eb
                 .selectFrom("page_copies as c")
+                .innerJoin("jobs as j", (join) =>
+                  join
+                    .onRef("j.person_id", "=", "c.person_id")
+                    .onRef("j.id", "=", "c.job_id"),
+                )
                 .select("c.job_id")
                 .whereRef("c.person_id", "=", "p.person_id")
                 .whereRef("c.file_id", "=", "p.file_id")
-                .whereRef("c.page_in_file", "=", "p.page_in_file"),
+                .whereRef("c.page_in_file", "=", "p.page_in_file")
+                // A finished reading's copy, as sorting counts it.
+                .where("j.state", "=", "done"),
             )
             .as("copied"),
       ])
@@ -249,8 +256,8 @@ export function saveReading(
     }
 
     // A reader's run, written whole: running, its copies, then its end. The
-    // document's pages no reading has copied yet are its pages too, so they
-    // show as not looked at, never as read, until a reading saves them.
+    // document's pages no finished reading has copied are its pages too, so
+    // they show as not looked at, never as read, until a reading saves them.
     const at = now();
     const saved = input.pages.map((p) => p.page);
     const missing = rows

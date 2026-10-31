@@ -102,7 +102,7 @@ When a reader's result comes back, Rufi AI reads the page copies and sorts the f
 
 The same report added twice, such as a PDF and a photo of it, stays two documents. Rufi AI says it looks like another copy; when you save, it offers the results as another source of the ones already saved.
 
-A file is sorted all at once, or not at all: if Rufi can't keep the sort (for example, it leaves a page out), it keeps none of it and tells Rufi AI why, and it tries again. What a draft says is Rufi AI's reading of the page; you check it before you save.
+Each sort is kept whole or not at all: if Rufi can't keep it (for example, it puts a page in two documents), it keeps none of it and tells Rufi AI why, and it tries again. Rufi AI can sort part of a file now and the rest later; until then the file shows **Not sorted yet**. What a draft says is Rufi AI's reading of the page; you check it before you save.
 
 The drafts are kept as **draft items**: they wait for you and stay across restarts, but they aren't part of your health record yet, so they don't count in your Overview or your trends until you save them (see [Save results to your health record](#save-results-to-your-health-record)). When you ask about a result, the AI also reads the drafts of your documents, and it says that a value it gives from one isn't saved yet.
 

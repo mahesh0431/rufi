@@ -119,12 +119,7 @@ export async function finishIn(
   );
   const ended = await trx
     .updateTable("jobs")
-    .set({
-      state: "done",
-      ended_at: at,
-      error: null,
-      sorted_at: sorts ? null : at,
-    })
+    .set({ state: "done", ended_at: at, error: null })
     .where("id", "=", run.jobId)
     .where("state", "=", "running")
     .where("attempt", "=", run.attempt)
@@ -135,6 +130,14 @@ export async function finishIn(
       run.jobId,
       "The reading isn't running any more.",
     );
+  }
+  if (!sorts) {
+    await trx
+      .updateTable("page_copies")
+      .set({ sorted_at: at })
+      .where("person_id", "=", run.personId)
+      .where("job_id", "=", run.jobId)
+      .execute();
   }
   for (const target of run.targets) {
     const copy = copied.get(target);
@@ -625,7 +628,13 @@ export function readings(
         if (!row) continue;
         const job = jobOf(row);
         // Only unreadable pages: finished as sorted, nothing to sort.
-        if (row.sorted_at === null) sorts = true;
+        const waiting = await db
+          .selectFrom("page_copies")
+          .select("job_id")
+          .where("job_id", "=", id)
+          .where("sorted_at", "is", null)
+          .executeTakeFirst();
+        if (waiting) sorts = true;
         const pages = await db
           .selectFrom("document_pages")
           .select(["position", "file_name", "state"])
