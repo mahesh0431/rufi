@@ -19,7 +19,14 @@ import type { AgentSandbox } from "../runtime.ts";
  */
 const rulePath = (path: string) => `/${path.replace(/[\\*?[\]]/g, "\\$&")}`;
 
-/** The tools Rufi AI uses without asking, beside writing in its folder. */
+/** The name Claude knows Rufi's tools by: they are `mcp__rufi__<tool>`. */
+export const RUFI_TOOLS = "rufi";
+
+/**
+ * The tools Rufi AI uses without asking, beside writing in its folder; and
+ * Rufi's own, through its door, which places each call in its turn and
+ * gives the agent only its own tools (session.ts).
+ */
 const ALLOWED = [
   "Read",
   "Glob",
@@ -28,6 +35,7 @@ const ALLOWED = [
   "WebFetch",
   "WebSearch",
   "Skill",
+  `mcp__${RUFI_TOOLS}`,
 ];
 
 export interface ClaudeLockDown {

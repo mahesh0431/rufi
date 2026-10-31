@@ -5,15 +5,20 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { providerContract } from "@rufi/agents/contract";
-import type { ProviderEvent } from "@rufi/agents/provider";
+import type { Conversation, ProviderEvent } from "@rufi/agents/provider";
 import { describe, expect, it, vi } from "vitest";
 import { fakeClaude } from "../../../tests/fake-claude.ts";
+import { callIdOf } from "../../core/chat/agents.ts";
 import { claudeAdapter } from "./adapter.ts";
+
+/** The scripted Claude of the contract's case now running. */
+let scripted: ReturnType<typeof fakeClaude> | undefined;
 
 providerContract("Claude", {
   setUp: async (script) => {
     const folder = await mkdtemp(join(tmpdir(), "rufi-claude-adapter-"));
     const fake = fakeClaude(script);
+    scripted = fake;
     return {
       adapter: claudeAdapter({
         claude: { path: "/fictional/claude", version: "2.1.312" },
@@ -33,14 +38,11 @@ providerContract("Claude", {
       },
     };
   },
-  callMeta: () => Promise.resolve({}),
+  callMeta: (conversation, _turn, call) =>
+    scripted?.callRufi(conversation.ref, call) ?? Promise.resolve(undefined),
   cannot: {
     lostSteer:
       "a steer has no reply to lose: it stays with Claude until Claude shows what became of it",
-  },
-  pending: {
-    placed: "Rufi's tools on Claude come next",
-    closedTurn: "Rufi's tools on Claude come next",
   },
 });
 
@@ -235,6 +237,33 @@ describe("Stop", () => {
   );
 });
 
+describe("a conversation Claude no longer keeps", () => {
+  // Claude deletes a conversation's transcript after a while unused, as it
+  // does its own: the next turn has to go in a new one.
+  it("is missing at the next start, which starts nothing", async () => {
+    const fake = fakeClaude({});
+    const { adapter, conversation, start, ends, events } = await onFake(
+      fake.query,
+      fake.sessions,
+    );
+    expect(await start("message-1")).toEqual({ status: "delivered" });
+    await vi.waitFor(() => {
+      expect(ends()).toHaveLength(1);
+    });
+    await fake.sessions.delete(conversation.ref);
+
+    expect(await start("message-2")).toEqual({
+      status: "not_delivered",
+      reason: "missing",
+      text: expect.any(String) as string,
+    });
+    expect(events.filter((event) => event.type === "turnStarted")).toHaveLength(
+      1,
+    );
+    await adapter.close();
+  });
+});
+
 describe("a message Claude is slow to start", () => {
   it("is uncertain, never not received, and can't start later unseen", async () => {
     const fake = fakeClaude({}, { slowStartMs: 300 });
@@ -410,6 +439,126 @@ describe("what Claude does in a turn", () => {
         resetsAt: "2026-11-01T03:00:00.000Z",
       },
     ]);
+    await adapter.close();
+  });
+});
+
+/**
+ * Rufi's door as far as a call goes (server/door.ts): it places the call,
+ * refusing one the adapter can't place, and keeps each call's answer by
+ * Rufi's call id, made by the door's own helper, so a repeat gets the same
+ * answer.
+ */
+function fakeDoor(agent: string) {
+  const answers = new Map<string, string>();
+  return (conversation: Conversation, number: number, meta: unknown) => {
+    const placed = conversation.placeCall(meta);
+    if (placed === undefined) return "refused";
+    const id = callIdOf(agent, number, placed.call);
+    const answer = answers.get(id) ?? `saved ${String(answers.size + 1)}`;
+    answers.set(id, answer);
+    return answer;
+  };
+}
+
+describe("calls to Rufi's tools", () => {
+  it("are placed in the turn their hook saw: a repeat gets the same answer, and an id the hook never saw is refused", async () => {
+    const fake = fakeClaude({ turn: "runs" });
+    const { adapter, conversation, start, first } = await onFake(
+      fake.query,
+      fake.sessions,
+    );
+    const door = fakeDoor("agent-1");
+    await start("message-1");
+    await first();
+    const meta = await fake.callRufi(conversation.ref, "toolu_1");
+
+    expect(door(conversation, 1, meta)).toBe("saved 1");
+    expect(door(conversation, 1, meta)).toBe("saved 1");
+    expect(
+      door(conversation, 1, { "claudecode/toolUseId": "toolu_unseen" }),
+    ).toBe("refused");
+    await adapter.close();
+  });
+
+  it("once Stop starts, refuse its turn's calls, and let no new one leave Claude", async () => {
+    const during: (object | undefined)[] = [];
+    const fake = fakeClaude(
+      { turn: "runs" },
+      {
+        onInterrupt: async (id) => {
+          during.push(await fake.callRufi(id, "toolu_2"));
+        },
+      },
+    );
+    const { adapter, conversation, start, first } = await onFake(
+      fake.query,
+      fake.sessions,
+    );
+    const door = fakeDoor("agent-1");
+    await start("message-1");
+    const turn = await first();
+    const meta = await fake.callRufi(conversation.ref, "toolu_1");
+    expect(door(conversation, 1, meta)).toBe("saved 1");
+
+    await conversation.stop(turn);
+    expect(during).toEqual([undefined]);
+    expect(door(conversation, 1, meta)).toBe("refused");
+    await adapter.close();
+  });
+
+  it("are a new call in a replacement conversation, under the same toolUseId", async () => {
+    const fake = fakeClaude({ turn: "runs" });
+    const door = fakeDoor("agent-1");
+    const answers: string[] = [];
+    for (const number of [1, 2]) {
+      const { adapter, conversation, start, first } = await onFake(
+        fake.query,
+        fake.sessions,
+      );
+      await start(`message-${String(number)}`);
+      await first();
+      const meta = await fake.callRufi(conversation.ref, "toolu_1");
+      answers.push(door(conversation, number, meta));
+      await adapter.close();
+    }
+    expect(answers).toEqual(["saved 1", "saved 2"]);
+  });
+
+  it("from a turn Claude began by itself, is placed in that turn before it starts for Rufi", async () => {
+    const fake = fakeClaude(
+      { turn: "runs", ignoresInterrupt: true },
+      { nextTurn: "answers_during_interrupt" },
+    );
+    const { adapter, conversation, start, events, first } = await onFake(
+      fake.query,
+      fake.sessions,
+      { stopMs: 50 },
+    );
+    await start("message-1");
+    const turn = await first();
+    void conversation.steer({
+      input: { id: "steer-1", parts: ["And the date?"] },
+      turn,
+    });
+    await vi.waitFor(() => {
+      expect(events.some((event) => event.type === "turnEnded")).toBe(true);
+    });
+    // Claude's own turn has begun; its first answer comes later.
+    const meta = await vi.waitFor(async () => {
+      const meta = await fake.callRufi(conversation.ref, "toolu_1");
+      expect(meta).toBeDefined();
+      return meta;
+    });
+    const placed = conversation.placeCall(meta);
+    expect(placed?.turn).not.toBe(turn);
+
+    await conversation.stop(turn);
+    expect(events).toContainEqual({
+      type: "turnStarted",
+      turn: placed?.turn,
+      inputs: ["steer-1"],
+    });
     await adapter.close();
   });
 });
