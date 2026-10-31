@@ -112,7 +112,8 @@ function Shown({ brief, person }: { brief: Brief; person: Person }) {
 
 /**
  * A source's record, as a link that opens it on its page (a result on the
- * page of its category, a "no known allergies" statement on Allergies); as
+ * page of its category, a "no known allergies" statement on Allergies, the
+ * profile on its page); as
  * words alone when it is no longer in the record.
  */
 function Cited({
@@ -141,6 +142,17 @@ function Cited({
       <Link
         to="/people/$personId/visits/$visitId"
         params={{ personId, visitId: record.id }}
+        className={look}
+      >
+        {what}
+      </Link>
+    );
+  }
+  if (record && page === "profile") {
+    return (
+      <Link
+        to="/people/$personId/profile"
+        params={{ personId }}
         className={look}
       >
         {what}

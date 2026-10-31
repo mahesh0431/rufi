@@ -4,7 +4,8 @@
 // running reply, or in a reply of its own. A waiting message can be steered
 // into the running reply, edited, moved by its handle (dragged, or by
 // keyboard) or removed; one Rufi didn't send says Failed, or Not sent, with
-// why as it came, and goes only when you send it.
+// why as it came, and goes only when you send it. One on its way to the AI
+// says nothing: the chat's working line shows it.
 import {
   closestCenter,
   DndContext,
@@ -35,11 +36,12 @@ import {
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { useStore } from "zustand";
+import { useShallow } from "zustand/shallow";
 import type { StoreApi } from "zustand/vanilla";
 import { request } from "./api.ts";
 import { ChipView } from "./chips.tsx";
 import { chatPath, type Live, messageOf } from "./live.ts";
-import { isRunning } from "./transcript-state.ts";
+import { goingNow, isRunning } from "./transcript-state.ts";
 import { Button, buttonLook, ICON, IconButton } from "./ui.tsx";
 
 /** Whether anything waits to show in the chat. */
@@ -47,7 +49,6 @@ export const anyWaiting = (state: Live) => state.queue.items.length > 0;
 
 /** Why a row doesn't go by itself: Failed, or Not sent, and why as it came. */
 function whyHeld(item: QueueItem): string | null {
-  if (item.state === "handing_over") return "Sending…";
   switch (item.held) {
     case "restored":
       return "Not sent · From a backup: it waited when the backup was made.";
@@ -70,7 +71,16 @@ export function WaitingView({
   live: StoreApi<Live>;
   personId: string;
 }) {
-  const { items } = useStore(live, (state) => state.queue);
+  // Not what shows as sent: being given to the AI, or in the chat already.
+  const items = useStore(
+    live,
+    useShallow((state) => {
+      const going = goingNow(state);
+      return state.queue.items.filter(
+        (item) => !going.includes(item) && !(item.id in state.entries),
+      );
+    }),
+  );
   const error = useStore(live, (state) => state.queueError);
   const running = useStore(live, isRunning);
   const [problem, setProblem] = useState<string | null>(null);
@@ -121,11 +131,15 @@ export function WaitingView({
     choice: "retry" | "new_thread",
   ) =>
     void act(() => request("POST", `${one(item)}/recover`, { hold, choice }));
+  // Held for the sign-in, a row goes by itself once you sign in; any
+  // other hold waits for you.
   const heading = running
     ? "Waiting · these go in order after the reply"
-    : items.some((item) => item.state !== "waiting" || item.held !== null)
+    : items.some((item) => item.held !== null && item.held !== "signed_out")
       ? "Not sent · Rufi sends these only when you say"
-      : "Waiting";
+      : items.some((item) => item.held === "signed_out")
+        ? "Waiting until you sign in"
+        : "Waiting";
 
   return (
     <section aria-label="Waiting messages" className="mt-3 flex flex-col gap-2">

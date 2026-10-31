@@ -4,7 +4,7 @@
 // the row; its message to Rufi AI shows in the chat (transcript.tsx), and
 // its name there opens the same pop-up.
 import { Dialog } from "@base-ui/react/dialog";
-import type { SubAgent } from "@rufi/contracts";
+import { modelOf, type SubAgent } from "@rufi/contracts";
 import { LoaderCircle, Square, X } from "lucide-react";
 import { useState } from "react";
 import {
@@ -16,7 +16,7 @@ import {
   working,
 } from "./agents-state.ts";
 import { messageOf } from "./live.ts";
-import { useModels } from "./reads.ts";
+import { effortName } from "./model-menu.tsx";
 import { AgentActivity } from "./transcript.tsx";
 import { Button, IconButton } from "./ui.tsx";
 
@@ -101,9 +101,7 @@ function Sheet({
   const agent = useChatAgents(personId).data?.agents.find(
     (one) => one.id === id,
   );
-  const model = useModels().data?.offered.find(
-    (one) => one.id === agent?.model,
-  );
+  const model = modelOf(agent?.model ?? "");
   const elapsed = useElapsed(agent?.since ?? null);
   const [stopping, setStopping] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -122,7 +120,7 @@ function Sheet({
                 agent.status,
                 ...(busy && elapsed !== undefined ? [elapsed] : []),
                 model?.name ?? agent.model,
-                agent.effort,
+                effortName(agent.effort),
               ].join(" · ")}
             </p>
           )}

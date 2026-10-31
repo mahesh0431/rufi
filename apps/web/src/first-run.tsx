@@ -1,5 +1,6 @@
 // The first run, for a new data folder: what Rufi is and isn't, what goes to
-// the AI, and how Rufi looks; your name, sign-in, the emergency region. The core keeps what is
+// the AI, and how Rufi looks; about you (your name and profile), sign-in,
+// the emergency region. The core keeps what is
 // done, so a reload or another tab continues at the first step not done.
 import {
   type AddPerson,
@@ -10,11 +11,13 @@ import {
 import { useMutation } from "@tanstack/react-query";
 import { Schema } from "effect";
 import { ArrowRight, Check } from "lucide-react";
+import type { ProfileField, ProfileValues } from "@rufi/contracts/record";
 import type { ExpressionKey } from "@rufi/brand/mark";
 import { type ReactNode, useState } from "react";
 import { ApiError, read } from "./api.ts";
 import { AppearanceChoice } from "./appearance.tsx";
 import { LiveDog } from "./dog.tsx";
+import { ProfileFields } from "./profile.tsx";
 import { queries, saveSettings, useFirstRun, useSettings } from "./reads.ts";
 import { SignIn, useSignInFlow } from "./signin.tsx";
 import { Button, ICON, Problem } from "./ui.tsx";
@@ -42,7 +45,7 @@ export function FirstRun() {
     case "welcome":
       return <Welcome />;
     case "name":
-      return <YourName />;
+      return <AboutYou />;
     case "sign_in":
       return <SignInStep />;
     case "region":
@@ -158,13 +161,23 @@ function Welcome() {
   );
 }
 
-function YourName() {
+/**
+ * "About you": your name, birth date and sex, needed to go on, and your
+ * blood group and height, which can stay empty. All of it is saved together
+ * with you and your chat, or nothing is; on a failure what you entered
+ * stays, with one line on what to do.
+ */
+function AboutYou() {
   const [name, setName] = useState("");
+  const [profile, setProfile] = useState<Omit<ProfileValues, "name">>({
+    birth_date: null,
+    sex_for_ranges: null,
+    blood_group: null,
+    height: null,
+  });
   const add = useMutation({
-    mutationFn: (displayName: string) =>
-      read(Added, "POST", "/api/people", {
-        displayName,
-      } satisfies typeof AddPerson.Type),
+    mutationFn: (about: typeof AddPerson.Type) =>
+      read(Added, "POST", "/api/people", about),
     onSettled: (_added, error) => {
       // Added here or in another tab: either way, on to the next step.
       if (
@@ -176,43 +189,88 @@ function YourName() {
       }
     },
   });
+  // Fields typed in a way Rufi can't keep, such as a height that isn't a number.
+  const [problems, setProblems] = useState<ReadonlySet<ProfileField>>(
+    new Set(),
+  );
   const trimmed = name.trim();
+  const { birth_date, sex_for_ranges, blood_group, height } = profile;
+  const ready =
+    trimmed !== "" &&
+    birth_date !== null &&
+    sex_for_ranges !== null &&
+    problems.size === 0;
   return (
     <form
-      className="mx-auto mt-16 flex max-w-md flex-col gap-3 px-6"
+      aria-labelledby="step"
+      className="mx-auto mt-16 mb-16 flex max-w-md flex-col gap-3 px-6"
       onSubmit={(event) => {
         event.preventDefault();
-        if (trimmed !== "") add.mutate(trimmed);
+        if (!ready) return;
+        add.mutate({
+          displayName: trimmed,
+          profile: {
+            birth_date,
+            sex_for_ranges,
+            ...(blood_group !== null && { blood_group }),
+            ...(height !== null && { height }),
+          },
+        });
       }}
     >
       <StepTop step="name" mood="hello" />
-      <label htmlFor="name" className="text-xl font-semibold">
-        What's your name?
-      </label>
-      <input
-        id="name"
-        autoFocus
-        autoComplete="given-name"
-        maxLength={200}
-        value={name}
-        onChange={(event) => {
-          setName(event.target.value);
+      <h1 id="step" className="text-xl font-semibold">
+        About you
+      </h1>
+      <p className="text-muted">
+        Rufi uses your age and sex to choose the right lab ranges.
+      </p>
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="name" className="font-medium">
+          Name
+        </label>
+        <input
+          id="name"
+          autoFocus
+          autoComplete="given-name"
+          maxLength={200}
+          value={name}
+          onChange={(event) => {
+            setName(event.target.value);
+          }}
+          className="rounded-lg border border-line bg-surface px-3 py-2"
+        />
+      </div>
+      <ProfileFields
+        values={{ ...profile, name: trimmed }}
+        asTyped
+        withName={false}
+        commit={(field, value) => {
+          setProfile((now) => ({ ...now, [field]: value }));
         }}
-        className="rounded-lg border border-line bg-surface px-3 py-2"
+        report={(field, problem) => {
+          setProblems((now) => {
+            const next = new Set(now);
+            if (problem === undefined) next.delete(field);
+            else next.add(field);
+            return next;
+          });
+        }}
       />
       {add.error && (
         <p role="alert" className="text-muted">
-          {add.error.message}
+          {add.error.message} Nothing was saved, and your answers are still
+          here: click Continue to try again.
         </p>
       )}
       <Button
         type="submit"
         look="main"
-        icon={Check}
+        icon={ArrowRight}
         className="self-start"
-        disabled={trimmed === "" || add.isPending}
+        disabled={!ready || add.isPending}
       >
-        Save and continue
+        Continue
       </Button>
     </form>
   );

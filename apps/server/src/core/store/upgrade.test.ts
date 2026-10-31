@@ -21,7 +21,8 @@ import { holdRufiLock } from "../../platform/files.ts";
 import { readBrief } from "../briefs/briefs.ts";
 import { transcripts, type ChatRow } from "../chat/transcript.ts";
 import { claimNotices } from "../record/notices.ts";
-import { recentSaves } from "../record/read.ts";
+import { profileOf, recentSaves } from "../record/read.ts";
+import { saveChanges, type SaveRequest } from "../record/save.ts";
 import { rufiCaller } from "../tools/tools.ts";
 import { backupsPath, makeBackup, upgradeBackupsPath } from "./backup.ts";
 import {
@@ -1153,7 +1154,10 @@ it("upgrades a record of version 15 so files start on Send: every document sent 
       reader_agent: null,
     })),
   );
-  expect(after.turns).toEqual(before.turns);
+  // A reply from before keeps no effort (0026).
+  expect(after.turns).toEqual(
+    before.turns.map((turn) => ({ ...turn, effort: null })),
+  );
   expect(after.entries).toEqual(
     before.entries.map((line) => ({ ...line, questions: null })),
   );
@@ -1320,4 +1324,181 @@ it("upgrades a record of version 20 so every agent's calls can be kept: each cal
   expect(calls()).toEqual(
     before.map((row) => ({ ...row, agent_id: null, agent_turn_id: null })),
   );
+});
+
+it("upgrades a record of version 24 to Rufi's four models: a chat on another model moves to GPT-6-Astra, one of the four keeps it, every chat keeps the rest, and XHigh can be chosen", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 24));
+  const old = new DatabaseSync(path);
+  try {
+    old.exec(`
+      UPDATE chats SET model = 'gpt-retired', model_provider = 'codex', effort = 'high', thread_id = 'thread-asha', revision = 7
+        WHERE person_id = 'asha';
+      UPDATE chats SET model = 'claude-opus-5-5', model_provider = 'claude', effort = 'low'
+        WHERE person_id = 'ravi';
+      INSERT INTO settings (key, value) VALUES ('models', '["gpt-retired"]');
+    `);
+  } finally {
+    old.close();
+  }
+  const chats = () => {
+    const db = new DatabaseSync(path, { readOnly: true });
+    try {
+      return db
+        .prepare("SELECT * FROM chats ORDER BY person_id")
+        .all()
+        .map((row) => ({ ...row }));
+    } finally {
+      db.close();
+    }
+  };
+  const [asha, ...others] = chats();
+
+  const store = await openRecord(home);
+  try {
+    expect(chats()).toEqual([
+      { ...asha, model: "gpt-6-astra", model_provider: "codex" },
+      ...others,
+    ]);
+    expect(others).toContainEqual(
+      expect.objectContaining({ model: "claude-opus-5-5", effort: "low" }),
+    );
+    expect(
+      store.db.prepare("SELECT * FROM settings WHERE key = 'models'").all(),
+    ).toEqual([]);
+    store.db.exec("UPDATE chats SET effort = 'xhigh' WHERE person_id = 'asha'");
+  } finally {
+    store.close();
+  }
+});
+
+it("upgrades a record of version 25 so each reply keeps its effort: every reply kept as it was, its effort unknown", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 25));
+  const old = new DatabaseSync(path);
+  try {
+    old.exec(`
+      INSERT INTO turns (id, person_id, chat_id, agent_turn_id, thread_id, model, status, started_at)
+        SELECT 't-before', person_id, id, 'codex-turn', 'codex-thread', 'gpt-6.1-sol', 'completed', '2026-10-30T09:00:00Z'
+        FROM chats WHERE person_id = 'asha';
+    `);
+  } finally {
+    old.close();
+  }
+  const turns = () => {
+    const db = new DatabaseSync(path, { readOnly: true });
+    try {
+      return db
+        .prepare("SELECT * FROM turns ORDER BY id")
+        .all()
+        .map((row) => ({ ...row }));
+    } finally {
+      db.close();
+    }
+  };
+  const before = turns();
+
+  const store = await openRecord(home);
+  store.close();
+  expect(turns()).toEqual(before.map((row) => ({ ...row, effort: null })));
+});
+
+/** The saves, sources and profiles in a record, as stored. */
+function savesIn(path: string) {
+  const db = new DatabaseSync(path, { readOnly: true });
+  try {
+    const all = (sql: string) =>
+      db
+        .prepare(sql)
+        .all()
+        .map((row) => ({ ...row }));
+    return {
+      operations: all("SELECT * FROM operations ORDER BY seq"),
+      changes: all("SELECT * FROM record_changes ORDER BY operation_id, seq"),
+      sources: all("SELECT rowid, * FROM record_sources ORDER BY rowid"),
+      profiles: all("SELECT * FROM profiles ORDER BY id"),
+    };
+  } finally {
+    db.close();
+  }
+}
+
+it("upgrades a record of version 26 to profiles: everyone's is empty, every save and source stays as it was, and a profile's saves come back exact from a backup", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 26));
+  const db = new DatabaseSync(path, { readOnly: true });
+  const before = {
+    operations: db
+      .prepare("SELECT * FROM operations ORDER BY seq")
+      .all()
+      .map((row) => ({ ...row })),
+    sources: db
+      .prepare("SELECT rowid, * FROM record_sources ORDER BY rowid")
+      .all()
+      .map((row) => ({ ...row })),
+  };
+  db.close();
+
+  const store = await openRecord(home);
+  try {
+    const upgraded = savesIn(path);
+    expect(upgraded.operations).toEqual(
+      before.operations.map((row) => ({
+        ...row,
+        origin: "chat",
+        receipt: null,
+      })),
+    );
+    expect(upgraded.sources).toEqual(before.sources);
+    expect(await profileOf(store.query, "asha", "2026-10-31")).toEqual({
+      id: "asha",
+      name: "Asha Fictional",
+      not_set: ["birth_date", "sex_for_ranges", "blood_group", "height"],
+    });
+
+    // Asha enters her profile in Settings, then corrects it on its page.
+    const enter = (
+      callId: string,
+      form: "settings" | "profile",
+      fields: object,
+    ) =>
+      store.query.transaction().execute((trx) =>
+        saveChanges(
+          trx,
+          { personId: "asha", form, callId, now: "2026-10-31T10:00:00.000Z" },
+          {
+            changes: [
+              { kind: "profile", action: "change", id: "asha", fields },
+            ],
+          } as SaveRequest,
+        ),
+      );
+    await enter("sending-1", "settings", {
+      birth_date: { date: "1990-03", words: "March 1990" },
+      sex_for_ranges: "female",
+      height: { value: 162, unit: "cm" },
+    });
+    await enter("sending-2", "profile", {
+      birth_date: { date: "1991", words: "1991" },
+    });
+  } finally {
+    store.close();
+  }
+  const made = await makeBackup(home, new Date("2026-10-31T11:00:00Z"));
+  const target = join(root, "restored");
+  await restore(join(backupsPath(home), made.name), target);
+
+  const kept = savesIn(path);
+  expect(kept.profiles).toContainEqual({
+    id: "asha",
+    person_id: "asha",
+    birth_date: "1991",
+    birth_date_words: "1991",
+    sex_for_ranges: "female",
+    blood_group: null,
+    height: 162,
+    height_unit: "cm",
+    removed: 0,
+  });
+  expect(savesIn(databasePath(target))).toEqual(kept);
 });

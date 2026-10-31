@@ -222,6 +222,10 @@ export function openClaudeSession(
       },
       model: options.model,
       ...(options.effort && { effort: options.effort }),
+      // Its thinking as it writes it, in summary (T3 Code's): what it
+      // finishes comes whole after.
+      includePartialMessages: true,
+      thinking: { type: "adaptive", display: "summarized" },
       ...("start" in options.conversation
         ? { sessionId: options.conversation.start }
         : { resume: options.conversation.resume }),

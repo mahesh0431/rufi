@@ -80,6 +80,15 @@ describe("get_overview", () => {
       ok: true,
       result: {
         person: "Asha Fictional",
+        // Her age today depends on the day the test runs.
+        profile: {
+          id: "asha",
+          name: "Asha Fictional",
+          birth_date: { date: "1990-03", words: "March 1990" },
+          age_today: expect.anything() as unknown,
+          sex_for_ranges: "female",
+          not_set: ["blood_group", "height"],
+        },
         documents: 2,
         reports: 2,
         results: 10,
@@ -802,7 +811,7 @@ describe("the error envelope", () => {
       "rm_rf",
     );
     expect(body["error"]).toBe(
-      "There is no tool called rm_rf. Rufi's tools: get_overview, get_records, get_documents, read_chat, save_changes, dismiss_items, sort_documents, save_reading, set_reader, create_brief, show_face, start_agent, agent_status, send_agent, read_agent, stop_agent, waiting_messages, list_models, set_agent_model, usage.",
+      "There is no tool called rm_rf. Rufi's tools: get_overview, get_records, get_documents, read_chat, save_changes, dismiss_items, sort_documents, save_reading, set_reader, create_brief, show_face, start_agent, agent_status, send_agent, read_agent, stop_agent, waiting_messages, set_agent_model, usage.",
     );
   });
 

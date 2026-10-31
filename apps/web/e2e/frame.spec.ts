@@ -16,6 +16,14 @@ async function accessible(page: Page) {
 
 const sidebar = (page: Page) => page.getByRole("complementary");
 
+/** The welcome's "About you", filled in with `name`, March 1990 and Female. */
+async function aboutYou(page: Page, name: string) {
+  await page.getByRole("textbox", { name: "Name", exact: true }).fill(name);
+  await page.getByRole("combobox", { name: "Month" }).selectOption("March");
+  await page.getByRole("textbox", { name: "Year" }).fill("1990");
+  await page.getByRole("radio", { name: "Female" }).check();
+}
+
 /** Rufi's dog at the top of the sidebar, as a screen reader finds it. */
 const dog = (page: Page) => sidebar(page).getByRole("img", { name: "Rufi" });
 
@@ -469,11 +477,48 @@ test.describe("first run", () => {
       .check();
     await next.click();
 
-    const name = page.getByRole("textbox", { name: "What's your name?" });
+    const name = page.getByRole("textbox", { name: "Name", exact: true });
     await expect(name).toBeFocused();
+    await expect(
+      page.getByRole("heading", { name: "About you" }),
+    ).toBeVisible();
+    await expect(page.getByRole("img", { name: "Step 2 of 4" })).toBeVisible();
     await page.reload();
+    await accessible(page);
+    // Continue waits for the name, the year of birth and the sex; blood
+    // group and height can stay empty.
+    const going = page.getByRole("button", { name: "Continue" });
     await name.fill("Mira Fictional");
-    await page.getByRole("button", { name: "Save and continue" }).click();
+    await page.getByRole("textbox", { name: "Day" }).fill("31");
+    await page
+      .getByRole("combobox", { name: "Month" })
+      .selectOption("February");
+    await expect(going).toBeDisabled();
+    await page.getByRole("textbox", { name: "Year" }).fill("1990");
+    await expect(going).toBeDisabled();
+    await page.getByRole("radio", { name: "Female" }).check();
+    await expect(going).toBeEnabled();
+    // A height that isn't a number holds Continue, with what to fix.
+    const height = page.getByRole("textbox", { name: "Height" });
+    await height.fill("tall");
+    await expect(going).toBeDisabled();
+    await expect(page.getByText("Give your height as a number.")).toBeVisible();
+    await height.fill("");
+    // 31 February can't be kept: nothing is saved, and the answers stay.
+    await going.click();
+    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(name).toHaveValue("Mira Fictional");
+    await expect(page.getByRole("textbox", { name: "Day" })).toHaveValue("31");
+    await expect(page.getByRole("combobox", { name: "Month" })).toHaveValue(
+      "2",
+    );
+    await expect(page.getByRole("textbox", { name: "Year" })).toHaveValue(
+      "1990",
+    );
+    await expect(page.getByRole("radio", { name: "Female" })).toBeChecked();
+    await page.getByRole("textbox", { name: "Day" }).fill("");
+    await page.getByRole("combobox", { name: "Month" }).selectOption("March");
+    await going.click();
 
     await expect(
       page.getByRole("heading", { name: "Sign in with ChatGPT", level: 1 }),
@@ -513,6 +558,18 @@ test.describe("first run", () => {
     await page.goBack();
     await expect(sidebar(page)).toContainText("Mira Fictional");
     await expect(title).toHaveText("Overview");
+    // Her profile has what the welcome asked, and says where it came from.
+    await sidebar(page).getByRole("link", { name: "Mira Fictional" }).click();
+    await expect(title).toHaveText("Profile");
+    await expect(page.getByRole("main")).toContainText(
+      /Birth dateMar 1990 · \d+ years old today/,
+    );
+    await expect(page.getByRole("main")).toContainText("Blood groupNot set");
+    await expect(page.getByRole("main").getByRole("listitem")).toHaveText([
+      /Birth date Not set → Mar 1990; Sex for lab ranges Not set → Female · in the welcome$/,
+    ]);
+    await page.goBack();
+    await expect(title).toHaveText("Overview");
     // The person's chat was made with them: the bar works at once.
     const bar = page.getByRole("region", { name: "Chat" });
     await bar.getByRole("button", { name: "Open the chat" }).click();
@@ -546,16 +603,6 @@ test.describe("first run", () => {
     await expect(page.locator(".reply")).toHaveText(
       "ok:Hello from the first page",
     );
-    // The sign-in goes away while the page is open: the next send says so.
-    rufi.codex = SIGNED_OUT;
-    const chatBox = page.getByRole("textbox", { name: "Message to Rufi" });
-    await chatBox.fill("My next question");
-    await chatBox.press("Enter");
-    await expect(page.getByRole("alert")).toHaveText(
-      "You're signed out. Sign in with ChatGPT to chat.Sign in",
-    );
-    await expect(chatBox).toHaveValue("My next question");
-
     await sidebar(page).getByRole("link", { name: "Settings" }).click();
     await expect(
       page.getByRole("combobox", { name: "Emergency region" }),
@@ -571,10 +618,8 @@ test.describe("first run", () => {
       .getByRole("checkbox", { name: "I understand Rufi is not a doctor" })
       .check();
     await page.getByRole("button", { name: "Continue" }).click();
-    await page
-      .getByRole("textbox", { name: "What's your name?" })
-      .fill("Mira Fictional");
-    await page.getByRole("button", { name: "Save and continue" }).click();
+    await aboutYou(page, "Mira Fictional");
+    await page.getByRole("button", { name: "Continue" }).click();
 
     await page.getByRole("button", { name: "Sign in with ChatGPT" }).click();
     await expect(page.getByRole("status")).toContainText(
@@ -613,6 +658,7 @@ test.describe("first run", () => {
     ).toHaveCount(0);
     answer.resolve(undefined);
     await expect(sidebar(page).getByRole("link")).toHaveText([
+      "Asha Fictional",
       "Chat with Rufi",
       "Overview",
       "Lab results7",
@@ -640,18 +686,14 @@ test.describe("first run", () => {
     const other = await context.newPage();
     await other.goto(rufi.link());
 
-    await other
-      .getByRole("textbox", { name: "What's your name?" })
-      .fill("Mira F.");
-    await page
-      .getByRole("textbox", { name: "What's your name?" })
-      .fill("Mira Fictional");
-    await page.getByRole("button", { name: "Save and continue" }).click();
+    await aboutYou(other, "Mira F.");
+    await aboutYou(page, "Mira Fictional");
+    await page.getByRole("button", { name: "Continue" }).click();
     await expect(
       page.getByRole("combobox", { name: "Emergency region" }),
     ).toBeVisible();
     // The other tab still shows the form; its name isn't added.
-    await other.getByRole("button", { name: "Save and continue" }).click();
+    await other.getByRole("button", { name: "Continue" }).click();
     const region = other.getByRole("combobox", { name: "Emergency region" });
     await region.selectOption("IN");
     await other.getByRole("button", { name: "Save and continue" }).click();

@@ -42,12 +42,13 @@ import {
 } from "./live-run.ts";
 import { codexBinary } from "../src/agent/codex/binary.ts";
 import { codexAdapter } from "../src/agent/codex/adapter.ts";
-import { DEFAULT_SHORTLIST } from "../src/core/chat/models.ts";
+import { DEFAULT_MODEL } from "../src/core/chat/models.ts";
 import {
   databasePath,
   openReadOnly,
   openWritable,
 } from "../src/core/store/database.ts";
+import { saveChanges } from "../src/core/record/save.ts";
 import { childEnvironment, rufiHome } from "../src/platform/config.ts";
 import { diagnostics } from "../src/platform/logs.ts";
 import { PROOF_HEADER } from "../src/server/api.ts";
@@ -486,7 +487,13 @@ const result = (
 ) =>
   `('${id}', 'asha', NULL, 'lab', '${test}', '${value}', ${comparator === null ? "NULL" : `'${comparator}'`}, ${String(Number.parseFloat(value.replace(/[<>]/, "")))}, '${unit}', NULL, NULL, NULL, '${measured}', '${measured}T09:00:00Z', NULL)`;
 const RESULTS = `INSERT INTO results (id, person_id, report_id, category, test_name, value_text, comparator, value_number, unit, reference_range, flag_text, context_text, measured_at, entered_at, replaces_id) VALUES `;
+/** Asha's haemoglobin from June 2016, with no range printed. */
+const HAEMOGLOBIN_2016 = `${RESULTS}${result("res-hb-2016", "Haemoglobin", "11.9", "g/dL", "2016-06-10")};`;
 const SEEDS: Record<string, string> = {
+  profile_settings: HAEMOGLOBIN_2016,
+  // Asha gave only her year of birth.
+  profile_year_alone: `${HAEMOGLOBIN_2016}
+    UPDATE profiles SET birth_date = '1990', birth_date_words = '1990' WHERE id = 'asha';`,
   // Asha told the AI she takes Levothyroxine 25 mcg.
   prescription_visit: `INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, revision, created_at, updated_at) VALUES
       ('m-levo', 'asha', 'c-asha', 1, 'message', 'I take Levothyroxine 25 mcg every morning.', 1, '2026-08-01T09:00:00Z', '2026-08-01T09:00:00Z');
@@ -800,6 +807,42 @@ const chipOf = (type: "document" | "draft_item", id: string) => ({
   type,
   id,
 });
+
+/** Asha's profile as stored. */
+function profile(home: string) {
+  const store = openReadOnly(databasePath(home));
+  if (!store) throw new Error("no database");
+  const row = store.db
+    .prepare("SELECT * FROM profiles WHERE id = 'asha'")
+    .get() as Record<string, unknown>;
+  store.close();
+  return row;
+}
+
+/** Asha enters `fields` in Settings › Profile, as its form saves them. */
+async function enterInSettings(home: string, fields: Record<string, unknown>) {
+  const store = openWritable(databasePath(home));
+  try {
+    // The core holds the record open too: wait for its writes.
+    store.db.exec("PRAGMA busy_timeout = 10000");
+    await store.query.transaction().execute((trx) =>
+      saveChanges(
+        trx,
+        {
+          personId: "asha",
+          form: "settings",
+          callId: randomUUID(),
+          now: new Date().toISOString(),
+        },
+        {
+          changes: [{ kind: "profile", action: "change", id: "asha", fields }],
+        },
+      ),
+    );
+  } finally {
+    store.close();
+  }
+}
 
 /** Answers yes when the AI asked instead of saving. */
 async function yesIfAsked(
@@ -2288,6 +2331,95 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
    * Delete file: the results stay facts. Asked about one, the AI uses it and
    * says the report was deleted; asked to open the report, it can't.
    */
+  /** Told her blood group, the AI asks first; after the yes, the profile has it. */
+  profile_yes: async (api, home) => {
+    const c = chat(api);
+    await c.ask("My blood group is B+.");
+    const asked_first = nothingSaved(home, await c.read());
+    await c.ask("yes");
+    const snapshot = await c.read();
+    return {
+      checks: {
+        asked_first,
+        saved_once: record(home).saves === 1 && receipts(snapshot) === 1,
+        blood_group_b_positive: profile(home)["blood_group"] === "B+",
+        birth_date_kept: profile(home)["birth_date"] === "1990-03",
+      },
+      snapshot,
+    };
+  },
+  /**
+   * The AI read Asha's profile; she changes her birth date in Settings.
+   * Asked about an old result, it reads the profile again and uses the new
+   * date; asked to undo the change, it puts the old date back after her yes.
+   */
+  profile_settings: async (api, home) => {
+    const c = chat(api);
+    await c.ask("How old am I, by my profile?");
+    const before = calls(home).length;
+    await enterInSettings(home, {
+      birth_date: { date: "2010-03", words: "March 2010" },
+    });
+    await c.ask(
+      "Was my haemoglobin of 11.9 g/dL in June 2016 normal for me then?",
+    );
+    const asked = await c.read();
+    const read_again = calls(home)
+      .slice(before)
+      .some((call) => call.tool === "get_overview" && call.ok === 1);
+    await c.ask("Undo my last profile change.");
+    // An undo is offered first: nothing changes until Asha says yes.
+    const consent_asked =
+      profile(home)["birth_date"] === "2010-03" &&
+      receipts(await c.read()) === 0;
+    await c.say("Yes, put it back.");
+    const snapshot = await c.read();
+    const now = profile(home);
+    return {
+      checks: {
+        read_again,
+        consent_asked,
+        put_back:
+          now["birth_date"] === "1990-03" &&
+          now["birth_date_words"] === "March 1990",
+        sex_kept: now["sex_for_ranges"] === "female",
+        one_chat_save: receipts(snapshot) === 1,
+      },
+      verdicts: [
+        {
+          check: "uses_the_new_birth_date",
+          criterion:
+            "The answer uses the birth date changed in Settings (March 2010): Asha was about 6 in June 2016, so it uses a child's range, says which, and says the report printed none. It doesn't use her age from 1990.",
+          evidence: lastReply(asked),
+        },
+      ],
+      snapshot,
+    };
+  },
+  /**
+   * Only a year of birth, and a 2016 result with no range: the AI uses her
+   * age then, and names the range it used.
+   */
+  profile_year_alone: async (api, home) => {
+    const c = chat(api);
+    await c.ask("Was my haemoglobin of 11.9 g/dL in June 2016 normal for me?");
+    const snapshot = await c.read();
+    return {
+      checks: {
+        read_profile: usedTool(home, "get_overview"),
+        nothing_saved: nothingSaved(home, snapshot),
+      },
+      verdicts: [
+        {
+          check: "range_for_her_age_then",
+          criterion:
+            "The answer says the report printed no range, names the range it used (for adult women), and uses her age in June 2016 (25 or 26, from a birth year of 1990), not today's. If it says her exact age is open, that's right.",
+          evidence: lastReply(snapshot),
+        },
+      ],
+      snapshot,
+    };
+  },
   delete_file_keep: async (api, home) => {
     const c = chat(api);
     await deleteAugust(api, "keep");
@@ -2450,8 +2582,7 @@ async function playCase(name: string, home: string) {
     ? Object.entries({
         every_turn_answered: everyTurnAnswered(outcome.snapshot),
         // The set tests the model a new chat gets by default.
-        on_default_model:
-          outcome.snapshot.turns[0]?.model === DEFAULT_SHORTLIST[0],
+        on_default_model: outcome.snapshot.turns[0]?.model === DEFAULT_MODEL,
         ...outcome.checks,
       })
         .filter(([, ok]) => !ok)

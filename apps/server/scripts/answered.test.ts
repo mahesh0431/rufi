@@ -5,6 +5,8 @@ import { everyTurnAnswered } from "./answered.ts";
 const turn = (id: string, status: Turn["status"]): Turn => ({
   id,
   model: "gpt-6.1-sol",
+  effort: "medium",
+  before: null,
   status,
   endReason: status === "failed" ? "usage_limit" : null,
   endText: null,

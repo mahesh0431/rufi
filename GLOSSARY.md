@@ -12,12 +12,16 @@ _Avoid_: keeper, owner, admin, caregiver
 
 **Person**:
 Someone whose health record Rufi keeps; you are often one of them.
-_Avoid_: patient, profile, member
+_Avoid_: patient, member
+
+**Profile**:
+A few facts about a person that their record is read with: their name (never empty), birth date (a year, a month and year, or a full date, with the words it came in), sex for lab ranges (Female or Male, only for choosing ranges), blood group and height (a number and its unit). Each but the name is **Not set** until given. It is part of the person's record: it changes only by a save, keeps its history and is never removed. The AI reads it with the record and uses age and sex to choose a range when the lab printed none. Its height is the person's own value, apart from height measurements.
+_Avoid_: demographics, account, user details, personal info
 
 ## The record
 
 **Record**:
-Everything Rufi holds as true about one person: what the user said yes to in the chat, and what came from their documents. Each record (a medicine use, visit, symptom, condition, allergy, result, care event, "none known" statement or follow-up) keeps its source and its history; removing one takes it out of the current record and keeps its history.
+Everything Rufi holds as true about one person: what the user said yes to in the chat, and what came from their documents. Each record (a medicine use, visit, symptom, condition, allergy, result, care event, "none known" statement, follow-up or the person's profile) keeps its source and its history; removing one takes it out of the current record and keeps its history.
 _Avoid_: chart, file, history
 
 **Health record**:
@@ -89,21 +93,21 @@ A procedure or an immunisation, planned or done. A visit to a doctor is a **visi
 _Avoid_: event, intervention
 
 **Source**:
-Where a saved record came from: the user's own message in the chat, a document and its page, or a visit (a record saved from a visit cites the visit; the visit cites its paper's page). A message source is the user's message with the facts the record came from, never their "yes" alone and never words the AI quotes: the AI names an earlier message by its place in the chat, and with none named it is the user's message in that turn. A record can have several, such as a result the user told the AI and then added in a lab report; the same result from another copy is another source, not another result. Undo of another source takes only that source off. A date keeps the words it came from ("last Monday"), which count from when the source message was sent.
+Where a saved record came from: the user's own message in the chat, a document and its page, what the user entered in their profile's form, or a visit (a record saved from a visit cites the visit; the visit cites its paper's page). A message source is the user's message with the facts the record came from, never their "yes" alone and never words the AI quotes: the AI names an earlier message by its place in the chat, and with none named it is the user's message in that turn. A record can have several, such as a result the user told the AI and then added in a lab report; the same result from another copy is another source, not another result. Undo of another source takes only that source off. A date keeps the words it came from ("last Monday"), which count from when the source message was sent.
 _Avoid_: origin, provenance, attachment
 
 ## Changes
 
 **Save**:
-One change to the record that the user agreed to in the chat: the AI's call to save it, then every record it changed, each with its before and after, and its receipt, all together or none. The same call again saves nothing new.
+One change to the record that the user agreed to in the chat, or entered themselves in their profile (in the welcome, on the profile page or in Settings): the AI's call or the form's sending, then every record it changed, each with its before and after, and its receipt, all together or none. The same call or sending again saves nothing new.
 _Avoid_: change set, batch, transaction, commit
 
 **Receipt**:
-What Rufi adds to the chat for each save: "Saved", then one line for each change, written from what was saved, never from the AI's words. A save of a document's draft items starts with a summary (how many new, more sources and corrections), and its lines say each one's page. A **sub-agent**'s names it by its title after "Saved".
+What Rufi adds to the chat for each save: "Saved", then one line for each change, written from what was saved, never from the AI's words. A change the user made in their profile's form has its receipt in Overview's Recent changes, not in the chat. A save of a document's draft items starts with a summary (how many new, more sources and corrections), and its lines say each one's page. A **sub-agent**'s names it by its title after "Saved".
 _Avoid_: toast, success message, confirmation
 
 **Undo**:
-Saving the reverse of an earlier save, by chat: the user says "undo that", the AI says what will change back and anything that changed since, and saves it after the user says yes. The earlier save stays in the history.
+Saving the reverse of an earlier save, by chat, also of a change made in the profile's form: the user says "undo that", the AI says what will change back and anything that changed since, and saves it after the user says yes. The earlier save stays in the history.
 _Avoid_: revert, rollback
 
 **Remove**:
@@ -144,11 +148,11 @@ _Avoid_: drawer, popup, sidebar
 The chat at its own address, opened with **Chat with Rufi** in the sidebar. A small window opens the chat as a page.
 
 **Transcript**:
-Rufi's own stored copy of the chat: your messages, the AI's replies with the questions it asks, and a receipt for each save, each saved before it is shown. What the AI did for each reply (one activity line for each thing it did, with everything it sent and got back, its notes and its reasoning) is kept in the AI's working state, `agents.sqlite`, and shown with the reply; a note's or a summary's text shows as it comes and is kept once whole, or as far as it came when the reply ends. Replies from before this version keep theirs in the transcript. The notes, the reasoning's headings and the activity lines show in each reply's **Activity**; a cut step keeps what it had. The chat shows its latest page first, and older pages as the user scrolls up, with a line between days and quiet lines where a **new thread** started and where the chat history was **compacted**; Rufi works out these lines from the transcript when it shows it.
+Rufi's own stored copy of the chat: your messages, the AI's replies with the questions it asks, and a receipt for each save, each saved before it is shown. What the AI did for each reply (one activity line for each thing it did, with everything it sent and got back, its notes and its reasoning) is kept in the AI's working state, `agents.sqlite`, and shown with the reply; a note's or a summary's text shows as it comes and is kept once whole, or as far as it came when the reply ends. Replies from before this version keep theirs in the transcript. The notes, the reasoning's headings and the activity lines show in each reply's **Activity**; a cut step keeps what it had. The chat shows its latest page first, and older pages as the user scrolls up, with a line between days and quiet lines where a reply runs on another **model** or **effort** than the one before, and where the chat history was **compacted**; Rufi works out these lines from the transcript when it shows it.
 _Avoid_: log, history
 
 **New thread**:
-A new working memory of the chat for the AI. It starts only when the AI's own copy of the chat is gone (a restore, a move of Rufi's data, its files deleted), or when the user clicks **New thread** on a message that waits because the AI's thread didn't open. The chat and the health record stay as they are; the AI gets the chat's last 10 messages and replies, without its notes, steps or thinking, and reads further back when it needs to. The chat shows a quiet line there: "New thread started". Another model or effort, or a change of Rufi's rules, keeps the same thread; a model of another provider starts a new thread there, with the chat's last messages.
+A new working memory of the chat for the AI. It starts only when the AI's own copy of the chat is gone (a restore, a move of Rufi's data, its files deleted), or when the user clicks **New thread** on a message that waits because the AI's thread didn't open. The chat and the health record stay as they are; the AI gets the chat's last 10 messages and replies, without its notes, steps or thinking, and reads further back when it needs to. Another model or effort, or a change of Rufi's rules, keeps the same thread; a model of another provider starts a new thread there, with the chat's last messages.
 _Avoid_: started afresh, reset, new session, new conversation
 
 **Chat history compacted**:
@@ -160,7 +164,7 @@ How much of the AI's memory of the chat its thread uses, as Codex last reported 
 _Avoid_: tokens left, memory full
 
 **Activity**:
-What the AI did for one reply, as the AI's agent reported it, in order: its **notes**, its thinking's headings, and one step for each thing it did (read the record with one of Rufi's tools, ran a command, searched the web, changed a file, worked with a sub-agent, generated a picture, which the reply shows). A **sub-agent** it started is one line, its title, status and the start of its result, which opens that agent's own Activity; its own sub-agents open there the same way. Each step shows what was reported, such as the command and its exit code, or `rufi.get_records` and what the AI asked for, never Rufi's words for it; it opens to everything the agent gave about it, such as a command's output. Open and live while the AI works; folded into one line under the answer once the reply ended ("Activity · 12 steps · 1 failed · 1m 36s"), as the Activity setting says (**Show while working**, **Always show**, **Always hide**). Plain lines in the chat, not a box.
+What the AI did for one reply, as the AI's agent reported it, in order: its **notes**, its thinking's headings, and one step for each thing it did (read the record with one of Rufi's tools, ran a command, searched the web, changed a file, worked with a sub-agent, generated a picture, which the reply shows). A **sub-agent** it started is one line, its title, status and the start of its result, which opens that agent's own Activity; its own sub-agents open there the same way. Each step shows what was reported, such as the command and its exit code, or `rufi.get_records` and what the AI asked for, never Rufi's words for it; it opens to everything the agent gave about it, such as a command's output. From the send until the AI's first step, a **Thinking** line with a timer stands in for it; then it is open and live while the AI works, with the timer; folded into one line under the answer once the reply ended ("Activity · 12 steps · 1 failed · 1m 36s"), as the Activity setting says (**Show while working**, **Always show**, **Always hide**). Plain lines in the chat, not a box.
 _Avoid_: trace, log, tool calls
 
 **Note (the AI's)**:
@@ -208,16 +212,12 @@ The message you started in the chat and haven't sent, with its chips, saved quie
 _Avoid_: note, unsent
 
 **Model**:
-The version of the AI that answers, such as GPT-6-Astra, chosen for the chat from the **shortlist**, with its **effort**, in the box. A new model answers from the next reply, in the same thread, with the whole chat; one of another provider starts a new thread there, with the chat's last messages.
+The version of the AI that answers, one of Rufi's four: GPT-6-Astra, GPT-6.1-Sol (Codex), Claude Fable 5.1 and Claude Opus 5.5 (Claude), fixed in Rufi, never asked of the providers. Chosen for the chat with its **effort**, in the box; a new chat starts on GPT-6-Astra; a provider that isn't signed in shows its two greyed. A new model answers from the next reply, in the same thread, with the whole chat; one of another provider starts a new thread there, with the chat's last messages.
 _Avoid_: engine, brain
 
 **Effort**:
-How hard the AI thinks before it answers: Low, Medium or High, chosen for the chat with the model. Medium until the user chooses another. A new effort applies from the next reply, in the same thread.
+How hard the AI thinks before it answers: Low, Medium, High or XHigh, the same four for every model, chosen for the chat with the model. Medium until the user chooses another. A new effort applies from the next reply, in the same thread.
 _Avoid_: reasoning level, thinking mode
-
-**Shortlist**:
-The models the AI and its agents may run on, ticked in **Settings** › **Models**: GPT-6-Astra and GPT-6.1-Sol until the user chooses. The ticked ones come first there, in the order they were ticked. The chat's menu offers those Codex or Claude offers now, and a new chat uses the first; an agent runs on its model's provider. An agent starts on one of them or is moved to one; any other is refused. An old `models.json` in the data folder is left as it is and not used.
-_Avoid_: allowlist, whitelist
 
 ## Coming back to things
 
@@ -256,7 +256,7 @@ An AI working in a conversation of its own, on a model and effort, with the tool
 _Avoid_: worker, thread (a conversation is the agent's, not the agent)
 
 **Sub-agent**:
-An agent another agent started for one task, with a title, such as checking a set of results. It sees its task and nothing of the chat, runs on the model and effort of the agent that started it, or others of the **shortlist** it was given, with the same tools or fewer, and goes on after the reply ends. What it saves to the record shows in the chat with Rufi's **receipt**, which names it by its title. When its turn ends, the agent that started it hears how it went (its **done message**), and Rufi AI says what it found. In the **Activity** of the reply that started it, it is one line. While one of Rufi AI's sub-agents works, it is a chip in the row above the message box; its line, its chip or its name on its message opens its pop-up: its own Activity, and Stop while it works. Its messages to Rufi AI show in the chat under its name.
+An agent another agent started for one task, with a title, such as checking a set of results. It sees its task and nothing of the chat, runs on the model and effort of the agent that started it, or another of Rufi's four models it was given, with the same tools, and goes on after the reply ends. What it saves to the record shows in the chat with Rufi's **receipt**, which names it by its title. When its turn ends, the agent that started it hears how it went (its **done message**), and Rufi AI says what it found. In the **Activity** of the reply that started it, it is one line. While one of Rufi AI's sub-agents works, it is a chip in the row above the message box; its line, its chip or its name on its message opens its pop-up: its own Activity, and Stop while it works. Its messages to Rufi AI show in the chat under its name.
 _Avoid_: helper, child (in screens and help), delegate
 
 **Done message**:
@@ -307,7 +307,7 @@ Rufi's diagnostic file, `logs/rufi.log` in the data folder: fixed events with ch
 _Avoid_: history, transcript
 
 **First run**:
-The short steps a new data folder starts with: what Rufi is and isn't, what goes to the AI, your name, sign in with ChatGPT (or skip), and your emergency region (or skip). Rufi keeps each step done. Until it is done, the first run fills the window, and nothing else in Rufi can be reached.
+The short steps a new data folder starts with: what Rufi is and isn't, what goes to the AI, about you (your name and your profile, saved together), sign in with ChatGPT (or skip), and your emergency region (or skip). Rufi keeps each step done. Until it is done, the first run fills the window, and nothing else in Rufi can be reached.
 _Avoid_: onboarding, setup wizard
 
 **Demo folder**:

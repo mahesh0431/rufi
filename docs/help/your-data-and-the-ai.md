@@ -59,7 +59,7 @@ You can move your data folder to another folder: on your Mac, or on a disk that 
 
 Rufi copies everything in your data folder into the new folder: your health record and your chat, your documents and your backups. It checks the copy (the record, and each file against the old one) and only then uses the new folder. Codex's and Claude's sign-ins stay in the old folder: sign in to each again (see [Signing in](signing-in.md)).
 
-The AI's own files (`codex/` and `sub-agents/`) and the AI's folder (`ai/`) stay in the old folder, because they name the old folder. Your chat is in your record, so nothing of it is lost: your next message starts a new thread for the AI with the chat's last messages, and the chat shows "New thread started" there. The AI's programs and notes stay in the old folder's `ai/`; copy what you want to keep.
+The AI's own files (`codex/` and `sub-agents/`) and the AI's folder (`ai/`) stay in the old folder, because they name the old folder. Your chat is in your record, so nothing of it is lost: your next message starts a new thread for the AI with the chat's last messages. The AI's programs and notes stay in the old folder's `ai/`; copy what you want to keep.
 
 The old folder stays as it was, with a `moved-to.json` file that names the new folder. Rufi doesn't open the old folder any more, also not with `RUFI_HOME`, so that you never change two copies. Delete it when you're ready.
 
@@ -97,7 +97,7 @@ Then Rufi doesn't read or change the location file, and **Settings** › **Data 
 
 > **Note:** When you ask Rufi something, the AI reads the parts of your health record it needs. That text goes to the AI service your chat's model runs on, so it can answer: OpenAI, through your ChatGPT plan, or Anthropic, through your Claude account, when you chose one of Claude's models. A sub-agent's work goes to the service of its own model. See [OpenAI's policies](https://openai.com/policies/) and [Anthropic's](https://www.anthropic.com/legal/privacy) for how they handle it.
 
-When the AI reads your record with Rufi's tools, it gets only the records of the person whose chat it is: Rufi chooses the person, and the AI can't name another one. The AI can't read the chat or Rufi's settings this way, and it can't change anything. It doesn't read your [device data](device-data.md) yet.
+When the AI reads your record with Rufi's tools, it gets your name and your profile (birth date, your age from it, sex for lab ranges, blood group and height), and the records it asks for. It gets only those of the person whose chat it is: Rufi chooses the person, and the AI can't name another one. The AI can't read the chat or Rufi's settings this way, and it can't change anything. It doesn't read your [device data](device-data.md) yet.
 
 Rufi's tools aren't all that the chat's AI can do: it also works in its own folder (see below).
 
@@ -135,7 +135,7 @@ Rufi draws a page again when it needs it; the drawn pages aren't in your backups
 
 A file you add goes nowhere until you send the message: it waits in the box, on your Mac. When you send it, Rufi tells Rufi AI, the AI you chat with, which files aren't read yet, and Rufi AI has them read by readers, sub-agents it starts (see [Documents](documents.md#how-rufi-reads-a-document)).
 
-- A reader is one of the AI's sub-agents, like any other (see [When the AI starts agents of its own](chat.md#when-the-ai-starts-agents-of-its-own)). It gets the task Rufi AI gives it, never your chat, and works in the AI's folder with the Rufi tools Rufi AI gives it, on a model you ticked. Rufi AI points it to Rufi's instructions for copying pages.
+- A reader is one of the AI's sub-agents, like any other (see [When the AI starts agents of its own](chat.md#when-the-ai-starts-agents-of-its-own)). It gets the task Rufi AI gives it, never your chat, and works in the AI's folder with the Rufi tools Rufi AI gives it, on one of Rufi's four models. Rufi AI points it to Rufi's instructions for copying pages.
 - It looks at each page with Rufi's tool, as above, so the pages go to the AI service it runs on, one you signed in with. Rufi's tools give it only the documents of the person whose chat it is.
 - It keeps its notes on the pages in `ai/work/`, and saves its copy of each page with Rufi's tool. Rufi keeps the copies in `rufi.sqlite`; what the reader did is its **Activity**, in `agents.sqlite`. Pages an older Rufi read keep what its reader saved then.
 
