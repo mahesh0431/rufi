@@ -745,6 +745,7 @@ describe("a call to the host's tools", () => {
     ).toEqual({
       agent: ASHA.id,
       turn: first.id,
+      ref: first.ref,
       conversation: 1,
       call: "call-1",
     });

@@ -17,7 +17,8 @@ import {
   openWritable,
   type Store,
 } from "../store/database.ts";
-import { chatCaller, forAgent } from "../tools/tools.ts";
+import { rufiCaller, forAgent } from "../tools/tools.ts";
+import { turnScope } from "../../../tests/scope.ts";
 
 const TZ = process.env["TZ"];
 process.env["TZ"] = "Asia/Kolkata";
@@ -68,11 +69,11 @@ async function say(text: string, to = chat): Promise<string> {
 
 /** The AI calls save_changes in the chat's turn. */
 async function save(changes: unknown[], callId = "call-1", to = chat) {
-  const answer = await chatCaller(reader, transcripts, () => undefined)(
-    to,
-    "t-1",
-    "person",
-  )("save_changes", { changes }, callId);
+  const answer = await rufiCaller(
+    reader,
+    transcripts,
+    () => undefined,
+  )(turnScope(to, "t-1"), "person")("save_changes", { changes }, callId);
   return {
     ok: answer.ok,
     body: JSON.parse(answer.text) as Record<string, unknown> & {

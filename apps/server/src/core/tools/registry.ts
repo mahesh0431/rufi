@@ -149,12 +149,24 @@ export const REJECTIONS_PER_TURN = 3;
  * back as the error envelope and use up one of the turn's `rejections`: a
  * number, or a setting read at the turn's first refusal.
  */
+/** A tool's result as the answer the AI gets. */
+export const answerOf = (result: unknown): ToolAnswer => ({
+  ok: true,
+  text: JSON.stringify({ ok: true, result }),
+});
+
 export function toolCaller(
   tools: readonly Tool[],
   context: () => ToolContext,
   log: Log,
   rejections: number | (() => Promise<number>) = REJECTIONS_PER_TURN,
-): (name: string, input: unknown, callId?: string) => Promise<ToolAnswer> {
+): (
+  name: string,
+  input: unknown,
+  callId?: string,
+  /** What this call alone runs with, over the turn's context. */
+  own?: Partial<ToolContext>,
+) => Promise<ToolAnswer> {
   // Counted as each refusal comes, before any wait: refusals made at the
   // same time each use one. The limit is read once, at the first.
   let refused = 0;
@@ -183,7 +195,7 @@ export function toolCaller(
       }),
     };
   };
-  return async (name, input, callId) => {
+  return async (name, input, callId, own) => {
     const tool = tools.find(
       (candidate) => candidate.name === name && candidate.callers !== "ui",
     );
@@ -204,6 +216,7 @@ export function toolCaller(
     try {
       const result: unknown = await tool.run(parsed.success, {
         ...context(),
+        ...own,
         callId,
       });
       if (result instanceof WithImage) {
@@ -219,7 +232,7 @@ export function toolCaller(
           ],
         };
       }
-      return { ok: true, text: JSON.stringify({ ok: true, result }) };
+      return answerOf(result);
     } catch (error) {
       if (error instanceof Refusal) return reject(error.message, error.issues);
       // The model only learns it failed; the log gets the tool and the error's code.

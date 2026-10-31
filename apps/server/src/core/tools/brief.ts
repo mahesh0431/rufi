@@ -1,7 +1,13 @@
 // create_brief: saves a visit brief the AI wrote from the saved record, in
 // Rufi's own chat (docs/help/visit-brief.md).
-import { BriefInput, BriefRefused } from "../briefs/briefs.ts";
+import { BriefInput, BriefRefused, type Made } from "../briefs/briefs.ts";
 import { defineTool, Refusal } from "./registry.ts";
+
+/** What create_brief answers for a brief. */
+export const briefResult = (made: Made) => ({
+  brief: made.line,
+  ...(!made.fresh && { note: "This call already made this brief." }),
+});
 
 export const createBrief = defineTool({
   name: "create_brief",
@@ -27,11 +33,7 @@ export const createBrief = defineTool({
       throw new Refusal("A brief can be made only in Rufi's own chat.");
     }
     try {
-      const made = await brief(input, callId);
-      return {
-        brief: made.line,
-        ...(!made.fresh && { note: "This call already made this brief." }),
-      };
+      return briefResult(await brief(input, callId));
     } catch (error) {
       if (error instanceof BriefRefused) {
         throw new Refusal(error.message, error.problems);

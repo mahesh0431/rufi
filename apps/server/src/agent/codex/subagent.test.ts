@@ -36,6 +36,7 @@ import {
 import { mcpEndpoint, mcpKeys, serveMcp } from "../../server/mcp.ts";
 import type { SubAgentOutcome } from "../runtime.ts";
 import { codexBinary } from "./binary.ts";
+import { callOf } from "./events.ts";
 import { subAgentRunner } from "./subagent.ts";
 
 /** The reader's direct model: Codex adds no tools of its own. */
@@ -181,9 +182,9 @@ async function read(
   const url = await endpoint();
   const key = keys.issue({
     tools: reader.specs,
-    call: async ({ tool, input, callId }) => {
+    call: async ({ tool, input, meta }) => {
       before?.(++calls);
-      const answer = await reader.call(tool, input, callId);
+      const answer = await reader.call(tool, input, callOf(meta).callId);
       answers.push(JSON.parse(answer.text));
       return answer;
     },

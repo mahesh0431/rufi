@@ -42,7 +42,7 @@ import { openRecord } from "../core/store/install.ts";
 import { claimNotices } from "../core/record/notices.ts";
 import { recordViews, waiting } from "../core/record/views.ts";
 import { pages } from "../core/documents/pages.ts";
-import { chatCaller, forAgent } from "../core/tools/tools.ts";
+import { rufiCaller, forAgent } from "../core/tools/tools.ts";
 import { coreInstructions, rulesVersion } from "../core/chat/instructions.ts";
 import { SKILLS } from "../core/skills/skills.ts";
 import { backupsPath } from "../core/store/backup.ts";
@@ -335,7 +335,7 @@ export const startCore = (options: CoreOptions) =>
           }),
           tools: {
             specs: tools.specs,
-            caller: chatCaller(
+            caller: rufiCaller(
               reader,
               transcripts,
               log,

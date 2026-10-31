@@ -25,13 +25,14 @@ import {
 } from "./registry.ts";
 import { LIMITS } from "./records.ts";
 import {
-  chatCaller,
+  rufiCaller,
   forAgent,
   REJECTIONS_SETTING,
   TOOLS,
   toolsJson,
 } from "./tools.ts";
 import type { Log } from "../../platform/logs.ts";
+import { turnScope } from "../../../tests/scope.ts";
 
 const read = (path: string) => readFile(new URL(path, import.meta.url), "utf8");
 const schema = await read("../store/schema.sql");
@@ -863,8 +864,12 @@ describe("the error envelope", () => {
         const chat = (await chats.chat("asha")) as ChatRow;
         if (value !== undefined)
           await chats.saveSetting(REJECTIONS_SETTING, value);
-        const caller = chatCaller(store, chats, record)(chat, "t-1", "person");
-        const refuse = () => caller("get_documents", { page: 1 });
+        const caller = rufiCaller(
+          store,
+          chats,
+          record,
+        )(turnScope(chat, "t-1"), "person");
+        const refuse = () => caller("get_documents", { page: 1 }, "c-1");
         const answers = [];
         if (parallel) answers.push(...(await Promise.all(lefts.map(refuse))));
         else {
@@ -960,11 +965,15 @@ describe("show_face", () => {
     try {
       const chats = transcripts(store, () => "2026-10-14T10:00:00Z");
       const chat = (await chats.chat("asha")) as ChatRow;
-      const caller = chatCaller(store, chats, record)(chat, "t-1", "person");
+      const caller = rufiCaller(
+        store,
+        chats,
+        record,
+      )(turnScope(chat, "t-1"), "person");
       const changes = () =>
         store.db.prepare("SELECT total_changes() AS n").get()?.["n"];
       const before = changes();
-      const answer = await caller("show_face", { face: "found" });
+      const answer = await caller("show_face", { face: "found" }, "c-1");
       expect(JSON.parse(answer.text)).toEqual({ ok: true });
       expect(changes()).toBe(before);
     } finally {

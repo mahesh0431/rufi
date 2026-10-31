@@ -141,6 +141,8 @@ export interface Placed {
   agent: string;
   /** The package's turn. */
   turn: string;
+  /** The provider's reference for that turn. */
+  ref: string;
   conversation: number;
   /** The provider's call id. */
   call: string;
@@ -1671,6 +1673,7 @@ export function createAgents(options: {
             ? {
                 agent: id,
                 turn: turn.id,
+                ref: placed.turn,
                 conversation: live.number,
                 call: placed.call,
               }

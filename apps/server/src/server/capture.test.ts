@@ -39,7 +39,7 @@ import {
 import { coreInstructions, rulesVersion } from "../core/chat/instructions.ts";
 import { SKILLS } from "../core/skills/skills.ts";
 import type { ToolSpec } from "../core/tools/registry.ts";
-import { chatCaller, forAgent } from "../core/tools/tools.ts";
+import { rufiCaller, forAgent } from "../core/tools/tools.ts";
 import { agentsPath } from "./agents.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
 import { tempPath, tempPattern } from "../platform/files.ts";
@@ -163,7 +163,7 @@ async function start(
     }),
     tools: {
       specs: tools.specs,
-      caller: chatCaller(reader, transcripts, log),
+      caller: rufiCaller(reader, transcripts, log),
     },
     log,
   });
@@ -321,14 +321,17 @@ describe("Rufi's tools on the pinned Codex, over MCP", () => {
         ["get_overview", 1, turn?.id],
         ["save_changes", 1, turn?.id],
       ]);
-      // Codex's call id is its item's id: the line and the call are one.
+      // Rufi's id for a call is <agent>/<conversation>/<Codex's call id>,
+      // and Codex's call id is its item's id: the line and the call are one.
+      const item = (callId = "") => callId.split("/").slice(2).join("/");
       for (const call of calls) {
         expect(
-          lines.find((line) => line.details?.id === call.call_id),
+          lines.find((line) => line.details?.id === item(call.call_id)),
         ).toMatchObject({ status: "done" });
       }
       expect(
-        lines.find((line) => line.details?.id === calls[0]?.call_id)?.text,
+        lines.find((line) => line.details?.id === item(calls[0]?.call_id))
+          ?.text,
       ).toBe("rufi.get_overview");
       expect(
         page.entries

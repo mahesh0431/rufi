@@ -8,6 +8,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
+import { turnScope } from "../../../tests/scope.ts";
 import {
   transcripts as openTranscripts,
   type ChatRow,
@@ -18,7 +19,7 @@ import {
   openWritable,
   type Store,
 } from "../store/database.ts";
-import { chatCaller } from "../tools/tools.ts";
+import { rufiCaller } from "../tools/tools.ts";
 import { copies } from "./copies.ts";
 import { readings } from "./reading.ts";
 import { saveReading } from "./save-reading.ts";
@@ -76,14 +77,14 @@ async function call(
   callId: string,
   { store, reader, transcripts, chat } = rufi,
 ) {
-  const answer = await chatCaller(
+  const answer = await rufiCaller(
     reader,
     transcripts,
     () => undefined,
     undefined,
     { run: sorting(store, now).sort, done: () => undefined },
     { run: saveReading(now), done: () => undefined },
-  )(chat, "t-1", "person")(tool, input, callId);
+  )(turnScope(chat, "t-1"), "person")(tool, input, callId);
   return JSON.parse(answer.text) as {
     ok: boolean;
     result?: { reading: string; pages: string; unreadable?: string };

@@ -22,7 +22,7 @@ import { readBrief } from "../briefs/briefs.ts";
 import { transcripts, type ChatRow } from "../chat/transcript.ts";
 import { claimNotices } from "../record/notices.ts";
 import { recentSaves } from "../record/read.ts";
-import { chatCaller } from "../tools/tools.ts";
+import { rufiCaller } from "../tools/tools.ts";
 import { backupsPath, makeBackup, upgradeBackupsPath } from "./backup.ts";
 import {
   databasePath,
@@ -33,6 +33,7 @@ import {
 import { markerPath, openRecord } from "./install.ts";
 import { MIGRATIONS, inspect, migrate } from "./migrations.ts";
 import { restore } from "./restore.ts";
+import { turnScope } from "../../../tests/scope.ts";
 
 const VERSION_1 = [
   await readFile(
@@ -165,11 +166,11 @@ async function ravisSave(store: Store, at: string): Promise<void> {
   });
   const reader = openReadOnly(databasePath(home)) as Store;
   try {
-    const answer = await chatCaller(reader, chats, () => undefined)(
-      chat,
-      "t-after",
-      "person",
-    )(
+    const answer = await rufiCaller(
+      reader,
+      chats,
+      () => undefined,
+    )(turnScope(chat, "t-after"), "person")(
       "save_changes",
       {
         changes: [
@@ -1033,11 +1034,11 @@ it("upgrades a record of version 14 to Visits: the saves, follow-ups and briefs 
     });
     const reader = openReadOnly(databasePath(home)) as Store;
     try {
-      const answer = await chatCaller(reader, chats, () => undefined)(
-        chat,
-        "t-undo",
-        "person",
-      )(
+      const answer = await rufiCaller(
+        reader,
+        chats,
+        () => undefined,
+      )(turnScope(chat, "t-undo"), "person")(
         "save_changes",
         {
           changes: (latest?.changes ?? []).map((change) => ({
@@ -1293,4 +1294,45 @@ it("opens a record the migrations made as this Rufi's own (schema.sql is what th
   db.close();
 
   expect(() => openReadOnly(path)?.close()).not.toThrow();
+});
+
+it("upgrades a record of version 20 so every agent's calls can be kept: each call kept before stays as it was, with no agent", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 20));
+  // Two calls of a reply in Asha's chat, as Rufi of version 20 kept them.
+  const old = new DatabaseSync(path);
+  try {
+    old.exec(`
+      INSERT INTO turns (id, person_id, chat_id, agent_turn_id, thread_id, model, status, started_at)
+        SELECT 't-calls', person_id, id, 'codex-turn', 'codex-thread', 'gpt-6.1-sol', 'completed', '2026-10-29T09:00:00Z'
+        FROM chats WHERE person_id = 'asha';
+      INSERT INTO tool_calls (id, person_id, chat_id, turn_id, call_id, tool, input, answer, ok, started_at, ended_at)
+        SELECT k.id, c.person_id, c.id, 't-calls', k.call_id, k.tool, k.input, k.answer, k.ok, '2026-10-29T09:00:01Z', '2026-10-29T09:00:02Z'
+        FROM chats c, (
+          SELECT 'call-1' AS id, 'call_overview' AS call_id, 'get_overview' AS tool, '{}' AS input, '{"ok":true,"result":{}}' AS answer, 1 AS ok
+          UNION ALL SELECT 'call-2', 'call_save', 'save_changes', '{"changes":[]}', '{"ok":false,"error":"Nothing to save."}', 0
+        ) k
+        WHERE c.person_id = 'asha';
+    `);
+  } finally {
+    old.close();
+  }
+  const calls = () => {
+    const db = new DatabaseSync(path, { readOnly: true });
+    try {
+      return db
+        .prepare("SELECT * FROM tool_calls ORDER BY id")
+        .all()
+        .map((row) => ({ ...row }));
+    } finally {
+      db.close();
+    }
+  };
+  const before = calls();
+
+  const store = await openRecord(home);
+  store.close();
+  expect(calls()).toEqual(
+    before.map((row) => ({ ...row, agent_id: null, agent_turn_id: null })),
+  );
 });

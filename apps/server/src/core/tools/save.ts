@@ -2,9 +2,14 @@
 // yes in Rufi's chat (docs/adr/0005). Only Rufi's own chat can save, and
 // only in a turn the user started. dismiss_items: draft items the user
 // doesn't want saved, never saved later.
-import { DismissInput, DismissRefused, FIXABLE } from "../record/items.ts";
+import {
+  DismissInput,
+  DismissRefused,
+  FIXABLE,
+  type Dismissed,
+} from "../record/items.ts";
 import { KINDS, kindNamed, type Field, type Kind } from "../record/kinds.ts";
-import { SaveInput, SaveRefused } from "../record/save.ts";
+import { SaveInput, SaveRefused, type Saved } from "../record/save.ts";
 import { defineTool, jsonSchemaOf, Refusal } from "./registry.ts";
 
 /** Receipt lines the AI gets back at most; the rest are in Rufi's receipt. */
@@ -191,26 +196,7 @@ ${FIELDS}`,
       throw new Refusal("Changes can be saved only in Rufi's own chat.");
     }
     try {
-      const saved = await save(input, callId);
-      const lines = saved.receipt.split("\n");
-      const receipt =
-        lines.length > RECEIPT_LINES
-          ? `${lines.slice(0, RECEIPT_LINES).join("\n")}\n(${String(lines.length - RECEIPT_LINES)} more lines in Rufi's receipt in the chat)`
-          : saved.receipt;
-      return {
-        ...(saved.receipt !== "" && { receipt }),
-        changes: saved.changes,
-        ...(saved.earlier.length > 0 && { already_saved: saved.earlier }),
-        ...(saved.fresh
-          ? saved.earlier.length > 0 && {
-              note: "The items in already_saved weren't saved again: each is in the record already, as its earlier save put it.",
-            }
-          : saved.receipt === ""
-            ? {
-                note: "Nothing was saved, and Rufi added no receipt: every item is in the record already, as its earlier save in already_saved put it. If the user asked for something else, read the result with get_records and tell them.",
-              }
-            : { note: "This call was already saved." }),
-      };
+      return savedResult(await save(input, callId));
     } catch (error) {
       if (error instanceof SaveRefused) {
         throw new Refusal(error.message, error.problems);
@@ -218,6 +204,36 @@ ${FIELDS}`,
       throw error;
     }
   },
+});
+
+/** What save_changes answers for a save. */
+export function savedResult(saved: Saved) {
+  const lines = saved.receipt.split("\n");
+  const receipt =
+    lines.length > RECEIPT_LINES
+      ? `${lines.slice(0, RECEIPT_LINES).join("\n")}\n(${String(lines.length - RECEIPT_LINES)} more lines in Rufi's receipt in the chat)`
+      : saved.receipt;
+  return {
+    ...(saved.receipt !== "" && { receipt }),
+    changes: saved.changes,
+    ...(saved.earlier.length > 0 && { already_saved: saved.earlier }),
+    ...(saved.fresh
+      ? saved.earlier.length > 0 && {
+          note: "The items in already_saved weren't saved again: each is in the record already, as its earlier save put it.",
+        }
+      : saved.receipt === ""
+        ? {
+            note: "Nothing was saved, and Rufi added no receipt: every item is in the record already, as its earlier save in already_saved put it. If the user asked for something else, read the result with get_records and tell them.",
+          }
+        : { note: "This call was already saved." }),
+  };
+}
+
+/** What dismiss_items answers for a dismissal. */
+export const dismissedResult = (done: Dismissed) => ({
+  dismissed: done.dismissed,
+  ...(done.already.length > 0 && { already_dismissed: done.already }),
+  ...(done.fresh && { receipt: done.receipt }),
 });
 
 export const dismissItems = defineTool({
@@ -236,12 +252,7 @@ export const dismissItems = defineTool({
       throw new Refusal("Items can be dismissed only in Rufi's own chat.");
     }
     try {
-      const done = await dismiss(input, callId);
-      return {
-        dismissed: done.dismissed,
-        ...(done.already.length > 0 && { already_dismissed: done.already }),
-        ...(done.fresh && { receipt: done.receipt }),
-      };
+      return dismissedResult(await dismiss(input, callId));
     } catch (error) {
       if (error instanceof DismissRefused) {
         throw new Refusal(error.message, error.problems);

@@ -47,7 +47,7 @@ import {
   openWritable,
   type Store,
 } from "../core/store/database.ts";
-import { chatCaller, forAgent } from "../core/tools/tools.ts";
+import { forAgent, rufiCaller } from "../core/tools/tools.ts";
 import { v7 as uuid } from "uuid";
 import { chatQueue, type ChatQueue } from "../core/chat/queue.ts";
 import { agentsPath } from "./agents.ts";
@@ -125,6 +125,8 @@ async function startChat(
     deadlines?: Partial<Deadlines>;
     /** How long Rufi's tools take. */
     toolMs?: number;
+    /** How long the agent waits for a call's answer. */
+    doorMs?: number;
     allowlist?: string[];
     /** Names this Rufi's rules: another one is an update. */
     rules?: string;
@@ -150,7 +152,14 @@ async function startChat(
   const tools = forAgent(() => ({ store: reader, personId: undefined }), log);
   const keys = mcpKeys();
   let port = 0;
-  served = await serveMcp(mcpEndpoint({ keys, port: () => port, log }));
+  served = await serveMcp(
+    mcpEndpoint({
+      keys,
+      port: () => port,
+      log,
+      ...(options.doorMs !== undefined && { toolMs: options.doorMs }),
+    }),
+  );
   port = served.port;
   if (backend === "real") model ??= await fakeModel();
   const command =
@@ -221,13 +230,13 @@ async function startChat(
     }),
     tools: {
       specs: tools.specs,
-      caller: (chat, turnId, origin) => {
-        const call = chatCaller(
+      caller: (scope, origin) => {
+        const call = rufiCaller(
           reader,
           transcripts,
           log,
           reader && pages(reader, home),
-        )(chat, turnId, origin);
+        )(scope, origin);
         return async (name, input, callId) => {
           admitted.push(name);
           await sleep(options.toolMs ?? 0);
@@ -315,6 +324,14 @@ async function turnsRun() {
   });
 }
 
+/** The AI saves the nausea the user told it about. */
+const saveNausea = {
+  tool: "save_changes",
+  arguments: {
+    changes: [{ kind: "symptom", action: "add", fields: { name: "Nausea" } }],
+  },
+};
+
 /** The AI saves a headache the user told it about. */
 const saveHeadache = {
   tool: "save_changes",
@@ -358,6 +375,17 @@ const waiting = async () =>
     item.state,
     item.held,
   ]);
+
+/**
+ * Rufi's id for a call of the chat's own agent, from the provider's:
+ * `<agent>/<conversation>/<call>`.
+ */
+function ownCall(call: string, chatId = "c-asha", conversation = 1): string {
+  const owner = store.db
+    .prepare("SELECT agent_id FROM agent_owners WHERE chat_id = ? AND root = 1")
+    .get(chatId);
+  return `${String(owner?.["agent_id"])}/${String(conversation)}/${call}`;
+}
 
 /** The thread's files are gone: Codex has no record of the chat's thread. */
 async function loseThread(chatId?: string): Promise<void> {
@@ -1181,7 +1209,7 @@ describe("the chat, on the scripted Codex", () => {
       await ended(c.id, ++turns);
       const call = store.db
         .prepare("SELECT answer FROM tool_calls WHERE call_id = ?")
-        .get(callId);
+        .get(ownCall(callId));
       const answer = JSON.parse(String(call?.["answer"])) as {
         ok: boolean;
         result: { changes: { id: string }[] };
@@ -1858,12 +1886,8 @@ describe("the chat, on the scripted Codex", () => {
     ]);
   });
 
-  it("stops a reply when Rufi can't keep a call to its tools, and tells the AI", async () => {
-    await startChat("fake", {
-      scenario: {
-        calls: [{ tool: "get_overview", arguments: {} }],
-      },
-    });
+  it("stops a reply when Rufi can't keep a call to its tools, and tells the AI; a save it can't keep saves nothing", async () => {
+    await startChat("fake", { scenario: { calls: [saveHeadache] } });
     const c = await newChat();
     // The store itself refuses the write, as a full disk would.
     store.db.exec(
@@ -1879,7 +1903,10 @@ describe("the chat, on the scripted Codex", () => {
       .filter((line) => line.includes('"answered":"tools/call"'));
     expect(answered).toHaveLength(1);
     expect(answered[0]).toContain("Rufi couldn't keep this call");
-    expect(answered[0]).not.toContain("Asha Fictional");
+    expect(store.db.prepare("SELECT * FROM symptoms").all()).toEqual([]);
+    expect(
+      (await transcript(c.id)).entries.filter(([kind]) => kind === "receipt"),
+    ).toEqual([]);
   });
 
   it("keeps a tool's late result out: the activity is stopped, not done", async () => {
@@ -1985,7 +2012,7 @@ describe("the chat, on the scripted Codex", () => {
     ]);
     expect(
       store.db.prepare("SELECT tool, call_id FROM tool_calls").all(),
-    ).toEqual([{ tool: "get_overview", call_id: "proper-read" }]);
+    ).toEqual([{ tool: "get_overview", call_id: ownCall("proper-read") }]);
     expect(store.db.prepare("SELECT * FROM symptoms").all()).toEqual([]);
     expect(
       (await transcript(asha.id)).entries.filter(
@@ -2056,8 +2083,67 @@ describe("the chat, on the scripted Codex", () => {
       ["receipt", "**Saved**\n\n- Added symptom **Headache**"],
     ]);
     expect(store.db.prepare("SELECT call_id FROM tool_calls").all()).toEqual([
-      { call_id: "call-0" },
+      { call_id: ownCall("call-0") },
     ]);
+  });
+
+  it("saves the calls of two agents of the chat that have the same id from their provider, each with its receipt", async () => {
+    // Rufi AI before and after the agent database is lost: two agents, and
+    // each one's first call is call-0.
+    await startChat("fake", { scenario: { calls: [saveHeadache] } });
+    const c = await newChat();
+    await say(c, "I have a headache");
+    await ended(c.id);
+    await startChat("fake", {
+      loseAgents: true,
+      scenario: { calls: [saveNausea] },
+    });
+    await say(await chatRow(c.id), "And I feel sick");
+    await ended(c.id, 2);
+    expect(
+      store.db.prepare("SELECT name FROM symptoms ORDER BY name").all(),
+    ).toEqual([{ name: "Headache" }, { name: "Nausea" }]);
+    expect(
+      (await transcript(c.id)).entries.filter(([kind]) => kind === "receipt"),
+    ).toEqual([
+      ["receipt", "**Saved**\n\n- Added symptom **Headache**"],
+      ["receipt", "**Saved**\n\n- Added symptom **Nausea**"],
+    ]);
+  });
+
+  it("saves once when the same call comes again after the agent stopped waiting for it", async () => {
+    await startChat("fake", {
+      scenario: {
+        calls: [
+          { ...saveHeadache, id: "call-same" },
+          { ...saveHeadache, id: "call-same" },
+        ],
+      },
+      toolMs: 300,
+      doorMs: 100,
+    });
+    const c = await newChat();
+    await say(c, "I have a headache");
+    await ended(c.id);
+    // Both calls ran to their end, after the agent's wait for each.
+    await until(() =>
+      Promise.resolve(
+        store.db
+          .prepare("SELECT call_id FROM tool_calls WHERE tool = 'save_changes'")
+          .all().length === 2,
+      ),
+    );
+    expect(store.db.prepare("SELECT name FROM symptoms").all()).toEqual([
+      { name: "Headache" },
+    ]);
+    expect(
+      (await transcript(c.id)).entries.filter(([kind]) => kind === "receipt"),
+    ).toEqual([["receipt", "**Saved**\n\n- Added symptom **Headache**"]]);
+    const answered = (await readFile(join(home, "fake.jsonl"), "utf8"))
+      .split("\n")
+      .filter((line) => line.includes('"answered":"tools/call"'));
+    expect(answered).toHaveLength(2);
+    expect(answered[0]).toContain("save_changes took too long.");
   });
 
   it("saves once when the same call comes again by its id, and answers it with the same receipt", async () => {
@@ -2080,8 +2166,8 @@ describe("the chat, on the scripted Codex", () => {
       .all() as { call_id: string; ok: number; answer: string }[];
     expect(answers).toHaveLength(2);
     expect(answers.map((a) => [a.call_id, a.ok])).toEqual([
-      ["call-same", 1],
-      ["call-same", 1],
+      [ownCall("call-same"), 1],
+      [ownCall("call-same"), 1],
     ]);
     const [first, again] = answers.map(
       (a) => JSON.parse(a.answer) as { result: Record<string, unknown> },
