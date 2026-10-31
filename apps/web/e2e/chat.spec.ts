@@ -1580,13 +1580,21 @@ test("a helper Rufi AI starts is one line in its Activity, which opens the helpe
   await expect(helpers).toHaveCount(0);
 });
 
-test("a helper's long Activity shows its latest lines, and earlier ones on request", async ({
+test("a helper's long Activity shows its latest lines, and earlier ones on request, each once", async ({
   page,
   rufi,
 }) => {
   await opened(page, rufi, {
     scenario: {
       bare: true,
+      // Its answer asks two questions, as Codex gives them: one item.
+      unstreamed: {
+        text: "Which pages next?",
+        questions: [
+          { title: "Page 3 or 4?", options: ["3", "4"] },
+          { title: "Both?", options: null },
+        ],
+      },
       callsByText: {
         "Read every page": [
           {
@@ -1614,15 +1622,76 @@ test("a helper's long Activity shows its latest lines, and earlier ones on reque
   const lines = log(chat(page))
     .getByRole("list", { name: "Reader's Activity" })
     .locator(":scope > li");
-  // Its task, 60 steps and its answer: the latest 50 first.
+  /** Each of its questions shows once. */
+  const asked = async () => {
+    for (const question of ["Page 3 or 4? (3 · 4)", "Both?"]) {
+      await expect(lines.filter({ hasText: question })).toHaveCount(1);
+    }
+  };
+  // Its task, 60 steps, its answers and its questions: the latest 50 first.
   await expect(lines).toHaveCount(50);
-  await expect(lines.last()).toHaveText("ok:reader: read every page");
+  await expect(lines.last()).toHaveText("Asks: Both?");
+  await asked();
   await log(chat(page)).getByRole("button", { name: "Show earlier" }).click();
-  await expect(lines).toHaveCount(62);
+  await expect(lines).toHaveCount(65);
   await expect(lines.first()).toHaveText("From Rufi AIreader: read every page");
+  await asked();
   await expect(
     log(chat(page)).getByRole("button", { name: "Show earlier" }),
   ).toHaveCount(0);
+});
+
+test("what Rufi AI tells a helper while it works shows last in the helper's open Activity, as it comes", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi, {
+    scenario: {
+      bare: true,
+      callsByText: {
+        "Read every page": [
+          {
+            id: "call-reader",
+            tool: "start_agent",
+            arguments: { title: "Reader", task: "reader: hang on every page" },
+          },
+        ],
+        // It reads 60 pages, then works on, quiet.
+        "reader:": Array.from({ length: 60 }, (_, page) => ({
+          server: "files",
+          tool: "read_page",
+          arguments: { page: page + 1 },
+        })),
+        Tell: [
+          {
+            tool: "send_agent",
+            arguments: { to: "$agent", text: "Skip page 3." },
+          },
+        ],
+      },
+    },
+  });
+  await send(page, "Read every page");
+  await log(chat(page))
+    .getByRole("button", { name: /^Activity · / })
+    .first()
+    .click();
+  await log(chat(page))
+    .getByRole("button", { name: /Reader · / })
+    .click();
+  const lines = log(chat(page))
+    .getByRole("list", { name: "Reader's Activity" })
+    .locator(":scope > li");
+  await expect(lines).toHaveCount(50);
+  await expect(lines.last()).toHaveText(/read_page · \{"page":60\}$/);
+
+  const reader = await log(chat(page))
+    .locator("[data-agent]")
+    .getAttribute("data-agent");
+  await send(page, `Tell (agent ${String(reader)}) to skip page 3`);
+  // It came after its steps: last, with no reload.
+  await expect(lines.last()).toHaveText(/^From Rufi AI[\s\S]*Skip page 3\.$/);
+  await expect(lines).toHaveCount(50);
 });
 
 test("an old chat shows as it was stored: its replies in order, and its steps folded under the last, with their stored words and no details", async ({

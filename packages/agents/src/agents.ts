@@ -191,11 +191,24 @@ export interface KeptTurn {
   startedAt: string;
   endedAt: string | null;
   /** What it took, in order: who sent each, and its words, unless the host keeps them. */
-  inputs: { id: string; sender: string; parts: string[] | null }[];
+  inputs: {
+    id: string;
+    sender: string;
+    parts: string[] | null;
+    /** When it was delivered: at the turn's start, or as it was steered in. */
+    at: string;
+  }[];
   /** What it reported, in order. */
   items: Item[];
   /** What it asked, kept apart from the items they came with, in order. */
-  questions: { item: string; title: string; options: string[] }[];
+  questions: {
+    item: string;
+    /** Its order among its item's questions: 1, 2... */
+    number: number;
+    title: string;
+    options: string[];
+    at: string;
+  }[];
 }
 
 /** One thing a turn reported, as the package kept it. */
@@ -1670,10 +1683,10 @@ export function createAgents(options: {
         (item) => item.turn,
       );
       const inputs = db.prepare(
-        "SELECT id, sender, parts FROM queue WHERE turn_id = ? ORDER BY position",
+        "SELECT id, sender, parts, updated_at AS at FROM queue WHERE turn_id = ? ORDER BY position",
       );
       const questions = db.prepare(
-        "SELECT item_id AS item, title, options FROM questions WHERE turn_id = ? ORDER BY rowid",
+        "SELECT item_id AS item, number, title, options, created_at AS at FROM questions WHERE turn_id = ? ORDER BY rowid",
       );
       return {
         turns: page.map((turn) => ({
@@ -1683,10 +1696,10 @@ export function createAgents(options: {
               id: string;
               sender: string;
               parts: string | null;
+              at: string;
             }[]
           ).map((input) => ({
-            id: input.id,
-            sender: input.sender,
+            ...input,
             parts:
               input.parts === null
                 ? null
@@ -1696,8 +1709,10 @@ export function createAgents(options: {
           questions: (
             questions.all(turn.id) as {
               item: string;
+              number: number;
               title: string;
               options: string;
+              at: string;
             }[]
           ).map((question) => ({
             ...question,

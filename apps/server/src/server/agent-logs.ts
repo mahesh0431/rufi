@@ -54,66 +54,83 @@ export function agentLogs(deps: {
         ? "You"
         : (agents.get(sender)?.title ?? sender);
 
-  /** A turn's lines: what it took, what it reported, and how it ended. */
+  /**
+   * A turn's lines in the order they happened: each message it took when it
+   * was delivered, what it reported when first reported, with the questions
+   * it asked; then how it ended.
+   */
   const linesOf = (agent: string, turn: KeptTurn): AgentLine[] => {
     const ended = turn.endedAt !== null;
-    const at = turn.endedAt ?? turn.startedAt;
     const plain = { activity: null, detail: null, status: null };
-    return [
-      ...turn.inputs.map((input): AgentLine => ({
-        id: `${turn.id}:${input.id}`,
-        kind: "message",
-        from: from(input.sender),
-        text: (input.parts ?? []).join("\n\n"),
-        ...plain,
-        updatedAt: turn.startedAt,
+    const happened = [
+      ...turn.inputs.map((input) => ({
+        at: input.at,
+        line: {
+          id: `${turn.id}:${input.id}`,
+          kind: "message",
+          from: from(input.sender),
+          text: (input.parts ?? []).join("\n\n"),
+          ...plain,
+          updatedAt: input.at,
+        } satisfies AgentLine,
       })),
-      ...turn.items.map((item): AgentLine => {
+      ...turn.items.map((item) => {
         const child = started(agent, item);
         return {
-          id: lineId(item.turn, item.id),
-          kind:
-            item.type === "text"
-              ? "reply"
-              : item.type === "reasoning"
-                ? "reasoning"
-                : "activity",
-          text: (item.type === "step" ? item.title : item.text) ?? "",
-          activity:
-            item.type === "note"
-              ? "note"
-              : item.type === "step"
-                ? (item.kind as AgentLine["activity"])
-                : null,
-          detail: item.type === "step" ? item.detail : null,
-          status: item.type === "text" ? null : shownStatus(item, ended),
-          updatedAt: item.updatedAt,
-          ...(child !== undefined && { agent: child }),
+          at: item.createdAt,
+          line: {
+            id: lineId(item.turn, item.id),
+            kind:
+              item.type === "text"
+                ? "reply"
+                : item.type === "reasoning"
+                  ? "reasoning"
+                  : "activity",
+            text: (item.type === "step" ? item.title : item.text) ?? "",
+            activity:
+              item.type === "note"
+                ? "note"
+                : item.type === "step"
+                  ? (item.kind as AgentLine["activity"])
+                  : null,
+            detail: item.type === "step" ? item.detail : null,
+            status: item.type === "text" ? null : shownStatus(item, ended),
+            updatedAt: item.updatedAt,
+            ...(child !== undefined && { agent: child }),
+          } satisfies AgentLine,
         };
       }),
-      ...turn.questions.map((question): AgentLine => ({
-        id: `${turn.id}:${question.item}`,
-        kind: "question",
-        text: question.title,
-        activity: null,
-        detail: question.options.join(" · "),
-        status: null,
-        updatedAt: at,
+      // A question shows with the item it came with, after it.
+      ...turn.questions.map((question) => ({
+        at:
+          turn.items.find((item) => item.id === question.item)?.createdAt ??
+          question.at,
+        line: {
+          id: `${turn.id}:${question.item}:${String(question.number)}`,
+          kind: "question",
+          text: question.title,
+          ...plain,
+          detail: question.options.join(" · "),
+          updatedAt: question.at,
+        } satisfies AgentLine,
       })),
-      ...(turn.status === "stopped" || turn.status === "failed"
-        ? [
-            {
-              id: `${turn.id}:end`,
-              kind: "end",
-              text: turn.result ?? turn.reason ?? "",
-              activity: null,
-              detail: null,
-              status: turn.status,
-              updatedAt: at,
-            } satisfies AgentLine,
-          ]
-        : []),
     ];
+    // At the same moment, a message comes before what it brought.
+    const lines: AgentLine[] = happened
+      .toSorted((a, b) => a.at.localeCompare(b.at))
+      .map(({ line }) => line);
+    if (turn.status === "stopped" || turn.status === "failed") {
+      lines.push({
+        id: `${turn.id}:end`,
+        kind: "end",
+        text: turn.result ?? turn.reason ?? "",
+        activity: null,
+        detail: null,
+        status: turn.status,
+        updatedAt: turn.endedAt ?? turn.startedAt,
+      });
+    }
+    return lines;
   };
 
   return {
@@ -181,10 +198,14 @@ export function agentLogs(deps: {
       return found && { details: found.payload };
     },
 
-    /** A sub-agent did something: the screens of its chat hear it soon. */
+    /**
+     * A sub-agent did something: the screens of its chat hear it soon. A
+     * chat's own agent shows in the chat as it goes.
+     */
     changed: (agent: string) => {
-      const root = agents.get(agent)?.root;
-      if (root === undefined) return;
+      const found = agents.get(agent);
+      if (!found || found.parent === null) return;
+      const { root } = found;
       pending.add(root);
       timer ??= setTimeout(() => {
         timer = undefined;
