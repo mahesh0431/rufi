@@ -15,3 +15,5 @@ A reply has no time limit. Codex ran with a fixed `ACCESS_TOKEN` in its environm
 Considered: Codex's external-token login (`account/login/start` with `chatgptAuthTokens`, renewed through `account/chatgptAuthTokens/refresh`), which refused Rufi's Sign in with ChatGPT token ("workspace routing discovery unauthorized"); the door's key in Codex's environment or in the command's arguments, both readable by the AI as above; a token that outlasts a turn, with a cap on the turn.
 
 The cost: the auth command is undocumented, so each pin bump reruns the contract tests and the live probe (`scripts/codex-auth-probe.ts`). A node process starts each time Codex asks, about once a minute while it works. A door that never answers costs Codex's whole retry run before the turn fails.
+
+**31 Oct 2026: the reader's door goes (ADR 0009).** With the old reader gone, only the chat's Codex has a door (`chat.json`), and no reader deadline is left.
