@@ -195,7 +195,7 @@ If you stop the reply while the AI saves, the save can still finish. Then its re
 
 ### When the AI starts agents of its own
 
-For a task that can run on its own, the AI can start an agent of its own, a sub-agent. It gets only the task the AI gives it, never your chat, and works with the AI's tools or fewer, on the AI's model or another one you ticked in **Settings** › **Models**. Between a sub-agent's turns, the AI can move it to another of those models, never while it works. On another provider's model, the sub-agent starts a new conversation there, which has its last 10 turns. It can go on after the reply ends: what it saves shows in the chat with Rufi's receipt, also after the reply, with its title after **Saved**. It saves only what you said yes to. A reader that copies your files' pages saves its copies with no receipt: they aren't part of your health record (see [Documents](documents.md#when-the-reading-ends)). In the Activity of the reply that started it, it is one line, which opens its pop-up (see [Activity](#activity)).
+For a task that can run on its own, the AI can start an agent of its own, a sub-agent. It gets only the task the AI gives it, never your chat, and works with the AI's tools or fewer, on the AI's model or another of Rufi's four, at any of the four efforts. A model whose provider isn't signed in can't start one. Between a sub-agent's turns, the AI can move it to another of the four, never while it works. On another provider's model, the sub-agent starts a new conversation there, which has its last 10 turns. It can go on after the reply ends: what it saves shows in the chat with Rufi's receipt, also after the reply, with its title after **Saved**. It saves only what you said yes to. A reader that copies your files' pages saves its copies with no receipt: they aren't part of your health record (see [Documents](documents.md#when-the-reading-ends)). In the Activity of the reply that started it, it is one line, which opens its pop-up (see [Activity](#activity)).
 
 **At work.** While the AI's sub-agents work, each is a chip in a row above the message box, below your waiting messages: a spinner, the name the AI gave it, and how long its turn has run, such as **Reading report.pdf 0:42**. When its turn ends (done, with a question, stopped or failed), its chip goes; when the AI gives it more to do, it comes back while it works. With no sub-agent at work, there is no row.
 
@@ -253,7 +253,7 @@ A message with files waits like any other. Removing it doesn't remove its files:
 
 A held message says why under it, and goes only when you click **Send** (the paper plane); you can also edit or remove it:
 
-- **Failed ·** and the error as it came, when Rufi couldn't hand the message to the AI, or the AI couldn't take it, for example when none of the models you ticked in **Settings** › **Models** is offered.
+- **Failed ·** and the error as it came, when Rufi couldn't hand the message to the AI, or the AI couldn't take it, for example when Codex couldn't open the AI's thread.
 - **Not sent · Stopped.** You clicked Stop while its reply was still starting, so it didn't go.
 - **Not sent · Stopped after 5 restarts in a row.** Rufi closed again and again while the AI worked, so the AI stopped carrying on by itself (see [While the AI replies](#while-the-ai-replies)). A new message from you sends it too, before your new one.
 - **Not sent · From a backup: it waited when the backup was made.** After a restore, nothing from the past goes to the AI by itself.
@@ -272,13 +272,11 @@ When the AI should know too, Rufi gives it a note:
 
 ## The model and effort
 
-The model and effort that answer show in the box, next to the send button, in every size of the chat: for example "GPT-6-Astra Medium". Click them to open one menu with both. When you aren't signed in, the menu can't list the models: click **Sign in with ChatGPT** in it to sign in.
+The model and effort that answer show in the box, next to the send button, in every size of the chat: for example "GPT-6-Astra Medium". Click them to open one menu with both.
 
-**The model.** Your chat has one model at a time. To change it, choose another in the menu: a tick shows the one that answers now. The menu shows the models you ticked in **Settings** › **Models** that Codex or Claude offers now: GPT-6-Astra and GPT-6.1-Sol until you choose. Before your first message, the chat shows the first of them, GPT-6-Astra when your plan offers it. Choose another before your first message if you like.
+**The model.** Your chat has one model at a time. To change it, choose another in the menu: a tick shows the one that answers now. Rufi has four models, and the menu always shows all four: GPT-6-Astra and GPT-6.1-Sol with your ChatGPT plan, and Claude Fable 5.1 and Claude Opus 5.5 with Claude. When Codex or Claude isn't signed in, its two models show greyed, with **Sign in with ChatGPT** or **Sign in to Claude** under them (see [Signing in](signing-in.md)). A new chat starts on GPT-6-Astra. Choose another before your first message if you like.
 
-**Models in Settings.** **Settings** › **Models** lists every model Codex and Claude offer now: Codex's with your ChatGPT plan, and Claude's once Claude Code is on your Mac and signed in (see [Signing in](signing-in.md)). For one that isn't signed in, or Claude when it isn't on your Mac, it says in one line what to do, with **Sign in**. Tick the ones the AI and the sub-agents it starts may run on. The ticked ones come first, in the order you ticked them: the chat's menu lists them, and a new chat starts on the first. The AI can't start a sub-agent on a model you haven't ticked. A chat already on a model you untick keeps it, and the box still names it, until you choose another in the menu.
-
-**The effort** is how hard the AI thinks before it answers: Low is faster, Medium gives careful answers at a good speed, and High thinks longer. Your chat starts at Medium. A new effort applies from the next reply, and the AI keeps its memory of the chat.
+**The effort** is how hard the AI thinks before it answers: Low is faster, Medium gives careful answers at a good speed, and High and XHigh think longer. Every model has the same four. Your chat starts at Medium. A new effort applies from the next reply, and the AI keeps its memory of the chat.
 
 Rufi keeps the model and effort for your chat. You can't change them while a reply runs. Rufi says so: stop the reply, then change them. A new model answers from your next message, and it has the whole chat: the AI keeps its memory of the chat. A model of another provider starts a new thread there, with the chat's last messages. Messages that wait go to the new model.
 
