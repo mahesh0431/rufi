@@ -54,6 +54,8 @@ import {
 const ASK_MS = 15_000;
 /** How long Claude has to answer an interrupt. */
 const STOP_MS = 10_000;
+/** How long a conversation's process stays open with nothing to do (T3 Code's). */
+const IDLE_MS = 30 * 60_000;
 /** Where a call to Rufi's tools carries Claude's id for it. */
 const TOOL_USE_ID = "claudecode/toolUseId";
 
@@ -84,6 +86,7 @@ export interface ClaudeAdapterOptions {
   query?: typeof sdkQuery;
   sessions?: ClaudeSessions;
   stopMs?: number;
+  idleMs?: number;
 }
 
 export function claudeAdapter(options: ClaudeAdapterOptions): ProviderAdapter {
@@ -195,7 +198,46 @@ interface Turn {
   /** The context its last request used, and the model that answered. */
   context?: number;
   model?: string;
+  /**
+   * Its thinking blocks' items: each is its API message's id and its place
+   * among that message's thinking, the same as it streams and once whole
+   * (T3 Code's). The message streaming now, the items of its blocks
+   * streaming now by their index, and how many each message began and
+   * finished.
+   */
+  thinking: {
+    message?: string;
+    streaming: Map<number, string>;
+    began: Map<string, number>;
+    whole: Map<string, number>;
+  };
 }
+
+/**
+ * What Rufi reads of Claude's streaming events (the Messages API's): the
+ * SDK types them from a package Rufi doesn't install.
+ */
+type StreamEvent =
+  | { type: "message_start"; message: { id: string } }
+  | {
+      type: "content_block_start";
+      index: number;
+      content_block: { type: string; thinking?: string };
+    }
+  | {
+      type: "content_block_delta";
+      index: number;
+      delta: { type: string; thinking?: string };
+    }
+  | { type: "content_block_stop"; index: number }
+  | { type: "message_delta" | "message_stop" };
+
+const isThinking = (type: string | undefined) =>
+  type === "thinking" || type === "redacted_thinking";
+
+/** The item of a message's `n`th thinking block. */
+const thinkingItem = (message: string, n: number) =>
+  `${message}:thinking:${String(n)}`;
 
 /** What the adapter's conversations share: Claude's latest limits. */
 interface Shared {
@@ -212,6 +254,14 @@ async function openConversation(
 ): Promise<Conversation> {
   const ref = open.resume ?? randomUUID();
   const stopMs = options.stopMs ?? STOP_MS;
+  const idleMs = options.idleMs ?? IDLE_MS;
+  /** Closes the open process once it has rested long enough. */
+  let resting: NodeJS.Timeout | undefined;
+  const rest = () => {
+    clearTimeout(resting);
+    resting = setTimeout(() => void closeProcess(), idleMs);
+    resting.unref();
+  };
   let model = open.model;
   let effort = open.effort;
   /** Whether Claude keeps a message of it, so a new process resumes it. */
@@ -255,7 +305,12 @@ async function openConversation(
 
   const begin = (inputs: readonly string[]) => {
     const turn = randomUUID();
-    running = { ref: turn, stopping: stops > 0, uses: new Map() };
+    running = {
+      ref: turn,
+      stopping: stops > 0,
+      uses: new Map(),
+      thinking: { streaming: new Map(), began: new Map(), whole: new Map() },
+    };
     kept = true;
     emit({ type: "turnStarted", turn, inputs });
   };
@@ -294,6 +349,11 @@ async function openConversation(
       if (running === undefined) begin(inputs);
     } else if (message.type === "system" && message.subtype === "api_retry") {
       if (running) running.unanswered = message.error_status === null;
+    } else if (message.type === "stream_event") {
+      // Only to show: what Claude finishes replaces it.
+      if (running && message.parent_tool_use_id === null) {
+        streamed(running, message.event as StreamEvent);
+      }
     } else if (message.type === "assistant") {
       named(message);
       if (running) {
@@ -316,17 +376,68 @@ async function openConversation(
           });
         }
         emit(turnUsageOf(running.ref, message.usage));
-        finish(endOf(message, running, rateLimit));
+        const end = endOf(message, running, rateLimit);
+        finish(end);
+        // Signed out, it can do nothing more.
+        if (end.status === "failed" && end.reason === "signed_out") {
+          void closeProcess();
+          return;
+        }
       }
-      // Nothing left with Claude: the next turn opens a new process.
-      if (out.size === 0) void closeProcess();
+      // Nothing left with Claude: it stays open for the next turn a while.
+      if (out.size === 0) rest();
+    }
+  };
+
+  /** Claude's thinking as it writes it, by the item its whole block will have. */
+  const streamed = (turn: Turn, event: StreamEvent) => {
+    const { thinking } = turn;
+    if (event.type === "message_start") {
+      thinking.message = event.message.id;
+      thinking.streaming.clear();
+    } else if (
+      event.type === "content_block_start" &&
+      isThinking(event.content_block.type) &&
+      thinking.message !== undefined
+    ) {
+      const n = thinking.began.get(thinking.message) ?? 0;
+      thinking.began.set(thinking.message, n + 1);
+      if (event.content_block.type !== "thinking") return;
+      const item = thinkingItem(thinking.message, n);
+      thinking.streaming.set(event.index, item);
+      emit({
+        type: "thinking",
+        turn: turn.ref,
+        item,
+        delta: event.content_block.thinking ?? "",
+      });
+    } else if (
+      event.type === "content_block_delta" &&
+      event.delta.type === "thinking_delta"
+    ) {
+      const item = thinking.streaming.get(event.index);
+      if (item === undefined) return;
+      emit({
+        type: "thinking",
+        turn: turn.ref,
+        item,
+        delta: event.delta.thinking ?? "",
+      });
+    } else if (event.type === "content_block_stop") {
+      thinking.streaming.delete(event.index);
     }
   };
 
   /** What an answer of Claude's holds: its text, thinking and tool calls. */
   const said = (turn: Turn, uuid: string, message: unknown) => {
+    const { id } = message as { id?: string };
     for (const [index, block] of blocksOf(message).entries()) {
-      const item = index === 0 ? uuid : `${uuid}/${String(index)}`;
+      let item = index === 0 ? uuid : `${uuid}/${String(index)}`;
+      if (id !== undefined && isThinking(block.type)) {
+        const n = turn.thinking.whole.get(id) ?? 0;
+        turn.thinking.whole.set(id, n + 1);
+        item = thinkingItem(id, n);
+      }
       if (block.type === "text") {
         emit({
           type: "text",
@@ -453,6 +564,7 @@ async function openConversation(
   };
 
   const closeProcess = async () => {
+    clearTimeout(resting);
     const current = session;
     session = undefined;
     ending = current;
@@ -514,6 +626,7 @@ async function openConversation(
           };
         }
       }
+      clearTimeout(resting);
       let current: ClaudeSession;
       try {
         current = await opened();
@@ -526,6 +639,7 @@ async function openConversation(
           "effort",
         );
       } catch (error) {
+        rest();
         return error instanceof SignedOut
           ? {
               status: "not_delivered",
