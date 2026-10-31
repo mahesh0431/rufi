@@ -532,10 +532,11 @@ export const SaveSettings = Schema.Struct({
   emergencyRegion: Schema.optionalKey(Schema.NullOr(Line(10))),
   /** The whole shortlist, in order. */
   models: Schema.optionalKey(Schema.Array(Id)),
+  /** How many restarts in a row Rufi carries on a reply that ran: 0 to 10. */
   continuesAfterRestart: Schema.optionalKey(
     Schema.Int.check(
       Schema.isGreaterThanOrEqualTo(0),
-      Schema.isLessThanOrEqualTo(20),
+      Schema.isLessThanOrEqualTo(10),
     ),
   ),
   /** The document reader's model: one of the models it can run on. */
