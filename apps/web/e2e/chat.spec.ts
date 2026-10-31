@@ -757,7 +757,8 @@ test("when Rufi stops while it hands a message to the AI, the message counts as 
   await send(page, "Questions before my visit");
   const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
   await expect(thinking(chat(page))).toBeVisible();
-  await expect(waiting).not.toContainText("Not sent");
+  await expect(log(chat(page))).toContainText("Questions before my visit");
+  await expect(waiting).toHaveCount(0);
   // Claiming a row precedes preparation: wait until Codex has the request.
   await expect
     .poll(async () => {
@@ -1411,8 +1412,9 @@ test("from Enter, one working line shows while the AI's thread opens and until t
   await send(page, "What does my TSH result mean?");
   const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
   await expect(thinking(chat(page))).toHaveText(/^Thinking · \d+:\d\d$/);
-  await expect(waiting).toContainText("What does my TSH result mean?");
-  await expect(waiting).not.toContainText("Not sent");
+  // Your message shows as sent at once, not as waiting.
+  await expect(log(chat(page))).toContainText("What does my TSH result mean?");
+  await expect(waiting).toHaveCount(0);
   await expect(activity(chat(page))).toHaveCount(0);
   await accessible(page);
   // A reload shows it again, from what Rufi says now.
