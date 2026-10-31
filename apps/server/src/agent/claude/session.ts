@@ -108,13 +108,15 @@ export interface ClaudePlugin {
 
 /**
  * Writes Rufi's skills as a Claude plugin in Rufi's home, afresh at each
- * start, so they always match this Rufi.
+ * start, so they always match this Rufi: in a folder of its own, outside
+ * Claude's folder, which the AI may never read, so its commands and file
+ * tools read a skill's files (claudeLockDown keeps them from writing it).
  */
 export async function prepareClaudePlugin(
   home: string,
   skills: readonly AgentSkill[],
 ): Promise<ClaudePlugin> {
-  const path = join(home, "claude", "plugin");
+  const path = join(home, "claude-plugin");
   await rm(path, { recursive: true, force: true });
   await mkdir(join(path, ".claude-plugin"), { recursive: true, mode: 0o700 });
   await writeFile(

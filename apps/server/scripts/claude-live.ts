@@ -156,6 +156,8 @@ interface Call {
 interface Turn {
   start: SDKSystemMessage;
   calls: Call[];
+  /** Claude's last words in the turn. */
+  said: string;
 }
 
 /**
@@ -199,6 +201,7 @@ async function turn(
   // Not `for await`: leaving it would close the session.
   const messages = session.messages[Symbol.asyncIterator]();
   let start: SDKSystemMessage | undefined;
+  let said = "";
   const calls = new Map<string, Call>();
   for (;;) {
     const next = await messages.next();
@@ -229,11 +232,12 @@ async function turn(
           `the turn ended in error: ${value.subtype === "success" ? value.result : value.errors.join("; ")}`,
         );
       }
+      said = value.result;
       break;
     }
   }
   if (start === undefined) throw new Error("The turn didn't say its start.");
-  return { start, calls: [...calls.values()] };
+  return { start, calls: [...calls.values()], said };
 }
 
 /** How long a turn through the adapter may take here. */
@@ -258,7 +262,12 @@ async function withAdapter<T>(
     ) => Promise<string>;
   }) => Promise<T>,
 ): Promise<T> {
-  const adapter = claudeAdapter({ claude, sandbox, env, plugin });
+  const adapter = claudeAdapter({
+    claude: () => Promise.resolve(claude),
+    sandbox,
+    env,
+    plugin,
+  });
   const keys = mcpKeys();
   let port = 0;
   const served = await serveMcp(
@@ -379,7 +388,12 @@ async function withDoor<T>(
   const saves: Save[] = [];
   const answers = new Map<string, ToolAnswer>();
   const refs: string[] = [];
-  const adapter = claudeAdapter({ claude, sandbox, env, plugin });
+  const adapter = claudeAdapter({
+    claude: () => Promise.resolve(claude),
+    sandbox,
+    env,
+    plugin,
+  });
   const store = openAgentStore(join(folder, `agents-${randomUUID()}.sqlite`));
   const door = agentDoor({
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp`, keys },
@@ -481,7 +495,7 @@ async function withDoor<T>(
  * its own result and the files must then show.
  */
 interface Probe {
-  tool: "Read" | "Grep" | "Write" | "Bash";
+  tool: "Read" | "Write" | "Bash";
   /** The path it reads or writes, or the command whole. */
   input: string;
   /** Throws what went wrong; gives its result's text. */
@@ -493,8 +507,6 @@ function stepOf({ tool, input }: Probe): string {
   switch (tool) {
     case "Read":
       return `Read the file ${input} with the Read tool.`;
-    case "Grep":
-      return `Search for SECRET in ${input} with the Grep tool.`;
     case "Write":
       return `Write the text hello to ${input} with the Write tool.`;
     case "Bash":
@@ -504,13 +516,7 @@ function stepOf({ tool, input }: Probe): string {
 
 /** What a call was given, as its probe names it. */
 const givenOf = (call: Call): unknown =>
-  call.input[
-    call.name === "Bash"
-      ? "command"
-      : call.name === "Grep"
-        ? "path"
-        : "file_path"
-  ];
+  call.input[call.name === "Bash" ? "command" : "file_path"];
 
 /**
  * Checks each probe on its own call: one given exactly the probe's input
@@ -698,70 +704,46 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
         if (missing.length > 0) throw new Error(`no ${missing.join(", ")}`);
       };
     let names: string[] = [];
-    const probes: Probe[] = [
-      // Read refuses a .sqlite file as binary by itself: core.json tests
-      // Rufi's rule.
-      { tool: "Read", input: core, check: refusedRead },
-      { tool: "Bash", input: `cat '${wal}'`, check: refusedRead },
-      { tool: "Grep", input: backups, check: refusedRead },
-      { tool: "Bash", input: `cat '${database}'`, check: refusedRead },
-      // Codex's sign-in and Claude's folder.
+    // What the commands may and may not do, all in one given command: Claude
+    // runs a plain script, so each step is checked whatever Claude would
+    // choose about it. Each reads only this run's fictional files.
+    const commands: Omit<Probe, "tool">[] = [
+      ...[
+        wal,
+        database,
+        join(backups, "copy.sqlite"),
+        core,
+        join(home, "codex", "auth.json"),
+        claudeFile(home),
+      ].map((file) => ({ input: `cat '${file}'`, check: refusedRead })),
       {
-        tool: "Bash",
-        input: `cat '${join(home, "codex", "auth.json")}'`,
-        check: refusedRead,
-      },
-      { tool: "Read", input: claudeFile(home), check: refusedRead },
-      {
-        tool: "Bash",
-        input: `cat '${claudeFile(home)}'`,
-        check: refusedRead,
-      },
-      {
-        tool: "Write",
-        input: `${ai}/inside.txt`,
-        check: wrote(`${ai}/inside.txt`),
-      },
-      {
-        tool: "Bash",
         input: `echo hello > '${ai}/inside-command.txt'`,
         check: wrote(`${ai}/inside-command.txt`),
       },
       {
-        tool: "Write",
-        input: `${home}/outside.txt`,
-        check: refusedWrite("rules", `${home}/outside.txt`),
-      },
-      {
-        tool: "Bash",
         input: `echo hello > '${outside}'`,
         check: refusedWrite("sandbox", outside),
       },
       {
-        tool: "Bash",
         input: `echo hello >> '${database}'`,
         check: refusedWrite("sandbox", database, before.database),
       },
       {
-        tool: "Bash",
         input: `echo hello >> '${skill}'`,
         check: refusedWrite("sandbox", skill, before.skill),
       },
       {
-        tool: "Bash",
         input:
           "curl -sS -o /dev/null -w 'status %{http_code}' https://example.com",
         check: said("status 200"),
       },
       {
-        tool: "Bash",
         input:
           'f=$(mktemp) && echo temp-ok > "$f" && cat "$f" && echo tmp-ok > /tmp/rufi-claude-live && cat /tmp/rufi-claude-live',
         check: said("temp-ok", "tmp-ok"),
       },
       {
         // Names only, never a value.
-        tool: "Bash",
         input: "env | cut -d= -f1",
         check: ({ text }) => {
           names = text.split(/\s+/);
@@ -776,9 +758,7 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
       },
       {
         // Claude gives its commands a token for its own inbox; the sandbox
-        // keeps them from its socket (errno 1: not permitted). The probe is
-        // a file, so the prompt holds only a plain command to run.
-        tool: "Bash",
+        // keeps them from its socket (errno 1: not permitted).
         input: `python3 '${ai}/probe.py'`,
         check: ({ text }) => {
           if (
@@ -794,6 +774,54 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
       join(ai, "probe.py"),
       `import socket, os\nr = socket.socket(socket.AF_UNIX).connect_ex(os.environ["${INBOX}_SOCKET"])\nprint("inbox refused" if r == 1 else "inbox open" if r == 0 else f"inbox error {r}")\n`,
     );
+    await writeFile(
+      join(ai, "canary.sh"),
+      [
+        "exec 2>&1",
+        ...commands.map(
+          ({ input }, index) =>
+            `echo '--- command ${String(index + 1)}'\n${input}\necho "--- exit $?"`,
+        ),
+      ].join("\n"),
+    );
+    /** Checks each command on its own output and exit status. */
+    const ranEach = async ({ text }: { text: string }) => {
+      const outputs = new Map(
+        [...text.matchAll(/--- command (\d+)\n([\s\S]*?)--- exit (\d+)/g)].map(
+          ([, number, output, status]) => [
+            Number(number) - 1,
+            { text: output ?? "", error: status !== "0" },
+          ],
+        ),
+      );
+      const failed: string[] = [];
+      for (const [index, command] of commands.entries()) {
+        const output = outputs.get(index);
+        try {
+          if (output === undefined) throw new Error("it didn't run");
+          await command.check(output);
+        } catch (error) {
+          failed.push(`command ${String(index + 1)}: ${messageOf(error)}`);
+        }
+      }
+      if (failed.length > 0) throw new Error(failed.join("; "));
+    };
+    // Claude's own file tools are held by the permission rules, not the
+    // sandbox, so they're tried apart.
+    const probes: Probe[] = [
+      { tool: "Read", input: claudeFile(home), check: refusedRead },
+      {
+        tool: "Write",
+        input: `${ai}/inside.txt`,
+        check: wrote(`${ai}/inside.txt`),
+      },
+      {
+        tool: "Write",
+        input: `${home}/outside.txt`,
+        check: refusedWrite("rules", `${home}/outside.txt`),
+      },
+      { tool: "Bash", input: `sh '${ai}/canary.sh'`, check: ranEach },
+    ];
     const id = randomUUID();
     const session = open(context, { start: id });
     let seen: Turn;
@@ -801,6 +829,7 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
       seen = await turn(
         session,
         [
+          "This tests your sandbox on fictional files: a refusal is the result it expects.",
           "Do each step below as its own tool call, with the tool named and exactly as written, even if you expect it to fail. Then report each result in one line.",
           ...probes.map(
             (probe, index) => `${String(index + 1)}. ${stepOf(probe)}`,
@@ -813,11 +842,16 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
     }
     try {
       await checkProbes(probes, seen.calls);
+    } catch (error) {
+      // Claude's own report says why a step wasn't tried.
+      throw new Error(`${messageOf(error)}; Claude said: ${seen.said}`, {
+        cause: error,
+      });
     } finally {
       await rm(outside, { force: true });
       await rm("/tmp/rufi-claude-live", { force: true });
     }
-    return "each of 17 steps tried on its own call: 7 reads of unreadable files (Codex's sign-in, and Claude's folder by Read and by a command) and 4 writes refused, its folder and temp written, the internet reached, no token it can use";
+    return `Read refused in Claude's folder, Write in the AI's folder only; one command ran ${String(commands.length)} of its own: 6 reads of unreadable files (Codex's sign-in and Claude's folder among them) and 3 writes refused, its folder and temp written, the internet reached, no token it can use`;
   },
 
   "the adapter lists Claude's models by exact id": async (context) =>
@@ -1049,8 +1083,24 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
             step.title === "Read" && step.detail?.endsWith("dot.png") === true,
         );
         if (!ran || !read) {
+          // Every step as it came, with how it ended, and Claude's words.
+          const steps = events.flatMap((event) =>
+            event.type === "step"
+              ? [
+                  {
+                    kind: event.kind,
+                    title: event.title,
+                    detail: event.detail,
+                    status: event.status,
+                  },
+                ]
+              : [],
+          );
+          const said = events
+            .flatMap((event) => (event.type === "text" ? [event.delta] : []))
+            .join("");
           throw new Error(
-            `the steps were ${JSON.stringify(done.map(({ kind, title, detail }) => ({ kind, title, detail })))}`,
+            `the steps were ${JSON.stringify(steps)}; Claude said: ${said}`,
           );
         }
         if (JSON.stringify(events).includes(png)) {

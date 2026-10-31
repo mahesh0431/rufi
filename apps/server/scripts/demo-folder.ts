@@ -1,6 +1,6 @@
 // The demo folder: Rufi's data folder for `pnpm demo`, apart from every
 // other. Each run resets it to the golden data set and keeps only Codex's and
-// Claude's sign-ins, so you sign in once.
+// Claude's sign-ins, so you sign in once; Claude's conversations go.
 import { randomUUID } from "node:crypto";
 import {
   lstat,
@@ -33,11 +33,13 @@ const markFor = (folder: string) => ({ kind: "rufi-demo-folder", folder });
 
 /**
  * What a reset keeps: the mark, the lock it holds, and Claude's folder,
- * whose sign-in Claude keeps in the Keychain under the folder's path. Of
- * Codex's folder it keeps only Codex's sign-in.
+ * whose sign-in Claude keeps in the Keychain under the folder's path, but
+ * not the conversations Claude keeps in it. Of Codex's folder it keeps only
+ * Codex's sign-in.
  */
 const KEPT = new Set([MARK, "rufi.lock", "claude"]);
 const CODEX_SIGN_IN = "auth.json";
+const CLAUDE_CONVERSATIONS = "projects";
 
 /**
  * Resets `folder` to the golden data set, dated up to `today`. Refuses when
@@ -69,6 +71,10 @@ export async function resetDemo(
     await checkDemo(folder);
     await writeMark(folder);
     // rm removes a link deeper inside without following it.
+    await rm(join(folder, "claude", CLAUDE_CONVERSATIONS), {
+      recursive: true,
+      force: true,
+    });
     for (const name of await readdir(folder)) {
       if (KEPT.has(name)) continue;
       if (name === "codex" && (await lstat(join(folder, name))).isDirectory()) {

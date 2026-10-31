@@ -1,6 +1,6 @@
 # Signing in
 
-Rufi's AI runs on Codex, with your ChatGPT plan. Codex signs in with your ChatGPT account, and Claude with your Claude account. Each signs in by itself, in your browser, and keeps and renews its own sign-in in your data folder. Rufi keeps no password or token of its own.
+Rufi's AI runs on Codex, with your ChatGPT plan, or on Claude, with your Claude account, when you choose one of Claude's models. Claude runs on the Claude Code installed on your Mac. Codex signs in with your ChatGPT account, and Claude with your Claude account. Each signs in by itself, in your browser, and keeps and renews its own sign-in in your data folder. Rufi keeps no password or token of its own.
 
 You can sign in in Rufi, or with terminal commands.
 
@@ -21,6 +21,8 @@ Rufi waits up to 5 minutes for you, for one sign-in at a time. If the sign-in do
 - Claude signed in: Rufi shows that it is, not as whom.
 - Not signed in: click **Sign in**, as above.
 - When Rufi can't ask Codex or Claude, for example because Claude isn't installed on your Mac, it shows why.
+
+Each one's models show in **Settings** › **Models** once it is signed in. A chat on one of Claude's models needs only Claude's sign-in, and a chat on one of Codex's only Codex's.
 
 ## Sign in from the terminal
 

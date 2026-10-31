@@ -2,6 +2,7 @@
 // Claude's kept conversations, giving the frames the installed Claude gave
 // in the trial (review-artifacts/agent-system/2026-10-29-claude-trial) as a
 // contract case's script asks. Only the fields the adapter reads are set.
+import { randomUUID } from "node:crypto";
 import type {
   query,
   SDKMessage,
@@ -59,6 +60,7 @@ export function fakeClaude(
     const answer = (to: string[]) => {
       frames.push({
         type: "assistant",
+        uuid: randomUUID(),
         message: { content: [{ type: "text", text: ANSWER }] },
         user_message_uuid: to.at(-1),
         user_message_uuids: to,
@@ -74,6 +76,7 @@ export function fakeClaude(
     const fail = (error: string, text: string) => {
       frames.push({
         type: "assistant",
+        uuid: randomUUID(),
         message: { content: [{ type: "text", text }] },
         error,
         user_message_uuid: turn,
@@ -85,6 +88,7 @@ export function fakeClaude(
     const picture = (bytes: string, to: string) => {
       frames.push({
         type: "assistant",
+        uuid: randomUUID(),
         message: {
           content: [
             {
@@ -199,6 +203,7 @@ export function fakeClaude(
           keep(message);
           frames.push({
             type: "assistant",
+            uuid: randomUUID(),
             message: { content: [] },
             user_message_uuid: message,
             user_message_uuids: [running, message],
