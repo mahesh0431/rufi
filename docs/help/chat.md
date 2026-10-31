@@ -194,6 +194,10 @@ Say "undo that". The AI reads the save and your health record as it is now. It t
 
 If you stop the reply while the AI saves, the save can still finish. Then its receipt shows in the chat, and the AI sees it the next time you write. Say "undo that" if you don't want it.
 
+### When the AI starts agents of its own
+
+For a task that can run on its own, the AI can start an agent of its own, a sub-agent. It gets only the task the AI gives it, never your chat, and works on the same model with the AI's tools or fewer. It can go on after the reply ends: what it saves shows in the chat with Rufi's receipt, also after the reply, with its title after **Saved**. It saves only what you said yes to. Ask the AI what it found. You don't see sub-agents on the screen yet.
+
 ## While the AI replies
 
 While the AI replies, the stop button (the square) is where the send button was. The chat bar also shows a turning circle before its text, because Activity doesn't show there.

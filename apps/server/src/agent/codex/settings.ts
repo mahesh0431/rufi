@@ -57,6 +57,11 @@ const SETTINGS = {
      */
     plugins: false,
     apps: false,
+    /**
+     * No Codex sub-agents: Rufi's own start_agent is the one kind
+     * (docs/adr/0026). On, it would bring their tools back regardless.
+     */
+    multi_agent_v2: false,
   },
 } as const;
 
@@ -132,6 +137,10 @@ ${features}
 
 # Only Rufi's skills: none of Codex's own.
 [skills.bundled]
+enabled = false
+
+# No Codex sub-agents (spawn_agent and its tools): Rufi starts its own.
+[agents]
 enabled = false
 
 # The agent's commands get no variable named like a secret (*KEY*, *SECRET*,

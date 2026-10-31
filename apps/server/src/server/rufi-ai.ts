@@ -41,13 +41,11 @@ export interface RufiAiHost {
   /** Resolves once what the chat was told so far is saved. */
   saved: () => Promise<void>;
   /**
-   * What the chat's agent's conversation opens with now: Rufi's tools are
-   * the agent's own, with its key.
+   * What a conversation of one of the chat's agents opens with now: Rufi's
+   * tools are the agent's own, with its key. A sub-agent's names the agent
+   * that started it.
    */
-  opening: (
-    chat: ChatRow,
-    agent: { id: string; tools: readonly string[] },
-  ) => Promise<ChatOpening>;
+  opening: (chat: ChatRow, agent: OpeningAgent) => Promise<ChatOpening>;
   /**
    * Claims a row of the chat's queue as it goes to the agent's conversation
    * `sentAs`: its words, or that it doesn't go (Host.claim).
@@ -59,6 +57,15 @@ export interface RufiAiHost {
   ) => Promise<Claim | undefined>;
   /** What the package did changed the chat's waiting messages. */
   changed: (chat: ChatRow) => void;
+}
+
+/** The agent whose conversation opens. */
+export interface OpeningAgent {
+  id: string;
+  title: string;
+  tools: readonly string[];
+  /** The agent that started it; none for the chat's own, Rufi AI. */
+  parent?: { title: string };
 }
 
 /** What a chat's conversation is given each time it opens. */
@@ -275,23 +282,38 @@ export async function startRufiAi(
     return undefined;
   };
 
-  /** The chat whose own agent `agent` is, as stored now. */
-  const chatOf = async (agent: string) => {
+  /** The chat whose agent `agent` is, as stored now. */
+  const ownChat = async (agent: string) => {
     const owner = await kept.owner(agent);
-    if (!owner?.root) return undefined;
+    if (!owner) return undefined;
     const row = await transcripts.chat(owner.personId);
-    return row?.id === owner.chatId ? row : undefined;
+    return row?.id === owner.chatId ? { row, root: owner.root } : undefined;
+  };
+
+  /** The chat whose own agent, Rufi AI, `agent` is, as stored now. */
+  const chatOf = async (agent: string) => {
+    const owned = await ownChat(agent);
+    return owned?.root ? owned.row : undefined;
   };
 
   const opening = async (
     agent: Agent,
     kind: "resume" | "new",
   ): Promise<Opening> => {
-    const row = await chatOf(agent.id);
+    const row = (await ownChat(agent.id))?.row;
     if (!row || !chat) throw new Error("Rufi AI's chat isn't open.");
-    const now = await chat.opening(row, agent);
+    const parent =
+      agent.parent === null ? undefined : system.agents.get(agent.parent);
+    const now = await chat.opening(row, {
+      id: agent.id,
+      title: agent.title,
+      tools: agent.tools,
+      ...(parent && { parent: { title: parent.title } }),
+    });
     given.set(agent.id, now.version);
-    const seed = kind === "new" ? await now.seed() : undefined;
+    // A sub-agent starts with its task only, never the chat.
+    const seed =
+      kind === "new" && agent.parent === null ? await now.seed() : undefined;
     return {
       instructions: now.instructions,
       tools: now.tools,
@@ -308,6 +330,8 @@ export async function startRufiAi(
     position?: number,
   ) => {
     if (threads.get(ref) !== agent) follow(agent, ref);
+    // The chat shows Rufi AI's conversation; a sub-agent's is its own.
+    if (system.agents.get(agent)?.parent !== null) return;
     // A turn's own usage is for the usage tool; the chat shows the context.
     if (event.type === "turnUsage") return;
     if (event.type === "turnEnded") {
@@ -507,9 +531,9 @@ export async function startRufiAi(
         // no longer owns, or of another chat's, finds nothing.
         const owner = await kept.owner(agent);
         const row = owner && (await transcripts.chat(owner.personId));
-        const tools = agents.get(agent)?.tools;
+        const found = agents.get(agent);
         const thread = threadOf(agent);
-        if (row?.id !== owner?.chatId || !row || !tools || !thread) {
+        if (row?.id !== owner?.chatId || !row || !found || !thread) {
           return undefined;
         }
         return {
@@ -520,7 +544,8 @@ export async function startRufiAi(
           turn: placed.turn,
           ref: placed.ref,
           call: placed.call,
-          tools,
+          tools: found.tools,
+          ...(found.parent !== null && { label: found.title }),
         };
       },
 

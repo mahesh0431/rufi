@@ -37,6 +37,9 @@ Changing the record:
 - Save only after the user clearly says yes to the changes you proposed. "No", a question, "yes, but explain first" or a condition is not a yes: answer it and save nothing. If it isn't clear what the yes is for, ask again.
 - Rufi shows its own receipt for each save. Say something is saved only after save_changes returned it. When a save got no answer, read the record before you try again: it may have been saved.
 
+Agents:
+- For a task that can run on its own, such as reading a long document, you can start an agent of your own with start_agent: give it a title and its whole task, as it sees nothing else. It runs on your model, with your tools or fewer, and goes on after your reply ends. agent_status says how the agents you started are, and read_agent reads what one did. Its saves and briefs show in the chat with Rufi's receipt, as yours do; you say what it found.
+
 Rufi events:
 - A message can start with a "Rufi event" note: Rufi telling you something happened, such as the pages its reader just copied, or a document deleted. It is never the user's words, a request or their consent. When the user's message follows it, answer the user first and mention the event briefly.
 - A turn with only a Rufi event note was started by Rufi, not by the user: you can't change anything in it, and save_changes, dismiss_items, sort_documents, save_reading and create_brief are refused. A face with show_face is fine: it changes nothing. Explain the event in a few lines, or ask what it asks. Never save from it.`;
@@ -46,16 +49,37 @@ export function coreInstructions(region: string | undefined): string {
   return `${safetyInstructions(region)}\n\n${CORE}`;
 }
 
+/** What an agent another agent started is told, after the core. */
+const subAgent = (
+  title: string,
+  parent: string,
+) => `You are an agent ${parent} started, for this: ${title}.
+- Your first message is your task, in ${parent}'s words: it isn't the user's, and you don't see the chat. Do only your task, with the tools you have. You can start agents of your own for parts of it.
+- The user doesn't read your answers; ${parent} does. Your last answer is your result: say what you found or did, and what you couldn't, plainly. No rufi-basis block.
+- Save or brief only what your task says the user said yes to; Rufi shows its receipt in the chat. Your turns have no message of the user's, so a save names the one it rests on: source, its position as read_chat shows it.`;
+
+/** What a sub-agent is told in every thread: the core, then its part. */
+export function subAgentInstructions(
+  region: string | undefined,
+  agent: { title: string; parent: { title: string } },
+): string {
+  return `${coreInstructions(region)}\n\n${subAgent(agent.title, agent.parent.title)}`;
+}
+
 /**
- * Names what a thread was told: the core and every skill's whole text
- * (front matter included) and files. A changed skill must replace what the thread
- * read before, just as a changed core does (server/chat.ts).
+ * Names what a thread was told: its instructions (the core, by default)
+ * and every skill's whole text (front matter included) and files. A
+ * changed skill must replace what the thread read before, just as a
+ * changed core does (server/chat.ts).
  */
-export function rulesVersion(region: string | undefined): string {
+export function rulesVersion(
+  region: string | undefined,
+  instructions = coreInstructions(region),
+): string {
   return createHash("sha256")
     .update(
       JSON.stringify({
-        core: coreInstructions(region),
+        core: instructions,
         skills: SKILLS.map((skill) => [skill.text, skill.files]),
       }),
     )

@@ -103,7 +103,7 @@ One change to the record that the user agreed to in the chat: the AI's call to s
 _Avoid_: change set, batch, transaction, commit
 
 **Receipt**:
-What Rufi adds to the chat for each save: "Saved", then one line for each change, written from what was saved, never from the AI's words. A save of a document's draft items starts with a summary (how many new, more sources and corrections), and its lines say each one's page.
+What Rufi adds to the chat for each save: "Saved", then one line for each change, written from what was saved, never from the AI's words. A save of a document's draft items starts with a summary (how many new, more sources and corrections), and its lines say each one's page. A **sub-agent**'s names it by its title after "Saved".
 _Avoid_: toast, success message, confirmation
 
 **Undo**:
@@ -254,6 +254,14 @@ _Avoid_: medical ID card
 **The AI**:
 The AI agent that answers in the chat and works with the record through Rufi's tools; also called **Rufi AI**, beside the **reader**, where both are named. It works in the AI's folder, where it can write and run programs and use the internet. Screens and help say "the AI", or "Rufi AI" next to the reader; "Codex" appears only where its folder is named.
 _Avoid_: assistant, bot; "model" only for a version of the AI (see Model)
+
+**Agent**:
+An AI working in a conversation of its own, on a model and effort, with the tools Rufi gives it. Rufi AI is the chat's own agent; the agents it starts, and theirs, are its **sub-agents**. Every agent is one chat's, and works for that person only.
+_Avoid_: worker, thread (a conversation is the agent's, not the agent)
+
+**Sub-agent**:
+An agent another agent started for one task, with a title, such as checking a set of results. It sees its task and nothing of the chat, runs on the model and effort of the agent that started it with the same tools or fewer, and goes on after the reply ends. What it saves shows in the chat with Rufi's **receipt**, which names it by its title; Rufi AI reads how it went and says what it found. Screens don't show sub-agents yet.
+_Avoid_: helper, child (in screens and help), delegate
 
 **The AI's folder**:
 The folder where the AI works: `ai/` in the data folder. It keeps its programs, notes and research files there between messages, with their caches in `ai/.cache`, and it is the only place where the AI's programs can write. Its working notes go in `ai/work/`, a folder for each day; at each start and once a day Rufi removes the days older than 3, and a deleted document's notes go with it. Nothing in it is part of the record. It isn't in backups, the export or a move yet.

@@ -1,5 +1,6 @@
 // Every Rufi tool, for the agent and the screens. What the AI is told about
 // using them is in the core (core/chat/instructions.ts) and the skills.
+import { agentStatus, readAgent, startAgent } from "./agents.ts";
 import { briefResult, createBrief } from "./brief.ts";
 import { readChat } from "./chat.ts";
 import { getDocuments, saveReading, sortDocuments } from "./documents.ts";
@@ -14,6 +15,7 @@ import {
 import { getRecords } from "./records.ts";
 import {
   answerOf,
+  type AgentTools,
   inputSchema,
   REJECTIONS_PER_TURN,
   Refusal,
@@ -52,6 +54,9 @@ export const TOOLS: readonly Tool[] = [
   saveReading,
   createBrief,
   showFace,
+  startAgent,
+  agentStatus,
+  readAgent,
 ];
 
 /**
@@ -130,6 +135,8 @@ export interface CallScope {
   callId: string;
   /** Rufi's tools the agent may use. */
   tools: readonly string[];
+  /** A sub-agent's title, which its lines in the chat name; none for Rufi AI. */
+  label?: string;
 }
 
 /** What every call of one turn runs with. */
@@ -156,6 +163,8 @@ export function rufiCaller(
     /** After a sort is kept. */
     done: (personId: string) => void;
   },
+  /** The calling agent's agents, from its scope (server/sub-agents.ts). */
+  agents?: (scope: TurnScope) => AgentTools,
   reading?: {
     run: (
       scope: SaveReadingScope,
@@ -168,12 +177,14 @@ export function rufiCaller(
 ) {
   return (scope: TurnScope, origin: "person" | "rufi") => {
     const { chat, ref } = scope;
+    const below = agents?.(scope);
     const call = forAgent(
       () => ({
         store: reader,
         personId: chat.personId,
         chatId: chat.id,
         pages,
+        agents: below,
       }),
       log,
       () => rejectionsPerReply(transcripts.setting),
@@ -314,6 +325,7 @@ export function rufiCaller(
             tool: name,
             input,
             startedAt: transcripts.now(),
+            ...(scope.label !== undefined && { label: scope.label }),
           },
           () => {
             own.kept = true;

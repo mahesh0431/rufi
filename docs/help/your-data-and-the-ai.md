@@ -161,7 +161,7 @@ So that an answer can be traced later, Rufi also keeps, as long as the chat:
 - For each change to your record, the record before and after it, and the message of yours it came from.
 - What you typed in the chat but didn't send (the chat's draft). Drafts stay on your Mac until you send them.
 
-Work the AI gives to a sub-agent isn't kept. The AI's own copies in `codex/` hold more, as long as the AI keeps them, also the page images the AI looked at.
+What a sub-agent does is kept in `agents.sqlite` like the AI's own steps, apart from your chat; what one saves to your record has its receipt in the chat. The AI's own copies in `codex/` hold more, as long as the AI keeps them, also the page images the AI looked at.
 
 ## What Rufi logs
 

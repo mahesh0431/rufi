@@ -138,6 +138,11 @@ export interface Scenario {
   bare?: boolean;
   /** Tool calls by turn, oldest first, for each thread. */
   callsByTurn?: NonNullable<Scenario["calls"]>[];
+  /**
+   * Tool calls of a turn whose message has these words, the first that
+   * matches, over `callsByTurn` and `calls`: a sub-agent's turn has its task.
+   */
+  callsByText?: Record<string, NonNullable<Scenario["calls"]>>;
   /** A usage-limit snapshot sent before a failed turn. */
   resetsAt?: number;
   /** The message Codex gives a failed turn (a usage-limit message). */
@@ -468,9 +473,12 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
     }
   }
   const turnIndex = thread.history.findIndex((turn) => turn.id === turnId);
+  const byText = Object.entries(scenario.callsByText ?? {}).find(([words]) =>
+    text.includes(words),
+  )?.[1];
   const calls = text.includes("quiet")
     ? []
-    : (scenario.callsByTurn?.[turnIndex] ?? scenario.calls ?? []);
+    : (byText ?? scenario.callsByTurn?.[turnIndex] ?? scenario.calls ?? []);
   // Rufi's note on what its reader copied comes before the message; a
   // message's own chips list their documents after its words.
   const input = entry.input.map((part) => part.text).join("\n");
@@ -855,6 +863,7 @@ function featureList() {
     daemon_auto_start: false,
     plugins: false,
     apps: false,
+    multi_agent_v2: false,
     ...scenario.features,
   };
   return Object.entries(reported).map(([name, enabled]) => ({

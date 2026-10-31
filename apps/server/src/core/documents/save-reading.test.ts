@@ -83,6 +83,7 @@ async function call(
     () => undefined,
     undefined,
     { run: sorting(store, now).sort, done: () => undefined },
+    undefined,
     { run: saveReading(now), done: () => undefined },
   )(turnScope(chat, "t-1"), "person")(tool, input, callId);
   return JSON.parse(answer.text) as {

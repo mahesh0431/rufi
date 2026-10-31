@@ -205,16 +205,19 @@ const printed = (request: number) =>
     .at(-1) ?? "";
 
 const RUFI_TOOLS = [
+  "mcp__rufi__agent_status",
   "mcp__rufi__create_brief",
   "mcp__rufi__dismiss_items",
   "mcp__rufi__get_documents",
   "mcp__rufi__get_overview",
   "mcp__rufi__get_records",
+  "mcp__rufi__read_agent",
   "mcp__rufi__read_chat",
   "mcp__rufi__save_changes",
   "mcp__rufi__save_reading",
   "mcp__rufi__show_face",
   "mcp__rufi__sort_documents",
+  "mcp__rufi__start_agent",
 ];
 
 describe("Rufi's tools on the pinned Codex, over MCP", () => {
@@ -224,8 +227,10 @@ describe("Rufi's tools on the pinned Codex, over MCP", () => {
     async (modelId) => {
       await start(
         [
+          // Codex cuts a long output in the middle: every tool's name, and
+          // only the save's description, whole.
           {
-            exec: `text(JSON.stringify(ALL_TOOLS.filter((t) => t.name.startsWith("mcp__rufi__"))))`,
+            exec: `text(JSON.stringify(ALL_TOOLS.filter((t) => t.name.startsWith("mcp__rufi__")).map((t) => ({ name: t.name, description: t.name === "mcp__rufi__save_changes" ? t.description : "" }))))`,
           },
           { text: "Done." },
         ],
@@ -248,6 +253,15 @@ describe("Rufi's tools on the pinned Codex, over MCP", () => {
         description: string;
       }[];
       expect(offered.map((tool) => tool.name).sort()).toEqual(RUFI_TOOLS);
+      // Rufi's start_agent is the one way to start an agent: none of Codex's.
+      expect(
+        JSON.stringify(
+          model?.requests.map((r) => [
+            r.tools,
+            r.input.filter((item) => item.type === "additional_tools"),
+          ]),
+        ),
+      ).not.toContain("spawn_agent");
       // What the model writes a save from: the declaration, not the schema.
       const save =
         offered

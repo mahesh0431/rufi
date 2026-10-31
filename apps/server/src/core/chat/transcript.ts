@@ -21,6 +21,7 @@ import {
 import { sql, type Kysely, type Selectable, type Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
 import type { Made } from "../briefs/briefs.ts";
+import { literal } from "../record/kinds.ts";
 import type { Saved } from "../record/save.ts";
 import { addRow, endPart } from "./queue.ts";
 import { chipsOf } from "./refs.ts";
@@ -125,7 +126,16 @@ export interface ToolCall {
   /** What the AI sent, as it came. */
   input: unknown;
   startedAt: string;
+  /** A sub-agent's title, which the call's line in the chat names. */
+  label?: string;
 }
+
+/** A receipt's heading, then the sub-agent's title that saved it, if any. */
+const labelled = (receipt: string, label: string | undefined) => {
+  if (label === undefined) return receipt;
+  const [head = "", ...rest] = receipt.split("\n\n");
+  return [`${head} · ${literal(label)}`, ...rest].join("\n\n");
+};
 
 /** The answer the AI gets, as Rufi keeps it. */
 export interface Answered {
@@ -1881,7 +1891,7 @@ export function transcripts(
           id: saved.id,
           turnId: turn?.id ?? null,
           kind: "receipt",
-          text: saved.receipt,
+          text: labelled(saved.receipt, call.label),
         });
         return { entries: [id], turns: [] };
       });
@@ -1914,7 +1924,10 @@ export function transcripts(
           id: made.id,
           turnId: turn?.id ?? null,
           kind: "brief",
-          text: made.line,
+          text:
+            call.label === undefined
+              ? made.line
+              : `${made.line} · ${call.label}`,
         });
         return { entries: [id], turns: [] };
       });

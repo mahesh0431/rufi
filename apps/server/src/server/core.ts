@@ -15,6 +15,7 @@ import type { AgentSandbox, RunSubAgent } from "../agent/runtime.ts";
 import { readBrief } from "../core/briefs/briefs.ts";
 import { DEFAULT_ALLOWLIST } from "../core/chat/models.ts";
 import { drafts as openDrafts } from "../core/chat/drafts.ts";
+import { chatAgents } from "../core/chat/agents.ts";
 import { chatQueue } from "../core/chat/queue.ts";
 import { transcripts as openTranscripts } from "../core/chat/transcript.ts";
 import { deletions, sweepFiles } from "../core/documents/delete.ts";
@@ -43,7 +44,11 @@ import { claimNotices } from "../core/record/notices.ts";
 import { recordViews, waiting } from "../core/record/views.ts";
 import { pages } from "../core/documents/pages.ts";
 import { rufiCaller, forAgent } from "../core/tools/tools.ts";
-import { coreInstructions, rulesVersion } from "../core/chat/instructions.ts";
+import {
+  coreInstructions,
+  rulesVersion,
+  subAgentInstructions,
+} from "../core/chat/instructions.ts";
 import { SKILLS } from "../core/skills/skills.ts";
 import { backupsPath } from "../core/store/backup.ts";
 import { devices as openDevices } from "../core/devices/devices.ts";
@@ -65,6 +70,7 @@ import { reader as openReader, readerChoice } from "./reader.ts";
 import { startRufiAi } from "./rufi-ai.ts";
 import { converter as openConverter } from "./converter.ts";
 import { secret, sessions } from "./session.ts";
+import { subAgents } from "./sub-agents.ts";
 import { signInFlow, type SignIn } from "./signin.ts";
 
 export interface CoreOptions {
@@ -329,10 +335,15 @@ export const startCore = (options: CoreOptions) =>
           agent: agentSystem.rufiAi,
           allowlist: DEFAULT_ALLOWLIST,
           mcp: { url: () => mcpUrl(MCP_CHAT), keys: chatKeys },
-          rules: (region) => ({
-            instructions: coreInstructions(region),
-            version: rulesVersion(region),
-          }),
+          rules: (region, agent) => {
+            const instructions = agent
+              ? subAgentInstructions(region, agent)
+              : coreInstructions(region);
+            return {
+              instructions,
+              version: rulesVersion(region, instructions),
+            };
+          },
           tools: {
             specs: tools.specs,
             caller: rufiCaller(
@@ -346,6 +357,11 @@ export const startCore = (options: CoreOptions) =>
                   readings.changed(personId);
                 },
               },
+              subAgents({
+                agents: agentSystem.agents,
+                kept: chatAgents(writer, options.now),
+                queue,
+              }),
               {
                 run: saveReading(options.now),
                 done: (personId) => {

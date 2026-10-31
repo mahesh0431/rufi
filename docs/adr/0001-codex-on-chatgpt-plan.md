@@ -8,7 +8,7 @@ Rufi runs `codex app-server` over stdio with OpenAI's documented provider settin
 
 - **Rufi's own `CODEX_HOME`** (`$RUFI_HOME/codex`), so nothing from the user's `~/.codex` loads.
 - **The app-server process gets its own `HOME`** (`$RUFI_HOME/codex/home`), so Codex doesn't find personal skills in `~/.agents/skills`, which no Codex setting controls in this version. The agent's commands get the real `HOME` back through `shell_environment_policy.set`.
-- **Off:** plugins and apps (catalogs Rufi doesn't use; connectors need native Codex sign-in), and the background daemon (Rufi owns app-server's lifetime).
+- **Off:** plugins and apps (catalogs Rufi doesn't use; connectors need native Codex sign-in), and the background daemon (Rufi owns app-server's lifetime). Since 30 Oct 2026, also Codex's own sub-agents: Rufi starts its own (ADR 0026).
 - **Stop:** `turn/interrupt`, then `thread/backgroundTerminals/clean`, because an interrupted turn leaves its commands running by design; then Rufi waits until `thread/backgroundTerminals/list` is empty, because the reply to clean only means it was queued. The list, not the process table: Codex keeps helpers such as `codex-code-mode-host` in their own process groups, and the list has no process ids in this version. If any step fails or takes too long, Rufi ends app-server and every process group under it. The turn returns only after Stop has finished.
 - **Crash:** Rufi notes the process groups under app-server while a turn runs, and ends them if app-server exits on its own.
 - **Token renewal:** a new access token means a new app-server and `thread/resume`, as OpenAI documents.

@@ -37,6 +37,7 @@ import type { McpKeys } from "./mcp.ts";
 import type { ReadProgress, Reader } from "./reader.ts";
 import type {
   ChatOpening,
+  OpeningAgent,
   RufiAi,
   RufiAiEvent,
   RufiAiHost,
@@ -58,9 +59,13 @@ export interface ChatDeps {
   mcp: { url: () => string; keys: McpKeys };
   /**
    * What the AI is told in every thread, for the emergency region chosen,
-   * and its version: a thread told another version is told again.
+   * and its version: a thread told another version is told again. A
+   * sub-agent's names it and the agent that started it.
    */
-  rules: (region: string | undefined) => {
+  rules: (
+    region: string | undefined,
+    agent?: { title: string; parent: { title: string } },
+  ) => {
     instructions: string;
     version: string;
   };
@@ -728,17 +733,19 @@ export function chat(deps: ChatDeps) {
     chat.threadId !== null && chat.threadProvider === agent.provider;
 
   /**
-   * What the chat's conversation with Rufi AI opens with now: the current
-   * rules, its tools with the agent's key, and for a new one the chat's
-   * last messages, read once the old conversation's events are saved.
+   * What a conversation of one of the chat's agents opens with now: the
+   * current rules, its tools with the agent's key, and for a new one the
+   * chat's last messages, read once the old conversation's events are
+   * saved (Rufi AI's only: a sub-agent has its task).
    */
   async function openingOf(
     chat: ChatRow,
-    own: { id: string; tools: readonly string[] },
+    own: OpeningAgent,
   ): Promise<ChatOpening> {
-    const { instructions, version } = deps.rules(
-      await transcripts.setting("emergency_region"),
-    );
+    const region = await transcripts.setting("emergency_region");
+    const { instructions, version } = own.parent
+      ? deps.rules(region, { title: own.title, parent: own.parent })
+      : deps.rules(region);
     return {
       instructions,
       version,

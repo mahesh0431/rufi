@@ -307,6 +307,22 @@ export function chatQueue(
           .execute()
       ).map((row) => row.id),
 
+    /** The words of these rows of the chat, by id, as they are now. */
+    words: async (
+      chat: ChatOf,
+      ids: readonly string[],
+    ): Promise<ReadonlyMap<string, string>> =>
+      ids.length === 0
+        ? new Map()
+        : new Map(
+            (
+              await rows(db, chat)
+                .select(["id", "text"])
+                .where("id", "in", ids)
+                .execute()
+            ).map((row) => [row.id, row.text]),
+          ),
+
     /**
      * Takes a message from the box: a new waiting row by the send's id, with
      * its references checked against the person, its unsent documents sent

@@ -2270,6 +2270,103 @@
           "face": "question"
         }
       ]
+    },
+    {
+      "name": "rufi.start_agent",
+      "description": "Starts an agent of your own for a task that can run on its own: it runs at once, on your model and effort, and goes on after your turn ends. Give it a title and its whole task, its first message. It has your tools unless you give it fewer (tools); one you don't have is refused. Its saves and briefs show in the chat with Rufi's receipt. Answers its id; agent_status says how it is, and read_agent reads its conversation.",
+      "callers": "model",
+      "readOnly": false,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "What the agent is for, in a few words, as the user would see it: \"Reading report.pdf\".",
+            "minLength": 1
+          },
+          "task": {
+            "type": "string",
+            "description": "Its whole task, its first message: it sees nothing of your conversation but this.",
+            "minLength": 1
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Rufi's tools it may use, by name, among your own. Leave it out for all of yours."
+          }
+        },
+        "required": [
+          "title",
+          "task"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "title": "Checking the thyroid results",
+          "task": "Read the user's thyroid results with get_records and say which are outside the lab's range.",
+          "tools": [
+            "get_overview",
+            "get_records"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "rufi.agent_status",
+      "description": "How the agents below you are: the ones you started and theirs, each with its title, the agent that started it (self: you), its status (idle before its first turn, running, done, stopped or failed) and its latest result. An id that isn't below you is not found. It doesn't wait.",
+      "callers": "model",
+      "readOnly": true,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The agents, by id. Leave it out for every agent below you."
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        {}
+      ]
+    },
+    {
+      "name": "rufi.read_agent",
+      "description": "Reads an agent's conversation, yours (\"self\") or one below you: its turns, the latest page first, each with what it was sent and by whom, its steps, the questions it asked (with their options) and its result. Give before: the page's earlier for the page before it; earlier is null on the first page. An agent that isn't you or below you is not found.",
+      "callers": "model",
+      "readOnly": true,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "description": "An agent below you, by id, or \"self\".",
+            "minLength": 1
+          },
+          "before": {
+            "type": "string",
+            "description": "The `earlier` of the page you read, for the turns before it."
+          }
+        },
+        "required": [
+          "agent"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "agent": "self"
+        }
+      ]
     }
   ]
 }
