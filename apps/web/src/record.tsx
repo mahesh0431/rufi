@@ -27,6 +27,7 @@ import type { BoxChip } from "./draft.ts";
 import { askRufi } from "./panel.ts";
 import { useRecordDetail, useRecordPages, useSeries } from "./reads.ts";
 import { Trend } from "./trend.tsx";
+import { resultsIn } from "./trend-drawing.ts";
 import { Button, buttonLook, EmptyState, ICON, Problem } from "./ui.tsx";
 
 /** The pages, in the sidebar's order, by their title: results have two. */
@@ -736,7 +737,7 @@ function SeriesTable({
       <h3 className="mt-3 mb-1 text-xs font-semibold text-muted">
         {title} over time
       </h3>
-      <Trend title={title} values={series.data.values} />
+      <Trend title={title} values={resultsIn(series.data.values)} />
       <table className="w-full border-collapse">
         <thead>
           <tr className="text-left text-xs text-muted">

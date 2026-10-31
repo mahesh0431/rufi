@@ -1,12 +1,46 @@
 // A result's values over time as a calm line: an ink line, a ring on a value
 // the lab flagged, the newest value filled, and the lab's range as printed.
 // No red, amber or green: the lab's flag and note say what it means, in
-// words. Large in an open row, small after a row's value.
-import type { ShownRow } from "@rufi/contracts/record";
-import { drawTrend } from "./trend-drawing.ts";
+// words. Large in an open row or a reply, small after a row's value. A large
+// trend is drawn at the width it has (up to 640 px), not scaled down, so its
+// labels keep their size in a narrow chat.
+import { useCallback, useState } from "react";
+import {
+  drawTrend,
+  type TrendDrawing,
+  type TrendValue,
+} from "./trend-drawing.ts";
 
 const LARGE = { width: 640, height: 150 };
 const MINI = { width: 88, height: 22, mini: true };
+/** Narrower than this, a large trend is scaled down rather than crowded. */
+const NARROWEST = 240;
+
+/**
+ * The width a large trend has to draw in, up to its own, followed from when
+ * its box appears (a trend in a reply being written may appear late).
+ */
+function useRoom() {
+  const [width, setWidth] = useState(LARGE.width);
+  const box = useCallback((element: HTMLDivElement | null) => {
+    if (!element) return;
+    const fit = () => {
+      setWidth(
+        Math.max(
+          NARROWEST,
+          Math.min(LARGE.width, Math.floor(element.clientWidth)),
+        ),
+      );
+    };
+    fit();
+    const resizes = new ResizeObserver(fit);
+    resizes.observe(element);
+    return () => {
+      resizes.disconnect();
+    };
+  }, []);
+  return [box, width] as const;
+}
 
 export function Trend({
   title,
@@ -15,11 +49,23 @@ export function Trend({
 }: {
   /** What the values are, as the chart's spoken label starts. */
   title: string;
-  values: readonly ShownRow[];
+  values: readonly TrendValue[];
   mini?: boolean;
 }) {
-  const drawing = drawTrend(title, values, mini ? MINI : LARGE);
+  const [box, width] = useRoom();
+  const drawing = drawTrend(title, values, mini ? MINI : { ...LARGE, width });
   if (drawing === undefined) return null;
+  const svg = <Drawing drawing={drawing} mini={mini} />;
+  return mini ? (
+    svg
+  ) : (
+    <div ref={box} className="my-2">
+      {svg}
+    </div>
+  );
+}
+
+function Drawing({ drawing, mini }: { drawing: TrendDrawing; mini: boolean }) {
   const { width, height } = drawing;
   return (
     <svg
@@ -28,7 +74,7 @@ export function Trend({
       width={width}
       height={height}
       viewBox={`0 0 ${String(width)} ${String(height)}`}
-      className={`block h-auto max-w-full overflow-visible ${mini ? "" : "my-2"}`}
+      className="block h-auto max-w-full overflow-visible"
     >
       {drawing.range !== undefined && (
         <Label x={drawing.right} y={11} anchor="end">
