@@ -12,6 +12,6 @@
     "./devices": "./src/devices.ts"
   },
   "dependencies": {
-    "effect": "4.0.5"
+    "effect": "4.0.7"
   }
 }
