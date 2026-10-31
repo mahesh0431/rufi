@@ -4,7 +4,7 @@
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { providerContract } from "@rufi/agents/contract";
+import { providerContract, type Script } from "@rufi/agents/contract";
 import type { ProviderEvent } from "@rufi/agents/provider";
 import { describe, expect, it, vi } from "vitest";
 import { fakeClaude } from "../../../tests/fake-claude.ts";
@@ -47,6 +47,7 @@ providerContract("Claude", {
 async function onFake(
   query: ReturnType<typeof fakeClaude>["query"],
   sessions: ReturnType<typeof fakeClaude>["sessions"],
+  more: { idleMs?: number } = {},
 ) {
   const folder = await mkdtemp(join(tmpdir(), "rufi-claude-adapter-"));
   const adapter = claudeAdapter({
@@ -57,6 +58,7 @@ async function onFake(
     plugin: { path: folder, skills: [] },
     query,
     sessions,
+    ...more,
   });
   const events: ProviderEvent[] = [];
   const conversation = await adapter.open({
@@ -107,32 +109,85 @@ describe("Claude's models", () => {
   });
 });
 
-describe("Claude's process for a conversation", () => {
-  it("closes when a turn ends, and the next turn carries the conversation on in a new one", async () => {
-    const fake = fakeClaude({});
-    const opens: { sessionId?: string; resume?: string }[] = [];
-    const query = ((args: Parameters<typeof fake.query>[0]) => {
-      opens.push({ ...args.options });
-      return fake.query(args);
-    }) as typeof fake.query;
-    const { adapter, conversation, start, ends } = await onFake(
-      query,
-      fake.sessions,
-    );
-    for (const id of ["message-1", "message-2"]) {
-      expect(await start(id)).toEqual({ status: "delivered" });
-      await vi.waitFor(() => {
-        expect(ends()).toHaveLength(id === "message-1" ? 1 : 2);
-      });
-    }
-    await adapter.close();
+/** The adapter on a scripted Claude, counting the processes it opens. */
+const counted = async (script: Script, idleMs?: number) => {
+  const fake = fakeClaude(script);
+  const opens: { sessionId?: string; resume?: string }[] = [];
+  let closed = 0;
+  const query = ((args: Parameters<typeof fake.query>[0]) => {
+    opens.push({ ...args.options });
+    const run = fake.query(args);
+    const close = run.close.bind(run);
+    run.close = () => {
+      closed += 1;
+      close();
+    };
+    return run;
+  }) as typeof fake.query;
+  const on = await onFake(query, fake.sessions, {
+    ...(idleMs !== undefined && { idleMs }),
+  });
+  /** Its turn, once it has ended. */
+  const run = async (id: string, count: number) => {
+    expect(await on.start(id)).toEqual({ status: "delivered" });
+    await vi.waitFor(() => {
+      expect(on.ends()).toHaveLength(count);
+    });
+  };
+  /** Once Rufi has closed `count` of its processes. */
+  const closes = (count: number) =>
+    vi.waitFor(() => {
+      expect(closed).toBe(count);
+    });
+  return { ...on, opens, sessions: fake.sessions, run, closes };
+};
 
+describe("Claude's process for a conversation", () => {
+  it("stays open between turns, and closes once it has rested, on Stop, and when Claude is signed out", async () => {
+    // Two turns in a row: one process.
+    const kept = await counted({});
+    await kept.run("message-1", 1);
+    await kept.run("message-2", 2);
     expect(
-      opens.map(({ sessionId, resume }) => ({ sessionId, resume })),
-    ).toEqual([
-      { sessionId: conversation.ref, resume: undefined },
-      { sessionId: undefined, resume: conversation.ref },
+      kept.opens.map(({ sessionId, resume }) => ({ sessionId, resume })),
+    ).toEqual([{ sessionId: kept.conversation.ref, resume: undefined }]);
+    await kept.adapter.close();
+
+    // Rested: the next turn carries the conversation on in a new one.
+    const rested = await counted({}, 50);
+    await rested.run("message-1", 1);
+    await rested.closes(1);
+    await rested.run("message-2", 2);
+    expect(rested.opens.map(({ resume }) => resume)).toEqual([
+      undefined,
+      rested.conversation.ref,
     ]);
+    await rested.adapter.close();
+
+    // Stopped.
+    const stopped = await counted({ turn: "runs" });
+    expect(await stopped.start("message-1")).toEqual({ status: "delivered" });
+    const started = () =>
+      stopped.events.flatMap((event) =>
+        event.type === "turnStarted" ? [event.turn] : [],
+      );
+    await vi.waitFor(() => {
+      expect(started()).toHaveLength(1);
+    });
+    await stopped.conversation.stop(started()[0] ?? "");
+    expect(await stopped.start("message-2")).toEqual({ status: "delivered" });
+    expect(stopped.opens).toHaveLength(2);
+    await stopped.adapter.close();
+
+    // Signed out in a turn.
+    const out = await counted({ turn: "renewal_fails" });
+    await out.run("message-1", 1);
+    expect(out.ends()).toEqual([
+      expect.objectContaining({ status: "failed", reason: "signed_out" }),
+    ]);
+    await out.run("message-2", 2);
+    expect(out.opens).toHaveLength(2);
+    await out.adapter.close();
   });
 });
 
@@ -194,17 +249,12 @@ describe("a message sent again", () => {
 describe("a conversation Claude no longer keeps", () => {
   // Claude deletes a conversation's transcript after a while unused, as it
   // does its own: the next turn has to go in a new one.
-  it("is missing at the next start, which starts nothing", async () => {
-    const fake = fakeClaude({});
-    const { adapter, conversation, start, ends, events } = await onFake(
-      fake.query,
-      fake.sessions,
-    );
-    expect(await start("message-1")).toEqual({ status: "delivered" });
-    await vi.waitFor(() => {
-      expect(ends()).toHaveLength(1);
-    });
-    await fake.sessions.delete(conversation.ref);
+  it("is missing at the next start, once its process has closed, which starts nothing", async () => {
+    const { adapter, conversation, start, events, run, closes, sessions } =
+      await counted({}, 20);
+    await run("message-1", 1);
+    await closes(1);
+    await sessions.delete(conversation.ref);
 
     expect(await start("message-2")).toEqual({
       status: "not_delivered",
@@ -286,7 +336,7 @@ describe("what Claude does in a turn", () => {
       { type: "turnStarted", inputs: ["message-1"] },
       {
         type: "reasoning",
-        item: "084ec2c6-2d45-4e22-9fa4-f15c06940c50",
+        item: "msg_011CgXDXkGwsVWtFB1JXMT9W:thinking:0",
         summary: "",
         payload: expect.objectContaining({ type: "thinking" }) as unknown,
       },

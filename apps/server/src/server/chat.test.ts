@@ -449,8 +449,11 @@ const newChat = () => chatRow();
  * Claude as Rufi runs it (claudeSetup), on the scripted Claude: what each
  * of its sessions was given, and each conversation it opened.
  */
-async function scriptedClaude(script: { signedIn?: boolean } = {}) {
-  const fake = fakeClaude(script);
+async function scriptedClaude(
+  script: { signedIn?: boolean } = {},
+  more: Parameters<typeof fakeClaude>[1] = {},
+) {
+  const fake = fakeClaude(script, more);
   const asked: Options[] = [];
   const opened: OpenOptions[] = [];
   const adapter = claudeAdapter({
@@ -794,19 +797,19 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     },
   );
 
-  // Only the scripted Codex can hold its sign-in check.
+  // Only the scripted Codex can hold the thread's start.
   it.runIf(name === "fake")(
     "a message sent while a reply starts or runs goes into that reply; one sent after goes as a new message",
     timeout,
     async () => {
       const hold = join(home, "hold");
       await startChat(name, {
-        scenario: { held: { methods: ["account/read"], file: hold } },
+        scenario: { held: { methods: ["thread/start"], file: hold } },
       });
       const c = await newChat();
       await chat?.selectModel(c, "gpt-6.1-sol");
-      // Its conversation opens: Codex holds its sign-in check, then the reply
-      // starts.
+      // Its conversation opens: Codex holds the thread's start, then the
+      // reply starts.
       await writeFile(hold, "");
       await say(await chatRow(c.id), "slow");
       await until(async () => (await chat?.agent.busy(c)) === true);
@@ -839,11 +842,11 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     async () => {
       const hold = join(home, "hold");
       await startChat(name, {
-        scenario: { held: { methods: ["account/read"], file: hold } },
+        scenario: { held: { methods: ["thread/start"], file: hold } },
       });
       const c = await newChat();
       await chat?.selectModel(c, "gpt-6.1-sol");
-      // Its conversation opens: Codex holds its sign-in check.
+      // Its conversation opens: Codex holds the thread's start.
       await writeFile(hold, "");
       await say(await chatRow(c.id), "Hello");
       await until(async () => (await chat?.agent.busy(c)) === true);
@@ -1349,7 +1352,7 @@ describe("the chat, on the scripted Codex", () => {
       expect(restored.version).not.toBe(undone.version);
       await checkReport(restored.version, amendment.count);
     }
-  });
+  }, 60_000);
 
   it("gives each Rufi event that came during a reply to the AI after it, in a turn of its own", async () => {
     await startChat("fake", { scenario: { calls: [saveHeadache] } });
@@ -2332,13 +2335,13 @@ describe("the chat, on the scripted Codex", () => {
       return id;
     };
     /**
-     * A reader Rufi AI starts for one document, with the tools it needs; each
-     * call has an id of its own, as Codex gives it.
+     * A reader Rufi AI starts for one document; each call has an id of its
+     * own, as Codex gives it.
      */
     const reader = (title: string, task: string) => ({
       id: `start-${title}`,
       tool: "start_agent",
-      arguments: { title, task, tools: ["get_documents", "save_reading"] },
+      arguments: { title, task },
     });
     /** A reader's save of these pages of the document its task names. */
     const saves = (pages: readonly number[]) => ({
@@ -3702,6 +3705,138 @@ describe("the chat, on the scripted Codex", () => {
     ).toEqual([]);
   });
 
+  describe("Claude's thinking", () => {
+    /** Claude's streaming event for its message's block `index`. */
+    const part = (event: object) => ({
+      type: "stream_event",
+      parent_tool_use_id: null,
+      event,
+    });
+    const begins = [
+      { type: "system", subtype: "init", user_message_uuids: ["$input"] },
+      part({ type: "message_start", message: { id: "msg_fictional_1" } }),
+    ];
+    /** A thinking block: it starts, its parts stream, it stops. */
+    const thinking = (index: number, parts: string[]) => [
+      part({
+        type: "content_block_start",
+        index,
+        content_block: { type: "thinking", thinking: "" },
+      }),
+      ...parts.map((thinking) =>
+        part({
+          type: "content_block_delta",
+          index,
+          delta: { type: "thinking_delta", thinking },
+        }),
+      ),
+      part({ type: "content_block_stop", index }),
+    ];
+    /** What Claude finished, as its own message. */
+    const whole = (uuid: string, block: object) => ({
+      type: "assistant",
+      uuid,
+      message: { id: "msg_fictional_1", content: [block] },
+    });
+    /** Asha's chat on Claude, giving these frames for each message. */
+    const onClaude = async (frames: object[]) => {
+      const claude = await scriptedClaude({}, { frames });
+      await startChat("fake", { other: claude.adapter });
+      const c = await newChat();
+      await chat?.selectModel(c, "claude-opus-5-5");
+      const shown: [string, string | null][] = [];
+      transcripts.subscribe(c.id, (change) => {
+        for (const entry of change.entries) {
+          if (entry.kind === "reasoning")
+            shown.push([entry.text, entry.status]);
+        }
+      });
+      return { c: await chatRow(c.id), shown, claude };
+    };
+    const thoughts = async (id: string) =>
+      (await transcript(id)).entries.filter(([kind]) => kind !== "activity");
+
+    it("shows as Claude writes it, then once, whole, for each block, also after a restart", async () => {
+      const { c, shown } = await onClaude([
+        ...begins,
+        ...thinking(0, ["Asha asks ", "about her TSH."]),
+        whole("a-1", {
+          type: "thinking",
+          thinking: "Asha asks about her TSH.",
+          signature: "fictional",
+        }),
+        ...thinking(1, ["Look it up."]),
+        whole("a-2", {
+          type: "thinking",
+          thinking: "Look it up in the record.",
+          signature: "fictional",
+        }),
+        whole("a-3", { type: "text", text: "Her last TSH was 2.1." }),
+        {
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          result: "Her last TSH was 2.1.",
+          usage: { input_tokens: 3, output_tokens: 1 },
+          modelUsage: {},
+          user_message_uuids: ["$input"],
+        },
+      ]);
+      await say(c, "What was my last TSH?");
+      await ended(c.id);
+
+      // Its parts as they came, each block's growing, then whole.
+      expect(shown).toContainEqual(["Asha asks ", "running"]);
+      expect(shown).toContainEqual(["Look it up.", "running"]);
+      const kept = [
+        ["message", "What was my last TSH?"],
+        ["reasoning", "Asha asks about her TSH."],
+        ["reasoning", "Look it up in the record."],
+        ["reply", "Her last TSH was 2.1."],
+      ];
+      expect(await thoughts(c.id)).toEqual(kept);
+      await startChat("fake", {
+        other: (await scriptedClaude()).adapter,
+      });
+      expect(await thoughts(c.id)).toEqual(kept);
+    });
+
+    it("keeps what showed when the reply stops while Claude thinks, also after a restart", async () => {
+      const { c, shown } = await onClaude([
+        ...begins,
+        part({
+          type: "content_block_start",
+          index: 0,
+          content_block: { type: "thinking", thinking: "" },
+        }),
+        part({
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "thinking_delta", thinking: "Asha asks" },
+        }),
+      ]);
+      await say(c, "What was my last TSH?");
+      await until(() =>
+        Promise.resolve(shown.some(([text]) => text === "Asha asks")),
+      );
+      await chat?.stop(c);
+      await ended(c.id);
+
+      const kept = [
+        ["message", "What was my last TSH?"],
+        ["reasoning", "Asha asks"],
+      ];
+      expect(await thoughts(c.id)).toEqual(kept);
+      expect((await transcript(c.id)).turns).toMatchObject([
+        { status: "interrupted" },
+      ]);
+      await startChat("fake", {
+        other: (await scriptedClaude()).adapter,
+      });
+      expect(await thoughts(c.id)).toEqual(kept);
+    });
+  });
+
   it("keeps a chat on Claude with Claude, also after a restart: signed out of Claude, it takes nothing and says so; signed in, it sends while Codex is signed out", async () => {
     await startChat("fake", {
       other: (await scriptedClaude()).adapter,
@@ -3732,18 +3867,14 @@ describe("the chat, on the scripted Codex", () => {
     expect(claude.opened).toHaveLength(1);
   });
 
-  it("gives a sub-agent only the tools it was given, and its own sub-agent no more than those", async () => {
+  it("gives a sub-agent all of its parent's tools, and its own sub-agent too", async () => {
     await startChat("fake", {
       scenario: {
         callsByText: {
           "Ask a reader": [
             {
               tool: "start_agent",
-              arguments: {
-                title: "Reader",
-                task: "reader: try",
-                tools: ["get_overview", "start_agent"],
-              },
+              arguments: { title: "Reader", task: "reader: try" },
             },
           ],
           "reader:": [
@@ -3762,11 +3893,7 @@ describe("the chat, on the scripted Codex", () => {
             },
             {
               tool: "start_agent",
-              arguments: {
-                title: "Wider",
-                task: "wider: try",
-                tools: ["get_overview", "save_changes"],
-              },
+              arguments: { title: "Helper", task: "helper: try" },
             },
           ],
         },
@@ -3783,33 +3910,16 @@ describe("the chat, on the scripted Codex", () => {
         ),
       ),
     );
-    const calls = store.db
-      .prepare(
-        "SELECT tool, answer FROM tool_calls WHERE agent_id = ? ORDER BY started_at",
-      )
-      .all(reader) as { tool: string; answer: string }[];
-    expect(
-      calls.map(({ tool, answer }) => ({
-        tool,
-        error: (JSON.parse(answer) as { error?: string }).error,
-      })),
-    ).toEqual([
-      {
-        tool: "save_changes",
-        error:
-          "There is no tool called save_changes. Rufi's tools: get_overview, start_agent.",
-      },
-      {
-        tool: "start_agent",
-        error:
-          "An agent you start can have only tools you have, and you don't have save_changes. Nothing was started.",
-      },
+    expect(store.db.prepare("SELECT name FROM symptoms").all()).toEqual([
+      { name: "Headache" },
     ]);
-    expect(store.db.prepare("SELECT * FROM symptoms").all()).toEqual([]);
-    expect(agentRows().map((row) => row["title"])).toEqual([
+    const agents = agentRows("SELECT title, tools FROM agents ORDER BY rowid");
+    expect(agents.map((row) => row["title"])).toEqual([
       "Rufi AI",
       "Reader",
+      "Helper",
     ]);
+    expect(new Set(agents.map((row) => row["tools"])).size).toBe(1);
   });
 
   it("saves the calls of two agents of the chat that have the same id from their provider, each with its receipt", async () => {

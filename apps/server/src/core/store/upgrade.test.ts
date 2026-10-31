@@ -21,7 +21,8 @@ import { holdRufiLock } from "../../platform/files.ts";
 import { readBrief } from "../briefs/briefs.ts";
 import { transcripts, type ChatRow } from "../chat/transcript.ts";
 import { claimNotices } from "../record/notices.ts";
-import { recentSaves } from "../record/read.ts";
+import { profileOf, recentSaves } from "../record/read.ts";
+import { saveChanges, type SaveRequest } from "../record/save.ts";
 import { rufiCaller } from "../tools/tools.ts";
 import { backupsPath, makeBackup, upgradeBackupsPath } from "./backup.ts";
 import {
@@ -1400,4 +1401,104 @@ it("upgrades a record of version 25 so each reply keeps its effort: every reply 
   const store = await openRecord(home);
   store.close();
   expect(turns()).toEqual(before.map((row) => ({ ...row, effort: null })));
+});
+
+/** The saves, sources and profiles in a record, as stored. */
+function savesIn(path: string) {
+  const db = new DatabaseSync(path, { readOnly: true });
+  try {
+    const all = (sql: string) =>
+      db
+        .prepare(sql)
+        .all()
+        .map((row) => ({ ...row }));
+    return {
+      operations: all("SELECT * FROM operations ORDER BY seq"),
+      changes: all("SELECT * FROM record_changes ORDER BY operation_id, seq"),
+      sources: all("SELECT rowid, * FROM record_sources ORDER BY rowid"),
+      profiles: all("SELECT * FROM profiles ORDER BY id"),
+    };
+  } finally {
+    db.close();
+  }
+}
+
+it("upgrades a record of version 26 to profiles: everyone's is empty, every save and source stays as it was, and a profile's saves come back exact from a backup", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 26));
+  const db = new DatabaseSync(path, { readOnly: true });
+  const before = {
+    operations: db
+      .prepare("SELECT * FROM operations ORDER BY seq")
+      .all()
+      .map((row) => ({ ...row })),
+    sources: db
+      .prepare("SELECT rowid, * FROM record_sources ORDER BY rowid")
+      .all()
+      .map((row) => ({ ...row })),
+  };
+  db.close();
+
+  const store = await openRecord(home);
+  try {
+    const upgraded = savesIn(path);
+    expect(upgraded.operations).toEqual(
+      before.operations.map((row) => ({
+        ...row,
+        origin: "chat",
+        receipt: null,
+      })),
+    );
+    expect(upgraded.sources).toEqual(before.sources);
+    expect(await profileOf(store.query, "asha", "2026-10-31")).toEqual({
+      id: "asha",
+      name: "Asha Fictional",
+      not_set: ["birth_date", "sex_for_ranges", "blood_group", "height"],
+    });
+
+    // Asha enters her profile in Settings, then corrects it on its page.
+    const enter = (
+      callId: string,
+      form: "settings" | "profile",
+      fields: object,
+    ) =>
+      store.query.transaction().execute((trx) =>
+        saveChanges(
+          trx,
+          { personId: "asha", form, callId, now: "2026-10-31T10:00:00.000Z" },
+          {
+            changes: [
+              { kind: "profile", action: "change", id: "asha", fields },
+            ],
+          } as SaveRequest,
+        ),
+      );
+    await enter("sending-1", "settings", {
+      birth_date: { date: "1990-03", words: "March 1990" },
+      sex_for_ranges: "female",
+      height: { value: 162, unit: "cm" },
+    });
+    await enter("sending-2", "profile", {
+      birth_date: { date: "1991", words: "1991" },
+    });
+  } finally {
+    store.close();
+  }
+  const made = await makeBackup(home, new Date("2026-10-31T11:00:00Z"));
+  const target = join(root, "restored");
+  await restore(join(backupsPath(home), made.name), target);
+
+  const kept = savesIn(path);
+  expect(kept.profiles).toContainEqual({
+    id: "asha",
+    person_id: "asha",
+    birth_date: "1991",
+    birth_date_words: "1991",
+    sex_for_ranges: "female",
+    blood_group: null,
+    height: 162,
+    height_unit: "cm",
+    removed: 0,
+  });
+  expect(savesIn(databasePath(target))).toEqual(kept);
 });

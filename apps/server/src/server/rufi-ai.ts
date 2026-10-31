@@ -291,6 +291,8 @@ export async function startRufiAi(
     transcripts: Transcripts;
     /** Tells the person's documents screens that a sub-agent changed. */
     documents?: (personId: string) => void;
+    /** A provider said it is signed out, as an agent's turn or hand-over went. */
+    signedOut?: () => void;
   },
 ): Promise<
   AgentSystem & {
@@ -450,6 +452,13 @@ export async function startRufiAi(
   const apply: Apply = async (event, advance) => {
     // Whatever a sub-agent's change, its chat's screens read it again.
     if (event.agent !== null) screens.logs?.changed(event.agent);
+    const said = event.payload as { held?: Hold; reason?: string };
+    if (
+      (event.type === "input.held" && said.held === "signed_out") ||
+      (event.type === "turn.ended" && said.reason === "signed_out")
+    ) {
+      options.signedOut?.();
+    }
     if (event.agent === null || !APPLIED.has(event.type)) return false;
     const row = await chatOf(event.agent);
     if (!row) return false;

@@ -38,6 +38,8 @@ import type { FolderSource } from "../core/store/data-folder.ts";
 import { openRecord } from "../core/store/install.ts";
 import { claimNotices } from "../core/record/notices.ts";
 import { recordViews, waiting } from "../core/record/views.ts";
+import { changeProfile, readProfile } from "../core/record/profile.ts";
+import { localTime } from "../core/record/dates.ts";
 import { pages } from "../core/documents/pages.ts";
 import { rufiCaller, forAgent } from "../core/tools/tools.ts";
 import {
@@ -67,7 +69,7 @@ import { startRufiAi } from "./rufi-ai.ts";
 import { converter as openConverter } from "./converter.ts";
 import { secret, sessions } from "./session.ts";
 import { agentRuns, subAgents } from "./sub-agents.ts";
-import { signInFlow, type ProviderSignIn } from "./signin.ts";
+import { keptSignIns, signInFlow, type ProviderSignIn } from "./signin.ts";
 
 export interface CoreOptions {
   /** Rufi's data folder. */
@@ -282,6 +284,14 @@ export const startCore = (options: CoreOptions) =>
         }),
     );
     opened.agents = agentStore;
+    const signIns = options.signIns ?? {};
+    const isProvider = (id: string): id is Provider =>
+      id === "codex" || id === "claude";
+    // How each provider is signed in, as it last said (server/signin.ts).
+    const signedIn = yield* Effect.acquireRelease(
+      Effect.sync(() => keptSignIns(signIns)),
+      (kept) => Effect.sync(kept.close),
+    );
     const agentSystem = yield* Effect.acquireRelease(
       attempt(() =>
         startRufiAi({
@@ -298,6 +308,10 @@ export const startCore = (options: CoreOptions) =>
           documents: (personId) => {
             readings.changed(personId);
           },
+          signedOut: () => {
+            void signedIn.refresh("codex");
+            void signedIn.refresh("claude");
+          },
           log,
           ...(options.now && { now: options.now }),
         }),
@@ -313,16 +327,12 @@ export const startCore = (options: CoreOptions) =>
     // Rufi's MCP server, with a key for each agent (server/mcp.ts).
     const chatKeys = mcpKeys();
     const mcpUrl = (path: string) => `http://127.0.0.1:${String(port)}${path}`;
-    const signIns = options.signIns ?? {};
     const signedOut: ProviderStatus = {
       state: "signed_out",
       account: null,
       text: null,
     };
-    const statusOf = (provider: Provider) =>
-      signIns[provider]?.status() ?? Promise.resolve(signedOut);
-    const isProvider = (id: string): id is Provider =>
-      id === "codex" || id === "claude";
+    const statusOf = (provider: Provider) => signedIn.status(provider);
     const account = async (): Promise<Status> => {
       const [codex, claude] = await Promise.all([
         statusOf("codex"),
@@ -431,6 +441,25 @@ export const startCore = (options: CoreOptions) =>
         };
       },
       record,
+      profile: {
+        read: (personId) =>
+          readProfile(
+            (reader ?? writer).query,
+            personId,
+            localTime(clock().toISOString()).slice(0, 10),
+          ),
+        save: async (personId, form, sending, changes) => {
+          await writer.query
+            .transaction()
+            .execute((trx) =>
+              changeProfile(
+                trx,
+                { personId, form, sending, now: clock().toISOString() },
+                changes,
+              ),
+            );
+        },
+      },
       brief: async (personId, briefId) =>
         reader && (await readBrief(reader.query, personId, briefId)),
       account,
@@ -467,7 +496,7 @@ export const startCore = (options: CoreOptions) =>
         folder: aiSandbox(home).folder,
         generated: generatedImages(home),
       }),
-      signIn: signInFlow(signIns, log),
+      signIn: signInFlow(signIns, log, signedIn.refresh),
       launcher,
       launchUrl,
       ...(options.screens !== undefined && { screens: options.screens }),

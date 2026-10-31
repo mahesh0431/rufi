@@ -80,6 +80,15 @@ describe("get_overview", () => {
       ok: true,
       result: {
         person: "Asha Fictional",
+        // Her age today depends on the day the test runs.
+        profile: {
+          id: "asha",
+          name: "Asha Fictional",
+          birth_date: { date: "1990-03", words: "March 1990" },
+          age_today: expect.anything() as unknown,
+          sex_for_ranges: "female",
+          not_set: ["blood_group", "height"],
+        },
         documents: 2,
         reports: 2,
         results: 10,

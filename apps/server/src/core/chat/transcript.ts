@@ -24,6 +24,8 @@ import { v7 as uuid } from "uuid";
 import type { Made } from "../briefs/briefs.ts";
 import { literal } from "../record/kinds.ts";
 import type { Saved } from "../record/save.ts";
+import { changeProfile } from "../record/profile.ts";
+import type { AddPerson } from "@rufi/contracts";
 import { addRow } from "./queue.ts";
 import { chipsOf } from "./refs.ts";
 import { CLOSED_WHILE_READING } from "../documents/reading.ts";
@@ -929,12 +931,17 @@ export function transcripts(
         .execute(),
 
     /**
-     * Adds the first person, as first run does, and with them their chat, in
-     * one transaction; undefined when someone is already there. The person
-     * is added only when there is none, so two tabs never make two people or
-     * two chats.
+     * Adds the first person, as the welcome's "About you" does, and with
+     * them their chat and their profile, its values saved as the welcome's
+     * save, all in one transaction or none (SaveRefused, or the disk's
+     * error); undefined when someone is already there. The person is added
+     * only when there is none, so two tabs never make two people or two
+     * chats.
      */
-    addFirstPerson: (displayName: string) =>
+    addFirstPerson: (
+      displayName: string,
+      profile: (typeof AddPerson.Type)["profile"],
+    ) =>
       db.transaction().execute(async (trx) => {
         const id = uuid();
         const { numAffectedRows } = await sql`
@@ -942,6 +949,20 @@ export function transcripts(
           SELECT ${id}, ${displayName} WHERE NOT EXISTS (SELECT 1 FROM people)
         `.execute(trx);
         if (numAffectedRows !== 1n) return undefined;
+        await trx
+          .insertInto("profiles")
+          .values({
+            id,
+            person_id: id,
+            birth_date: null,
+            birth_date_words: null,
+            sex_for_ranges: null,
+            blood_group: null,
+            height: null,
+            height_unit: null,
+            removed: 0,
+          })
+          .execute();
         await trx
           .insertInto("chats")
           .values({
@@ -961,6 +982,11 @@ export function transcripts(
             created_at: now(),
           })
           .execute();
+        await changeProfile(
+          trx,
+          { personId: id, form: "welcome", sending: uuid(), now: now() },
+          profile,
+        );
         return { id, displayName };
       }),
 

@@ -20,6 +20,7 @@ import { FollowUpsPage } from "./follow-ups.tsx";
 import { Frame } from "./frame.tsx";
 import { HelpPage } from "./help-page.tsx";
 import { OverviewPage } from "./overview.tsx";
+import { ProfilePage } from "./profile.tsx";
 import { isPageKind, pageOf, RecordPage } from "./record.tsx";
 import { usePeople, useRecordDetail } from "./reads.ts";
 import { SettingsPage } from "./settings.tsx";
@@ -290,6 +291,27 @@ const conversation = createRoute({
   },
 });
 
+const profile = createRoute({
+  getParentRoute: () => root,
+  path: "/people/$personId/profile",
+  component: function Profile() {
+    const { personId } = profile.useParams();
+    const people = usePeople();
+    if (people.data === undefined) {
+      return people.error ? (
+        <div className="px-6 py-8">
+          <Problem error={people.error} retry={() => void people.refetch()} />
+        </div>
+      ) : null;
+    }
+    const person = people.data.find((p) => p.id === personId);
+    if (!person) {
+      return <div className="px-6 py-8 text-muted">There is no page here.</div>;
+    }
+    return <ProfilePage key={personId} person={person} />;
+  },
+});
+
 const settings = createRoute({
   getParentRoute: () => root,
   path: "/settings",
@@ -346,6 +368,7 @@ export const router = createRouter({
     visit,
     followUps,
     brief,
+    profile,
     conversation,
     settings,
     signIn,

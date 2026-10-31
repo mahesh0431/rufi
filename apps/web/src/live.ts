@@ -112,6 +112,8 @@ function open(personId: string): Opened {
     for (const key of ["record", "series", "follow-ups", "brief"]) {
       void queries.invalidateQueries({ queryKey: [key, personId] });
     }
+    // A profile change can change the name, which the sidebar shows.
+    void queries.invalidateQueries({ queryKey: ["people"] });
   };
 
   // Each change starts a read; only the last one started is shown, so an

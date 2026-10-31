@@ -311,7 +311,7 @@ function summaryOf(receipt: string): string {
 }
 
 /** When a save was: "Today 01:45", "Yesterday 18:02", else "18:31 on 3 Sep 2026". */
-function savedAt(iso: string, now: Date): string {
+export function savedAt(iso: string, now: Date): string {
   const day = dayLine(iso, now);
   if (day !== "Today" && day !== "Yesterday") {
     return printedTime(iso).replace(/^at /, "");

@@ -21,6 +21,44 @@ CREATE TABLE people (
   display_name TEXT NOT NULL
 ) STRICT;
 
+-- A person's profile: the few facts about them their record is read with,
+-- such as which lab range fits. One per person, made with the person (its
+-- id is theirs), each value empty until given; never removed: a value is
+-- cleared instead. It changes only by a save, like any record: from the
+-- chat, the welcome, the profile page or Settings.
+CREATE TABLE profiles (
+  id TEXT PRIMARY KEY,
+  person_id TEXT NOT NULL REFERENCES people (id),
+  birth_date TEXT,             -- at the precision given: 'YYYY', 'YYYY-MM' or 'YYYY-MM-DD'
+  birth_date_words TEXT,
+  sex_for_ranges TEXT CHECK (sex_for_ranges IN ('female', 'male')), -- only for choosing lab ranges
+  blood_group TEXT CHECK (blood_group IN ('A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-')),
+  height REAL,                 -- as given, in height_unit
+  height_unit TEXT CHECK (height_unit IN ('cm', 'in')),
+  removed INTEGER NOT NULL DEFAULT 0, -- always 0: the record's reads expect it
+  UNIQUE (person_id, id),
+  CHECK (id = person_id)
+) STRICT;
+
+-- The profile as the record reads and saves it (its kind's table): its
+-- values with the person's name, which stays in people. A save changes it
+-- here, and the trigger puts each value back where it lives.
+CREATE VIEW profile_rows AS
+  SELECT p.rowid AS rowid, p.id, p.person_id, people.display_name AS name,
+    p.birth_date, p.birth_date_words, p.sex_for_ranges, p.blood_group,
+    p.height, p.height_unit, p.removed
+  FROM profiles p JOIN people ON people.id = p.person_id;
+
+CREATE TRIGGER profile_rows_change INSTEAD OF UPDATE ON profile_rows
+BEGIN
+  UPDATE people SET display_name = NEW.name WHERE id = OLD.person_id;
+  UPDATE profiles SET
+    birth_date = NEW.birth_date, birth_date_words = NEW.birth_date_words,
+    sex_for_ranges = NEW.sex_for_ranges, blood_group = NEW.blood_group,
+    height = NEW.height, height_unit = NEW.height_unit, removed = NEW.removed
+  WHERE person_id = OLD.person_id AND id = OLD.id;
+END;
+
 -- Original bytes, exactly as they came, shared across people. The bytes are
 -- in files/<id> in the data folder, written and synced before any row points
 -- to them; a row is only added with a document page that uses it, and goes
@@ -520,21 +558,26 @@ CREATE TABLE chat_queue (
   CHECK ((held IS 'open_failed') = (hold_id IS NOT NULL))
 ) STRICT;
 
--- One save to the record, made by the AI's call to save_changes in a
--- chat. Its receipt is the transcript entry with the same id. seq is the
--- order of saves, across people: history is read in that order, never by
--- time (the Mac's clock can move back) or rowid (VACUUM may renumber it).
+-- One save to the record: made by the AI's call to save_changes in a chat,
+-- or by what the person entered in the welcome, on the profile page or in
+-- Settings (origin). A chat save's receipt is the transcript entry with the
+-- same id; a form's is kept here, and isn't in the chat. seq is the order
+-- of saves, across people: history is read in that order, never by time
+-- (the Mac's clock can move back) or rowid (VACUUM may renumber it).
 CREATE TABLE operations (
   id TEXT PRIMARY KEY,         -- UUIDv7
   seq INTEGER NOT NULL UNIQUE, -- 1, 2, 3...: set by the save in its transaction
   person_id TEXT NOT NULL,
-  chat_id TEXT NOT NULL,
-  call_id TEXT NOT NULL,       -- the agent's id for the call: the same call again is the same save
-  request TEXT NOT NULL,       -- the changes as the AI sent them (JSON)
+  origin TEXT NOT NULL DEFAULT 'chat' CHECK (origin IN ('chat', 'welcome', 'profile', 'settings')),
+  chat_id TEXT,                -- the chat it was made in; null for a form's
+  call_id TEXT NOT NULL,       -- the agent's id for the call, or the form's id for one sending: the same again is the same save
+  request TEXT NOT NULL,       -- the changes as sent (JSON)
+  receipt TEXT,                -- a form's receipt
   created_at TEXT NOT NULL,
   UNIQUE (person_id, id),
-  UNIQUE (chat_id, call_id),
-  FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id)
+  UNIQUE (person_id, call_id),
+  FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id),
+  CHECK ((origin = 'chat') = (chat_id IS NOT NULL))
 ) STRICT;
 
 -- Each record a save changed: the whole row before and after (JSON), so it
@@ -556,15 +599,16 @@ CREATE TABLE record_changes (
 ) STRICT;
 
 -- Where a record's values came from, several per record: the user's
--- message, a page of a document, or a Visit (the records saved from a
--- visit cite it; the Visit cites its paper's page). Each is added by a save, and a later
+-- message, a page of a document, a Visit (the records saved from a
+-- visit cite it; the Visit cites its paper's page), or what the person
+-- entered in a form (the save that added it says which). Each is added by a save, and a later
 -- save may take it off (removed_by); it is never deleted. Saying "save it"
 -- isn't a source: it only says yes.
 CREATE TABLE record_sources (
   person_id TEXT NOT NULL,
   kind TEXT NOT NULL,          -- the record's kind: 'result', 'symptom'...
   record_id TEXT NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('message', 'document_page', 'visit')),
+  type TEXT NOT NULL CHECK (type IN ('message', 'document_page', 'visit', 'form')),
   entry_id TEXT,               -- message: the user's message
   document_id TEXT,            -- document_page: the document and its page
   page INTEGER,
@@ -578,7 +622,8 @@ CREATE TABLE record_sources (
   FOREIGN KEY (person_id, removed_by) REFERENCES operations (person_id, id),
   CHECK ((type = 'message') = (entry_id IS NOT NULL)),
   CHECK ((type = 'document_page') = (document_id IS NOT NULL AND page IS NOT NULL)),
-  CHECK ((type = 'visit') = (visit_id IS NOT NULL))
+  CHECK ((type = 'visit') = (visit_id IS NOT NULL)),
+  CHECK (type != 'form' OR operation_id IS NOT NULL)
 ) STRICT;
 
 -- A visit brief the AI wrote from the saved record, in a chat. Its line in
@@ -746,4 +791,4 @@ CREATE TABLE agent_cursor (
 ) STRICT;
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 26;
+PRAGMA user_version = 27;
