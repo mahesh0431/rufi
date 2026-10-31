@@ -346,6 +346,9 @@ export function chat(deps: ChatDeps) {
           window: event.window,
         });
         return;
+      // The agent database keeps it.
+      case "turnUsage":
+        return;
       case "turnEnded":
         await transcripts.endTurn(chat, event.turnId, event.end);
         // Its steps as the agent database keeps them now it ended.

@@ -260,6 +260,16 @@ function eventOf(threadId: string, event: ProviderEvent): RufiAiEvent {
         tokens: event.tokens,
         window: event.window,
       };
+    case "turnUsage":
+      return {
+        threadId,
+        type: "turnUsage",
+        turnId,
+        input: event.input,
+        cached: event.cached,
+        output: event.output,
+        payload: event.payload,
+      };
     case "turnEnded":
       return { threadId, type: "turnEnded", turnId, end: endOf(event.end) };
   }

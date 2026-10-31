@@ -117,6 +117,20 @@ export type AgentEvent = { threadId: string } & (
    * (null when the agent doesn't know it). It may come outside a reply.
    */
   | { type: "usage"; turnId: string; tokens: number; window: number | null }
+  /**
+   * What the reply used, across all its requests, as the agent counted it,
+   * once it ends: the input tokens (all of them, and of those, how many came
+   * from the cache) and the tokens written. `payload` is the agent's own
+   * count, as it came.
+   */
+  | {
+      type: "turnUsage";
+      turnId: string;
+      input: number;
+      cached: number;
+      output: number;
+      payload: unknown;
+    }
 );
 
 /** A Stop that came while Rufi was getting ready to send. */

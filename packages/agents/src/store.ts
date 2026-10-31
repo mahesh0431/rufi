@@ -24,6 +24,7 @@ const MIGRATIONS: readonly string[] = [
   read("migrations/0001-agents.sql"),
   read("migrations/0002-questions.sql"),
   read("migrations/0003-agents-talk-back.sql"),
+  read("migrations/0004-turn-usage.sql"),
 ];
 
 /** An event as the log keeps it. */

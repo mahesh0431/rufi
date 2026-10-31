@@ -176,6 +176,16 @@ export function codexAdapter(
           window: event.window,
         });
         return;
+      case "turnUsage":
+        emit({
+          type: "turnUsage",
+          turn: event.turnId,
+          input: event.input,
+          cached: event.cached,
+          output: event.output,
+          payload: event.payload,
+        });
+        return;
       case "turnEnded":
         emit({
           type: "turnEnded",
