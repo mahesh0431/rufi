@@ -839,6 +839,65 @@ describe("Stop", () => {
     expect(received()).toEqual(["note-2"]);
     expect(rows("SELECT status FROM turns")).toEqual([{ status: "done" }]);
   });
+
+  it("before a sub-agent's first turn settles it as stopped: its task is held, and its parent hears it once", async () => {
+    const asked = Promise.withResolvers<undefined>();
+    const opened = Promise.withResolvers<undefined>();
+    agents = await run({
+      ...fake.adapter,
+      open: async (options) => {
+        asked.resolve(undefined);
+        await opened.promise;
+        return fake.adapter.open(options);
+      },
+    });
+    asha();
+    const reader: NewAgent = {
+      ...ASHA,
+      id: "agent-reader",
+      parent: ASHA.id,
+      title: "Reading report.pdf",
+      tools: ["get_records"],
+    };
+    agents.create(reader);
+    agents.admit(reader.id);
+    agents.send(reader.id, {
+      id: "task",
+      sender: ASHA.id,
+      kind: "queue",
+      parts: ["Read report.pdf."],
+    });
+    await asked.promise;
+    expect(agents.get(reader.id)?.status).toBe("idle");
+    const stopped = agents.stop(reader.id, "person");
+    opened.resolve(undefined);
+    await stopped;
+
+    await until(() => {
+      expect(agents.get(reader.id)?.status).toBe("stopped");
+    });
+    expect(
+      rows("SELECT id, state, held FROM queue WHERE agent_id = ?", reader.id),
+    ).toEqual([{ id: "task", state: "waiting", held: "stopped" }]);
+    await until(() => {
+      expect(agents.get(ASHA.id)?.status).toBe("done");
+    });
+    expect(
+      rows(
+        "SELECT sender, parts, about, said FROM queue WHERE agent_id = ?",
+        ASHA.id,
+      ),
+    ).toEqual([
+      {
+        sender: reader.id,
+        parts: JSON.stringify([
+          "Reading report.pdf (agent-reader) stopped (by person).",
+        ]),
+        about: "stopped",
+        said: "",
+      },
+    ]);
+  });
 });
 
 describe("forget", () => {

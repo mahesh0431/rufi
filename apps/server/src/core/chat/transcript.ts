@@ -608,8 +608,8 @@ export function transcripts(
 
   /**
    * Where a reply's steps go: after the last of what it started with (its
-   * messages, Rufi's events and Rufi's reading), else after the last entry
-   * before it started.
+   * messages, its agents' messages, Rufi's events and Rufi's reading), else
+   * after the last entry before it started.
    */
   async function anchorOf(trx: Db, turn: TurnRow): Promise<number> {
     const { opening } = await trx
@@ -617,7 +617,16 @@ export function transcripts(
       .select((eb) => eb.fn.max<number | null>("seq").as("opening"))
       .where("person_id", "=", turn.person_id)
       .where("turn_id", "=", turn.id)
-      .where("kind", "in", ["message", "event", "activity"])
+      .where((eb) =>
+        eb.or([
+          eb("kind", "in", ["message", "event", "activity"]),
+          // An agent's message it started with; not one steered in later.
+          eb.and([
+            eb("kind", "=", "agent"),
+            eb(sql`json_extract(details, '$.steered')`, "is", null),
+          ]),
+        ]),
+      )
       .executeTakeFirstOrThrow();
     if (opening !== null) return opening;
     const { before } = await trx
@@ -810,7 +819,8 @@ export function transcripts(
 
   /**
    * An agent's message enters the transcript, in `turnId`, by its input's
-   * id: once (one already there stays where it is).
+   * id: once (one already there stays where it is). One steered into the
+   * running reply says so: it isn't what the reply opened with (anchorOf).
    */
   async function agentEntry(
     trx: Transaction<Tables>,
@@ -818,6 +828,7 @@ export function transcripts(
     revision: number,
     message: AgentMessage,
     turnId: string | null,
+    steered = false,
   ): Promise<string | undefined> {
     if (
       await trx
@@ -834,7 +845,7 @@ export function transcripts(
       turnId,
       kind: "agent",
       text: said,
-      details: JSON.stringify(sender),
+      details: JSON.stringify({ ...sender, ...(steered && { steered }) }),
     });
   }
 
@@ -1354,6 +1365,7 @@ export function transcripts(
           revision,
           message,
           turn?.id ?? null,
+          true,
         );
         return made === undefined ? undefined : { entries: [made], turns: [] };
       }),

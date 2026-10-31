@@ -6,14 +6,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Page } from "@rufi/contracts";
 import { beforeEach, describe, expect, it } from "vitest";
-import { databasePath, openWritable } from "../store/database.ts";
+import { databasePath, openWritable, type Store } from "../store/database.ts";
 import {
   PAGE_ROWS,
   transcripts as openTranscripts,
   type ChatRow,
+  type Step,
   type Transcripts,
 } from "./transcript.ts";
 
+let store: Store;
 let transcripts: Transcripts;
 let chat: ChatRow;
 let minute = 0;
@@ -22,7 +24,7 @@ const clock = () =>
   new Date(Date.UTC(2026, 9, 1, 8, 0) + minute++ * 60_000).toISOString();
 
 beforeEach(async () => {
-  const store = openWritable(
+  store = openWritable(
     databasePath(await mkdtemp(join(tmpdir(), "rufi-pages-"))),
   );
   store.db.exec(`
@@ -196,5 +198,63 @@ describe("the chat's pages", () => {
       turns: [],
       before: null,
     });
+  });
+});
+
+describe("a reply an agent's message started", () => {
+  it("shows its steps below that message; one steered in later doesn't move them", async () => {
+    store.db.exec(`
+      INSERT INTO agent_owners (agent_id, person_id, chat_id, root, created_at)
+        VALUES ('rufi-ai', 'asha', 'c-asha', 1, '2026-10-01T08:00:00Z');
+    `);
+    const step: Step = {
+      id: "read",
+      position: 1,
+      type: "step",
+      kind: "command",
+      title: "Ran a command",
+      detail: "ls",
+      status: "completed",
+      text: null,
+      createdAt: "2026-10-01T09:00:00Z",
+      updatedAt: "2026-10-01T09:00:00Z",
+    };
+    transcripts.readSteps({
+      of: () => new Map([["turn-1", [step]]]),
+      details: () => undefined,
+    });
+    const message = (input: string, said: string) => ({
+      input,
+      agent: "reader",
+      title: "Reading letter.pdf",
+      about: "wrote" as const,
+      said,
+    });
+    // The clock moves on between the reply's start and its message.
+    await transcripts.startTurn(
+      chat,
+      "turn-1",
+      { id: "thread-1", model: "gpt-6-astra" },
+      ["started"],
+      [message("started", "The letter is from March 2025.")],
+    );
+    const shown = async () =>
+      (await transcripts.page(chat)).entries.map((entry) => entry.text);
+    expect(await shown()).toEqual([
+      "The letter is from March 2025.",
+      "Ran a command",
+    ]);
+
+    await transcripts.applyAgentMessage(
+      chat,
+      message("steered", "It names a TSH of 2.1."),
+      "turn-1",
+      () => Promise.resolve(),
+    );
+    expect(await shown()).toEqual([
+      "The letter is from March 2025.",
+      "Ran a command",
+      "It names a TSH of 2.1.",
+    ]);
   });
 });

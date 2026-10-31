@@ -2031,59 +2031,6 @@ describe("the chat, on the scripted Codex", () => {
     );
   });
 
-  it("stops a sub-agent and the helpers it started from the screens; another chat can't", async () => {
-    // Both work on until they are stopped.
-    await startChat("fake", {
-      scenario: {
-        callsByText: {
-          "Ask a helper": [
-            {
-              tool: "start_agent",
-              arguments: { title: "Helper", task: "helper: hang on" },
-            },
-          ],
-          "helper:": [
-            {
-              tool: "start_agent",
-              arguments: { title: "Second helper", task: "second: hang" },
-            },
-          ],
-        },
-      },
-    });
-    const c = await newChat();
-    await say(c, "Ask a helper");
-    const helper = ownCall("call-0");
-    const second = `${helper}/1/call-0`;
-    await until(() =>
-      Promise.resolve(
-        agentRows(`SELECT status FROM agents WHERE id = '${second}'`)[0]?.[
-          "status"
-        ] === "running",
-      ),
-    );
-    store.db.exec(`
-      INSERT INTO people (id, display_name) VALUES ('ravi', 'Ravi Fictional');
-      INSERT INTO chats (id, person_id, created_at)
-        VALUES ('c-ravi', 'ravi', '2026-10-01T09:00:00Z');
-    `);
-    expect(await ai?.logs.stop("c-ravi", helper)).toBe(false);
-    expect(await ai?.logs.stop(c.id, helper)).toBe(true);
-    await until(() =>
-      Promise.resolve(
-        agentRows(
-          `SELECT status FROM agents WHERE id IN ('${helper}', '${second}')`,
-        ).every((row) => row["status"] === "stopped"),
-      ),
-    );
-    // Its stopped message goes to Rufi AI, and shows in the chat.
-    await until(async () =>
-      (await transcript(c.id)).all.some(
-        (entry) => entry.kind === "agent" && entry.from?.about === "stopped",
-      ),
-    );
-  });
-
   it("runs a sub-agent's own sub-agent, whose done message wakes its parent, whose own wakes Rufi AI; then Rufi AI reads how each went and the conversation of the one below, and that one reads the one that started it", async () => {
     await startChat("fake", {
       scenario: {

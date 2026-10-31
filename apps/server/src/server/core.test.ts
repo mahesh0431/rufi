@@ -707,6 +707,72 @@ describe("the local API", () => {
     });
   });
 
+  it("stops a sub-agent and the helpers it started from its pop-up, only through its own person's chat", async () => {
+    // Both work on until they are stopped.
+    const core = await start({
+      adapters: scripted({
+        callsByText: {
+          "Ask a helper": [
+            {
+              tool: "start_agent",
+              arguments: { title: "Helper", task: "helper: hang on" },
+            },
+          ],
+          "helper:": [
+            {
+              tool: "start_agent",
+              arguments: { title: "Second helper", task: "second: hang" },
+            },
+          ],
+        },
+      }),
+    });
+    const page = await session(core);
+    const c = await chat(page);
+    // Ravi's chat has its own Rufi AI too.
+    const ravis = `/api/people/${addRavi().id}/chat`;
+    await page.say(ravis, "Hello");
+    await until(async () =>
+      (
+        (await page.api("GET", ravis)).body["turns"] as { status: string }[]
+      ).some((turn) => turn.status === "completed"),
+    );
+    await page.say(c.path, "Ask a helper");
+    const agents = async () =>
+      (await page.api("GET", `${c.path}/agents`)).body["agents"] as {
+        id: string;
+        parent: string | null;
+        status: string;
+      }[];
+    await until(async () => {
+      const now = await agents();
+      return now.length === 2 && now.every((one) => one.status === "running");
+    });
+    const helper = (await agents()).find((one) => one.parent === null)?.id;
+    const stop = (path: string) =>
+      page.api(
+        "POST",
+        `${path}/agents/stop?agent=${encodeURIComponent(helper ?? "")}`,
+      );
+
+    expect((await stop(ravis)).status).toBe(404);
+    expect((await agents()).map((one) => one.status)).toEqual([
+      "running",
+      "running",
+    ]);
+
+    expect((await stop(c.path)).status).toBe(200);
+    await until(async () =>
+      (await agents()).every((one) => one.status === "stopped"),
+    );
+    // Its stopped message goes to Rufi AI, and shows in the chat.
+    await until(async () =>
+      ((await page.api("GET", c.path)).body["entries"] as Entry[]).some(
+        (entry) => entry.kind === "agent" && entry.from?.about === "stopped",
+      ),
+    );
+  });
+
   it("reads the record only for the person in the path, and only by GET", async () => {
     const store = openWritable(databasePath(home));
     store.db.exec(
