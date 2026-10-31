@@ -5,8 +5,8 @@
 // same words the fake model uses for the real Codex (tests/fake-model.ts):
 // "hang" never ends, "partial" writes "ok:part" and then never ends, "slow"
 // answers after 300 ms, "sign-in ended" fails as Codex does when its
-// sign-in has ended and can't be renewed, "fail" fails, "quiet" makes no
-// tool call and runs no command, "command"
+// sign-in has ended and can't be renewed, "fail" fails (the word: an agent's
+// "failed" doesn't), "quiet" makes no tool call and runs no command, "command"
 // starts a long command ("background command": and the turn ends while it
 // runs), "drip" streams its answer in five parts 100 ms
 // apart, "long" streams 200 parts of 1,000 characters, "think" streams a
@@ -127,11 +127,13 @@ export interface Scenario {
   /**
    * Calls of Rufi's tools the model makes during a turn, before answering;
    * `id` is Codex's call id (`call-<n>`; `exec-…` for a call made from exec).
-   * The text "$document" in a call's arguments becomes the document the
-   * turn's input names: in Rufi's note on what its reader copied
-   * ("(document <id>)"), or else the first document chip. A draft's
-   * reading "$reading" becomes the reading of its page's copy, which the
-   * fake reads with get_documents first, as the model would (not a step).
+   * The text "$document" in a call's arguments becomes the first document
+   * the turn's input names ("(document <id>)", as Rufi's note on files
+   * names one, or a document chip), and "$document2" the second;
+   * "$started" becomes the agent the turn's last start_agent started, as
+   * its answer gives it. A draft's reading "$reading" becomes the reading of
+   * its page's copy, which the fake reads with get_documents first, as the
+   * model would (not a step).
    */
   calls?: {
     id?: string;
@@ -468,21 +470,30 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
   const calls = text.includes("quiet")
     ? []
     : (byText ?? scenario.callsByTurn?.[turnIndex] ?? scenario.calls ?? []);
-  // Rufi's note on what its reader copied comes before the message; a
-  // message's own chips list their documents after its words.
+  // Rufi's note on files comes before the message; a message's own chips
+  // list their documents after its words.
   const input = entry.input.map((part) => part.text).join("\n");
-  const named =
-    /\(document ([^)\s]+)\)/.exec(input)?.[1] ??
-    /^- document ([^,\s]+),/m.exec(input)?.[1];
+  const documents = [
+    ...new Set(
+      [
+        ...input.matchAll(/\(document ([^)\s]+)\)|^- document ([^,\s]+),/gm),
+      ].map((match) => match[1] ?? match[2] ?? ""),
+    ),
+  ];
+  const named = documents[0];
   // An agent a message names, "(agent <id>)", as a test writes it.
   const agent = /\(agent ([^)\s]+)\)/.exec(input)?.[1];
+  /** The agent this turn's last start_agent started, as its answer gives it. */
+  let started: string | undefined;
   for (const [i, { id, ...scripted }] of calls.entries()) {
     const call = {
       ...scripted,
       arguments: JSON.parse(
         JSON.stringify(scripted.arguments)
+          .replaceAll("$document2", documents[1] ?? "$document2")
           .replaceAll("$document", named ?? "$document")
-          .replaceAll("$agent", agent ?? "$agent"),
+          .replaceAll("$agent", agent ?? "$agent")
+          .replaceAll("$started", started ?? "$started"),
       ) as unknown,
     };
     const drafts = (call.arguments as { drafts?: unknown } | null)?.drafts;
@@ -540,6 +551,12 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
     record({ answered: "tools/call", reply });
     if (thread.running?.turnId !== turnId) return;
     const failed = !reply.result || reply.result["isError"] === true;
+    if (call.tool === "start_agent" && !failed) {
+      const [answer] = (reply.result?.["content"] ?? []) as { text: string }[];
+      started =
+        (JSON.parse(answer?.text ?? "{}") as { result?: { agent?: string } })
+          .result?.agent ?? started;
+    }
     event("item/completed", {
       item: {
         ...item,
@@ -667,7 +684,7 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
     });
     return;
   }
-  if (text.includes("fail") || turnIndex < (scenario.failTurns ?? 0)) {
+  if (/\bfail\b/.test(text) || turnIndex < (scenario.failTurns ?? 0)) {
     if (scenario.resetsAt !== undefined) {
       send({
         method: "account/rateLimits/updated",

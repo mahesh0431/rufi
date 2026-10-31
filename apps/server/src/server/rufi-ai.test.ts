@@ -8,15 +8,11 @@ import type { ProviderAdapter, ProviderEvent } from "@rufi/agents/provider";
 import { openAgentStore, type AgentStore } from "@rufi/agents/store";
 import type { Pointer } from "@rufi/contracts";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { scriptedReader, type Script } from "../../tests/fake-reader.ts";
 import { chatQueue } from "../core/chat/queue.ts";
 import {
   transcripts as openTranscripts,
   type ChatRow,
 } from "../core/chat/transcript.ts";
-import { copies } from "../core/documents/copies.ts";
-import { copyReader } from "../core/documents/copy-reader.ts";
-import { pages } from "../core/documents/pages.ts";
 import { readings } from "../core/documents/reading.ts";
 import {
   databasePath,
@@ -26,7 +22,6 @@ import {
 import { agentsPath } from "./agents.ts";
 import { chat as openChat } from "./chat.ts";
 import { mcpKeys } from "./mcp.ts";
-import { reader as documentReader } from "./reader.ts";
 import { startRufiAi } from "./rufi-ai.ts";
 
 let home: string;
@@ -53,15 +48,8 @@ const rows = (sql: string) =>
     .all()
     .map((row) => ({ ...row }));
 
-/**
- * Rufi as it starts: Rufi AI on the package, and the chat on it, with Rufi's
- * reader playing `reader`, one script per reading.
- */
-async function start(
-  adapter: ProviderAdapter,
-  logged: string[] = [],
-  reader: Script[] = [],
-) {
+/** Rufi as it starts: Rufi AI on the package, and the chat on it. */
+async function start(adapter: ProviderAdapter, logged: string[] = []) {
   const store = openAgentStore(agentsPath(home));
   const transcripts = openTranscripts(record);
   const system = await startRufiAi({
@@ -77,20 +65,10 @@ async function start(
   // Replies still running once Rufi has read the events were cut.
   await transcripts.interruptRunning();
   const keys = mcpKeys();
-  const reads = readings(record);
-  const read = documentReader({
-    readings: reads,
-    kind: copyReader(pages(record, home), copies(record)),
-    run: scriptedReader(reader).run,
-    choice: () => Promise.resolve({ model: "fake-model", effort: "low" }),
-    mcp: { url: () => "http://127.0.0.1:9/mcp/reader", keys },
-    log: () => undefined,
-    retryWaitsMs: [],
-  }).read;
   const chat = openChat({
     transcripts,
     queue: chatQueue(record),
-    reading: { readings: reads, read },
+    readings: readings(record),
     signIn: () =>
       Promise.resolve({ state: "signed_in", account: null, text: null }),
     agent: system.rufiAi,

@@ -13,7 +13,12 @@ import {
 } from "./agents.ts";
 import { briefResult, createBrief } from "./brief.ts";
 import { readChat } from "./chat.ts";
-import { getDocuments, saveReading, sortDocuments } from "./documents.ts";
+import {
+  getDocuments,
+  saveReading,
+  setReader,
+  sortDocuments,
+} from "./documents.ts";
 import { showFace } from "./face.ts";
 import { getOverview } from "./overview.ts";
 import {
@@ -39,6 +44,7 @@ import type { Log } from "../../platform/logs.ts";
 import type { ChatRow, ToolCall, Transcripts } from "../chat/transcript.ts";
 import { createBrief as makeBrief } from "../briefs/briefs.ts";
 import type { Pages } from "../documents/pages.ts";
+import { setReader as setDocumentReader } from "../documents/readers.ts";
 import {
   keptReading,
   keptUnsaved,
@@ -61,6 +67,7 @@ export const TOOLS: readonly Tool[] = [
   dismissItems,
   sortDocuments,
   saveReading,
+  setReader,
   createBrief,
   showFace,
   startAgent,
@@ -264,6 +271,22 @@ export function rufiCaller(
           kept();
           reading.done(chat.personId);
           return saved;
+        },
+        setReader: async (input) => {
+          if (!below?.inChat(input.agent)) {
+            throw new Refusal(
+              `No agent ${input.agent} is in your chat: give an agent agent_status lists.`,
+            );
+          }
+          const set = await transcripts.withToolCall(
+            chat,
+            made,
+            (trx) => setDocumentReader(trx, chat.personId, input),
+            answerOf,
+          );
+          kept();
+          reading?.done(chat.personId);
+          return set;
         },
         brief: async (input, callId) => {
           const written = await transcripts.briefWithLine(

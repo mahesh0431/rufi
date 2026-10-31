@@ -60,6 +60,8 @@ export interface SaveReadingAnswer {
   reading: string;
   pages: string;
   unreadable?: string;
+  /** The document's pages no reading has copied yet. */
+  not_read?: string;
   note: string;
 }
 
@@ -199,16 +201,35 @@ export function saveReading(
         "There is no such document for this person: check its id with get_documents.",
       );
     }
-    const pages = (
-      await trx
-        .selectFrom("document_pages")
-        .select("position")
-        .where("person_id", "=", personId)
-        .where("document_id", "=", document.id)
-        .where("file_id", "is not", null)
-        .orderBy("position")
-        .execute()
-    ).map((p) => p.position);
+    const rows = await trx
+      .selectFrom("document_pages as p")
+      .select([
+        "p.position",
+        (eb) =>
+          eb
+            .exists(
+              eb
+                .selectFrom("page_copies as c")
+                .innerJoin("jobs as j", (join) =>
+                  join
+                    .onRef("j.person_id", "=", "c.person_id")
+                    .onRef("j.id", "=", "c.job_id"),
+                )
+                .select("c.job_id")
+                .whereRef("c.person_id", "=", "p.person_id")
+                .whereRef("c.file_id", "=", "p.file_id")
+                .whereRef("c.page_in_file", "=", "p.page_in_file")
+                // A finished reading's copy, as sorting counts it.
+                .where("j.state", "=", "done"),
+            )
+            .as("copied"),
+      ])
+      .where("p.person_id", "=", personId)
+      .where("p.document_id", "=", document.id)
+      .where("p.file_id", "is not", null)
+      .orderBy("p.position")
+      .execute();
+    const pages = rows.map((p) => p.position);
     const problems: Issue[] = [];
     const seen = new Map<number, number>();
     for (const [index, { page }] of input.pages.entries()) {
@@ -234,9 +255,15 @@ export function saveReading(
       );
     }
 
-    // A reader's run, written whole: running, its copies, then its end.
+    // A reader's run, written whole: running, its copies, then its end. The
+    // document's pages no finished reading has copied are its pages too, so
+    // they show as not looked at, never as read, until a reading saves them.
     const at = now();
-    const targets = input.pages.map((p) => p.page);
+    const saved = input.pages.map((p) => p.page);
+    const missing = rows
+      .filter((p) => !p.copied && !saved.includes(p.position))
+      .map((p) => p.position);
+    const targets = [...saved, ...missing].sort((a, b) => a - b);
     const run = {
       jobId: uuid(),
       attempt: 1,
@@ -271,9 +298,13 @@ export function saveReading(
     return {
       saved: true,
       reading: run.jobId,
-      pages: ranges(targets),
+      pages: ranges(saved),
       ...(unreadable.length > 0 && { unreadable: ranges(unreadable) }),
-      note: "Saved. Rufi AI sorts it from here; a short line on what you read is a good way to end.",
+      ...(missing.length > 0 && { not_read: ranges(missing) }),
+      note:
+        missing.length > 0
+          ? `Saved. No reading has copied pages ${ranges(missing)} yet: they show as not looked at until one saves them. Rufi AI sorts what you saved; a short line on what you read is a good way to end.`
+          : "Saved. Rufi AI sorts it from here; a short line on what you read is a good way to end.",
     };
   };
 }

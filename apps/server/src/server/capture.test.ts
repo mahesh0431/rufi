@@ -252,6 +252,7 @@ const RUFI_TOOLS = [
   "mcp__rufi__save_reading",
   "mcp__rufi__send_agent",
   "mcp__rufi__set_agent_model",
+  "mcp__rufi__set_reader",
   "mcp__rufi__show_face",
   "mcp__rufi__sort_documents",
   "mcp__rufi__start_agent",

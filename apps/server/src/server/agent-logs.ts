@@ -1,5 +1,6 @@
 // What the chat's sub-agents did, for the screens: each one's line, its own
-// Activity as it reported it, and a signal when any of them did something.
+// Activity as it reported it, and a signal when any of them did something
+// (to the chat's screens, and its person's documents).
 // Only the agents below a chat's own agent are that chat's.
 import type { Agents, Item, KeptTurn } from "@rufi/agents/agents";
 import type { AgentLine, AgentLog, SubAgent } from "@rufi/contracts";
@@ -22,6 +23,8 @@ const lineId = (ref: string, item: string) =>
 export function agentLogs(deps: {
   agents: Agents;
   kept: Pick<ReturnType<typeof chatAgents>, "root" | "owner">;
+  /** Tells the person's documents screens: a reader's status shows there. */
+  documents?: ((personId: string) => void) | undefined;
 }) {
   const { agents, kept } = deps;
   const listeners = new Map<string, Set<() => void>>();
@@ -219,6 +222,7 @@ export function agentLogs(deps: {
               for (const listener of listeners.get(owner?.chatId ?? "") ?? []) {
                 listener();
               }
+              if (owner) deps.documents?.(owner.personId);
             })
             .catch(() => undefined);
         }

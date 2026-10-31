@@ -169,6 +169,67 @@ describe("a reading agent's saved reading", () => {
     old.store.close();
   });
 
+  it("of fewer pages than the document has leaves the others not looked at, never read, until a reading saves them", async () => {
+    const states = () =>
+      rows(
+        rufi.store,
+        "SELECT position, state FROM document_pages WHERE document_id = 'doc-asha-aug' ORDER BY position",
+      );
+    const first = await call(
+      "save_reading",
+      { document: "doc-asha-aug", pages: [PAGES[0]] },
+      "call-first",
+    );
+    expect(first).toMatchObject({
+      ok: true,
+      result: { pages: "1", not_read: "2" },
+    });
+    expect(states()).toEqual([
+      { position: 1, state: "read" },
+      { position: 2, state: "not_looked_at" },
+    ]);
+    const rest = await call(
+      "save_reading",
+      { document: "doc-asha-aug", pages: [PAGES[1]] },
+      "call-rest",
+    );
+    expect(rest.result).toEqual(
+      expect.not.objectContaining({ not_read: expect.anything() as unknown }),
+    );
+    expect(states()).toEqual([
+      { position: 1, state: "read" },
+      { position: 2, state: "unreadable" },
+    ]);
+  });
+
+  it("counts only a finished reading's copy: a page an older stopped reading copied, and no reading since, stays not looked at", async () => {
+    rufi.store.db.exec(`
+      INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, error, created_at)
+        VALUES ('job-stopped', 'asha', 'document_read', 'doc-asha-aug', 'failed', 1, '[1,2]', 'Rufi closed while reading', '${NOW}');
+      INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at)
+        SELECT 'asha', file_id, page_in_file, 'job-stopped', 1, 'read', 'Half a copy', '${NOW}'
+        FROM document_pages WHERE document_id = 'doc-asha-aug' AND position = 1;
+    `);
+    const saved = await call(
+      "save_reading",
+      { document: "doc-asha-aug", pages: [PAGES[1]] },
+      "call-page-2",
+    );
+    expect(saved).toMatchObject({
+      ok: true,
+      result: { pages: "2", not_read: "1" },
+    });
+    expect(
+      rows(
+        rufi.store,
+        "SELECT position, state FROM document_pages WHERE document_id = 'doc-asha-aug' ORDER BY position",
+      ),
+    ).toEqual([
+      { position: 1, state: "not_looked_at" },
+      { position: 2, state: "unreadable" },
+    ]);
+  });
+
   it("gets its kept answer when the same call comes again, writes once, and keeps no page text", async () => {
     const input = { document: "doc-asha-aug", pages: PAGES };
     const first = await call("save_reading", input, "call-read");

@@ -3,13 +3,9 @@
 // in Rufi's own queue (core/chat/queue.ts): the chat puts its rows, in
 // order, into Rufi AI's queue in the agent package, which hands them over
 // and claims each one's words from Rufi's queue just before (server/
-// rufi-ai.ts). A message that sends files to read has Rufi's part first: once
-// it is next and Rufi AI is idle, its reply starts, Rufi's reader copies the
-// files one after another (each a step of the reply), outside the chat's
-// lane so Stop and other actions go on, and only then the message goes to
-// the AI with Rufi's note on what was copied; the rows behind it wait for
-// it. A reading that doesn't finish ends the reply before the AI, with
-// Retry. Rufi AI is the chat's own agent; its thread is its conversation. It
+// rufi-ai.ts). A message that sends files goes like any other, with Rufi's
+// note naming those not read yet: Rufi AI has them read by agents of its
+// own. Rufi AI is the chat's own agent; its thread is its conversation. It
 // calls Rufi's tools through Rufi's MCP server, with a key for its chat;
 // each call is bound to the reply it was made in.
 import {
@@ -30,17 +26,15 @@ import {
   QueueRefusal,
   type ChatQueue,
   type HandOver,
-  type Waiting,
 } from "../core/chat/queue.ts";
 import { refsForAi } from "../core/chat/refs.ts";
 import type { ChatRow, Step, Transcripts } from "../core/chat/transcript.ts";
-import type { Job, Readings } from "../core/documents/reading.ts";
+import type { Readings } from "../core/documents/reading.ts";
 import type { ToolAnswer, ToolSpec } from "../core/tools/registry.ts";
 import type { CallScope, TurnScope } from "../core/tools/tools.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import { agentDoor } from "./door.ts";
 import type { McpKeys } from "./mcp.ts";
-import type { ReadProgress, Reader } from "./reader.ts";
 import type {
   ChatOpening,
   OfferedModel,
@@ -49,7 +43,6 @@ import type {
   RufiAiEvent,
   RufiAiHost,
 } from "./rufi-ai.ts";
-import { v7 as uuid } from "uuid";
 
 /** How many earlier messages a new conversation starts with. */
 const NEW_THREAD_MESSAGES = 10;
@@ -90,10 +83,11 @@ export interface ChatDeps {
   };
   log: Log;
   /**
-   * Rufi's reader, for the files a message sends: their readings, and the
-   * call that reads one. Without it, a message goes to the AI as it is.
+   * The person's readings: the Documents page hears of a file sent, and
+   * Rufi's note names the files a message brings that aren't read yet.
+   * Without it, a message goes to the AI as it is.
    */
-  reading?: { readings: Readings; read: Reader["read"] };
+  readings?: Pick<Readings, "changed" | "toRead">;
 }
 
 /** A request the chat can't do now, in words for the person. */
@@ -135,8 +129,6 @@ export function chat(deps: ChatDeps) {
   const streaming = new Map<string, { since: string; text: string }>();
   /** Turns with a part Rufi couldn't save: stopped, and ended as failed. */
   const unsaved = new Set<string>();
-  /** Rufi's parts of replies under way, so closing waits for them. */
-  const parts = new Set<Promise<void>>();
 
   /** A part of the turn wasn't saved: nothing more of it is, and it stops. */
   function lost(threadId: string, turnId: string): void {
@@ -151,11 +143,19 @@ export function chat(deps: ChatDeps) {
     saved: () => saving,
     opening: (chat, agent) => openingOf(chat, agent),
     // Rufi's queue decides: the row's words as they are now, or that it
-    // doesn't go.
+    // doesn't go. Its files not read yet are named as they go.
     claim: async (chat, input, sentAs) => {
       const claimed = await queue.claim(chat, input, sentAs);
       if (claimed.status === "gone") return claimed;
-      return { status: "claimed", parts: inputOf(claimed.handOver) };
+      const { handOver } = claimed;
+      const files = await deps.readings?.toRead(chat.personId, handOver.refs);
+      return {
+        status: "claimed",
+        parts: inputOf({
+          ...handOver,
+          notes: [...handOver.notes, ...(files === undefined ? [] : [files])],
+        }),
+      };
     },
     changed: (chat) => {
       queue.changed(chat.id);
@@ -410,9 +410,7 @@ export function chat(deps: ChatDeps) {
    * Puts the chat's waiting rows in Rufi AI's queue, in the chat's lane, in
    * Rufi's order: what Rufi keeps decides what goes, and the package hands
    * them over, each as the person sent it: into the running reply (steer)
-   * or after it (queue). A message with files to read goes once Rufi's part
-   * has read them, which starts when it is next and Rufi AI is idle; the
-   * rows behind it wait for it. A conversation told older rules opens again
+   * or after it (queue). A conversation told older rules opens again
    * first, once Rufi AI is idle. Signed out, nothing goes.
    */
   const carry = (chat: ChatRow) =>
@@ -425,10 +423,6 @@ export function chat(deps: ChatDeps) {
         (await deps.signIn(provider)).state !== "signed_in"
       ) {
         return;
-      }
-      // Rufi's part reads a message's files: what comes after waits.
-      for (const id of await queue.reading(fresh)) {
-        if (agent.input(id) === undefined) return;
       }
       // Held as signed out, they go now the sign-in is back.
       await queue.signedIn(fresh);
@@ -473,7 +467,6 @@ export function chat(deps: ChatDeps) {
       const order: string[] = [];
       const added: { id: string; sender: string; kind: "queue" | "steer" }[] =
         [];
-      let reading = false;
       for (const row of rows) {
         const there = agent.input(row.id);
         // Rufi's row goes: a hold the package kept on it lifts too.
@@ -485,198 +478,11 @@ export function chat(deps: ChatDeps) {
         // With the AI, or settled: the package's events say what became
         // of it.
         if (there) continue;
-        if (reading) continue;
-        // A message with files queues: Rufi's part reads them first.
-        if (
-          await toRead(
-            fresh,
-            row.refs.map((chip) => chip.ref),
-          )
-        ) {
-          if (idle && order.length === 0) await part(fresh, row);
-          reading = true;
-          continue;
-        }
         added.push({ id: row.id, sender: row.origin, kind: row.kind });
         order.push(row.id);
       }
       await agent.queue(fresh, added, order);
     });
-
-  /**
-   * Rufi's part of a message's reply, before the AI: its files' readings,
-   * made with its reply in one transaction (transcripts.startPart), then
-   * read (readFirst). With nothing to read after all, it goes as it is.
-   */
-  async function part(chat: ChatRow, row: Waiting): Promise<void> {
-    const reading = deps.reading;
-    if (!reading || !(await queue.startReading(chat, row.id))) return;
-    const documents = row.refs.flatMap((chip) =>
-      chip.ref.type === "document"
-        ? [{ id: chip.ref.id, again: chip.ref.readAgain === true }]
-        : [],
-    );
-    const started = await transcripts.startPart(
-      chat,
-      row.id,
-      chat.model ?? "",
-      async (trx) => {
-        const jobs: Job[] = [];
-        for (const { id, again } of documents) {
-          const job = await reading.readings.open(
-            trx,
-            chat.personId,
-            id,
-            again,
-          );
-          if (job) jobs.push(job);
-        }
-        return jobs;
-      },
-    );
-    if (!started) {
-      await toAgent(chat, row.id, undefined);
-      return;
-    }
-    // Their readings start: the Documents page says so.
-    reading.readings.changed(chat.personId);
-    readFirst(chat, row.id, started);
-  }
-
-  /**
-   * A message Rufi's part has read for goes to Rufi AI next, with Rufi's
-   * note on what it read, kept with the message first; the rows behind it
-   * follow.
-   */
-  async function toAgent(
-    chat: ChatRow,
-    id: string,
-    note: string | undefined,
-  ): Promise<void> {
-    await queue.readNote(chat, id, note);
-    if (agent.input(id) === undefined) {
-      await agent.queue(chat, [{ id, sender: "person", kind: "queue" }], []);
-    }
-    next(chat);
-  }
-
-  /**
-   * Rufi's part of a reply, outside the chat's lane: each file's reading
-   * as a step, one after another, then the message to Rufi AI, with Rufi's
-   * note on what was copied. A Stop or a reading that fails ends the reply
-   * here, its message held for Retry and the readings left failed, their
-   * copies kept; what waits behind it goes on. Rufi closing leaves it for
-   * the next start.
-   */
-  function readFirst(
-    chat: ChatRow,
-    id: string,
-    part: { turnId: string; opened: Job[] },
-  ): void {
-    const reading = deps.reading;
-    if (!reading) return;
-    const op = stoppable(chat);
-    const jobIds = part.opened.map((job) => job.id);
-    /** The reply ends here, before the AI: its message waits for Retry. */
-    const end = async (stopped: boolean, text: string, why: string) => {
-      if (closed) return;
-      await transcripts.endPart(
-        chat,
-        part.turnId,
-        {
-          status: stopped ? "interrupted" : "failed",
-          ...(stopped && { reason: "stopped" as const }),
-          text,
-        },
-        (trx) => reading.readings.failOpen(trx, jobIds, why),
-      );
-      queue.changed(chat.id);
-      reading.readings.changed(chat.personId);
-      next(chat);
-    };
-    const work = (async () => {
-      const done: string[] = [];
-      for (const job of part.opened) {
-        const stepId = uuid();
-        const { name } = await reading.readings.progress(job);
-        let shown: ReadProgress | undefined;
-        let writing = Promise.resolve();
-        const step = (
-          status: "running" | "done" | "failed" | "stopped",
-          detail: string,
-        ) => {
-          writing = writing
-            .then(async () => {
-              await transcripts.setStep(chat, part.turnId, stepId, {
-                title: `Rufi's reader · ${name}`,
-                detail,
-                status,
-                details: { document: job.documentId, job: job.id },
-              });
-            })
-            .catch((error: unknown) => {
-              log("chat.save_failed", {
-                kind: "step",
-                error: errorCode(error),
-              });
-            });
-          return writing;
-        };
-        const ended = await reading.read(job, op.signal, (now) => {
-          shown = now;
-          void step("running", progressWords(now));
-        });
-        await writing;
-        const far = `${String(shown?.saved ?? 0)} of ${String(shown?.of ?? job.targets.length)}`;
-        if (ended.ended === "done") {
-          const after = await reading.readings.progress(job);
-          await step(
-            "done",
-            [
-              `${String(after.of)} ${after.of === 1 ? "page" : "pages"}`,
-              ...(after.unreadable > 0
-                ? [`${String(after.unreadable)} couldn't be read`]
-                : []),
-            ].join(" · "),
-          );
-          done.push(job.id);
-          continue;
-        }
-        if (ended.ended === "deleted") {
-          await step("stopped", "deleted");
-          continue;
-        }
-        if (closed) return;
-        if (ended.ended === "stopped") {
-          await step("stopped", `stopped · ${far}`);
-          await end(true, `Stopped. · read ${far}`, "Stopped");
-          return;
-        }
-        await step("failed", `${ended.why} · ${far}`);
-        await end(
-          false,
-          `Couldn't read ${name} · ${ended.why} · read ${far}`,
-          ended.why,
-        );
-        return;
-      }
-      if (closed) return;
-      if (op.signal.aborted) {
-        await end(true, "Stopped.", "Stopped");
-        return;
-      }
-      const note = await reading.readings.note(done);
-      await toAgent(chat, id, note);
-    })()
-      .catch((error: unknown) => {
-        log("chat.dispatch_failed", { error: errorCode(error) });
-      })
-      .finally(() => {
-        parts.delete(work);
-        acting.get(chat.id)?.delete(op);
-      });
-    parts.add(work);
-  }
 
   /**
    * The chat as stored now: an earlier action may have given it a
@@ -770,28 +576,9 @@ export function chat(deps: ChatDeps) {
     }
     // Its files are sent now: the Documents page lists them.
     if (refs.some((ref) => ref.type === "document")) {
-      deps.reading?.readings.changed(chat.personId);
+      deps.readings?.changed(chat.personId);
     }
     next(chat);
-  }
-
-  /** Whether any of the documents among `refs` needs reading first. */
-  async function toRead(chat: ChatRow, refs: readonly Pointer[]) {
-    const reading = deps.reading;
-    if (!reading) return false;
-    for (const ref of refs) {
-      if (
-        ref.type === "document" &&
-        (await reading.readings.needs(
-          chat.personId,
-          ref.id,
-          ref.readAgain === true,
-        ))
-      ) {
-        return true;
-      }
-    }
-    return false;
   }
 
   /** Whether a reply the person started runs in the chat now. */
@@ -848,8 +635,8 @@ export function chat(deps: ChatDeps) {
     },
 
     /**
-     * Stops the running reply, Rufi's part of one, or a hand-over getting
-     * ready. What waits goes on after.
+     * Stops the running reply, or a hand-over getting ready. What waits goes
+     * on after.
      */
     stop: async (chat: ChatRow) => {
       for (const op of acting.get(chat.id) ?? []) op.abort();
@@ -910,20 +697,6 @@ export function chat(deps: ChatDeps) {
         });
         next(chat);
       },
-      /**
-       * The person's Retry of a reply that ended while Rufi read its files,
-       * for the hold they saw: its message goes again, first in line, and
-       * its reading goes on where it stopped. A Retry on an older hold
-       * changes nothing.
-       */
-      retry: async (chat: ChatRow, id: string, hold: string) => {
-        await mustBeSignedIn(chat);
-        await inLane(chat, async (fresh) => {
-          await refused(() => queue.retry(fresh, id, hold));
-        });
-        // Its reading goes on first, if it needs to (carry).
-        next(chat);
-      },
       subscribe: (chatId: string, listener: () => void) =>
         queue.subscribe(chatId, listener),
     },
@@ -973,9 +746,7 @@ export function chat(deps: ChatDeps) {
     /** Waits for what is being saved, then ends the agent. */
     close: async () => {
       closed = true;
-      // Rufi's parts stop; the next start ends their replies.
       for (const ops of acting.values()) for (const op of ops) op.abort();
-      await Promise.allSettled(parts);
       await agent.close();
       await Promise.allSettled(lanes.values());
       await saving;
@@ -1044,19 +815,6 @@ export function chat(deps: ChatDeps) {
       if (error instanceof QueueRefusal) throw new ChatRefusal(error.message);
       throw error;
     }
-  }
-}
-
-/** How far a reading is, for its step. */
-function progressWords(now: ReadProgress): string {
-  const far = `${String(now.saved)} of ${String(now.of)}`;
-  switch (now.state) {
-    case "waiting":
-      return `waiting for another reading · ${far}`;
-    case "again":
-      return `waiting to copy again · ${far}`;
-    case "copying":
-      return `${far} ${now.of === 1 ? "page" : "pages"}`;
   }
 }
 

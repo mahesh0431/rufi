@@ -4,6 +4,7 @@ import { Result, Schema, SchemaIssue } from "effect";
 import { errorCode, type Log } from "../../platform/logs.ts";
 import type { BriefInput, Made } from "../briefs/briefs.ts";
 import type { Pages } from "../documents/pages.ts";
+import type { SetReaderInput } from "../documents/readers.ts";
 import type {
   SaveReadingAnswer,
   SaveReadingInput,
@@ -61,6 +62,10 @@ export interface ToolContext {
   saveReading?:
     | ((input: SaveReadingInput, callId: string) => Promise<SaveReadingAnswer>)
     | undefined;
+  /** Sets the agent that reads documents (set_reader): only in Rufi's own chat. */
+  setReader?:
+    | ((input: SetReaderInput, callId: string) => Promise<unknown>)
+    | undefined;
   /** What the calling agent does with agents: only in Rufi's own chat. */
   agents?: AgentTools | undefined;
 }
@@ -77,6 +82,10 @@ export interface AgentTools {
   read: (input: ReadAgentInput) => Promise<unknown>;
   /** Stops an agent below the caller, or itself; with children, all below it too. */
   stop: (input: StopAgentInput) => unknown;
+  /** Whether an agent is in the caller's chat. */
+  inChat: (agent: string) => boolean;
+  /** Whether an agent is at work: not yet run, running or going on. */
+  runs: (agent: string) => boolean;
   /** What waits for the caller and the agents below it: listed or changed. */
   waiting: (input: WaitingMessagesInput) => Promise<unknown>;
   /** The models of the user's shortlist offered now. */

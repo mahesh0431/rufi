@@ -204,6 +204,10 @@ const results = (count: number) =>
  */
 function statusOf(document: DocumentSummary): string {
   const reading = document.reading;
+  // Its reader at work: it saves its pages at once, so no count yet.
+  if (document.status === "reading" && document.reader !== null) {
+    return "Reading";
+  }
   if (document.status === "not_read" || reading === null) return "Not read yet";
   const read = `read ${String(reading.saved)} of ${String(reading.of)}`;
   if (document.status === "reading") return `Reading · ${read}`;
@@ -236,10 +240,11 @@ function Status({
       <span className="rounded-full bg-side px-2 py-px text-xs text-muted">
         {statusOf(document)}
       </span>
-      {(document.status === "not_read" || reading?.canRetry === true) && (
-        <RetryButton personId={personId} documentId={document.id} />
-      )}
-      {document.status !== "not_read" && (
+      {document.status !== "reading" &&
+        (document.status === "not_read" || reading?.canRetry === true) && (
+          <RetryButton personId={personId} documentId={document.id} />
+        )}
+      {reading !== null && (
         <Button
           look="quiet"
           icon={ScanText}

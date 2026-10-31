@@ -4,9 +4,7 @@
 // running reply, or in a reply of its own. A waiting message can be steered
 // into the running reply, edited, moved by its handle (dragged, or by
 // keyboard) or removed; one Rufi didn't send says Failed, or Not sent, with
-// why as it came, and goes only when you send it. A message already in the
-// chat (Rufi's part reads its files, or its reply ended there with Retry)
-// shows only there.
+// why as it came, and goes only when you send it.
 import {
   closestCenter,
   DndContext,
@@ -44,16 +42,8 @@ import { chatPath, type Live, messageOf } from "./live.ts";
 import { isRunning } from "./transcript-state.ts";
 import { Button, buttonLook, ICON, IconButton } from "./ui.tsx";
 
-/**
- * Shown here, unless its reply has it and what it needs: one being read,
- * or one whose reply offers Retry. A message held for another reason
- * (from a backup) shows here with its actions, also when its reply has it.
- */
-const waitsHere = (item: QueueItem) =>
-  item.turnId == null || (item.held !== null && item.held !== "reply_ended");
-
 /** Whether anything waits to show in the chat. */
-export const anyWaiting = (state: Live) => state.queue.items.some(waitsHere);
+export const anyWaiting = (state: Live) => state.queue.items.length > 0;
 
 /** Why a row doesn't go by itself: Failed, or Not sent, and why as it came. */
 function whyHeld(item: QueueItem): string | null {
@@ -67,7 +57,6 @@ function whyHeld(item: QueueItem): string | null {
     case "open_failed":
       return `Failed · ${item.heldText ?? ""}`;
     case "signed_out":
-    case "reply_ended":
       return item.heldText;
     case null:
       return null;
@@ -81,8 +70,7 @@ export function WaitingView({
   live: StoreApi<Live>;
   personId: string;
 }) {
-  const { items: all } = useStore(live, (state) => state.queue);
-  const items = all.filter(waitsHere);
+  const { items } = useStore(live, (state) => state.queue);
   const error = useStore(live, (state) => state.queueError);
   const running = useStore(live, isRunning);
   const [problem, setProblem] = useState<string | null>(null);

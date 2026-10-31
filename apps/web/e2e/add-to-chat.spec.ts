@@ -289,8 +289,8 @@ test("the paperclip says it adds a file, then gives its chip; the same file agai
 
 /** Seven draft items read from page 1 of Asha's August report. */
 const DRAFTS = `
-  INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, sorted_at, created_at)
-    VALUES ('job-aug', 'asha', 'document_read', 'doc-asha-aug', 'done', 1, '[1,2]', '2026-10-01T09:00:00Z', '2026-10-01T09:00:00Z');
+  INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, created_at)
+    VALUES ('job-aug', 'asha', 'document_read', 'doc-asha-aug', 'done', 1, '[1,2]', '2026-10-01T09:00:00Z');
   UPDATE document_pages SET state = 'read', entry_job_id = 'job-aug'
     WHERE document_id = 'doc-asha-aug';
   UPDATE documents SET version = 1, kind = 'lab_report', issuer = 'Sunrise Labs', date = '2026-08-12'

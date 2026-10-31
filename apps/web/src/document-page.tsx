@@ -218,10 +218,11 @@ function Checking({
             </p>
           )}
         </div>
-        {(document.status === "not_read" ||
-          document.reading?.canRetry === true) && (
-          <RetryButton personId={person.id} documentId={document.id} />
-        )}
+        {document.status !== "reading" &&
+          (document.status === "not_read" ||
+            document.reading?.canRetry === true) && (
+            <RetryButton personId={person.id} documentId={document.id} />
+          )}
         <Button
           icon={FileText}
           onClick={() => {
@@ -230,7 +231,7 @@ function Checking({
         >
           View original
         </Button>
-        {document.status !== "not_read" && (
+        {document.reading !== null && (
           <Button
             icon={ScanText}
             onClick={() => {

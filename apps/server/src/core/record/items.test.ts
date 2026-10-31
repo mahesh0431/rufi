@@ -1210,7 +1210,9 @@ describe("a sort's trace", () => {
     );
     expect(drafts()).toEqual({});
     expect(
-      rows("SELECT sorted_at FROM jobs WHERE id = 'job-doc-asha-aug'"),
+      rows(
+        "SELECT DISTINCT sorted_at FROM page_copies WHERE job_id = 'job-doc-asha-aug'",
+      ),
     ).toEqual([{ sorted_at: null }]);
 
     store.db.exec("DROP TRIGGER no_trace");

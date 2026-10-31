@@ -6,7 +6,6 @@ import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Provider, ProviderStatus } from "@rufi/contracts";
-import type { RunSubAgent } from "../../server/src/agent/runtime.ts";
 import {
   expect,
   test as base,
@@ -107,8 +106,6 @@ export class Rufi {
       scenario?: Scenario;
       codex?: "real";
       now?: () => string;
-      /** The document reader (tests/fake-reader.ts); without it, readings wait. */
-      reader?: RunSubAgent;
       /** How the data folder was chosen; RUFI_HOME when not given. */
       source?: FolderSource;
     } = {},
@@ -150,7 +147,6 @@ export class Rufi {
             return Promise.resolve();
           },
         },
-        ...(options.reader !== undefined && { reader: options.reader }),
         ...(port !== undefined && { port }),
         ...(options.now !== undefined && { now: options.now }),
       }).pipe(Scope.provide(scope)),
@@ -177,6 +173,32 @@ export class Rufi {
   get core(): Core {
     if (!this.#core) throw new Error("Rufi isn't running.");
     return this.#core;
+  }
+
+  /**
+   * All Rufi AI got with its first turn on a message that starts with
+   * `words`, Rufi's notes first, as the scripted Codex logged it.
+   */
+  async given(words: string): Promise<string | undefined> {
+    return (await readFile(join(this.home, "fake-codex.jsonl"), "utf8"))
+      .trim()
+      .split("\n")
+      .map(
+        (line) =>
+          JSON.parse(line) as {
+            received?: {
+              method?: string;
+              params?: { input?: { text: string }[] };
+            };
+          },
+      )
+      .find(
+        ({ received }) =>
+          received?.method === "turn/start" &&
+          received.params?.input?.at(-1)?.text.startsWith(words) === true,
+      )
+      ?.received?.params?.input?.map((part) => part.text)
+      .join("\n");
   }
 
   /** A fresh single-use link, as `pnpm start` prints it. */
@@ -247,9 +269,10 @@ export async function sendFiles(
   await page
     .getByLabel("Choose documents", { exact: true })
     .setInputFiles(files);
-  // A chip shows once the add ends.
+  // A chip shows in the box once the add ends (a sent message shows its own).
   await expect(
     chat
+      .locator("form")
       .getByRole("list", { name: "Added to this message" })
       .getByRole("listitem")
       .first(),

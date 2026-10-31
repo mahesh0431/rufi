@@ -366,20 +366,14 @@ describe("the core", () => {
     await release();
   });
 
-  it("counts a hand-over a crash cut off as sent, its reply stopped; what waits goes; a reply cut off in Rufi's part ends there, its message held for Retry", async () => {
+  it("counts a hand-over a crash cut off as sent, its reply stopped; what waits goes", async () => {
     const left = openWritable(databasePath(home));
     left.db.exec(`
-      INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional'), ('ravi', 'Ravi Fictional');
-      INSERT INTO chats (id, person_id, created_at) VALUES ('c-asha', 'asha', '2026-10-04T09:00:00Z'), ('c-ravi', 'ravi', '2026-10-04T09:00:00Z');
+      INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional');
+      INSERT INTO chats (id, person_id, created_at) VALUES ('c-asha', 'asha', '2026-10-04T09:00:00Z');
       INSERT INTO chat_queue (id, person_id, chat_id, origin, text, position, state, sent_as, created_at, updated_at) VALUES
         ('q-1', 'asha', 'c-asha', 'person', 'Being handed over', 1, 'handing_over', 'agent-gone/1', '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z'),
-        ('q-2', 'asha', 'c-asha', 'person', 'Waiting', 2, 'waiting', NULL, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z');
-      -- Ravi's reply was copying his file, before the AI had his message.
-      INSERT INTO turns (id, person_id, chat_id, agent_turn_id, thread_id, model, status, started_at)
-        VALUES ('t-r', 'ravi', 'c-ravi', NULL, NULL, 'gpt-6.1-sol', 'running', '2026-10-04T10:00:00Z');
-      INSERT INTO chat_queue (id, person_id, chat_id, origin, text, position, state, sent_as, turn_id, created_at, updated_at) VALUES
-        ('q-r', 'ravi', 'c-ravi', 'person', 'Read this', 1, 'handing_over', NULL, 't-r', '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z'),
-        ('q-r2', 'ravi', 'c-ravi', 'person', 'Second', 2, 'waiting', NULL, NULL, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z');`);
+        ('q-2', 'asha', 'c-asha', 'person', 'Waiting', 2, 'waiting', NULL, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z');`);
     left.close();
     const page = await session(await start());
     const said = async (person: string) =>
@@ -407,53 +401,13 @@ describe("the core", () => {
     expect(
       (await page.api("GET", "/api/people/asha/chat/queue")).body["items"],
     ).toEqual([]);
-
-    const ravi = "/api/people/ravi/chat";
-    await until(async () => (await said("ravi")).length === 1);
-    const held = (await page.api("GET", `${ravi}/queue`)).body["items"] as {
-      holdId: string;
-    }[];
-    expect(held).toEqual([
-      {
-        id: "q-r",
-        origin: "person",
-        text: "Read this",
-        state: "waiting",
-        held: "reply_ended",
-        heldText: "Rufi closed while reading.",
-        holdId: expect.any(String) as string,
-        refs: [],
-        turnId: "t-r",
-      },
-    ]);
-    expect((await page.api("GET", ravi)).body["turns"]).toMatchObject([
-      {
-        id: "t-r",
-        status: "interrupted",
-        endText: "Rufi closed while reading.",
-      },
-      { status: "completed" },
-    ]);
-    // Two Retry clicks (two tabs) send it once.
-    const hold = { hold: held[0]?.holdId };
-    const retries = await Promise.all([
-      page.api("POST", `${ravi}/queue/q-r/retry`, hold),
-      page.api("POST", `${ravi}/queue/q-r/retry`, hold),
-    ]);
-    expect(retries.map((r) => r.status).sort((a, b) => a - b)).toEqual([
-      200, 409,
-    ]);
-    await until(async () => (await said("ravi")).length === 2);
-    await sleep(300);
-    expect((await said("ravi")).map((entry) => entry.id)).toEqual([
-      "q-r2",
-      "q-r",
-    ]);
   });
 
-  it("after an upgrade, sends each message that waited once and counts one that may have reached the AI as sent, also when its first start is cut short", async () => {
+  it("after an upgrade, sends each message that waited once and counts one that may have reached the AI as sent, also when its first start is cut short; one whose files an older Rufi read goes once, in the chat once", async () => {
     // Asha's chat as Rufi of version 19 left it, stopped: one message to
-    // go, one behind it, and one it may have given the AI.
+    // go, one behind it, and one it may have given the AI. Ravi's: one
+    // whose reply ended while Rufi read its file, held for that reply's
+    // Retry, and one whose file Rufi was reading when it stopped.
     const path = databasePath(home);
     const first = new DatabaseSync(path);
     first.exec(`${MIGRATIONS[0] ?? ""}; PRAGMA user_version = 1;`);
@@ -466,7 +420,18 @@ describe("the core", () => {
       INSERT INTO chat_queue (id, person_id, chat_id, origin, text, position, state, sent_as, created_at, updated_at) VALUES
         ('q-handed', 'asha', 'c-asha', 'person', 'Handed over', 1, 'handing_over', 'q-handed', '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z'),
         ('q-first', 'asha', 'c-asha', 'person', 'hang', 2, 'waiting', NULL, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z'),
-        ('q-second', 'asha', 'c-asha', 'person', 'Second', 3, 'waiting', NULL, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z');`);
+        ('q-second', 'asha', 'c-asha', 'person', 'Second', 3, 'waiting', NULL, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z');
+      INSERT INTO people (id, display_name) VALUES ('ravi', 'Ravi Fictional');
+      INSERT INTO chats (id, person_id, created_at) VALUES ('c-ravi', 'ravi', '2026-10-04T09:00:00Z');
+      INSERT INTO turns (id, person_id, chat_id, agent_turn_id, thread_id, model, status, end_text, started_at, ended_at) VALUES
+        ('t-ended', 'ravi', 'c-ravi', NULL, NULL, 'gpt-6.1-sol', 'failed', 'Couldn''t read scan.pdf', '2026-10-04T10:00:00Z', '2026-10-04T10:01:00Z'),
+        ('t-reading', 'ravi', 'c-ravi', NULL, NULL, 'gpt-6.1-sol', 'running', NULL, '2026-10-04T10:02:00Z', NULL);
+      INSERT INTO transcript_entries (id, person_id, chat_id, seq, turn_id, kind, text, revision, created_at, updated_at) VALUES
+        ('q-ended', 'ravi', 'c-ravi', 1, 't-ended', 'message', 'Read my scan', 1, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z'),
+        ('q-reading', 'ravi', 'c-ravi', 2, 't-reading', 'message', 'And this one', 2, '2026-10-04T10:02:00Z', '2026-10-04T10:02:00Z');
+      INSERT INTO chat_queue (id, person_id, chat_id, origin, text, position, state, held, held_text, hold_id, turn_id, created_at, updated_at) VALUES
+        ('q-ended', 'ravi', 'c-ravi', 'person', 'Read my scan', 1, 'waiting', 'reply_ended', 'Couldn''t read scan.pdf', 'hold-1', 't-ended', '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z'),
+        ('q-reading', 'ravi', 'c-ravi', 'person', 'And this one', 2, 'handing_over', NULL, NULL, NULL, 't-reading', '2026-10-04T10:02:00Z', '2026-10-04T10:02:00Z');`);
     left.close();
     const said = async (page: Awaited<ReturnType<typeof session>>) =>
       (
@@ -481,6 +446,31 @@ describe("the core", () => {
     await until(async () =>
       (await said(page)).some((entry) => entry.id === "q-first"),
     );
+    // Ravi's two go by themselves, each once, and each shows once, where it
+    // was; the reply Rufi was reading in ended as cut off.
+    const ravi = async () =>
+      (await page.api("GET", "/api/people/ravi/chat")).body as {
+        entries: { id: string; kind: string; text: string }[];
+        turns: { status: string }[];
+      };
+    await until(async () =>
+      (await ravi()).entries.some((entry) => entry.text === "ok:And this one"),
+    );
+    await sleep(300);
+    expect(
+      (await ravi()).entries
+        .filter((entry) => entry.kind === "message" || entry.kind === "reply")
+        .map((entry) => (entry.kind === "message" ? entry.id : entry.text)),
+    ).toEqual(["q-ended", "q-reading", "ok:Read my scan", "ok:And this one"]);
+    expect((await ravi()).turns.map((turn) => turn.status)).toEqual([
+      "failed",
+      "interrupted",
+      "completed",
+      "completed",
+    ]);
+    expect(
+      (await page.api("GET", "/api/people/ravi/chat/queue")).body["items"],
+    ).toEqual([]);
     await stop();
     page = await session(await start());
     await until(async () =>

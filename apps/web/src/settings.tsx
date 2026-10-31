@@ -13,7 +13,6 @@ import { AppearanceChoice } from "./appearance.tsx";
 import { DeviceDataSection } from "./devices.tsx";
 import { SettingChoice } from "./choice.tsx";
 import { printedTime } from "./dates.ts";
-import { EFFORTS } from "./model-menu.tsx";
 import {
   queries,
   saveSettings,
@@ -129,7 +128,6 @@ export function SettingsPage() {
           )
         )}
       </div>
-      <DocumentsSection />
       <DeviceDataSection />
       <BackupsSection />
       <ExportSection />
@@ -340,83 +338,6 @@ function RestartSection() {
           stop instead, and your waiting messages wait for you to send them. 0:
           they never carry on by themselves.
         </p>
-        {save.error && (
-          <p role="alert" className="text-muted">
-            {save.error.message}
-          </p>
-        )}
-      </div>
-    </>
-  );
-}
-
-/** The model and effort Rufi's reader reads documents with. */
-function DocumentsSection() {
-  const settings = useSettings();
-  const save = useMutation({ mutationFn: saveSettings });
-  const reader = settings.data?.reader;
-  return (
-    <>
-      <h2 className="mt-8 mb-2 px-0.5 font-semibold">Documents</h2>
-      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4">
-        {reader && (
-          <>
-            <div className="flex flex-col gap-2">
-              <label htmlFor="reader-model" className="font-medium">
-                Reader model
-              </label>
-              <select
-                id="reader-model"
-                value={reader.model}
-                disabled={save.isPending}
-                onChange={(event) => {
-                  save.mutate({ readerModel: event.target.value });
-                }}
-                className="w-64 rounded-lg border border-line bg-surface px-2 py-1.5"
-              >
-                {reader.models.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex items-center gap-3">
-              <span id="reader-effort" className="font-medium">
-                Effort
-              </span>
-              <div
-                role="radiogroup"
-                aria-labelledby="reader-effort"
-                className="inline-flex rounded-lg border border-line bg-side p-0.5"
-              >
-                {EFFORTS.map((effort) => (
-                  <label
-                    key={effort.id}
-                    className="relative rounded-md px-3 py-0.5 text-muted has-checked:bg-surface has-checked:text-ink has-checked:shadow-sm has-focus-visible:outline-2 has-focus-visible:outline-accent"
-                  >
-                    <input
-                      type="radio"
-                      name="reader-effort"
-                      value={effort.id}
-                      checked={reader.effort === effort.id}
-                      disabled={save.isPending}
-                      onChange={() => {
-                        save.mutate({ readerEffort: effort.id });
-                      }}
-                      className="absolute inset-0 m-0 cursor-pointer opacity-0"
-                    />
-                    {effort.name}
-                  </label>
-                ))}
-              </div>
-            </div>
-            <p className="text-muted">
-              Rufi reads documents with this model, when you send them. A
-              reading that runs keeps the model and effort it started with.
-            </p>
-          </>
-        )}
         {save.error && (
           <p role="alert" className="text-muted">
             {save.error.message}

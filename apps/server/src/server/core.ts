@@ -26,10 +26,7 @@ import { copies } from "../core/documents/copies.ts";
 import { copyReader } from "../core/documents/copy-reader.ts";
 import { saveReading } from "../core/documents/save-reading.ts";
 import { sorting as openSorting } from "../core/documents/sorting.ts";
-import {
-  CLOSED_WHILE_READING,
-  readings as openReadings,
-} from "../core/documents/reading.ts";
+import { readings as openReadings } from "../core/documents/reading.ts";
 import { draftItems } from "../core/documents/items.ts";
 import { backupJob } from "../core/store/backup.ts";
 import { workCleaner } from "../core/store/work.ts";
@@ -72,7 +69,7 @@ import { reader as openReader, readerChoice } from "./reader.ts";
 import { startRufiAi, type OfferedModel } from "./rufi-ai.ts";
 import { converter as openConverter } from "./converter.ts";
 import { secret, sessions } from "./session.ts";
-import { subAgents } from "./sub-agents.ts";
+import { agentRuns, subAgents } from "./sub-agents.ts";
 import { signInFlow, type ProviderSignIn } from "./signin.ts";
 
 export interface CoreOptions {
@@ -257,7 +254,11 @@ export const startCore = (options: CoreOptions) =>
     const transcripts = openTranscripts(writer, options.now);
     const drafts = openDrafts(writer, options.now);
     const queue = chatQueue(writer, options.now);
-    const readings = openReadings(writer, options.now);
+    // Whether a document's reader is at work: the agent system is made by
+    // the time anything lists documents.
+    const readings = openReadings(writer, options.now, {
+      runs: (agent) => agentRuns(agentSystem.agents, agent),
+    });
     const sorting = openSorting(writer, options.now);
     const deviceData = openDevices(
       writer,
@@ -300,6 +301,9 @@ export const startCore = (options: CoreOptions) =>
           ).specs.map((spec) => spec.name),
           cwd: aiSandbox(home).folder,
           model: DEFAULT_SHORTLIST[0] ?? "",
+          documents: (personId) => {
+            readings.changed(personId);
+          },
           log,
           ...(options.now && { now: options.now }),
         }),
@@ -309,9 +313,6 @@ export const startCore = (options: CoreOptions) =>
     // Replies still running once Rufi has read the agent database's events
     // were cut when it stopped.
     const interrupted = yield* attempt(() => transcripts.interruptRunning());
-    // A message whose files Rufi was reading waits for its reply's Retry;
-    // one Rufi hadn't handed over yet waits again.
-    yield* attempt(() => queue.endStopped(`${CLOSED_WHILE_READING}.`));
     // Readings Rufi stopped in the middle fail, their copies kept: nothing
     // reads by itself.
     yield* attempt(() => readings.recover());
@@ -413,7 +414,7 @@ export const startCore = (options: CoreOptions) =>
             ),
           },
           log,
-          reading: { readings, read: documentReader.read },
+          readings,
         }),
       ),
       (opened) => Effect.promise(() => opened.close()),

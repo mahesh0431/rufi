@@ -314,9 +314,7 @@ export const QueueItem = Schema.Struct({
    * restored (from a backup), failed (the AI couldn't take it; heldText
    * says why, as it came), stopped (a Stop came before it went),
    * open_failed (the AI's thread didn't open; heldText says why, and the
-   * person chooses Send or New thread), reply_ended (its reply ended while
-   * Rufi read its files; it is in the chat already, and its reply's Retry
-   * sends it again; heldText says why).
+   * person chooses Send or New thread).
    */
   held: Schema.NullOr(
     Schema.Literals([
@@ -325,19 +323,13 @@ export const QueueItem = Schema.Struct({
       "failed",
       "stopped",
       "open_failed",
-      "reply_ended",
     ]),
   ),
   heldText: Schema.NullOr(Schema.String),
-  /** Which open_failed or reply_ended hold it is: the person's choice names it. */
+  /** Which open_failed hold it is: the person's choice names it. */
   holdId: Schema.NullOr(Schema.String),
   /** A message's references, as its chips. */
   refs: Schema.Array(Chip),
-  /**
-   * The reply the message is in already: Rufi's part read, or reads, its
-   * files there. A reply_ended message's reply shows its Retry.
-   */
-  turnId: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 export type QueueItem = typeof QueueItem.Type;
 
@@ -668,12 +660,6 @@ export const SaveDraft = Schema.Struct({
 });
 
 export const ReorderQueue = Schema.Struct({ ids: Schema.Array(Id) });
-
-/**
- * The person's Retry of a reply that ended while Rufi read its files,
- * naming the hold they saw.
- */
-export const RetryReply = Schema.Struct({ hold: Id });
 
 /**
  * The person's choice for a message whose AI thread didn't open, naming
