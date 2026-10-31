@@ -273,6 +273,7 @@ async function startChat(
               if (!chat) throw new Error("no chat");
               return chat.shortlisted();
             },
+            usage: system.usage,
           }),
         )(scope);
         return async (name, input, callId) => {
@@ -2807,6 +2808,75 @@ describe("the chat, on the scripted Codex", () => {
           held: "Stopped.",
         },
       ],
+    });
+  });
+
+  it("lets Rufi AI see how much of the plan is used and when it resets, and what each of its turns used", async () => {
+    await startChat("fake", {
+      scenario: {
+        // As Codex reports them: the 5-hour and the weekly window.
+        limits: {
+          primary: {
+            usedPercent: 42,
+            windowDurationMins: 300,
+            resetsAt: 1793448000,
+          },
+          secondary: {
+            usedPercent: 18,
+            windowDurationMins: 10080,
+            resetsAt: 1793923200,
+          },
+        },
+        usage: { tokens: 1200, window: 272000 },
+        callsByText: {
+          "How much": [
+            { tool: "usage", arguments: {} },
+            { tool: "read_agent", arguments: { agent: "self" } },
+          ],
+        },
+      },
+    });
+    const c = await newChat();
+    await say(c, "Hello");
+    await ended(c.id);
+    await say(await chatRow(c.id), "How much of my plan is left?");
+    await ended(c.id, 2);
+    const [usage, read] = (
+      store.db
+        .prepare(
+          "SELECT answer FROM tool_calls WHERE tool IN ('usage', 'read_agent') ORDER BY started_at",
+        )
+        .all() as { answer: string }[]
+    ).map(({ answer }) => JSON.parse(answer) as unknown);
+    expect(usage).toEqual({
+      ok: true,
+      result: {
+        yours: "codex",
+        providers: [
+          {
+            provider: "codex",
+            windows: [
+              {
+                minutes: 300,
+                used_percent: 42,
+                resets_at: "2026-10-31T12:00:00.000Z",
+              },
+              {
+                minutes: 10080,
+                used_percent: 18,
+                resets_at: "2026-11-06T00:00:00.000Z",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    // The first turn's tokens, as the provider counted them.
+    expect(read).toMatchObject({
+      ok: true,
+      result: {
+        turns: [{ used: { input: 3590, cached: 0, output: 10 } }, {}],
+      },
     });
   });
 

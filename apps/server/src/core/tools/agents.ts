@@ -252,6 +252,21 @@ export const listModels = defineTool({
   },
 });
 
+export const usage = defineTool({
+  name: "usage",
+  description:
+    "How much of the user's plan is used now, for each provider (yours names the one your model runs on), as the provider last reported it: each usage window with its length in minutes, the percent used and when it resets. A provider reports it as its replies run, so a provider with no reply yet since Rufi started has no windows.",
+  input: Schema.Struct({}),
+  callers: "model",
+  readOnly: true,
+  destructive: false,
+  examples: [{}],
+  run: (_input, { agents }) => {
+    if (!agents) throw outside();
+    return agents.usage();
+  },
+});
+
 export const setAgentModel = defineTool({
   name: "set_agent_model",
   description:

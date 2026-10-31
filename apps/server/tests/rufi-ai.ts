@@ -33,6 +33,7 @@ export async function rufiAiFor(options: {
   return {
     agent: system.rufiAi,
     agents: system.agents,
+    usage: system.usage,
     /** As the core does once the chat is open. */
     dispatch: async () =>
       system.agents.dispatch({

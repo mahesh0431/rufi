@@ -2456,6 +2456,21 @@
           "model": "<id from list_models>"
         }
       ]
+    },
+    {
+      "name": "rufi.usage",
+      "description": "How much of the user's plan is used now, for each provider (yours names the one your model runs on), as the provider last reported it: each usage window with its length in minutes, the percent used and when it resets. A provider reports it as its replies run, so a provider with no reply yet since Rufi started has no windows.",
+      "callers": "model",
+      "readOnly": true,
+      "destructive": false,
+      "inputSchema": {
+        "not": {
+          "type": "null"
+        }
+      },
+      "examples": [
+        {}
+      ]
     }
   ]
 }

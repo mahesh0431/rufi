@@ -75,6 +75,8 @@ export interface AgentTools {
   models: () => Promise<unknown>;
   /** An idle agent below the caller, on another model from its next turn. */
   setModel: (input: SetAgentModelInput) => Promise<unknown>;
+  /** Each provider's usage now and when its limits reset, as it reported them. */
+  usage: () => Promise<unknown>;
 }
 
 /** A tool's input: decoded without services, like JSON. */

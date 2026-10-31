@@ -221,6 +221,7 @@ const RUFI_TOOLS = [
   "mcp__rufi__sort_documents",
   "mcp__rufi__start_agent",
   "mcp__rufi__stop_agent",
+  "mcp__rufi__usage",
   "mcp__rufi__waiting_messages",
 ];
 

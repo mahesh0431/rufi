@@ -362,6 +362,7 @@ export const startCore = (options: CoreOptions) =>
                 messages: (): Chat["queue"] => chat.queue,
                 models: (): Promise<readonly OfferedModel[]> =>
                   chat.shortlisted(),
+                usage: () => agentSystem.usage(),
               }),
             ),
           },
