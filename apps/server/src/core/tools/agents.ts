@@ -1,6 +1,8 @@
 // Rufi's agent tools: an agent starts agents of its own, sees how the ones
-// below it are, writes to one or to the agent that started it, and reads
-// the conversation of any agent in its chat. Rufi's chat does them in the agent
+// below it are, writes to one or to the agent that started it, reads the
+// conversation of any agent in its chat, stops one below it or itself,
+// with or without everything under it, and manages what waits for it and
+// for the agents below it. Rufi's chat does them in the agent
 // system (server/sub-agents.ts); a sub-agent never gets more tools than the
 // agent that starts it.
 import { Schema } from "effect";
@@ -62,6 +64,49 @@ export const ReadAgentInput = Schema.Struct({
   ),
 });
 export type ReadAgentInput = typeof ReadAgentInput.Type;
+
+export const StopAgentInput = Schema.Struct({
+  agent: Schema.String.annotate({
+    description: 'An agent below you, by id, or "self".',
+  }).check(Schema.isMinLength(1)),
+  with_children: Schema.optionalKey(
+    Schema.Boolean.annotate({
+      description:
+        "true: every agent below it stops too, and what waits for any of them is dropped. Leave it out to stop just this agent.",
+    }),
+  ),
+});
+export type StopAgentInput = typeof StopAgentInput.Type;
+
+export const WaitingMessagesInput = Schema.Struct({
+  action: Schema.Literals([
+    "list",
+    "edit",
+    "remove",
+    "reorder",
+    "steer",
+  ]).annotate({
+    description:
+      "list: what waits for you and for the agents below you, in the order it goes. edit: new text for one (id, text). remove: one never goes (id). reorder: one agent's messages in this order (ids). steer: one goes now, into its agent's running turn or first in line, also one held (id).",
+  }),
+  id: Schema.optionalKey(
+    Schema.String.annotate({
+      description: "The message, as list gives it: for edit, remove and steer.",
+    }),
+  ),
+  text: Schema.optionalKey(
+    Schema.String.annotate({
+      description: "Its new text, whole: for edit.",
+    }).check(Schema.isMinLength(1)),
+  ),
+  ids: Schema.optionalKey(
+    Schema.Array(Schema.String).annotate({
+      description:
+        "Messages of one agent, in the order they go: for reorder. The others keep their places.",
+    }),
+  ),
+});
+export type WaitingMessagesInput = typeof WaitingMessagesInput.Type;
 
 const outside = () =>
   new Refusal("Agents can be started only by an agent in Rufi's chat.");
@@ -131,5 +176,35 @@ export const readAgent = defineTool({
   run: (input, { agents }) => {
     if (!agents) throw outside();
     return agents.read(input);
+  },
+});
+
+export const stopAgent = defineTool({
+  name: "stop_agent",
+  description:
+    'Stops an agent below you, or yourself ("self"): its turn ends now, and what it was given to do next goes on after. With with_children, every agent below it stops too, what waits for any of them is dropped (the user\'s messages show "Not sent" with Send), and none of their results wakes another; the stopped agent\'s own result goes to the agent that started it. Answers the agents that stop; agent_status says when they have.',
+  input: StopAgentInput,
+  callers: "model",
+  readOnly: false,
+  destructive: false,
+  examples: [{ agent: "self", with_children: true }],
+  run: (input, { agents }) => {
+    if (!agents) throw outside();
+    return agents.stop(input);
+  },
+});
+
+export const waitingMessages = defineTool({
+  name: "waiting_messages",
+  description:
+    "Manages the messages waiting for you and for the agents below you: the user's, Rufi's notes and agents' messages. list gives each with its id, whose queue it is in (self: yours), who sent it, steer or queue, its text, and why it is held, if it is (one held goes only when it is steered). edit gives one new text; remove means it never goes; reorder puts the messages given, of one queue, in that order, in the places they had; steer sends one now, into its agent's running turn or first in line, and lifts its hold. Every action answers the list as it is then. The user's messages change as if the user changed them: one already on its way can't be changed.",
+  input: WaitingMessagesInput,
+  callers: "model",
+  readOnly: false,
+  destructive: true,
+  examples: [{ action: "list" }, { action: "steer", id: "<id from list>" }],
+  run: (input, { agents }) => {
+    if (!agents) throw outside();
+    return agents.waiting(input);
   },
 });

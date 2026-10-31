@@ -1520,7 +1520,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
           const got = found(want);
           return (
             got !== undefined &&
-            [want.value, ...(want.or ?? [])].includes(got.value) &&
+            got.value === want.value &&
             got.date === want.date
           );
         }),
@@ -1535,7 +1535,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         {
           check: "tells_what_it_found",
           criterion:
-            "Rufi AI's reply to the message with the files says in a few lines what each file holds (two reports and a prescription; the June report again), that nothing is saved, points at what is worth a look, and answers the person's question about TSH using the report's printed value.",
+            "Rufi AI's reply to the message with the files says in a few lines what each file holds (two reports and a prescription; the June report again), that nothing is saved, points at what is worth a look, and answers the person's question about TSH with the 5.8 written by hand over the crossed-out 5.3, as worth a look.",
           evidence: snapshot.entries
             .filter((e) => e.kind === "reply")
             .map((e) => e.text)

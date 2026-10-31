@@ -49,7 +49,7 @@ Rufi AI's work on a file once it is read, in the reply to the message that sent 
 _Avoid_: classification, grouping, parsing
 
 **Draft item**:
-One result or measurement Rufi AI drafted from a page copy, with its value as the copy prints it (for a digit the reader marked unclear, Rufi AI's reading) and the words it came from, marks included (**From the page**), waiting for you: not part of your record, so it counts in no Overview or trend until you save it; when the AI gives one in an answer, it says it isn't saved yet. The drafted values are kept beside any change. It points to its document and page, and may be **worth a look**, with Rufi AI's reason (on a reading from an older Rufi, why its reader wasn't sure). One whose page was read again since is out of date and can't be saved. It waits until it is saved (new, as another source of a saved result, or as a correction) or dismissed (set aside, as the document's page says); a dismissed item is never saved.
+One result or measurement Rufi AI drafted from a page copy, with its value as the copy prints it (for a digit the reader marked unclear, Rufi AI's reading) and the words it came from, marks included (**From the page**), waiting for you: not part of your record, so it counts in no Overview or trend until you save it; when the AI gives one in an answer, it says it isn't saved yet. The drafted values are kept beside any change. It points to its document and page, and may be **worth a look**, with Rufi AI's reason (on a reading from an older Rufi, why its reader wasn't sure). It names the reading of the page it was drafted from; one whose page was read again after that reading is out of date and can't be saved. It waits until it is saved (new, as another source of a saved result, or as a correction) or dismissed (set aside, as the document's page says); a dismissed item is never saved.
 _Avoid_: pending result, unconfirmed record, extracted row
 
 **Report**:
@@ -188,7 +188,7 @@ What waits to go to the AI, kept by Rufi with the chat: your messages and Rufi's
 _Avoid_: inbox, outbox
 
 **Waiting messages**:
-What the queue holds, shown in the chat after its last message as soon as you send; you can steer, edit, reorder or remove your messages there. A held one says **Failed** with the error as it came, or **Not sent** with why (Stop cut its start off, or it came from a backup), and goes only when you send it. A message that brings new files waits for a reply of its own, which reads them first. A message whose reply ended in Rufi's part is not listed: its reply has **Retry**. Signed out, a send takes nothing: the text and chips stay in the box. After a Stop, and when Rufi starts again, what waits goes on, in order; a message whose start a Stop cut off is held, **Not sent · Stopped.**
+What the queue holds, shown in the chat after its last message as soon as you send; you can steer, edit, reorder or remove your messages there. A held one says **Failed** with the error as it came, or **Not sent** with why (Stop cut its start off, or it came from a backup), and goes only when you send it. A message that brings new files waits for a reply of its own, which reads them first. A message whose reply ended in Rufi's part is not listed: its reply has **Retry**. Signed out, a send takes nothing: the text and chips stay in the box. After a Stop, and when Rufi starts again, what waits goes on, in order; a message whose start a Stop cut off is held, **Not sent · Stopped.** The AI can do the same when you ask, and with what waits for its sub-agents (`waiting_messages`); steering a held one sends it.
 _Avoid_: backlog, pending messages
 
 **Rufi event**:
@@ -196,7 +196,7 @@ Rufi's own note that something happened outside your chat, such as a deleted doc
 _Avoid_: notification, system message
 
 **Stop**:
-Ends the AI's reply now, with anything it started. What it wrote so far is kept; what waits goes on, in order.
+Ends the AI's reply now. What it wrote so far is kept; what waits goes on, in order, and its **sub-agents** keep working. The AI can stop a sub-agent, or itself, with everything under it: then all of them stop, what waits for any of them doesn't go (your messages show **Not sent · Stopped.**), and none of their results wakes another.
 _Avoid_: cancel, abort
 
 **Interrupted**:
@@ -268,7 +268,7 @@ What an agent is told when one it started ends a turn: its title, and its whole 
 _Avoid_: callback, notification
 
 **The AI's folder**:
-The folder where the AI works: `ai/` in the data folder. It keeps its programs, notes and research files there between messages, with their caches in `ai/.cache`, and it is the only place where the AI's programs can write. Nothing in it is part of the record. It isn't in backups, the export or a move yet.
+The folder where the AI works: `ai/` in the data folder. It keeps its programs, notes and research files there between messages, with their caches in `ai/.cache`, and it is the only place where the AI's programs can write. Its working notes go in `ai/work/`, a folder for each day; at each start and once a day Rufi removes the days older than 3, and a deleted document's notes go with it. Nothing in it is part of the record. It isn't in backups, the export or a move yet.
 _Avoid_: workspace, sandbox, scratch folder
 
 **Tool**:

@@ -214,10 +214,13 @@ const RUFI_TOOLS = [
   "mcp__rufi__read_agent",
   "mcp__rufi__read_chat",
   "mcp__rufi__save_changes",
+  "mcp__rufi__save_reading",
   "mcp__rufi__send_agent",
   "mcp__rufi__show_face",
   "mcp__rufi__sort_documents",
   "mcp__rufi__start_agent",
+  "mcp__rufi__stop_agent",
+  "mcp__rufi__waiting_messages",
 ];
 
 describe("Rufi's tools on the pinned Codex, over MCP", () => {
