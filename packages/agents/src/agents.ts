@@ -123,6 +123,8 @@ export interface Sent {
   parts?: readonly string[];
   /** A message one agent wrote to another (its done messages are the package's). */
   about?: "wrote";
+  /** What the sending agent wrote, in its own words, without the line around them. */
+  said?: string;
   /**
    * The person wrote it: the agent's restarts in a row count from none
    * again, and what the last one held goes.
@@ -258,7 +260,8 @@ export interface Agents {
   ) => { turns: KeptTurn[]; earlier: string | null };
   /**
    * Where an input is in its agent's queue, who sent it and, from another
-   * agent, why; nothing when the queue has none.
+   * agent, why and what it said in its own words; nothing when the queue
+   * has none.
    */
   input: (id: string) =>
     | {
@@ -267,6 +270,7 @@ export interface Agents {
         held: Hold | null;
         sender: string;
         about: About | null;
+        said: string | null;
       }
     | undefined;
   /** What waits for the agent, held too, in the order it goes. */
@@ -518,21 +522,17 @@ const message = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 
 /**
- * What an agent's parent is told when its turn ends, in its done message:
- * its title and id, and its whole answer and its questions with their
- * options, in plain words, or how it stopped or failed.
+ * What an agent said when its turn ended, in its own words: its whole
+ * answer and its questions with their options, in plain words, or why it
+ * failed; nothing when it stopped.
  */
-function doneText(
-  agent: Agent,
+function saidAtEnd(
   end: TurnEnd,
-  by: string | null,
   questions: readonly { title: string; options: readonly string[] }[],
 ): string {
-  const who = `${agent.title} (${agent.id})`;
   switch (end.status) {
     case "done":
       return [
-        `${who} ${questions.length > 0 ? "asks" : "done"}:`,
         end.answer,
         ...questions.map((question) =>
           [
@@ -544,9 +544,33 @@ function doneText(
         .filter((part) => part !== "")
         .join("\n\n");
     case "stopped":
+      return "";
+    case "failed":
+      return end.text ?? end.reason;
+  }
+}
+
+/**
+ * What an agent's parent is told when its turn ends, in its done message:
+ * its title and id, then what it said, or how it stopped or failed.
+ */
+function doneText(
+  agent: Agent,
+  end: TurnEnd,
+  by: string | null,
+  said: string,
+  asked: boolean,
+): string {
+  const who = `${agent.title} (${agent.id})`;
+  switch (end.status) {
+    case "done":
+      return [`${who} ${asked ? "asks" : "done"}:`, said]
+        .filter((part) => part !== "")
+        .join("\n\n");
+    case "stopped":
       return `${who} stopped${by === null ? "" : ` (by ${by})`}.`;
     case "failed":
-      return `${who} failed: ${end.text ?? end.reason}.`;
+      return `${who} failed: ${said}.`;
   }
 }
 
@@ -1095,17 +1119,21 @@ export function createAgents(options: {
               : "done"
             : end.status;
         const input = `done:${turn.id}`;
+        const said = saidAtEnd(end, questions);
         // Inside a tree that stops, it is kept but wakes nobody.
         const dropped = together(parent, live.id);
         db.prepare(
-          `INSERT INTO queue (id, agent_id, sender, kind, parts, about, state, held, held_text, position, created_at, updated_at)
-           VALUES (?, ?, ?, 'steer', ?, ?, 'waiting', ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue WHERE agent_id = ?), ?, ?)`,
+          `INSERT INTO queue (id, agent_id, sender, kind, parts, about, said, state, held, held_text, position, created_at, updated_at)
+           VALUES (?, ?, ?, 'steer', ?, ?, ?, 'waiting', ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue WHERE agent_id = ?), ?, ?)`,
         ).run(
           input,
           parent,
           live.id,
-          JSON.stringify([doneText(agent, end, stopBy, questions)]),
+          JSON.stringify([
+            doneText(agent, end, stopBy, said, questions.length > 0),
+          ]),
           about,
+          said,
           dropped ? STOPPED.held : null,
           dropped ? STOPPED.text : null,
           parent,
@@ -1628,7 +1656,7 @@ export function createAgents(options: {
     input: (id) =>
       db
         .prepare(
-          "SELECT agent_id AS agent, state, held, sender, about FROM queue WHERE id = ?",
+          "SELECT agent_id AS agent, state, held, sender, about, said FROM queue WHERE id = ?",
         )
         .get(id) as
         | {
@@ -1637,6 +1665,7 @@ export function createAgents(options: {
             held: Hold | null;
             sender: string;
             about: About | null;
+            said: string | null;
           }
         | undefined,
 
@@ -1926,8 +1955,8 @@ export function createAgents(options: {
           }
         }
         db.prepare(
-          `INSERT INTO queue (id, agent_id, sender, kind, parts, about, held, held_text, position, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue WHERE agent_id = ?), ?, ?)`,
+          `INSERT INTO queue (id, agent_id, sender, kind, parts, about, said, held, held_text, position, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue WHERE agent_id = ?), ?, ?)`,
         ).run(
           input.id,
           id,
@@ -1935,6 +1964,7 @@ export function createAgents(options: {
           input.kind,
           input.parts === undefined ? null : JSON.stringify(input.parts),
           input.about ?? null,
+          input.said ?? null,
           dropped ? STOPPED.held : null,
           dropped ? STOPPED.text : null,
           id,

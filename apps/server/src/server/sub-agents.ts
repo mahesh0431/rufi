@@ -137,6 +137,7 @@ export function subAgents(deps: {
           kind,
           parts: [`${self.title} (${self.id}) writes:\n\n${text}`],
           about: "wrote",
+          said: text,
         });
         return {
           agent: target,
