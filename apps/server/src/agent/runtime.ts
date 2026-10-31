@@ -40,6 +40,8 @@ export interface TurnEnd {
   text?: string;
   /** When a usage limit resets (ISO 8601), when the provider says. */
   resetsAt?: string;
+  /** The agent's process ended under the turn: it crashed, or Rufi ended it. */
+  died?: true;
 }
 
 /** What the agent does, as it happens. Every event names its thread and turn. */
@@ -202,6 +204,8 @@ export interface ThreadSettings {
   instructions: string;
   /** Where the thread gets Rufi's tools, given again each time it is resumed. */
   tools?: McpServer;
+  /** Its working folder, in the AI's folder; without it, the AI's folder. */
+  cwd?: string;
 }
 
 export interface AgentRuntime {
@@ -264,7 +268,8 @@ export interface AgentRuntime {
   ) => Promise<void>;
   /**
    * Passes a message into the running reply; returns that reply's turn id.
-   * Throws NotSent when no reply runs or the agent refused it.
+   * Throws NotSent when it surely didn't reach the agent: no reply runs,
+   * the agent refused it, or Rufi couldn't get to the agent (signed out).
    */
   steer: (
     threadId: string,

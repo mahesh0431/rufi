@@ -4,7 +4,9 @@
 // does. What a turn does is chosen by its message's text, the
 // same words the fake model uses for the real Codex (tests/fake-model.ts):
 // "hang" never ends, "partial" writes "ok:part" and then never ends, "slow"
-// answers after 300 ms, "fail" fails, "quiet" makes no tool call and runs no
+// answers after 300 ms, "renew" runs Rufi's provider auth command for a
+// fresh token as Codex does after a 401 (failing the turn as Codex does when
+// the command fails), "fail" fails, "quiet" makes no tool call and runs no
 // command, "command"
 // starts a long command ("background command": and the turn ends while it
 // runs), "drip" streams its answer in five parts 100 ms
@@ -13,8 +15,9 @@
 // writes a progress note (fake-model.ts's NOTE) before it answers ("whole
 // commentary": only when it completes; "cut commentary": half of it, and
 // the turn never ends), "seeded" gives the first words of the note and the
-// answer as each starts, before their deltas, and anything else answers
-// "ok:<text>".
+// answer as each starts, before their deltas, "crash" ends the fake as the
+// turn starts, and anything else answers "ok:<text>". A scenario's `words`
+// count as part of every message.
 // Like Codex, it calls Rufi's tools on the MCP server a thread was given
 // (its config's mcp_servers.rufi), checking it answers when the thread starts
 // or resumes. Like Codex, a thread keeps the developer instructions it was
@@ -24,7 +27,7 @@
 // answers a resume of a thread it has no record of with "no rollout found
 // for thread id <id>". The test passes a scenario in FAKE_CODEX and reads
 // what happened from the JSON lines written to FAKE_CODEX_LOG.
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   appendFileSync,
@@ -40,8 +43,12 @@ import { NOTE, THINKING } from "./fake-model.ts";
 import { callTool, initialize, type McpServerConfig } from "./mcp-client.ts";
 
 export interface Scenario {
+  /** Words that choose what every turn does, as if its message had them. */
+  words?: string;
   /** Methods the fake never answers. */
   hang?: string[];
+  /** Methods the fake refuses with an error, doing nothing. */
+  refuse?: string[];
   /** Methods the fake takes and answers after `slowMs` (200 ms). */
   slow?: string[];
   slowMs?: number;
@@ -85,10 +92,10 @@ export interface Scenario {
   reasoningMs?: number;
   /**
    * The turn generates a picture before answering, as Codex's image
-   * generation does: started, then completed with its bytes and, unless
-   * null, the path it saved them at.
+   * generation does: started, then completed with its bytes (base64, these
+   * or a PNG's) and, unless null, the path it saved them at.
    */
-  picture?: { savedPath: string | null };
+  picture?: { savedPath: string | null; bytes?: string };
   /**
    * Codex compacts the thread's context during the turn, before answering;
    * the compaction ends `compactionMs` (0) after it starts.
@@ -135,6 +142,8 @@ export interface Scenario {
   resetsAt?: number;
   /** The message Codex gives a failed turn (a usage-limit message). */
   failMessage?: string;
+  /** What Codex says a failed turn failed of (`usageLimitExceeded`). */
+  failInfo?: string | null;
   /** Each thread's first turns fail, as on the usage limit. */
   failTurns?: number;
   /** Sparse account rate-limit updates following that snapshot. */
@@ -157,7 +166,6 @@ record({
   started: process.argv.slice(2),
   pid: process.pid,
   env: Object.keys(process.env).sort(),
-  token: process.env["ACCESS_TOKEN"],
   codexHome: process.env["CODEX_HOME"],
 });
 
@@ -248,6 +256,20 @@ let queuedCount = 0;
 let command: ReturnType<typeof spawn> | undefined;
 let commandRunning = false;
 
+/** Whether anything of process group `pgid` is left, also not yet reaped. */
+function groupLeft(pgid: number): boolean {
+  try {
+    process.kill(-pgid, 0);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    // EPERM is macOS's answer for a group not yet reaped.
+    if (code === "EPERM") return true;
+    if (code === "ESRCH") return false;
+    throw error;
+  }
+}
+
 const textOf = (entry: Queued) => entry.input.at(-1)?.text ?? "";
 const queued = (clientUserMessageId: string, text: string): Queued => ({
   id: `q-${String(++queuedCount)}`,
@@ -271,7 +293,11 @@ for (const [id, known] of Object.entries(scenario.threads ?? {})) {
 const USAGE_LIMIT =
   "You’ve hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again later.";
 
-const turnObject = (id: string, status: string) => ({
+const turnObject = (
+  id: string,
+  status: string,
+  failed?: { message: string; codexErrorInfo: string },
+) => ({
   id,
   items: [],
   itemsView: "notLoaded",
@@ -279,8 +305,12 @@ const turnObject = (id: string, status: string) => ({
   error:
     status === "failed"
       ? {
-          message: scenario.failMessage ?? USAGE_LIMIT,
-          codexErrorInfo: "usageLimitExceeded",
+          message: failed?.message ?? scenario.failMessage ?? USAGE_LIMIT,
+          codexErrorInfo:
+            failed?.codexErrorInfo ??
+            (scenario.failInfo === undefined
+              ? "usageLimitExceeded"
+              : scenario.failInfo),
           additionalDetails: null,
           misalignment: null,
         }
@@ -324,7 +354,22 @@ function dispatch(thread: Thread, next: Queued) {
   return turnObject(turnId, "inProgress");
 }
 
-function complete(thread: Thread, turnId: string, status: string) {
+/** Like Codex: a steer joins the running turn, and its record. */
+function steer(thread: Thread, entry: Queued) {
+  if (!thread.running) return;
+  thread.running.steers.push(entry);
+  thread.history
+    .find((turn) => turn.id === thread.running?.turnId)
+    ?.messages.push(entry);
+  persist();
+}
+
+function complete(
+  thread: Thread,
+  turnId: string,
+  status: string,
+  failed?: { message: string; codexErrorInfo: string },
+) {
   const turn = thread.history.find((t) => t.id === turnId);
   if (turn) turn.status = status;
   if (thread.running?.turnId !== turnId) {
@@ -335,13 +380,45 @@ function complete(thread: Thread, turnId: string, status: string) {
   persist();
   send({
     method: "turn/completed",
-    params: { threadId: thread.id, turn: turnObject(turnId, status) },
+    params: { threadId: thread.id, turn: turnObject(turnId, status, failed) },
+  });
+}
+
+/**
+ * Like Codex, runs the auth command of Rufi's provider (its config.toml) for
+ * a token. Its words when it fails, as Codex 0.163.0 gives them.
+ */
+async function authToken(): Promise<{ token: string } | { failed: string }> {
+  const config = readFileSync(
+    join(process.env["CODEX_HOME"] ?? "", "config.toml"),
+    "utf8",
+  );
+  const auth = config.split("[model_providers.openai_chatgpt_plan.auth]")[1];
+  const command = /^command = (".*")$/m.exec(auth ?? "")?.[1];
+  const args = /^args = (\[.*\])$/m.exec(auth ?? "")?.[1];
+  if (command === undefined || args === undefined) {
+    return { failed: "Rufi's provider has no auth command." };
+  }
+  const file = JSON.parse(command) as string;
+  return new Promise((resolve) => {
+    execFile(file, JSON.parse(args) as string[], (error, stdout, stderr) => {
+      resolve(
+        error
+          ? {
+              failed: `provider auth command \`${file}\` exited with status exit status: 1: ${stderr}`,
+            }
+          : { token: stdout.trim() },
+      );
+    });
   });
 }
 
 async function runTurn(thread: Thread, turnId: string, entry: Queued) {
   const threadId = thread.id;
-  const text = textOf(entry);
+  const text =
+    scenario.words === undefined
+      ? textOf(entry)
+      : `${textOf(entry)} ${scenario.words}`;
   const event = (method: string, params: object) => {
     send({ method, params: { threadId, turnId, ...params } });
   };
@@ -375,6 +452,21 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
     persist();
   }
   event("item/started", { item: userItem(entry) });
+  if (text.includes("crash")) process.exit(1);
+  // Like Codex after OpenAI refuses its token (a 401): it runs the auth
+  // command again, and fails the turn with the command's words when that
+  // fails (Codex first tries five times more).
+  if (text.includes("renew")) {
+    const renewed = await authToken();
+    record({ renewed: "token" in renewed ? renewed.token : null });
+    if ("failed" in renewed) {
+      complete(thread, turnId, "failed", {
+        message: renewed.failed,
+        codexErrorInfo: "other",
+      });
+      return;
+    }
+  }
   const turnIndex = thread.history.findIndex((turn) => turn.id === turnId);
   const calls = text.includes("quiet")
     ? []
@@ -556,7 +648,12 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
       { detached: true, stdio: ["ignore", "pipe", "ignore"] },
     ));
     commandRunning = true;
-    shell.once("exit", () => (commandRunning = false));
+    // It lists the command until nothing of its process group is left, the
+    // program in the background too, reaped: a check of a pid then agrees.
+    shell.once("exit", function gone() {
+      if (shell.pid !== undefined && groupLeft(shell.pid)) setTimeout(gone, 10);
+      else commandRunning = false;
+    });
     shell.stdout.once("data", (chunk: Buffer) => {
       record({ command: shell.pid, child: Number(chunk.toString().trim()) });
       event("item/started", {
@@ -612,7 +709,7 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
         ...item,
         status: "completed",
         revisedPrompt: "A fictional watercolour of a sleeping cat",
-        result: "iVBORw0KGgo".repeat(1_000),
+        result: scenario.picture.bytes ?? "iVBORw0KGgo".repeat(1_000),
         ...(scenario.picture.savedPath !== null && {
           savedPath: scenario.picture.savedPath,
         }),
@@ -694,6 +791,16 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
   }
   complete(thread, turnId, "completed");
 }
+
+/** A model as model/list gives it, with the efforts it takes. */
+const model = (id: string, displayName: string) => ({
+  id,
+  displayName,
+  supportedReasoningEfforts: ["low", "medium", "high"].map(
+    (reasoningEffort) => ({ reasoningEffort, description: reasoningEffort }),
+  ),
+  defaultReasoningEffort: "medium",
+});
 
 /** A usage breakdown as Codex reports it, of `totalTokens` tokens. */
 const usageOf = (totalTokens: number) => ({
@@ -859,13 +966,13 @@ async function handle(
       return params["cursor"]
         ? {
             data: [
-              { id: "gpt-6-astra", displayName: "GPT-6-Astra" },
-              { id: "gpt-5.5", displayName: "GPT-5.5" },
+              model("gpt-6-astra", "GPT-6-Astra"),
+              model("gpt-5.5", "GPT-5.5"),
             ],
             nextCursor: null,
           }
         : {
-            data: [{ id: "gpt-6.1-sol", displayName: "GPT-6.1-Sol" }],
+            data: [model("gpt-6.1-sol", "GPT-6.1-Sol")],
             nextCursor: "page-2",
           };
     case "thread/start": {
@@ -917,6 +1024,19 @@ async function handle(
     }
     case "thread/read":
       return threadResponse(threadOf(params));
+    case "thread/delete": {
+      // Like Codex 0.163.0: one it has no record of is refused.
+      const id = String(params["threadId"]);
+      if (!threads.delete(id)) {
+        throw new Error(`no rollout found for thread id ${id}`);
+      }
+      loaded.delete(id);
+      persist();
+      setImmediate(() => {
+        send({ method: "thread/deleted", params: { threadId: id } });
+      });
+      return {};
+    }
     case "thread/unsubscribe": {
       const thread = threadOf(params);
       if (!loaded.delete(thread.id)) return { status: "notLoaded" };
@@ -946,7 +1066,7 @@ async function handle(
       };
       // Like Codex: into a running turn it steers.
       if (thread.running) {
-        thread.running.steers.push(entry);
+        steer(thread, entry);
         return { turn: turnObject(thread.running.turnId, "inProgress") };
       }
       // Like Codex: the model and effort hold for this turn and the ones after.
@@ -977,12 +1097,13 @@ async function handle(
       ) {
         throw new Error("no active turn to steer");
       }
-      thread.running.steers.push({
+      const { turnId } = thread.running;
+      steer(thread, {
         id: "steer",
         input: params["input"] as Queued["input"],
         clientUserMessageId: String(params["clientUserMessageId"]),
       });
-      return { turnId: thread.running.turnId };
+      return { turnId };
     }
     case "turn/interrupt": {
       if (scenario.ignoreInterrupt) return undefined;
@@ -1065,6 +1186,13 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   if (message.id === undefined) return; // a notification, e.g. initialized
   if (scenario.hang?.includes(message.method)) return;
   const { id, method } = message;
+  if (scenario.refuse?.includes(method)) {
+    send({
+      id,
+      error: { code: -32600, message: `The fake refused ${method}.` },
+    });
+    return;
+  }
   const reply = () => {
     handle(method, message.params ?? {}).then(
       (result) => {

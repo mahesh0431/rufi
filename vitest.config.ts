@@ -6,6 +6,8 @@ export default defineConfig({
     include: [
       "apps/*/src/**/*.test.ts",
       "apps/*/scripts/*.test.ts",
+      "packages/*/src/**/*.test.ts",
+      "packages/*/tests/*.test.ts",
       "lint/*.test.ts",
     ],
     // Test files at the same time: 4, and never more than the CPUs less one

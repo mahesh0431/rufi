@@ -8,6 +8,7 @@ A family's health record on their Mac, with an AI that reads their documents and
 - While working, check what you changed: `pnpm check:quick` (format, lint, types, unused code) and the tests covering what you changed, with `pnpm exec vitest run <file>` or `pnpm exec playwright test <file>` after `pnpm --filter @rufi/web build`. `pnpm format` fixes formatting.
 - CI runs the full suite on every pull request; it must be green before merging. `pnpm check` runs the full suite locally when wanted.
 - After changing `schema.sql`, a tool or the Codex pin, run `pnpm db:types`, `pnpm tools:json` or `pnpm codex:types`.
+- After changing `apps/server/src/agent/claude/` or the Claude Agent SDK pin, run `pnpm claude:live`: it checks the Claude installed on this Mac, with fictional data (CI has no Claude).
 - By hand, always set `RUFI_HOME` to a fictional data folder; without it Rufi opens the person's real `~/.rufi`.
 
 ## Tests
@@ -33,6 +34,7 @@ A family's health record on their Mac, with an AI that reads their documents and
 - The record changes only by a save, in one transaction, with a receipt; records are never deleted (ADR 0005).
 - The AI reads the record only through Rufi's tools, for the person Rufi chose (ADR 0006).
 - The AI's sandbox (`aiSandbox`, ADR 0016), the reader's lock-down (ADR 0010), the window's guards and the CSP (ADR 0017). Never relax them to make a test pass.
+- No secret in a process's arguments or environment, Codex's or Rufi's: the AI's commands can read them. Codex gets its token from Rufi's token door (ADR 0025).
 - A schema change is a migration; a shipped one never changes (ADR 0011).
 - Backups are checked; restore never writes over anything (ADR 0008).
 - Values are stored as printed.

@@ -55,6 +55,7 @@ import type { UserInput } from "./protocol/v2/UserInput.ts";
 import { errorCode, type Log } from "../../platform/logs.ts";
 import { RpcError } from "./rpc.ts";
 import { AI_PROFILE, mcpServers, prepareCodexHome } from "./settings.ts";
+import { doorFile } from "./token-door.ts";
 
 export interface CodexDeps {
   /** Rufi's data folder; Codex gets `codex/` inside it. */
@@ -66,7 +67,10 @@ export interface CodexDeps {
   command: CodexCommand;
   /** The child's environment, without secrets (platform/config.ts). */
   env: Readonly<Record<string, string>>;
-  /** An access token valid for at least `validForMs`. */
+  /**
+   * An access token valid for at least `validForMs`: for Codex's token door,
+   * and to check the sign-in before Rufi sends anything.
+   */
   token: (validForMs: number) => Promise<string>;
   version: string;
   deadlines?: Partial<Deadlines>;
@@ -76,16 +80,18 @@ export interface CodexDeps {
   log?: Log;
 }
 
-/** A token must outlast a whole turn, plus this margin. */
-const TOKEN_MARGIN_MS = 5 * 60_000;
+/** The sign-in check before Rufi sends anything: a token valid this long. */
+const SIGNED_IN_MS = 60_000;
 /** How often Rufi notes the process groups of running commands. */
 const TRACK_EVERY_MS = 500;
 
 interface Running {
   threadId: string;
   turnId: string;
-  /** How it ended, when Rufi decided it (a deadline, a tool loop). */
+  /** How it ended, when Rufi decided it (a Stop, a tool loop). */
   end: TurnEnd | undefined;
+  /** When Codex said it started. */
+  startedAt: number;
   /**
    * Agent messages whose text came as they started or in deltas; the others
    * arrive whole at their end.
@@ -104,7 +110,6 @@ interface Running {
   stopping: Promise<void> | undefined;
   /** Settles once Codex has shown the user's message that started it. */
   messaged: PromiseWithResolvers<void>;
-  deadline: NodeJS.Timeout;
 }
 
 const textInput = (text: string): UserInput => ({
@@ -113,7 +118,28 @@ const textInput = (text: string): UserInput => ({
   text_elements: [],
 });
 
-export function codexRuntime(deps: CodexDeps): AgentRuntime {
+/** A model as Codex lists it, with the efforts it takes. */
+interface CodexModel extends Model {
+  efforts: string[];
+  defaultEffort: string;
+}
+
+/** What the Codex adapter needs beyond what the chat uses. */
+export interface CodexRuntime extends AgentRuntime {
+  /** The models Codex offers now, with their efforts. */
+  catalog: (signal?: AbortSignal) => Promise<CodexModel[]>;
+  /** Codex's usage limits as it last reported them. */
+  limits: () => RateLimitSnapshot | undefined;
+  /**
+   * Lets go of a thread Codex has open, once no reply runs in it, so the
+   * next resume gives it new settings.
+   */
+  release: (threadId: string) => Promise<void>;
+  /** Deletes a thread no reply runs in; one Codex hasn't got counts as deleted. */
+  deleteThread: (threadId: string) => Promise<void>;
+}
+
+export function codexRuntime(deps: CodexDeps): CodexRuntime {
   const deadlines = { ...DEADLINES, ...deps.deadlines };
   const log = deps.log ?? (() => undefined);
   const emit = (event: AgentEvent) => {
@@ -140,10 +166,12 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     app.rpc.request<T>(method, params, deadlines.requestMs);
 
   /**
-   * Codex with a token that outlasts a turn. The token is always awaited to
-   * the end (a renewed one must be saved); after it, a Stop ends the wait.
-   * Thread preparation and its hand-over share a signal: a new thread has
-   * no saved rollout to resume if a second decision replaces its server.
+   * Codex, once the sign-in holds: signed out, nothing is sent. Codex gets
+   * its tokens from its door, renewed as it goes, so a running app-server
+   * is kept. The sign-in is always awaited to the end (a renewed token must
+   * be saved); after it, a Stop ends the wait. Thread preparation and its
+   * hand-over share a signal: a new thread has no saved rollout to resume if
+   * a second decision replaces its server.
    */
   async function ready(signal?: AbortSignal): Promise<AppServer> {
     if (lifetime.signal.aborted) throw new Error("Codex is closed.");
@@ -152,14 +180,13 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       if (signal?.aborted) throw new Stopped();
       return previous;
     }
-    const token = await deps.token(deadlines.turnMs + TOKEN_MARGIN_MS);
+    await deps.token(SIGNED_IN_MS);
     if (signal?.aborted) throw new Stopped();
-    // A running reply keeps its app-server: Codex keeps the turn in it.
-    if (server?.running() && (server.token === token || turns.size > 0)) {
+    if (server?.running()) {
       if (signal) prepared.set(signal, server);
       return server;
     }
-    starting ??= start(token).finally(() => {
+    starting ??= start().finally(() => {
       starting = undefined;
     });
     const app = await abortable(starting, signal);
@@ -167,9 +194,11 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     return app;
   }
 
-  async function start(token: string): Promise<AppServer> {
+  async function start(): Promise<AppServer> {
     await shutDown();
+    const door = doorFile(deps.home, "chat");
     const paths = await prepareCodexHome(deps.home, {
+      door,
       userHome: deps.env["HOME"],
       sandbox: deps.sandbox,
       skills: deps.skills,
@@ -178,7 +207,8 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       command: deps.command,
       env: { ...deps.env, HOME: paths.processHome },
       codexHome: paths.codexHome,
-      token,
+      door,
+      token: deps.token,
       version: deps.version,
       deadlines,
       signal: lifetime.signal,
@@ -199,6 +229,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
           status: "failed",
           reason: "provider_failed",
           text: "Codex stopped unexpectedly.",
+          died: true,
         });
       },
     });
@@ -219,6 +250,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       status: "failed",
       reason: "provider_failed",
       text: "Codex stopped.",
+      died: true,
     });
   }
 
@@ -239,7 +271,6 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   function finish(running: Running, end: TurnEnd): void {
     if (turns.get(running.threadId) !== running) return;
     turns.delete(running.threadId);
-    clearTimeout(running.deadline);
     if (turns.size === 0) {
       clearInterval(tracking);
       tracking = undefined;
@@ -269,7 +300,7 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     };
     return {
       model: settings.model,
-      cwd: deps.sandbox.folder,
+      cwd: settings.cwd ?? deps.sandbox.folder,
       approvalPolicy: "never",
       // The named profile, never the legacy `sandbox`: only a profile can
       // deny reads.
@@ -379,7 +410,11 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       const stopped = running.stopping && turn.status === "completed";
       finish(
         running,
-        endOf(stopped ? { ...turn, status: "interrupted" } : turn, limits),
+        endOf(
+          stopped ? { ...turn, status: "interrupted" } : turn,
+          limits,
+          (server?.signedOutAt() ?? -1) >= running.startedAt,
+        ),
       );
       return;
     }
@@ -405,20 +440,13 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
       threadId,
       turnId,
       end: undefined,
+      startedAt: Date.now(),
       streamed: new Set(),
       notes: new Set(),
       thinking: new Map(),
       messaged: Promise.withResolvers(),
       ended: Promise.withResolvers(),
       stopping: undefined,
-      deadline: setTimeout(() => {
-        running.end ??= {
-          status: "failed",
-          reason: "timeout",
-          text: "The reply took too long, so Rufi stopped it.",
-        };
-        void stopTurn(running);
-      }, deadlines.turnMs),
     };
     turns.set(threadId, running);
     tracking ??= setInterval(() => void track(), TRACK_EVERY_MS);
@@ -769,7 +797,59 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     return { model: response.model, running };
   }
 
-  /** A renewed sign-in replaces Codex, so its known thread is picked up again. */
+  /**
+   * Lets go of a thread Codex has open; it closes at once
+   * (thread_unload_delay_secs = 0).
+   */
+  async function unload(
+    app: AppServer,
+    threadId: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (!loaded.has(threadId)) return;
+    const closed = Promise.withResolvers<undefined>();
+    closing.set(threadId, closed);
+    try {
+      const { status } = await request<ThreadUnsubscribeResponse>(
+        app,
+        "thread/unsubscribe",
+        { threadId },
+      );
+      if (status === "unsubscribed") {
+        await within(closed.promise, deadlines.requestMs, signal);
+      }
+    } finally {
+      closing.delete(threadId);
+    }
+    loaded.delete(threadId);
+  }
+
+  /** The models, every page, with their efforts. */
+  async function catalog(signal?: AbortSignal): Promise<CodexModel[]> {
+    const app = await ready(signal);
+    const models: CodexModel[] = [];
+    let cursor: string | null = null;
+    do {
+      const page: ModelListResponse = await request(app, "model/list", {
+        cursor,
+        includeHidden: false,
+      });
+      for (const model of page.data) {
+        models.push({
+          id: model.id,
+          name: model.displayName,
+          efforts: model.supportedReasoningEfforts.map(
+            (option) => option.reasoningEffort,
+          ),
+          defaultEffort: model.defaultReasoningEffort,
+        });
+      }
+      cursor = page.nextCursor;
+    } while (cursor);
+    return models;
+  }
+
+  /** A new app-server (after a crash) picks a known thread up again. */
   async function open(
     threadId: string,
     signal?: AbortSignal,
@@ -787,21 +867,38 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
   return {
     provider: "codex",
 
-    models: async (signal) => {
-      const app = await ready(signal);
-      const models: Model[] = [];
-      let cursor: string | null = null;
-      do {
-        const page: ModelListResponse = await request(app, "model/list", {
-          cursor,
-          includeHidden: false,
-        });
-        for (const model of page.data) {
-          models.push({ id: model.id, name: model.displayName });
+    models: async (signal) =>
+      (await catalog(signal)).map(({ id, name }) => ({ id, name })),
+
+    catalog,
+
+    limits: () => limits,
+
+    deleteThread: async (threadId) => {
+      if (turns.has(threadId)) throw new Error("A reply is running.");
+      const app = await ready();
+      threads.delete(threadId);
+      try {
+        await request(app, "thread/delete", { threadId });
+      } catch (error) {
+        // Codex's answer for a thread it has no files of (0.163.0).
+        if (
+          !(error instanceof RpcError) ||
+          error.code !== -32600 ||
+          error.message !==
+            `Codex refused thread/delete: no rollout found for thread id ${threadId}`
+        ) {
+          throw error;
         }
-        cursor = page.nextCursor;
-      } while (cursor);
-      return models;
+      }
+      loaded.delete(threadId);
+    },
+
+    release: async (threadId) => {
+      if (turns.has(threadId)) throw new Error("A reply is running.");
+      threads.delete(threadId);
+      const app = server;
+      if (app?.running()) await unload(app, threadId);
     },
 
     startThread: async (settings, signal) => {
@@ -833,26 +930,12 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
         );
       }
       // Codex ignores new settings for a thread it has open: it is let go
-      // of first, and closes at once (thread_unload_delay_secs = 0).
-      if (loaded.has(threadId)) {
-        const closed = Promise.withResolvers<undefined>();
-        closing.set(threadId, closed);
-        try {
-          const { status } = await request<ThreadUnsubscribeResponse>(
-            app,
-            "thread/unsubscribe",
-            { threadId },
-          );
-          if (status === "unsubscribed") {
-            await within(closed.promise, deadlines.requestMs, signal);
-          }
-        } catch (error) {
-          if (error instanceof Stopped) throw error;
-          throw new NotReloaded(undefined, { cause: error });
-        } finally {
-          closing.delete(threadId);
-        }
-        loaded.delete(threadId);
+      // of first.
+      try {
+        await unload(app, threadId, signal);
+      } catch (error) {
+        if (error instanceof Stopped) throw error;
+        throw new NotReloaded(undefined, { cause: error });
       }
       const response = await resume(app, threadId, settings, signal);
       // The history still holds the instructions the thread was first given
@@ -924,7 +1007,12 @@ export function codexRuntime(deps: CodexDeps): AgentRuntime {
     },
 
     steer: async (threadId, message) => {
-      const app = await open(threadId);
+      let app: AppServer;
+      try {
+        app = await open(threadId);
+      } catch (error) {
+        throw new NotSent(errorText(error), { cause: error });
+      }
       const running = turns.get(threadId);
       if (!running || running.stopping) {
         throw new NotSent("No reply is running to steer.");
