@@ -48,6 +48,8 @@ import type { RateLimitSnapshot } from "./protocol/v2/RateLimitSnapshot.ts";
 import type { ReasoningSummaryTextDeltaNotification } from "./protocol/v2/ReasoningSummaryTextDeltaNotification.ts";
 import type { ThreadBackgroundTerminalsListResponse } from "./protocol/v2/ThreadBackgroundTerminalsListResponse.ts";
 import type { ThreadResumeResponse } from "./protocol/v2/ThreadResumeResponse.ts";
+import type { ThreadTokenUsage } from "./protocol/v2/ThreadTokenUsage.ts";
+import type { TokenUsageBreakdown } from "./protocol/v2/TokenUsageBreakdown.ts";
 import type { ThreadInjectItemsParams } from "./protocol/v2/ThreadInjectItemsParams.ts";
 import type { ThreadItem } from "./protocol/v2/ThreadItem.ts";
 import type { ThreadStartResponse } from "./protocol/v2/ThreadStartResponse.ts";
@@ -113,6 +115,10 @@ interface Running {
   stopping: Promise<void> | undefined;
   /** Settles once Codex has shown the user's message that started it. */
   messaged: PromiseWithResolvers<void>;
+  /** The thread's tokens before it, as Codex last counted them. */
+  before: TokenUsageBreakdown | undefined;
+  /** Codex's latest count during it. */
+  used: ThreadTokenUsage | undefined;
 }
 
 const textInput = (text: string): UserInput => ({
@@ -180,6 +186,8 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
   /** Threads Rufi let go of, until Codex says they are closed. */
   const closing = new Map<string, PromiseWithResolvers<undefined>>();
   const turns = new Map<string, Running>(); // the running turn of each thread
+  /** Each thread's tokens so far, as Codex last counted them. */
+  const totals = new Map<string, TokenUsageBreakdown>();
   /** Threads where a Stop came during a send: the reply it starts is stopped. */
   const stopNext = new Set<string>();
   /** Codex's sign-ins under way, by Codex's id for each. */
@@ -304,6 +312,19 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
       tracking = undefined;
     }
     running.ended.resolve();
+    // What it used: the thread's count at its end, less the count before it.
+    const { used, before } = running;
+    if (used) {
+      emit({
+        type: "turnUsage",
+        threadId: running.threadId,
+        turnId: running.turnId,
+        input: used.total.inputTokens - (before?.inputTokens ?? 0),
+        cached: used.total.cachedInputTokens - (before?.cachedInputTokens ?? 0),
+        output: used.total.outputTokens - (before?.outputTokens ?? 0),
+        payload: used,
+      });
+    }
     emit({
       type: "turnEnded",
       threadId: running.threadId,
@@ -422,6 +443,9 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
           tokens: tokenUsage.last.totalTokens,
           window: tokenUsage.modelContextWindow,
         });
+        totals.set(threadId, tokenUsage.total);
+        const running = turns.get(threadId);
+        if (running?.turnId === turnId) running.used = tokenUsage;
       }
       return;
     }
@@ -481,6 +505,8 @@ export function codexRuntime(deps: CodexDeps): CodexRuntime {
       messaged: Promise.withResolvers(),
       ended: Promise.withResolvers(),
       stopping: undefined,
+      before: totals.get(threadId),
+      used: undefined,
     };
     turns.set(threadId, running);
     tracking ??= setInterval(() => void track(), TRACK_EVERY_MS);

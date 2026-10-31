@@ -188,6 +188,11 @@ export interface KeptTurn {
   reason: string | null;
   /** Its final answer whole, or the provider's words when it failed. */
   result: string | null;
+  /**
+   * What it used, as its provider counted it once it ended: input tokens
+   * (all, and of those, from the cache) and the tokens written.
+   */
+  used: { input: number; cached: number; output: number } | null;
   startedAt: string;
   endedAt: string | null;
   /** What it took, in order: who sent each, and its words, unless the host keeps them. */
@@ -379,6 +384,15 @@ export interface Agents {
 const ITEM = `turns.provider_turn AS turn, turns.conversation, items.id, items.position, items.type, items.kind,
   items.title, items.detail, items.status, items.text,
   items.created_at AS createdAt, items.updated_at AS updatedAt`;
+
+/** What a turn used, as kept, without the provider's own count. */
+function usedOf(kept: string | null): KeptTurn["used"] {
+  if (kept === null) return null;
+  const { input, cached, output } = JSON.parse(kept) as NonNullable<
+    KeptTurn["used"]
+  >;
+  return { input, cached, output };
+}
 
 /** An agent's conversation and turns while this process runs it. */
 interface Live {
@@ -830,9 +844,19 @@ export function createAgents(options: {
         });
         return;
       }
-      // A turn's own usage is the usage tool's to keep (plan PR 18).
-      case "turnUsage":
+      case "turnUsage": {
+        const turn = turnOf(live, event.turn);
+        if (!turn) return;
+        const { input, cached, output, payload } = event;
+        store.change(({ event: record }) => {
+          db.prepare("UPDATE turns SET used = ? WHERE id = ?").run(
+            JSON.stringify({ input, cached, output, reported: payload }),
+            turn.id,
+          );
+          record("turn.usage", live.id, { turn: turn.id });
+        });
         return;
+      }
       case "turnEnded":
         endTurn(live, event.turn, event.end);
         return;
@@ -1664,7 +1688,7 @@ export function createAgents(options: {
     history: (agent, { before, limit }) => {
       const found = db
         .prepare(
-          `SELECT id, provider_turn AS ref, status, reason, result,
+          `SELECT id, provider_turn AS ref, status, reason, result, used,
              started_at AS startedAt, ended_at AS endedAt
            FROM turns WHERE agent_id = ?
              AND (? IS NULL OR rowid < (SELECT rowid FROM turns WHERE id = ? AND agent_id = ?))
@@ -1676,7 +1700,9 @@ export function createAgents(options: {
           before ?? null,
           agent,
           limit + 1,
-        ) as unknown as Omit<KeptTurn, "inputs" | "items">[];
+        ) as unknown as (Omit<KeptTurn, "inputs" | "items" | "used"> & {
+        used: string | null;
+      })[];
       const page = found.slice(0, limit).toReversed();
       const refs = page.flatMap((turn) =>
         turn.ref === null ? [] : [turn.ref],
@@ -1694,6 +1720,7 @@ export function createAgents(options: {
       return {
         turns: page.map((turn) => ({
           ...turn,
+          used: usedOf(turn.used),
           inputs: (
             inputs.all(turn.id) as {
               id: string;

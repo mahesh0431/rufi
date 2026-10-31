@@ -20,7 +20,7 @@ import type { TurnScope } from "../core/tools/tools.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import { NOT_SHORTLISTED } from "../core/chat/models.ts";
 import { ChatRefusal, type Chat } from "./chat.ts";
-import type { OfferedModel } from "./rufi-ai.ts";
+import type { OfferedModel, ProviderUsage } from "./rufi-ai.ts";
 
 /** How many turns a page of an agent's conversation holds. */
 const PAGE = 10;
@@ -34,6 +34,8 @@ export function subAgents(deps: {
   messages: () => Chat["queue"];
   /** The models of the person's shortlist the providers offer now. */
   models: () => Promise<readonly OfferedModel[]>;
+  /** Each provider's usage now, as it reported it. */
+  usage: () => Promise<readonly ProviderUsage[]>;
 }): (scope: TurnScope) => AgentTools {
   const { agents, kept } = deps;
   /** A model of the shortlist, else refused with the chat's own line. */
@@ -193,6 +195,7 @@ export function subAgents(deps: {
               })),
             }),
             result: turn.result,
+            ...(turn.used && { used: turn.used }),
           })),
           earlier: page.earlier,
         };
@@ -211,6 +214,18 @@ export function subAgents(deps: {
         });
         return { stopping: children ? [id, ...agents.below(id)] : [id] };
       },
+
+      usage: async () => ({
+        yours: agents.get(scope.agent)?.provider ?? null,
+        providers: (await deps.usage()).map(({ provider, windows }) => ({
+          provider,
+          windows: windows.map(({ minutes, usedPercent, resetsAt }) => ({
+            ...(minutes !== undefined && { minutes }),
+            used_percent: usedPercent,
+            ...(resetsAt !== undefined && { resets_at: resetsAt }),
+          })),
+        })),
+      }),
 
       models: async () => ({
         models: (await deps.models()).map(

@@ -8,6 +8,7 @@ import {
   setAgentModel,
   startAgent,
   stopAgent,
+  usage,
   waitingMessages,
 } from "./agents.ts";
 import { briefResult, createBrief } from "./brief.ts";
@@ -70,6 +71,7 @@ export const TOOLS: readonly Tool[] = [
   waitingMessages,
   listModels,
   setAgentModel,
+  usage,
 ];
 
 /**

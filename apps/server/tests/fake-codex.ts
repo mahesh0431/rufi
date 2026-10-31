@@ -153,6 +153,8 @@ export interface Scenario {
    * with its task, and a done message with the agent's title.
    */
   callsByText?: Record<string, NonNullable<Scenario["calls"]>>;
+  /** The plan's usage limits each turn reports as it starts, as Codex's responses do. */
+  limits?: Record<string, unknown>;
   /** A usage-limit snapshot sent before a failed turn. */
   resetsAt?: number;
   /** The message Codex gives a failed turn (a usage-limit message). */
@@ -430,6 +432,12 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
     params: { status: "disabled" },
   });
   send({ method: "brand/new/notification", params: { threadId } });
+  if (scenario.limits) {
+    send({
+      method: "account/rateLimits/updated",
+      params: { rateLimits: scenario.limits },
+    });
+  }
   send({
     method: "turn/started",
     params: { threadId, turn: turnObject(turnId, "inProgress") },

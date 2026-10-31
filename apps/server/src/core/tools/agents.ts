@@ -195,7 +195,7 @@ export const sendAgent = defineTool({
 export const readAgent = defineTool({
   name: "read_agent",
   description:
-    "Reads the conversation of an agent in your chat, yours (\"self\") or another's: its turns, the latest page first, each with what it was sent and by whom, its steps, the questions it asked (with their options) and its result. Give before: the page's earlier for the page before it; earlier is null on the first page. An agent outside your chat is not found.",
+    "Reads the conversation of an agent in your chat, yours (\"self\") or another's: its turns, the latest page first, each with what it was sent and by whom, its steps, the questions it asked (with their options), its result and what it used, once it ended (the tokens it read, how many of those from the cache, and the tokens it wrote, as its provider counted them). Give before: the page's earlier for the page before it; earlier is null on the first page. An agent outside your chat is not found.",
   input: ReadAgentInput,
   callers: "model",
   readOnly: true,
@@ -249,6 +249,21 @@ export const listModels = defineTool({
   run: (_input, { agents }) => {
     if (!agents) throw outside();
     return agents.models();
+  },
+});
+
+export const usage = defineTool({
+  name: "usage",
+  description:
+    "How much of the user's plan is used now, for each provider (yours names the one your model runs on), as the provider last reported it: each usage window with its length in minutes, the percent used and when it resets. A provider reports it as its replies run, so a provider with no reply yet since Rufi started has no windows.",
+  input: Schema.Struct({}),
+  callers: "model",
+  readOnly: true,
+  destructive: false,
+  examples: [{}],
+  run: (_input, { agents }) => {
+    if (!agents) throw outside();
+    return agents.usage();
   },
 });
 

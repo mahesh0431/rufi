@@ -280,6 +280,8 @@ Rufi keeps the model and effort for your chat. You can't change them while a rep
 
 **Context used.** In the chat's panel and page, a small grey ring with a percentage, such as "38%", shows beside the model and effort: how much of the AI's memory of the chat is in use, as the AI last reported it. Point at it, or move to it with Tab, to see what it means. It shows after the AI's first reply, and keeps its value when you reload. It changes after each step of a reply, not with each word. After a compaction or another model, it keeps the old value until the next reply. After a new thread, it shows nothing until the AI's first reply there. When the AI doesn't say how big its memory is, there is no ring. A full memory is normal: near full, Codex compacts the chat history.
 
+**Your plan's usage.** The AI can see how much of your ChatGPT plan is used now, and when each limit resets, as your plan last reported it with a reply. Before a big job, such as several sub-agents or a long document, it may look. When little is left, it may do less at once, choose a lighter model or effort for its sub-agents, or tell you when the limit resets and let you choose. Until a reply has run since Rufi started, it sees no usage. To see your usage yourself, open **Settings** › **ChatGPT plan** › **Manage usage**.
+
 ## The AI's memory of the chat
 
 Your chat is always kept whole in Rufi, and the AI can read all of it. The AI also keeps its own working memory of the chat, a thread, while you talk.

@@ -11,6 +11,7 @@ import {
   type McpRegistration,
   type ProviderEvent,
   type TurnEnd as Ended,
+  type UsageWindow,
 } from "@rufi/agents/provider";
 import { type Cause, SIGNED_OUT } from "@rufi/contracts";
 import { type AgentEvent, type Model, type TurnEnd } from "../agent/runtime.ts";
@@ -81,6 +82,12 @@ export interface ChatOpening {
   tools: McpRegistration;
   /** A new conversation's earlier history, read as it opens. */
   seed: () => Promise<string | undefined>;
+}
+
+/** A provider's usage now and when its limits reset, as it reported them. */
+export interface ProviderUsage {
+  provider: string;
+  windows: readonly UsageWindow[];
 }
 
 /** A model a provider offers now, with the provider it runs on. */
@@ -200,10 +207,7 @@ function endOf(end: Ended): TurnEnd {
 }
 
 /** A provider event as one of today's agent events, in `threadId`. */
-function eventOf(
-  threadId: string,
-  event: Exclude<ProviderEvent, { type: "turnUsage" }>,
-): RufiAiEvent {
+function eventOf(threadId: string, event: ProviderEvent): RufiAiEvent {
   const turnId = event.turn;
   switch (event.type) {
     case "turnStarted":
@@ -264,6 +268,16 @@ function eventOf(
         tokens: event.tokens,
         window: event.window,
       };
+    case "turnUsage":
+      return {
+        threadId,
+        type: "turnUsage",
+        turnId,
+        input: event.input,
+        cached: event.cached,
+        output: event.output,
+        payload: event.payload,
+      };
     case "turnEnded":
       return { threadId, type: "turnEnded", turnId, end: endOf(event.end) };
   }
@@ -276,7 +290,11 @@ export async function startRufiAi(
     "host" | "live" | "apply" | "opened"
   > & { transcripts: Transcripts },
 ): Promise<
-  AgentSystem & { rufiAi: (host: RufiAiHost) => RufiAi; logs: AgentLogs }
+  AgentSystem & {
+    rufiAi: (host: RufiAiHost) => RufiAi;
+    logs: AgentLogs;
+    usage: () => Promise<ProviderUsage[]>;
+  }
 > {
   const { transcripts, adapters } = options;
   const kept = chatAgents(options.record, options.now);
@@ -399,8 +417,6 @@ export async function startRufiAi(
       screens.logs?.changed(agent);
       return;
     }
-    // A turn's own usage is for the usage tool; the chat shows the context.
-    if (event.type === "turnUsage") return;
     if (event.type === "turnEnded") {
       const own = ends.get(event.turn);
       ends.delete(event.turn);
@@ -739,6 +755,13 @@ export async function startRufiAi(
     ...system,
     rufiAi,
     logs: shown,
+    usage: () =>
+      Promise.all(
+        adapters.map(async (adapter) => ({
+          provider: adapter.id,
+          windows: await adapter.usage(),
+        })),
+      ),
     close: async () => {
       shown.close();
       await system.close();
