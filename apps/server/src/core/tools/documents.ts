@@ -2,10 +2,10 @@
 // list, newest first. A document: its pages, its add and its drafts. A
 // document and a page: that page as the AI sees it (the image first, then
 // the reader's copy and the PDF's own text when it has some), from the same
-// page service the reader uses. A document and copies: the reader's copies of its add's
-// pages, for sorting (sort_documents). Lists come in parts
-// with a continuation, so a read can always be finished. The person is
-// Rufi's choice; the AI names only a document of theirs and a page.
+// page service the reader uses. A document and copies: the reader's copies
+// of its add's pages, for sorting (sort_documents). Lists come in parts with
+// a continuation, so a read can always be finished. The person is Rufi's
+// choice; the AI names only a document of theirs and a page.
 import type { DraftItem } from "@rufi/contracts/documents";
 import { Schema } from "effect";
 import { DELETED_DOCUMENT, ranges } from "../documents/naming.ts";
