@@ -428,8 +428,6 @@ interface ExpectedDraft {
   date: string;
   /** Why it is worth a look, when it is. */
   look?: string;
-  /** Other values a draft may take, flagged (a crossed-out print). */
-  or?: readonly string[];
 }
 
 /**
@@ -502,7 +500,6 @@ export const EXPECTED: {
       date: "2026-06-12",
       ...(test === "TSH" && {
         look: "the printed 5.3 is crossed out and 5.8 written by hand",
-        or: ["5.3"],
       }),
     })),
     ...[
