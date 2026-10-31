@@ -44,6 +44,15 @@ A lab test and a measurement of the same name are kept apart: each has its own v
 
 Results saved before Rufi had the two pages are on Lab results. Move any measurement among them in the chat.
 
+### Your tests
+
+Each result is in one of your tests, such as Creatinine, Blood count items like Haemoglobin, or Blood pressure. A test keeps the values of one thing measured from every lab together, whatever each lab called it: "S. Creatinine", "Creatinine, serum" and "CREA" can all be Creatinine. A urine creatinine is a test of its own.
+
+- **The AI chooses the test** when it saves a result, and tells you which test a result joins when the lab named it differently, and which tests are new. It asks when it isn't sure. Each test has a name and a section, such as Kidney, in the AI's words.
+- **Each test has a unit**, such as mg/dL. The AI also saves each result's number in that unit: the printed number when the units mean the same (mg/dl and mg/dL), or converted, for example 97 µmol/L as 1.1 mg/dL. When it can't compare, it saves none. What the lab printed always stays as it came.
+- **To fix a test, tell the AI**, for example "these two are the same test", "the urine one isn't creatinine" or "call it Serum creatinine". As for every change, it asks first, and the chat shows a receipt. "Undo that" puts it back.
+- A test you no longer have results in isn't shown. Results saved before Rufi had tests are in one test for each name and unit the lab printed: ask the AI to join any that are the same.
+
 An old link to a result opens it on its page now.
 
 ## Your profile

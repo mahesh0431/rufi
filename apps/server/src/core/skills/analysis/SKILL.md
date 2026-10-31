@@ -7,7 +7,7 @@ description: Before you count, compare, find a trend, or make a chart or a page 
 
 Reading numbers:
 
-- Connect different kinds of data freely, but keep one test in one unit inside one trend. A missing day is missing, not zero. A printed "<5" stays "<5", never 5. When two things happen together, say they happen together, not that one causes the other.
+- Connect different kinds of data freely, but keep one test in one unit inside one trend: a test's test_number values are all in its unit, as Rufi's line draws them. A missing day is missing, not zero. A printed "<5" stays "<5", never 5. When two things happen together, say they happen together, not that one causes the other.
 
 Programs in your folder:
 

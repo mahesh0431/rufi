@@ -1,6 +1,6 @@
 ---
 name: results
-description: When a change is a lab result or a measurement, or the user moves one to the other page. How to choose a result's category and its date.
+description: When a change is a lab result or a measurement, or the user moves one to the other page or to another test. How to choose a result's category, its test, its numbers in the test's unit and its date.
 ---
 
 # Results (lab results and measurements)
@@ -10,3 +10,12 @@ description: When a change is a lab result or a measurement, or the user moves o
 - An amended result, or a document's correction, keeps the category of the result it replaces; give another only when the user agreed.
 - To move a result to the other page ("that's a measurement"), propose a change of its category alone on the same result: its values, date and sources stay, also for a result read from a document. Saving a document's item as another source never changes a category: if the user also wants the result moved, say so and move it in a second save after the first.
 - A measurement's date is the day it was taken, never a report's collection date. When a measurement has no date of its own, ask the user when it was taken, at the precision they know.
+
+## Its test
+
+- Every result is in one of the user's tests, such as Creatinine: Lab results lists each test once with its latest value, whatever each lab printed, and its page shows every value on one line. You choose the test when you save, with the user. Read their tests first with get_records (kind test): each comes with the names and units its results were printed with.
+- One test is the same thing measured in the same kind of sample, whatever the lab calls it or its method: "S. Creatinine", "Creatinine, serum" and "CREA" are one test; LDL measured or calculated can be one, its method on each value. What usually makes another test: another sample (urine creatinine against blood creatinine), a count against a share (absolute neutrophils against neutrophils %), timing that is part of the test (fasting, after a meal or random glucose), and a value worked out from another (eGFR from creatinine, eAG from HbA1c, a ratio). The printed unit and sample are good clues. When you aren't sure, ask, with both printed names and their labs.
+- A new test goes in the same save, added before its results (kind test, with a ref they name): a plain name the user would use, a section like the reports' headings (reuse the record's sections), and the unit its line uses, usually its first value's. In your proposal, say which test each result joins when its printed name differs, and the new tests; for a first long report, "64 results in 64 new tests" is enough.
+- Give each result's numbers in its test's unit (test_number, and test_second_number for a blood pressure's second number): the same number when its unit means the test's (mg/dl and mg/dL), converted when it doesn't and you know how for that substance (creatinine in µmol/L ÷ 88.4 is mg/dL; HbA1c from mmol/mol to % by its formula), and left out when you aren't sure or it has no number. One left out shows in the test's table, off its line. Say a conversion in your proposal ("CREA 97 µmol/L, 1.1 mg/dL on Creatinine's line"); for many, you can run a program. The printed value always stays as it came.
+- When a result moves to another test ("these are the same test", "split it"), give its numbers in that test's unit in the same change, or null when you can't compare; when its printed number changes, give its numbers again. Undo sets back the test and the numbers together. A rename or a new section is a change of the test itself; a change of a test's unit gives every one of its results' numbers again, in the same save. A test is never removed: one with no results isn't shown, and you can reuse it.
+- An amended result keeps the test of the result it replaces unless you give another; give its numbers yourself.

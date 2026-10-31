@@ -414,12 +414,16 @@ function resultsIn(path: string) {
  * line's test (the first result of its printed name and unit), its numbers
  * copied as the test's, and no shared label.
  */
-const inItsTest = ({ group_label: _, ...row }: Record<string, unknown>) => ({
-  ...row,
-  test_id: row["id"] === "res-a5" ? "t-res-a4" : `t-${String(row["id"])}`,
-  test_number: row["value_number"],
-  test_second_number: row["second_number"],
-});
+function inItsTest(old: Record<string, unknown>) {
+  const row = { ...old };
+  delete row["group_label"];
+  return {
+    ...row,
+    test_id: row["id"] === "res-a5" ? "t-res-a4" : `t-${String(row["id"])}`,
+    test_number: row["value_number"],
+    test_second_number: row["second_number"],
+  };
+}
 
 it.each([1, 3])(
   "upgrades a record of version %i so every result is a lab result, its fields, ids and links kept and its history unchanged",

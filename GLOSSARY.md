@@ -57,8 +57,12 @@ A lab or clinic report: one document as Rufi AI sorted it, with who issued it, i
 _Avoid_: lab sheet, test report
 
 **Result**:
-One lab test or measurement, kept exactly as reported or entered: name, value, unit, reference range, the lab's own flag, method or context, and when it was measured at the precision known. Every result has a **category**: it is a lab result or a measurement.
+One lab test or measurement, kept exactly as reported or entered: name, value, unit, reference range, the lab's own flag, method or context, and when it was measured at the precision known. Every result has a **category**: it is a lab result or a measurement. Every result is in one **test**, with its numbers in the test's unit when the AI could give them.
 _Avoid_: reading, lab value
+
+**Test**:
+One of a person's tests, such as Creatinine or Blood pressure: what their results are in, whatever each lab printed, so the values of one test from every lab are together. It has a name, a section (such as Kidney) and the unit its line uses, all in the AI's words. The AI chooses each result's test when it saves the result, with the user, and gives the result's numbers in the test's unit: the printed number when the units mean the same, converted when they don't, none when it can't compare; the printed value stays as it came. Joining two tests, splitting one and renaming are saves in the chat, with a receipt and undo. A test is never removed: one with no results isn't shown. Results saved before Rufi had tests are in one test for each printed name and unit.
+_Avoid_: analyte, biomarker, series, group
 
 **Category**:
 Whether a result is a lab result or a measurement, which decides the page it shows on. The AI chooses it with the user when it saves, never from the test's name or from having a report; an amended result keeps the category of the one it replaces unless the user agrees to another. The user can change it in the chat ("that's a measurement"): the same result moves, with a receipt. Results saved before Rufi had categories count as lab results.
