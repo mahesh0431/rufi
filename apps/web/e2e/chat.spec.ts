@@ -1108,7 +1108,7 @@ test("⌘J opens the panel; Esc steps back and returns focus; another page close
   await expect(opener(chat(page))).toBeFocused();
 });
 
-test("a click outside the panel steps back to the bar and keeps what you typed; a click in it, its menu, Stop or Based on doesn't", async ({
+test("a click outside the panel steps back to the bar and keeps what you typed; a click in it, its menu or Stop doesn't", async ({
   page,
   rufi,
 }) => {
@@ -1123,18 +1123,10 @@ test("a click outside the panel steps back to the bar and keeps what you typed; 
     },
   });
   const minimise = chat(page).getByRole("button", { name: "Minimise" });
-  await send(
-    page,
-    "Your last HbA1c\n\n```rufi-basis\nFrom your record, read now.\n```",
-  );
+  await send(page, "Your last HbA1c");
   await expect(log(chat(page)).locator(".reply")).toHaveText(
     "ok:Your last HbA1c",
   );
-  await log(chat(page)).getByRole("button", { name: "Based on" }).click();
-  await expect(page.getByRole("dialog", { name: "Based on" })).toContainText(
-    "From your record, read now.",
-  );
-  await expect(minimise).toBeVisible();
   // A reply that runs until it is stopped.
   await send(page, "partial");
   await expect(log(chat(page)).locator(".reply").last()).toHaveText("ok:part");
@@ -1848,70 +1840,6 @@ test("a save made in another window while this one's connection was down shows o
 
   down.resolve(undefined);
   await expect(results(6)).toBeVisible();
-});
-
-test("Based on, beside Activity once a reply ended, opens the AI's own words and Esc closes it; small talk and a stopped reply have none", async ({
-  page,
-  rufi,
-}) => {
-  await opened(page, rufi, {
-    scenario: {
-      calls: [
-        {
-          tool: "get_records",
-          arguments: { kind: "result", from: "2026-08", to: "2026-08" },
-        },
-      ],
-    },
-  });
-  const basedOn = log(chat(page)).getByRole("button", { name: "Based on" });
-  // The fake answers with the message's own words: here, a rufi-basis block.
-  await send(
-    page,
-    "Your last HbA1c\n\n```rufi-basis\nFrom your record, read now.\n```",
-  );
-  await expect(log(chat(page)).locator(".reply")).toHaveText(
-    "ok:Your last HbA1c",
-  );
-  // On Activity's line.
-  await expect(
-    log(chat(page))
-      .locator("[data-activity]")
-      .getByRole("button", { name: "Based on" }),
-  ).toHaveCount(1);
-  await basedOn.focus();
-  await page.keyboard.press("Enter");
-  const popover = page.getByRole("dialog", { name: "Based on" });
-  await expect(
-    popover.getByText("From your record, read now.", { exact: true }),
-  ).toBeVisible();
-  await accessible(page);
-  // Esc closes the popover only, and the focus goes back to Based on.
-  await page.keyboard.press("Escape");
-  await expect(popover).toHaveCount(0);
-  await expect(basedOn).toBeFocused();
-  await expect(
-    chat(page).getByRole("button", { name: "Minimise" }),
-  ).toBeVisible();
-  // Also from Close, reached with Tab.
-  await page.keyboard.press("Enter");
-  await expect(popover).toBeVisible();
-  await page.keyboard.press("Tab");
-  await expect(popover.getByRole("button", { name: "Close" })).toBeFocused();
-  await page.keyboard.press("Escape");
-  await expect(popover).toHaveCount(0);
-  await expect(basedOn).toBeFocused();
-
-  await send(page, "quiet thanks");
-  await expect(log(chat(page)).locator(".reply").nth(1)).toHaveText(
-    "ok:quiet thanks",
-  );
-  await expect(basedOn).toHaveCount(1);
-  await send(page, "partial");
-  await expect(log(chat(page)).locator(".reply").nth(2)).toHaveText("ok:part");
-  await chat(page).getByRole("button", { name: "Stop" }).click();
-  await expect(log(chat(page)).getByText("Stopped.")).toBeVisible();
-  await expect(basedOn).toHaveCount(1);
 });
 
 test("a tool step shows the tool and its arguments as reported, and opens to its result", async ({

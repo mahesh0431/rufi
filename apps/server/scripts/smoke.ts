@@ -450,10 +450,6 @@ const sourcesNote = (home: string) =>
       .join(", ") || "none"
   }`;
 
-/** A turn's Based on: How, in the AI's words. */
-const basis = (snapshot: Snapshot, turn = -1) => ({
-  how: snapshot.turns.at(turn)?.how ?? null,
-});
 /** Rufi's own record of each call the AI made to its tools. */
 function calls(home: string) {
   const store = openReadOnly(databasePath(home));
@@ -832,8 +828,6 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     return {
       checks: {
         used_get_overview: overviewRead,
-        how_present: basis(latest).how !== null,
-        how_present_for_the_hba1c: basis(snapshot).how !== null,
       },
       verdicts: [
         {
@@ -860,7 +854,6 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     return {
       checks: {
         read_records: recordReads(home).length > 0,
-        how_present: basis(snapshot).how !== null,
       },
       verdicts: [
         {
@@ -922,7 +915,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     );
     const snapshot = await c.read();
     return {
-      checks: { how_present: basis(snapshot).how !== null },
+      checks: {},
       verdicts: [
         {
           check: "four_last_28_september",
@@ -934,60 +927,17 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
       snapshot,
     };
   },
-  /** An answer from general knowledge says so, and reads nothing. */
+  /** An answer from general knowledge reads nothing. */
   general: async (api, home) => {
     const c = chat(api);
     await c.ask(
       "From what you know, without looking at my record: what is a normal HbA1c?",
     );
     const snapshot = await c.read();
-    const { how } = basis(snapshot);
     return {
-      checks: {
-        how_present: how !== null,
-        read_nothing: !readsRecord(home),
-      },
-      verdicts: [
-        {
-          check: "how_says_general_knowledge",
-          criterion:
-            "Based on's How says the answer comes from general knowledge, not the record.",
-          evidence: how ?? "(none)",
-        },
-      ],
+      checks: { read_nothing: !readsRecord(home) },
       snapshot,
     };
-  },
-  /** A web answer: How says where it came from (a person checks it against Activity). */
-  web: async (api) => {
-    const c = chat(api);
-    await c.ask(
-      "Look up on the web what the American Diabetes Association currently recommends as the HbA1c target for most adults, and give me the source.",
-    );
-    const snapshot = await c.read();
-    const { how } = basis(snapshot);
-    const steps = snapshot.entries
-      .filter((e) => e.kind === "activity" && e.activity !== "note")
-      .map((e) => e.text);
-    return {
-      checks: { how_present: how !== null },
-      verdicts: [
-        {
-          check: "how_matches_activity",
-          criterion:
-            "Based on's How says where the answer came from, and matches Activity: the web when Activity shows a web search or a command, else general knowledge.",
-          evidence: `How: ${how ?? "(none)"}\nActivity: ${steps.join(", ") || "(none)"}`,
-        },
-      ],
-      snapshot,
-    };
-  },
-  /** Small talk has no Based on's How. */
-  small_talk: async (api) => {
-    const c = chat(api);
-    await c.ask("Thanks, that's all for now!");
-    const snapshot = await c.read();
-    return { checks: { no_how: basis(snapshot).how === null }, snapshot };
   },
   /**
    * A follow-up answered from an earlier read says so; then a new subject,
@@ -1002,7 +952,6 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     const snapshot = await c.read();
     return {
       checks: {
-        how_present: basis(range).how !== null,
         three_replies: snapshot.turns.length === 3,
       },
       verdicts: [
@@ -1055,10 +1004,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
       "Look at my CRP and glucose this year. Are they going up, and did starting creatine in June cause it?",
     );
     const snapshot = await c.read();
-    return {
-      checks: { how_present: basis(snapshot).how !== null },
-      snapshot,
-    };
+    return { checks: {}, snapshot };
   },
   /**
    * The analysis story: the AI reads the record, makes a chart with a
@@ -1077,7 +1023,6 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         ran_a_program: snapshot.entries.some(
           (e) => e.kind === "activity" && e.activity === "command",
         ),
-        how_present: basis(snapshot).how !== null,
       },
       verdicts: [
         {
@@ -1100,7 +1045,6 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     return {
       checks: {
         read_records: recordReads(home).length > 0,
-        how_present: basis(snapshot).how !== null,
       },
       verdicts: [
         {
@@ -2381,7 +2325,6 @@ function transcriptText(snapshot: Snapshot): string {
   const shown = snapshot.entries.filter(
     (e) => e.kind !== "reasoning" || e.text.trim() !== "",
   );
-  const last = new Map(shown.map((e) => [e.turnId, e.id]));
   return shown
     .map((e) => {
       let text: string;
@@ -2394,9 +2337,7 @@ function transcriptText(snapshot: Snapshot): string {
         text = `Rufi: ${e.text}`;
       else
         text = `${e.kind === "reply" ? "AI" : e.kind === "steer" ? "You (steer)" : "You"}: ${e.text}`;
-      const turn = snapshot.turns.find((t) => t.id === e.turnId);
-      if (!turn || last.get(e.turnId) !== e.id) return text;
-      return `${text}\n\n> Based on: ${turn.how ?? "(none)"}`;
+      return text;
     })
     .join("\n\n");
 }

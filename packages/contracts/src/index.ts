@@ -171,8 +171,7 @@ export const Entry = Schema.Struct({
     "brief",
   ]),
   /**
-   * The message; the reply's answer (without its rufi-basis blocks, which
-   * the turn's How holds); an activity's text as the agent reported it (the
+   * The message; the reply as it came; an activity's text as the agent reported it (the
    * command, `server.tool`, the paths, a note's words; a line stored before
    * notes, its title); the reasoning's summary so far; a receipt's, an
    * event's or a brief's line.
@@ -233,11 +232,6 @@ export const Turn = Schema.Struct({
    * than the reply before it (a lost thread, a move, the person's choice).
    */
   newThread: Schema.Boolean,
-  /**
-   * How, from the reply's last rufi-basis block: where the answer comes
-   * from, in the AI's words. Only once the reply completed.
-   */
-  how: Schema.NullOr(Schema.String),
   /**
    * The agent whose message started this reply, Rufi AI's by itself, and
    * why: its turn ended done, stopped or failed, it asked a question, or it

@@ -12,7 +12,6 @@ const turn = (id: string, status: Turn["status"]): Turn => ({
   startedAt: "2026-10-05T00:00:00Z",
   endedAt: status === "running" ? null : "2026-10-05T00:00:05Z",
   newThread: false,
-  how: null,
 });
 const entry = (kind: Entry["kind"], turnId: string, text: string): Entry => ({
   id: `${kind}-${turnId}`,

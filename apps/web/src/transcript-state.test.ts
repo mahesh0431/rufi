@@ -30,7 +30,6 @@ const turn = (status: Turn["status"], id = "t1"): Turn => ({
   startedAt: at,
   endedAt: null,
   newThread: false,
-  how: null,
 });
 const chat = { model: "gpt-6.1-sol", effort: "medium", context: null } as const;
 const page = (

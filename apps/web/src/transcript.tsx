@@ -1,7 +1,7 @@
 // The chat's transcript as the core stored it: your messages, the AI's
 // replies as Markdown, with the pictures, pages and diagrams they show
 // (files.tsx), each picture the AI generated, and under each answer its
-// Activity and, once it completed, Based on beside it; Rufi's receipt for
+// Activity; Rufi's receipt for
 // each save to the record, Rufi's own event lines (never your words), the
 // line of each visit brief, which opens it, and how a reply ended when it
 // didn't finish. A line between days, and a quiet line where a new AI thread
@@ -14,7 +14,6 @@
 // page; older pages load as you scroll up, and the view stays where it is.
 // Each entry reads only itself from the live store, so a streaming reply
 // re-renders alone.
-import { Popover } from "@base-ui/react/popover";
 import { Link } from "@tanstack/react-router";
 import {
   ArrowUpRight,
@@ -24,7 +23,6 @@ import {
   ChevronRight,
   ChevronsUp,
   FileText,
-  Info,
   LoaderCircle,
   RotateCw,
   Square,
@@ -67,7 +65,6 @@ import { chatPath, type Live } from "./live.ts";
 import { ApiError, read } from "./api.ts";
 import { RetryButton } from "./reading.tsx";
 import { useSettings } from "./reads.ts";
-import { Menus } from "./model-menu.tsx";
 import { latestHeading } from "./thinking.ts";
 import { isRunning } from "./transcript-state.ts";
 import { Dog, LiveDog } from "./dog.tsx";
@@ -262,11 +259,10 @@ const shows = (entry: Entry) =>
 /**
  * What the transcript shows, in order, each as a key: "d:" a day's line
  * before an entry, "a:" a new thread started for a turn, "k:" a compaction
- * running, "c:" a compaction completed, "e:" an entry, "s:" a turn's Activity and Based on, "x:" how
+ * running, "c:" a compaction completed, "e:" an entry, "s:" a turn's Activity, "x:" how
  * a turn ended. A turn's Activity takes the place of its first line while it
- * runs, and sits under its answer once it ended, with Based on beside it
- * when the AI wrote How. Keys, so the list draws again only when what it
- * shows changes.
+ * runs, and sits under its answer once it ended. Keys, so the list draws
+ * again only when what it shows changes.
  */
 function lines(state: Live): string[] {
   const { order, entries } = state;
@@ -312,9 +308,7 @@ function lines(state: Live): string[] {
     const step = firstStep.get(turn.id);
     const answer = lastReply.get(turn.id);
     if (turn.status !== "running" && answer !== undefined) {
-      if (step !== undefined || turn.how !== null) {
-        add(after, answer, `s:${turn.id}`);
-      }
+      if (step !== undefined) add(after, answer, `s:${turn.id}`);
     } else if (step !== undefined) add(before, step, `s:${turn.id}`);
     if (cut(turn)) add(after, closes, `x:${turn.id}`);
   }
@@ -753,8 +747,7 @@ const steps = (n: number) => `${String(n)} ${n === 1 ? "step" : "steps"}`;
  * into one line once the reply ended, as the Activity setting says ("always
  * show": open after too; "always hide": one working line, then folded). A
  * click folds or opens it; that choice holds until the reply ends, and is
- * this page's own. Based on sits on its line. No line when there is nothing
- * to show.
+ * this page's own. No line when there is nothing to show.
  */
 function ActivityView({
   live,
@@ -786,7 +779,7 @@ function ActivityView({
   const [chosen, choose] = useState<{ open: boolean; running: boolean }>();
   const list = useId();
   const gone = turn?.stepsGone === true && ids.length === 0;
-  if (!turn || (ids.length === 0 && turn.how === null && !gone)) return null;
+  if (!turn || (ids.length === 0 && !gone)) return null;
   const open =
     chosen?.running === running
       ? chosen.open
@@ -852,7 +845,6 @@ function ActivityView({
             Activity is gone with the AI&apos;s working state.
           </p>
         )}
-        {turn.how !== null && <BasedOn how={turn.how} />}
       </div>
       {open && (
         <ol
@@ -1275,55 +1267,6 @@ function StatusSign({ status }: { status: keyof typeof STATUS_WORDS | null }) {
     <Square size={11} className="shrink-0" aria-hidden />
   ) : (
     <Check size={13} className="shrink-0" aria-hidden />
-  );
-}
-
-/**
- * Based on, beside a reply's Activity once it completed: How, the AI's own
- * words on where the answer comes from, as plain text in a popover. A click
- * outside, Esc or Close closes it, and the focus goes back to Based on.
- */
-function BasedOn({ how }: { how: string }) {
-  const portals = use(Menus);
-  // Opened, the popover itself has the focus, so its words come first.
-  const popup = useRef<HTMLDivElement>(null);
-  return (
-    <Popover.Root>
-      <Popover.Trigger className="flex min-h-8 w-fit shrink-0 cursor-pointer items-center gap-1.5 rounded-md text-muted hover:text-ink data-[popup-open]:text-ink">
-        <Info size={ICON} className="shrink-0" aria-hidden />
-        Based on
-      </Popover.Trigger>
-      <Popover.Portal container={portals}>
-        <Popover.Positioner
-          side="bottom"
-          align="start"
-          sideOffset={4}
-          className="z-30"
-        >
-          <Popover.Popup
-            ref={popup}
-            initialFocus={popup}
-            className="w-72 max-w-[calc(100vw-2rem)] rounded-xl bg-surface/95 py-2 pr-1.5 pl-3 shadow-menu backdrop-blur-xl outline-none"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <Popover.Title className="text-xs font-normal text-muted">
-                Based on
-              </Popover.Title>
-              {/* No tooltip: one would take the first Esc. */}
-              <Popover.Close
-                aria-label="Close"
-                className={buttonLook({ look: "quiet", shape: "icon" })}
-              >
-                <X size={ICON} aria-hidden />
-              </Popover.Close>
-            </div>
-            <p className="pr-1.5 break-words whitespace-pre-wrap text-ink">
-              {how}
-            </p>
-          </Popover.Popup>
-        </Popover.Positioner>
-      </Popover.Portal>
-    </Popover.Root>
   );
 }
 

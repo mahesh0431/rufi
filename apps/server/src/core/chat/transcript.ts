@@ -26,7 +26,6 @@ import { literal } from "../record/kinds.ts";
 import type { Saved } from "../record/save.ts";
 import { addRow } from "./queue.ts";
 import { chipsOf } from "./refs.ts";
-import { splitBasis } from "./basis.ts";
 import { CLOSED_WHILE_READING } from "../documents/reading.ts";
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
@@ -246,7 +245,7 @@ const whole = (
   turnStatus: TurnRow["status"] | null | undefined,
 ) => turnStatus === "completed" && status !== "stopped";
 
-/** An entry as the screens get it; a reply shows its answer (docs/adr/0007). */
+/** An entry as the screens get it. */
 const toEntry = (
   row: EntryRow,
   turnStatus: TurnRow["status"] | undefined,
@@ -256,12 +255,7 @@ const toEntry = (
   turnId: row.turn_id,
   kind: row.kind as Entry["kind"],
   text:
-    row.kind === "reply"
-      ? withQuestions(
-          splitBasis(row.text, whole(row.status, turnStatus)).answer,
-          row.questions,
-        )
-      : row.text,
+    row.kind === "reply" ? withQuestions(row.text, row.questions) : row.text,
   activity: row.activity as Entry["activity"],
   detail: row.detail,
   // Reasoning is whole once the agent gave all of it; a partial summary
@@ -360,9 +354,7 @@ async function entriesOut(trx: Db, rows: EntryRow[]): Promise<Entry[]> {
 }
 
 /**
- * Turns as the screens get them, each with its How from its own replies
- * once it completed. A
- * turn on another agent thread than the turn before it is on a new thread;
+ * Turns as the screens get them. A turn on another agent thread than the turn before it is on a new thread;
  * the chat's first turn isn't.
  */
 async function turnsOut(trx: Db, rows: TurnRow[]): Promise<Turn[]> {
@@ -400,25 +392,7 @@ async function turnsOut(trx: Db, rows: TurnRow[]): Promise<Turn[]> {
         .execute()
     ).map((row) => [row.id, row.thread_before]),
   );
-  const replies = await trx
-    .selectFrom("transcript_entries")
-    .select(["turn_id", "text", "status"])
-    .where("person_id", "=", first.person_id)
-    .where("turn_id", "in", ids)
-    .where("kind", "=", "reply")
-    .orderBy("seq")
-    .execute();
   return rows.map((row) => {
-    const how =
-      row.status === "completed"
-        ? replies
-            .filter(
-              (reply) =>
-                reply.turn_id === row.id && whole(reply.status, row.status),
-            )
-            .map((reply) => splitBasis(reply.text, true).how)
-            .findLast((found) => found !== undefined)
-        : undefined;
     const threadBefore = before.get(row.id) ?? null;
     return {
       id: row.id,
@@ -433,7 +407,6 @@ async function turnsOut(trx: Db, rows: TurnRow[]): Promise<Turn[]> {
         row.thread_id !== null &&
         threadBefore !== null &&
         threadBefore !== row.thread_id,
-      how: how ?? null,
       ...(row.cause !== null && { cause: JSON.parse(row.cause) as Cause }),
     };
   });
@@ -1918,9 +1891,8 @@ export function transcripts(
      * the AI. The user's message is there once it went, in a reply that has
      * ended (also when it went again after such a reply), or with no turn of
      * Rufi's, when a start confirmed it after a crash. A reply that
-     * completed is as it came, with its rufi-basis block, so the new thread
-     * sees the convention; one that didn't is its answer only, marked
-     * unfinished, as are its notes. Commands and thinking are left out.
+     * completed is as it came; one that didn't is marked unfinished, as are
+     * its notes. Commands and thinking are left out.
      */
     lastMessages: async (chat: ChatRow, count: number) => {
       const rows = await db
@@ -2012,10 +1984,7 @@ export function transcripts(
         }
         return {
           from: "ai" as const,
-          text: withQuestions(
-            finished ? row.text : splitBasis(row.text, false).answer,
-            row.questions,
-          ),
+          text: withQuestions(row.text, row.questions),
           ...(!finished && { unfinished: true }),
         };
       });
