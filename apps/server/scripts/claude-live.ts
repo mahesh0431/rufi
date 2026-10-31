@@ -28,6 +28,7 @@ import type {
   Conversation,
   ProviderAdapter,
   ProviderEvent,
+  UsageWindow,
 } from "@rufi/agents/provider";
 import { openAgentStore } from "@rufi/agents/store";
 import { claudeAdapter } from "../src/agent/claude/adapter.ts";
@@ -48,7 +49,12 @@ import {
 import type { AgentSandbox } from "../src/agent/runtime.ts";
 import { callIdOf } from "../src/core/chat/agents.ts";
 import type { ChatRow } from "../src/core/chat/transcript.ts";
-import type { ToolAnswer, ToolSpec } from "../src/core/tools/registry.ts";
+import { usage as usageTool } from "../src/core/tools/agents.ts";
+import {
+  specOf,
+  type ToolAnswer,
+  type ToolSpec,
+} from "../src/core/tools/registry.ts";
 import { agentDoor } from "../src/server/door.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "../src/server/mcp.ts";
 import { backupsPath } from "../src/core/store/backup.ts";
@@ -355,6 +361,9 @@ const SAVE_NOTE: ToolSpec = {
   destructive: false,
 };
 
+/** Rufi's own usage tool, as Rufi gives it to every agent. */
+const USAGE = specOf(usageTool);
+
 /** A note saved through the door: Rufi's id for its call, and its turn. */
 interface Save {
   callId: string;
@@ -365,14 +374,17 @@ interface Save {
 /**
  * Runs `body` with Rufi's door (its MCP endpoint and the agent door), the
  * agent package on the Claude adapter with one admitted fictional agent,
- * and a save_note that keeps each call's answer by Rufi's id for it, as
- * Rufi's saves do; deletes the conversations it made.
+ * a save_note that keeps each call's answer by Rufi's id for it, as Rufi's
+ * saves do, and Rufi's usage tool, answered as Rufi answers it with the
+ * adapter's usage now; deletes the conversations it made.
  */
 async function withDoor<T>(
   { claude, folder, sandbox, env, plugin }: Context,
   body: (run: {
     events: ProviderEvent[];
     saves: Save[];
+    /** What each call of the usage tool was given: Claude's usage then. */
+    usages: (readonly UsageWindow[])[];
     /** Sends text to the agent; its input's id. */
     send: (kind: "queue" | "steer", text: string) => string;
     until: <F>(pick: (event: ProviderEvent) => F | undefined) => Promise<F>;
@@ -386,6 +398,7 @@ async function withDoor<T>(
   port = served.port;
   const events: ProviderEvent[] = [];
   const saves: Save[] = [];
+  const usages: (readonly UsageWindow[])[] = [];
   const answers = new Map<string, ToolAnswer>();
   const refs: string[] = [];
   const adapter = claudeAdapter({
@@ -397,7 +410,7 @@ async function withDoor<T>(
   const store = openAgentStore(join(folder, `agents-${randomUUID()}.sqlite`));
   const door = agentDoor({
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp`, keys },
-    specs: [SAVE_NOTE],
+    specs: [SAVE_NOTE, USAGE],
     place: (agent, meta) => {
       const placed = agents.place(agent, meta);
       // Whose the agent is doesn't matter to a fictional note.
@@ -406,13 +419,26 @@ async function withDoor<T>(
           ...placed,
           chat: {} as ChatRow,
           thread: refs.at(-1) ?? "",
-          tools: [SAVE_NOTE.name],
+          tools: [SAVE_NOTE.name, USAGE.name],
         },
       );
     },
-    run: (scope, _tool, input) => {
+    run: async (scope, tool, input) => {
       const kept = answers.get(scope.callId);
-      if (kept) return Promise.resolve(kept);
+      if (kept) return kept;
+      if (tool === USAGE.name) {
+        const windows = await adapter.usage();
+        usages.push(windows);
+        const answer = {
+          ok: true,
+          text: JSON.stringify({
+            yours: adapter.id,
+            providers: [{ provider: adapter.id, windows }],
+          }),
+        };
+        answers.set(scope.callId, answer);
+        return answer;
+      }
       saves.push({
         callId: scope.callId,
         ref: scope.ref,
@@ -426,7 +452,7 @@ async function withDoor<T>(
         }),
       };
       answers.set(scope.callId, answer);
-      return Promise.resolve(answer);
+      return answer;
     },
     log: () => undefined,
   });
@@ -437,7 +463,7 @@ async function withDoor<T>(
       opening: () =>
         Promise.resolve({
           instructions: "You help with a fictional test. Keep replies short.",
-          tools: door.registration(AGENT, [SAVE_NOTE.name]),
+          tools: door.registration(AGENT, [SAVE_NOTE.name, USAGE.name]),
         }),
       ledger: ({ ref }) => {
         refs.push(ref);
@@ -459,7 +485,7 @@ async function withDoor<T>(
     provider: "claude",
     model: MODEL,
     effort: "low",
-    tools: [SAVE_NOTE.name],
+    tools: [SAVE_NOTE.name, USAGE.name],
     cwd: sandbox.folder,
   });
   agents.admit(AGENT);
@@ -480,7 +506,7 @@ async function withDoor<T>(
     return id;
   };
   try {
-    return await body({ events, saves, send, until });
+    return await body({ events, saves, usages, send, until });
   } finally {
     await agents.close();
     await adapter.close();
@@ -1018,6 +1044,34 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
           throw new Error(`the save was ${JSON.stringify(save)}`);
         }
         return "one save, in its turn, as <agent>/1/<Claude's toolUseId>";
+      }),
+
+  "Rufi's usage tool, called in a turn, answers with Claude's usage from that turn":
+    async (context) =>
+      withDoor(context, async ({ usages, send, until }) => {
+        const turn = await until(
+          startedBy(
+            send("queue", "Use the usage tool once. Then reply 'done'."),
+          ),
+        );
+        const end = await until(endOf(turn));
+        if (end.status !== "done") {
+          throw new Error(`the turn ended ${JSON.stringify(end)}`);
+        }
+        // The adapter is new to this case: what it has is from this turn.
+        const [windows, ...more] = usages;
+        if (!windows || more.length > 0) {
+          throw new Error(
+            `the usage tool was called ${String(usages.length)} times`,
+          );
+        }
+        if (windows.length === 0) throw new Error("it gave no usage");
+        return `one call: ${windows
+          .map(
+            ({ minutes, usedPercent }) =>
+              `${String(usedPercent)}% of ${minutes === undefined ? "a window" : `${String(minutes)} minutes`}`,
+          )
+          .join(", ")}`;
       }),
 
   "a steer's own turn calls the door, and the call is placed in that turn":
