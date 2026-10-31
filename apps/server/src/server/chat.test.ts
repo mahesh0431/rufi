@@ -727,20 +727,33 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     async () => {
       await startChat(name);
       const c = await newChat();
-      // Two requests, each with the chat as it read it.
+      // Two requests, each with the chat as it read it, both queued:
+      // either may reach the queue first, and each has a reply of its own.
       const again = await chatRow(c.id);
-      await Promise.all([say(c, "slow first"), say(again, "B", "queue")]);
+      await Promise.all([
+        say(c, "slow first", "queue"),
+        say(again, "B", "queue"),
+      ]);
       await ended(c.id, 2);
       const { entries, turns } = await transcript(c.id);
-      expect(
-        entries.filter(([kind]) => kind === "message" || kind === "reply"),
-      ).toEqual([
-        ["message", "slow first"],
-        ["reply", "ok:slow first"],
-        ["message", "B"],
-        ["reply", "ok:B"],
-      ]);
+      const shown = entries.filter(
+        ([kind]) => kind === "message" || kind === "reply",
+      );
+      expect(shown).toHaveLength(4);
+      expect([shown.slice(0, 2), shown.slice(2)]).toEqual(
+        expect.arrayContaining([
+          [
+            ["message", "slow first"],
+            ["reply", "ok:slow first"],
+          ],
+          [
+            ["message", "B"],
+            ["reply", "ok:B"],
+          ],
+        ]),
+      );
       expect(turns.map((t) => t.status)).toEqual(["completed", "completed"]);
+      expect(threadsUsed()).toBe(1);
     },
   );
 
@@ -1123,8 +1136,8 @@ it(
 );
 
 describe("the chat, on the scripted Codex", () => {
-  /** Each turn/start's input texts, in order. */
-  const inputs = async () =>
+  /** Each turn/start's input texts, in order, or each turn/steer's. */
+  const inputs = async (method = "turn/start") =>
     (await readFile(join(home, "fake.jsonl"), "utf8"))
       .trim()
       .split("\n")
@@ -1135,7 +1148,7 @@ describe("the chat, on the scripted Codex", () => {
             params?: { input?: { text: string }[] };
           };
         };
-        return entry.received?.method === "turn/start"
+        return entry.received?.method === method
           ? [(entry.received.params?.input ?? []).map((part) => part.text)]
           : [];
       });
@@ -1998,6 +2011,62 @@ describe("the chat, on the scripted Codex", () => {
     expect(all.find((entry) => entry.kind === "receipt")?.turnId).toBeNull();
   });
 
+  it("writes a sub-agent's message into the chat once, in its own words, where Rufi AI takes it: steered into the reply that runs", async () => {
+    const looked = Promise.withResolvers<undefined>();
+    await startChat("fake", {
+      scenario: {
+        callsByText: {
+          "Ask a helper and look": [
+            {
+              tool: "start_agent",
+              arguments: { title: "Helper", task: "helper: hello" },
+            },
+            { id: "look", tool: "get_overview", arguments: {} },
+          ],
+        },
+      },
+      waitFor: (tool) => (tool === "get_overview" ? looked.promise : undefined),
+    });
+    const c = await newChat();
+    await say(c, "Ask a helper and look");
+    const helper = ownCall("call-0");
+    // The helper's done message goes into the reply while it waits.
+    await until(() =>
+      Promise.resolve(
+        agentRows("SELECT state FROM queue WHERE about = 'done'")[0]?.[
+          "state"
+        ] === "delivered",
+      ),
+    );
+    looked.resolve(undefined);
+    await ended(c.id);
+    await settled(c.id);
+
+    const { turns, all } = await transcript(c.id);
+    expect(turns).toHaveLength(1);
+    expect(
+      all
+        .filter((entry) => entry.kind === "agent")
+        .map(({ turnId, agent, from, text }) => ({
+          turnId,
+          agent,
+          from,
+          text,
+        })),
+    ).toEqual([
+      {
+        turnId: turns[0]?.id,
+        agent: helper,
+        from: { title: "Helper", about: "done" },
+        text: "ok:helper: hello",
+      },
+    ]);
+    // Rufi AI got it with Rufi's line naming the helper by its id.
+    expect((await inputs("turn/steer")).flat().join("\n")).toContain(
+      `Helper (${helper}) done:\n\nok:helper: hello`,
+    );
+  });
+
   it("runs a sub-agent's own sub-agent, whose done message wakes its parent, whose own wakes Rufi AI; then Rufi AI reads how each went and the conversation of the one below, and that one reads the one that started it", async () => {
     await startChat("fake", {
       scenario: {
@@ -2030,8 +2099,25 @@ describe("the chat, on the scripted Codex", () => {
       ),
     );
     await settled(c.id);
-    const { turns } = await transcript(c.id);
-    expect(turns[1]?.cause).toEqual({ title: "Helper", about: "done" });
+    // Each of the helper's messages is in the chat, in its own words, where
+    // Rufi AI took it; the second helper's to the helper is not.
+    const { turns, all } = await transcript(c.id);
+    expect(
+      all
+        .filter((entry) => entry.kind === "agent")
+        .map(({ agent, from, text }) => ({ agent, from, text })),
+    ).toEqual([
+      {
+        agent: helper,
+        from: { title: "Helper", about: "done" },
+        text: "ok:helper: ask yours",
+      },
+      {
+        agent: helper,
+        from: { title: "Helper", about: "done" },
+        text: helperSaid,
+      },
+    ]);
     await startChat("fake", {
       scenario: {
         callsByText: {
@@ -2158,8 +2244,14 @@ describe("the chat, on the scripted Codex", () => {
       ),
     );
     await settled(c.id);
-    const { turns } = await transcript(c.id);
-    expect(turns[1]?.cause).toEqual({ title: "Brief", about: "asked" });
+    // The chat shows its question, with the options, under its name.
+    const { turns, all } = await transcript(c.id);
+    expect(all.find((entry) => entry.kind === "agent")).toMatchObject({
+      turnId: turns[1]?.id,
+      agent: helper,
+      from: { title: "Brief", about: "asked" },
+      text: "Which visit is this brief for?\n- 3 Nov, Dr Rao\n- 12 Nov, Dr Iyer",
+    });
     await startChat("fake", {
       scenario: {
         callsByText: {
@@ -2222,10 +2314,11 @@ describe("the chat, on the scripted Codex", () => {
     const c = await newChat();
     await say(c, "Ask a reader");
     await ended(c.id, 2);
-    const { turns } = await transcript(c.id);
-    expect(turns[1]).toMatchObject({
-      status: "completed",
-      cause: { title: "Reading letter.pdf", about: "done" },
+    const { turns, all } = await transcript(c.id);
+    expect(turns[1]?.status).toBe("completed");
+    expect(all.find((entry) => entry.kind === "agent")).toMatchObject({
+      turnId: turns[1]?.id,
+      from: { title: "Reading letter.pdf", about: "done" },
     });
     expect(
       store.db
@@ -2395,7 +2488,13 @@ describe("the chat, on the scripted Codex", () => {
         "completed",
         "completed",
       ]);
-      expect(new Set(turns.slice(1).map((turn) => turn.cause?.title))).toEqual(
+      // Each reader's message shows in the reply it woke, one in each.
+      const messages = all.filter((entry) => entry.kind === "agent");
+      expect(messages.map((entry) => entry.turnId)).toEqual([
+        turns[1]?.id,
+        turns[2]?.id,
+      ]);
+      expect(new Set(messages.map((entry) => entry.from?.title))).toEqual(
         new Set(["Reading the photo", "Reading the report"]),
       );
       expect(await listed()).toEqual(
@@ -2512,12 +2611,25 @@ describe("the chat, on the scripted Codex", () => {
       await ended(c.id, 4);
       await settled(c.id);
 
-      const { turns } = await transcript(c.id);
-      expect(turns.map((turn) => [turn.status, turn.cause?.about])).toEqual([
-        ["completed", undefined],
-        ["completed", "failed"],
-        ["completed", undefined],
-        ["completed", "done"],
+      const { turns, all } = await transcript(c.id);
+      expect(turns.map((turn) => turn.status)).toEqual([
+        "completed",
+        "completed",
+        "completed",
+        "completed",
+      ]);
+      // The failure woke the second reply, the second reader's result the
+      // fourth; the Retry's reply has none.
+      expect(
+        all
+          .filter((entry) => entry.kind === "agent")
+          .map((entry) => [
+            turns.findIndex((turn) => turn.id === entry.turnId),
+            entry.from?.about,
+          ]),
+      ).toEqual([
+        [1, "failed"],
+        [3, "done"],
       ]);
       expect(readers().map(({ title, status }) => ({ title, status }))).toEqual(
         [
@@ -2722,11 +2834,16 @@ describe("the chat, on the scripted Codex", () => {
       { sender: ownCall("call-0"), state: "delivered" },
       { sender: ownCall("call-1"), state: "delivered" },
     ]);
-    const { turns } = await transcript(c.id);
-    expect(turns[1]?.cause).toMatchObject({
-      title: expect.stringMatching(/^Helper [AB]$/) as unknown,
-      about: "done",
-    });
+    const { all } = await transcript(c.id);
+    expect(
+      all
+        .filter((entry) => entry.kind === "agent")
+        .map((entry) => entry.from)
+        .toSorted((a, b) => (a?.title ?? "").localeCompare(b?.title ?? "")),
+    ).toEqual([
+      { title: "Helper A", about: "done" },
+      { title: "Helper B", about: "done" },
+    ]);
   });
 
   it("stops one branch with everything under it while another runs: the branch's own result reaches Rufi AI, and the one below it wakes nobody", async () => {

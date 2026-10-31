@@ -405,7 +405,6 @@ CREATE TABLE turns (
   resets_at TEXT,              -- a usage limit's reset time, when the provider gave one
   started_at TEXT NOT NULL,
   ended_at TEXT,
-  cause TEXT CHECK (cause IS NULL OR json_valid(cause)), -- woken by an agent it started: {"title", "about": done, stopped, failed, asked or wrote}
   UNIQUE (person_id, id),
   UNIQUE (chat_id, agent_turn_id),
   FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id)
@@ -414,19 +413,20 @@ CREATE TABLE turns (
 -- A chat's transcript, in order: your messages (steers marked), one
 -- line per thing the agent did with everything it sent and got back, the
 -- agent's reasoning and its replies, Rufi's receipts, Rufi's events
--- (its own factual lines, never the person's words) and the line of each
--- visit brief. Stored before anyone is shown it.
+-- (its own factual lines, never the person's words), the line of each
+-- visit brief, and the messages of the agents Rufi AI started, where Rufi
+-- AI took them. Stored before anyone is shown it.
 CREATE TABLE transcript_entries (
   id TEXT PRIMARY KEY,         -- UUIDv7; a message keeps the id the agent got with it
   person_id TEXT NOT NULL,
   chat_id TEXT NOT NULL,
   seq INTEGER NOT NULL,        -- 1, 2, 3... in the chat
   turn_id TEXT,                -- the reply it belongs to
-  kind TEXT NOT NULL CHECK (kind IN ('message', 'steer', 'activity', 'reply', 'reasoning', 'receipt', 'event', 'brief')),
-  text TEXT NOT NULL,          -- the message or the reply as it came; an activity's text as the agent reported it (the command, the tool, a note's words); the reasoning's summary; a receipt's, an event's or a brief's line
+  kind TEXT NOT NULL CHECK (kind IN ('message', 'steer', 'activity', 'reply', 'reasoning', 'receipt', 'event', 'brief', 'agent')),
+  text TEXT NOT NULL,          -- the message or the reply as it came; an activity's text as the agent reported it (the command, the tool, a note's words); the reasoning's summary; a receipt's, an event's or a brief's line; an agent's message in its own words, as it sent it (empty when it stopped)
   activity TEXT CHECK (activity IN ('tool', 'command', 'web_search', 'file_change', 'sub_agent', 'compaction', 'picture', 'note', 'reading', 'other')), -- reading: Rufi's reader copying one document, in Rufi's part of a reply
   detail TEXT,                 -- an activity's second reported part: a tool's arguments, a command's exit code; a picture's path, whole; a reading's progress
-  details TEXT,                -- an activity's or reasoning's everything, as the agent gave it (JSON); a reading's job and document; an event's kind and facts (JSON); null: none
+  details TEXT,                -- an activity's or reasoning's everything, as the agent gave it (JSON); a reading's job and document; an event's kind and facts (JSON); an agent's message's agent, its name then and why it came: {"agent", "title", "about": done, asked, wrote, stopped or failed} (JSON); null: none
   refs TEXT,                   -- a message's references, its chips (JSON); null: none
   status TEXT CHECK (status IN ('running', 'done', 'failed', 'stopped')),
   agent_item_id TEXT,          -- the agent's id for a reply or an activity, to update it
@@ -445,7 +445,8 @@ CREATE TABLE transcript_entries (
   CHECK ((kind = 'activity') = (activity IS NOT NULL)),
   CHECK (kind != 'activity' OR status IS NOT NULL),
   CHECK (status IS NULL OR kind IN ('activity', 'reply')),
-  CHECK (details IS NULL OR kind IN ('activity', 'reasoning', 'event')),
+  CHECK (details IS NULL OR kind IN ('activity', 'reasoning', 'event', 'agent')),
+  CHECK (kind != 'agent' OR details IS NOT NULL),
   CHECK (refs IS NULL OR kind IN ('message', 'steer'))
 ) STRICT;
 
@@ -744,4 +745,4 @@ CREATE TABLE agent_cursor (
 ) STRICT;
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 23;
+PRAGMA user_version = 24;

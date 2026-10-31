@@ -7,7 +7,6 @@
 import { AxeBuilder } from "@axe-core/playwright";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { setTimeout as sleep } from "node:timers/promises";
 import type { Locator, Page } from "@playwright/test";
 import { Page as ChatPage } from "@rufi/contracts";
 import { Schema } from "effect";
@@ -1535,7 +1534,7 @@ test("the Activity setting: show while working folds at the end; always show sta
   ).toBeChecked();
 });
 
-test("a helper Rufi AI starts is one line in its Activity, which opens the helper's own Activity, and the helper's own helper opens there the same way, by mouse and by keyboard", async ({
+test("a helper Rufi AI starts is one line in its Activity, which opens the helper's pop-up with its own Activity, where the helper's own helper opens below its line, by mouse and by keyboard", async ({
   page,
   rufi,
 }, testInfo) => {
@@ -1574,23 +1573,21 @@ test("a helper Rufi AI starts is one line in its Activity, which opens the helpe
   const helper = log(chat(page)).getByRole("button", { name: /Helper · / });
   // One line: its name, its status and its result's start.
   await expect(helper).toHaveText(/^Helper · done · ok:/);
-  await expect(helper).toHaveAttribute("aria-expanded", "false");
 
-  // By keyboard: Enter opens the helper's own Activity.
+  // By keyboard: Enter opens the helper's pop-up, with its own Activity.
   await helper.focus();
   await helper.press("Enter");
-  await expect(helper).toHaveAttribute("aria-expanded", "true");
-  const helpers = log(chat(page)).getByRole("list", {
-    name: "Helper's Activity",
-  });
+  const popup = page.getByRole("dialog", { name: "Helper" });
+  const helpers = popup.getByRole("list", { name: "Helper's Activity" });
   await expect(helpers.locator(":scope > li").first()).toHaveText(
     "From Rufi AIhelper: compare the reports",
   );
   const checker = helpers.getByRole("button", { name: /Checker · / });
   await expect(checker).toHaveText(/^Checker · done · ok:/);
+  await expect(checker).toHaveAttribute("aria-expanded", "false");
   await expect(helpers).toContainText("ok:helper: compare the reports");
 
-  // By mouse: the helper's helper opens inside it, with its own steps.
+  // By mouse: the helper's helper opens below its line, with its own steps.
   await checker.click();
   const checkers = helpers.getByRole("list", { name: "Checker's Activity" });
   await expect(checkers.locator(":scope > li")).toHaveText([
@@ -1599,16 +1596,70 @@ test("a helper Rufi AI starts is one line in its Activity, which opens the helpe
     "ok:checker: read the March report",
   ]);
   await accessible(page);
-  // For the reviewer: the tree from the helper's line down.
-  await helper.evaluate((line) => {
-    line.scrollIntoView({ block: "start" });
-  });
+  // For the reviewer: the pop-up with the tree.
   await page.screenshot({ path: testInfo.outputPath("nested.png") });
 
-  // Enter again folds the helper, and its helper with it.
-  await helper.press("Enter");
-  await expect(helper).toHaveAttribute("aria-expanded", "false");
-  await expect(helpers).toHaveCount(0);
+  // Enter folds the helper's helper; Esc closes the pop-up.
+  await checker.press("Enter");
+  await expect(checker).toHaveAttribute("aria-expanded", "false");
+  await expect(checkers).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(popup).toHaveCount(0);
+});
+
+test("an agent at work is a chip above the box that opens its pop-up, with its Activity and Stop; stopped, its chip goes and its message shows in the chat, where its name opens the pop-up again", async ({
+  page,
+  rufi,
+}, testInfo) => {
+  await opened(page, rufi, {
+    scenario: {
+      bare: true,
+      callsByText: {
+        "Read my report": [
+          {
+            id: "call-reader",
+            tool: "start_agent",
+            arguments: { title: "Reader", task: "reader: hang on page 1" },
+          },
+        ],
+      },
+    },
+  });
+  await send(page, "Read my report");
+  const row = chat(page).getByRole("list", { name: "Agents at work" });
+  const chip = row.getByRole("button", { name: /^Reader \d+:\d\d$/ });
+  await expect(chip).toBeVisible();
+  // For the reviewer: the row above the box, then the pop-up and the message.
+  await page.screenshot({ path: testInfo.outputPath("row.png") });
+
+  // Its pop-up: its task from Rufi AI first, and Stop while it works.
+  await chip.click();
+  const popup = page.getByRole("dialog", { name: "Reader" });
+  await expect(
+    popup
+      .getByRole("list", { name: "Reader's Activity" })
+      .locator("li")
+      .first(),
+  ).toHaveText("From Rufi AIreader: hang on page 1");
+  await accessible(page);
+  await page.screenshot({ path: testInfo.outputPath("pop-up.png") });
+  await popup.getByRole("button", { name: "Stop" }).click();
+  await expect(popup).toContainText("stopped");
+  await expect(popup.getByRole("button", { name: "Stop" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(popup).toHaveCount(0);
+
+  // Its chip goes; its stopped message shows in the chat, under its name.
+  await expect(row).toHaveCount(0);
+  const named = page.getByRole("button", { name: "Reader", exact: true });
+  const message = log(chat(page))
+    .locator("[data-entry]")
+    .filter({ has: named });
+  await expect(message).toContainText("Reader· stopped");
+  const name = message.getByRole("button", { name: "Reader", exact: true });
+  await page.screenshot({ path: testInfo.outputPath("message.png") });
+  await name.click();
+  await expect(page.getByRole("dialog", { name: "Reader" })).toBeVisible();
 });
 
 test("a helper's long Activity shows its latest lines, and earlier ones on request, each once", async ({
@@ -1650,7 +1701,8 @@ test("a helper's long Activity shows its latest lines, and earlier ones on reque
   const reader = log(chat(page)).getByRole("button", { name: /Reader · / });
   await expect(reader).toHaveText(/^Reader · done/);
   await reader.click();
-  const lines = log(chat(page))
+  const popup = page.getByRole("dialog", { name: "Reader" });
+  const lines = popup
     .getByRole("list", { name: "Reader's Activity" })
     .locator(":scope > li");
   /** Each of its questions shows once. */
@@ -1663,16 +1715,16 @@ test("a helper's long Activity shows its latest lines, and earlier ones on reque
   await expect(lines).toHaveCount(50);
   await expect(lines.last()).toHaveText("Asks: Both?");
   await asked();
-  await log(chat(page)).getByRole("button", { name: "Show earlier" }).click();
+  await popup.getByRole("button", { name: "Show earlier" }).click();
   await expect(lines).toHaveCount(65);
   await expect(lines.first()).toHaveText("From Rufi AIreader: read every page");
   await asked();
-  await expect(
-    log(chat(page)).getByRole("button", { name: "Show earlier" }),
-  ).toHaveCount(0);
+  await expect(popup.getByRole("button", { name: "Show earlier" })).toHaveCount(
+    0,
+  );
 });
 
-test("what Rufi AI tells a helper while it works shows last in the helper's open Activity, as it comes", async ({
+test("what Rufi AI tells a helper while it works shows last in the helper's Activity", async ({
   page,
   rufi,
 }) => {
@@ -1707,22 +1759,22 @@ test("what Rufi AI tells a helper while it works shows last in the helper's open
     .getByRole("button", { name: /^Activity · / })
     .first()
     .click();
-  await log(chat(page))
-    .getByRole("button", { name: /Reader · / })
-    .click();
-  const lines = log(chat(page))
+  const line = log(chat(page)).getByRole("button", { name: /Reader · / });
+  await line.click();
+  const lines = page
+    .getByRole("dialog", { name: "Reader" })
     .getByRole("list", { name: "Reader's Activity" })
     .locator(":scope > li");
   await expect(lines).toHaveCount(50);
   await expect(lines.last()).toHaveText(/read_page · \{"page":60\}$/);
-  // It has been quiet a while: what the screen hears next is the message.
-  await sleep(500);
+  await page.keyboard.press("Escape");
 
   const reader = await log(chat(page))
     .locator("[data-agent]")
     .getAttribute("data-agent");
   await send(page, `Tell (agent ${String(reader)}) to skip page 3`);
-  // It came after its steps: last, with no reload.
+  // It came after its steps: last.
+  await line.click();
   await expect(lines.last()).toHaveText(/^From Rufi AI[\s\S]*Skip page 3\.$/);
   await expect(lines).toHaveCount(50);
 });

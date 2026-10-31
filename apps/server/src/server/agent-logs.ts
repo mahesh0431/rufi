@@ -147,6 +147,8 @@ export function agentLogs(deps: {
         const agent = agents.get(id);
         if (!agent) return [];
         const result = agent.result?.replace(/\s+/g, " ").trim() ?? null;
+        const working =
+          agent.status === "running" || agent.status === "continuing";
         return [
           {
             id,
@@ -156,6 +158,12 @@ export function agentLogs(deps: {
               result !== null && result.length > RESULT_CHARS
                 ? `${result.slice(0, RESULT_CHARS).trimEnd()}…`
                 : result,
+            parent: agent.parent === root ? null : agent.parent,
+            since: working
+              ? (agents.history(id, { limit: 1 }).turns[0]?.startedAt ?? null)
+              : null,
+            model: agent.model,
+            effort: agent.effort,
           },
         ];
       });
@@ -186,6 +194,17 @@ export function agentLogs(deps: {
         lines: lines.slice(start),
         earlier: start > 0 || before !== undefined,
       };
+    },
+
+    /**
+     * Stops one of the chat's sub-agents and every agent it started, as
+     * the person asks on the screens; false when the chat has no such
+     * agent. Its stopped message goes to the agent that started it.
+     */
+    stop: async (chatId: string, agent: string): Promise<boolean> => {
+      if (!(await mine(chatId, agent))) return false;
+      await agents.stop(agent, "person", { children: true });
+      return true;
     },
 
     /** Everything a sub-agent's step gave; undefined when there is no such step. */

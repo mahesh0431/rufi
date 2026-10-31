@@ -139,7 +139,7 @@ const replies = () =>
     "SELECT id, text, status FROM transcript_entries WHERE kind = 'reply' ORDER BY seq",
   );
 
-it("puts each turn, and its whole answer on its reply row, from the package's events, once, with Rufi's cursor in the same transaction", async () => {
+it("puts each turn, and its whole answer on its reply row, from the package's events, once, with Rufi's cursor in the same transaction; an agent's message too", async () => {
   const fake = fakeProvider({ id: "codex", script: { turn: "runs" } });
   let emit: (event: ProviderEvent) => void = () => undefined;
   const adapter: ProviderAdapter = {
@@ -256,12 +256,58 @@ it("puts each turn, and its whole answer on its reply row, from the package's ev
     expect(turns()).toEqual([completed, completed, completed]);
     expect(cursor()).toBe(lastEvent(rufi.store));
   });
+
+  // One of its agents writes to it: the message is in the chat, in the
+  // agent's own words, from the events alone.
+  rufi.system.agents.create({
+    id: "agent-reader",
+    parent: agent,
+    title: "Reading letter.pdf",
+    provider: "codex",
+    model: "fake-model",
+    effort: "low",
+    tools: [],
+    cwd: join(home, "ai"),
+  });
+  const said = "The letter is from March 2025.";
+  rufi.system.agents.send(agent, {
+    id: "letter-read",
+    sender: "agent-reader",
+    kind: "queue",
+    parts: [`Reading letter.pdf (agent-reader) writes:\n\n${said}`],
+    about: "wrote",
+    said,
+  });
+  await rufi.running();
+  fake.end(thread, { status: "done", answer: "Noted." });
+  await vi.waitFor(() => {
+    expect(turns()).toEqual([completed, completed, completed, completed]);
+    expect(cursor()).toBe(lastEvent(rufi.store));
+  });
+  const agentEntries = () =>
+    rows(
+      "SELECT e.id, e.text, e.details, t.agent_turn_id IS NOT NULL AS inTurn FROM transcript_entries e JOIN turns t ON t.id = e.turn_id WHERE e.kind = 'agent'",
+    );
+  const letter = agentEntries();
+  expect(letter).toEqual([
+    {
+      id: "letter-read",
+      text: said,
+      details: JSON.stringify({
+        agent: "agent-reader",
+        title: "Reading letter.pdf",
+        about: "wrote",
+      }),
+      inTurn: 1,
+    },
+  ]);
   const whole = replies();
   expect(whole).toMatchObject([
     { text: "" },
     { id: streamed, text: "Your last TSH was 2.1.", status: "done" },
     { text: "It was 2.4.", status: "done" },
     { text: "Ferritin was 40.", status: "done" },
+    { text: "Noted.", status: "done" },
   ]);
 
   // Nor of one that starts while Rufi's cursor can't move, and still runs
@@ -289,17 +335,20 @@ it("puts each turn, and its whole answer on its reply row, from the package's ev
     completed,
     completed,
     completed,
+    completed,
     {
       status: "interrupted",
       end_text: "Rufi closed before the reply finished.",
     },
   ]);
   expect(replies()).toEqual(whole);
+  expect(agentEntries()).toEqual(letter);
   // The note and its question are there as they were.
   expect(await rufi.shown()).toEqual([
     ...firstTurn,
     "It was 2.4.",
     "Ferritin was 40.",
+    "Noted.",
   ]);
   await rufi.close();
 });

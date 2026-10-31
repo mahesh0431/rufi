@@ -13,11 +13,16 @@ import {
   type TurnEnd as Ended,
   type UsageWindow,
 } from "@rufi/agents/provider";
-import { type Cause, SIGNED_OUT } from "@rufi/contracts";
+import { SIGNED_OUT } from "@rufi/contracts";
 import { type AgentEvent, type Model, type TurnEnd } from "../agent/runtime.ts";
 import { chatAgents, sentAs } from "../core/chat/agents.ts";
 import { UNKNOWN_PROVIDER } from "../core/chat/models.ts";
-import type { ChatRow, Step, Transcripts } from "../core/chat/transcript.ts";
+import type {
+  AgentMessage,
+  ChatRow,
+  Step,
+  Transcripts,
+} from "../core/chat/transcript.ts";
 import { startAgents, type AgentSystem, type Apply } from "./agents.ts";
 import { agentLogs, type AgentLogs } from "./agent-logs.ts";
 import type { Placed } from "./door.ts";
@@ -31,8 +36,8 @@ export type RufiAiEvent = (
       turnId: string;
       /** The inputs it took: the chat's rows, by their ids. */
       inputs: readonly string[];
-      /** It took only messages from agents below: the first one's. */
-      cause?: Cause;
+      /** The messages of Rufi AI's agents among them. */
+      messages?: readonly AgentMessage[];
     }
 ) & {
   /** Its item's place in its turn, as the package keeps it. */
@@ -70,8 +75,11 @@ export interface OpeningAgent {
   id: string;
   title: string;
   tools: readonly string[];
-  /** The agent that started it; none for the chat's own, Rufi AI. */
-  parent?: { title: string };
+  /**
+   * The agent that started it, and whether that is Rufi AI; none for the
+   * chat's own, Rufi AI.
+   */
+  parent?: { title: string; rufiAi: boolean };
 }
 
 /** What a chat's conversation is given each time it opens. */
@@ -357,7 +365,9 @@ export async function startRufiAi(
       id: agent.id,
       title: agent.title,
       tools: agent.tools,
-      ...(parent && { parent: { title: parent.title } }),
+      ...(parent && {
+        parent: { title: parent.title, rufiAi: parent.parent === null },
+      }),
     });
     given.set(agent.id, now.version);
     // A new conversation hears what came before: Rufi AI the chat, a
@@ -392,20 +402,6 @@ export async function startRufiAi(
     return `A new conversation started. Your earlier turns are available through read_agent with "self".\n\nYour last turns, oldest first:\n\n${lines.join("\n\n")}`;
   };
 
-  /**
-   * Why Rufi AI replies by itself: a turn that took only messages from the
-   * agents below it, by the first one's agent and reason.
-   */
-  const causeOf = (inputs: readonly string[]): Cause | undefined => {
-    const taken = inputs.map((id) => system.agents.input(id));
-    const [first] = taken;
-    if (!first || taken.some((input) => !input?.about)) return undefined;
-    const title = system.agents.get(first.sender)?.title;
-    return first.about && title !== undefined
-      ? { title, about: first.about }
-      : undefined;
-  };
-
   // The package keeps out what an older conversation reports: what comes
   // is the agent's open conversation's.
   const live = (
@@ -434,8 +430,9 @@ export async function startRufiAi(
         return;
       }
     }
-    const cause =
-      event.type === "turnStarted" ? causeOf(event.inputs) : undefined;
+    // The messages of its agents it took, with their own words.
+    const messages =
+      event.type === "turnStarted" ? system.agents.messages(event.inputs) : [];
     const started =
       event.type === "step"
         ? screens.logs?.started(agent, {
@@ -447,7 +444,7 @@ export async function startRufiAi(
     if (started !== undefined) screens.logs?.changed(started);
     chat?.onEvent({
       ...eventOf(ref, event),
-      ...(cause && { cause }),
+      ...(messages.length > 0 && { messages }),
       ...(position !== undefined && { position }),
       ...(started !== undefined && { agent: started }),
     });
@@ -469,22 +466,24 @@ export async function startRufiAi(
     const payload = event.payload as {
       input: string;
       ref?: string | null;
+      /** From another agent: what it is. */
+      message?: AgentMessage;
       held: Hold;
       text: string;
     };
     switch (event.type) {
       case "turn.started": {
-        const { ref, inputs, from } = event.payload as {
+        const { ref, inputs, messages } = event.payload as {
           ref: string;
           inputs: string[];
-          from?: { title: string; about: Cause["about"] };
+          messages?: AgentMessage[];
         };
         await transcripts.applyStart(
           row,
           ref,
           { id: row.threadId ?? "", model: row.model ?? row.threadModel ?? "" },
           inputs,
-          from && { title: from.title, about: from.about },
+          messages ?? [],
           advance,
         );
         break;
@@ -505,14 +504,24 @@ export async function startRufiAi(
         );
         break;
       }
-      case "input.delivered":
-        await transcripts.applyInput(
-          row,
-          payload.input,
-          { state: "delivered", agentTurn: payload.ref ?? null },
-          advance,
-        );
+      case "input.delivered": {
+        // One of its agents' messages, steered into its turn, shows there.
+        const { message } = payload;
+        await (message
+          ? transcripts.applyAgentMessage(
+              row,
+              message,
+              payload.ref ?? null,
+              advance,
+            )
+          : transcripts.applyInput(
+              row,
+              payload.input,
+              { state: "delivered", agentTurn: payload.ref ?? null },
+              advance,
+            ));
         break;
+      }
       case "input.held":
         await transcripts.applyInput(
           row,

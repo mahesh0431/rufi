@@ -9,6 +9,7 @@ import type { Person } from "@rufi/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { Maximize2, Minus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { AgentsAtWork } from "./agents.tsx";
 import { FileDrop } from "./attach.tsx";
 import { Box } from "./box.tsx";
 import { liveStore, loadOlder, retain } from "./live.ts";
@@ -104,13 +105,16 @@ export function ChatDock({ person }: { person: Person }) {
   }, [asked]);
   // A click outside the panel and its menus steps back to the bar; focus
   // goes where the click put it. Ask Rufi on the page adds to the open
-  // panel's box instead.
+  // panel's box instead, and an agent's pop-up opens over the panel.
   useEffect(() => {
     if (!open) return;
     const onDown = (event: PointerEvent) => {
       if (event.target instanceof Node && dock.current?.contains(event.target))
         return;
-      if (event.target instanceof Element && event.target.closest("[data-ask]"))
+      if (
+        event.target instanceof Element &&
+        event.target.closest("[data-ask], [data-over-chat]")
+      )
         return;
       usePanel.setState({ open: false, focusBefore: null });
     };
@@ -172,6 +176,7 @@ export function ChatDock({ person }: { person: Person }) {
                   : `rounded-full bg-surface/95 shadow-float backdrop-blur-xl transition-shadow ${lit ? "ring-2 ring-accent" : ""}`
               }
             >
+              {open && <AgentsAtWork personId={person.id} />}
               <Box
                 person={person}
                 live={live}
@@ -224,6 +229,7 @@ export function ChatPage({ person }: { person: Person }) {
           inner="mx-auto max-w-[760px] px-10 py-6"
         />
         <div className="mx-auto w-full max-w-[760px] px-10 pb-1">
+          <AgentsAtWork personId={person.id} />
           <Box person={person} live={live} size="page" inputRef={field} />
           <AiCanMakeMistakes />
         </div>
