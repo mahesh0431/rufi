@@ -178,7 +178,7 @@ You can also tell the AI about a visit with no paper, such as a video call with 
 A reader can fail or be stopped before it saves its copies. Its line in the reply's Activity says how it ended, and the reader's result wakes Rufi AI as when it finishes: Rufi AI tells you what happened, and may start a reader again (see [How Rufi AI has files read](#how-rufi-ai-has-files-read)). A reader saves its copies all at once, so a reader that stopped saved none of them, and the file still says **Not read yet**.
 
 - **You're signed out, your sign-in has ended, or your plan's usage limit is reached:** the reader can't go on, and neither can Rufi AI. Sign in, or wait until the limit resets, then ask Rufi AI to read the file again, or use **Retry**.
-- **Rufi closed while a reader worked:** when Rufi starts again, the reader carries on (see [After a restart](chat.md#after-a-restart)).
+- **Rufi closed while a reader worked:** when Rufi starts again, the reader carries on (see [While the AI replies](chat.md#while-the-ai-replies)).
 
 A reading by an earlier version of Rufi that stopped shows **Failed** on the Documents page, and **View reading** and the document's page say why, in full.
 
