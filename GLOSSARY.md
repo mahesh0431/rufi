@@ -171,10 +171,6 @@ _Avoid_: commentary, progress message, interim reply
 What a reply shows besides its words. A picture is a chart from the AI's program or a picture the AI generated; a page is an HTML file the AI made, drawn in the reply in a locked frame and opened large over the chat, self-contained (it loads nothing from the internet and can't reach Rufi); a diagram is drawn from the AI's Mermaid text. Pictures and pages are files in the AI's folder (or where it keeps the pictures it generates), shown as they are now: Rufi keeps no copy, and a file that is gone shows as such.
 _Avoid_: artifact, attachment, image (say picture), HTML (say page)
 
-**Basis**:
-What an answer rests on: **How**, the AI's own words on where the answer comes from (your record, read in this reply or earlier in the chat, the web, or general knowledge) and how it got there. It shows as **Based on** beside the answer's **Activity** once the reply has completed, and opens as plain text. What the AI read is in Activity, each read a step. Small talk has none.
-_Avoid_: reason, rationale, citation; "reasoning" is the AI's thinking, and a **source** is what a record rests on
-
 **Steer**:
 A message sent while the AI is replying, passed into that reply; the AI carries on with it in mind, told in one line that it is being steered. It waits in the **queue** like any other until the AI takes it. While a reply runs, Enter steers unless Settings says queue; **Steer** beside the box, or on a waiting message, does it too.
 _Avoid_: nudge, interrupt
@@ -374,4 +370,3 @@ _Avoid_: download, dump
 - A **chat** has one **queue**: your messages and the notes of **Rufi events** wait there for the AI.
 - The **chat** has one **transcript**, one **draft** and a **model**; a **steer** and each **activity** belong to one reply.
 - A **device source** belongs to one **person** for good; a **batch** comes from one source; a **device value** comes from batches of one person's sources, and has one **device type**.
-- An answer's **basis** belongs to its reply: How, from the AI's words at the end of that reply.
