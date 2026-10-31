@@ -213,6 +213,7 @@ const RUFI_TOOLS = [
   "mcp__rufi__read_agent",
   "mcp__rufi__read_chat",
   "mcp__rufi__save_changes",
+  "mcp__rufi__save_reading",
   "mcp__rufi__send_agent",
   "mcp__rufi__show_face",
   "mcp__rufi__sort_documents",
@@ -811,9 +812,8 @@ describe.runIf(process.platform === "darwin")(
           expect(existsSync(`${agentsPath(home)}-wal`)).toBe(true);
           const skill = join(home, "codex", "skills", "analysis", "SKILL.md");
           const q = (path: string) => JSON.stringify(path);
-          // Each one that is there now, with the backup's copy, core.json's
-          // temp copy and the token doors; neither database has a journal,
-          // in WAL mode.
+          // Each one that is there now, and the backup's copy; neither
+          // database has a journal, in WAL mode.
           const journal = `${databasePath(home)}-journal`;
           const denied = [
             ...unreadable.map((path) =>

@@ -203,7 +203,8 @@ export function chat(deps: ChatDeps) {
     const startedAt = transcripts.now();
     const answer = await caller.call(tool, input, callId);
     // Kept before the AI has it: Rufi keeps every answer the AI got (a
-    // write keeps its own, with what it changed).
+    // write keeps its own, with what it changed; a reading not saved, without
+    // its page text).
     try {
       if (!answer.kept) {
         await transcripts.recordToolCall(
@@ -214,10 +215,10 @@ export function chat(deps: ChatDeps) {
             ref,
             callId,
             tool,
-            input,
+            input: answer.keep?.input ?? input,
             startedAt,
           },
-          answer,
+          answer.keep?.answer ?? answer,
         );
       }
     } catch (error) {
