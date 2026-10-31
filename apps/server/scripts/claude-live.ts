@@ -1009,6 +1009,9 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
       const conversation = await open();
       const turn = await send(conversation, randomUUID(), "Reply 'noted'.");
       await until(endOf(turn));
+      // Its process closes, as after resting: Claude deletes only a
+      // conversation long unused.
+      await conversation.close();
       await adapter.delete(conversation.ref);
       const delivery = await conversation.startTurn({
         input: { id: randomUUID(), parts: ["Reply 'again'."] },
