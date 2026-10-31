@@ -10,6 +10,10 @@ export const SHORTLIST_SETTING = "models";
 /** Why a model can't be chosen, for the person and for agents alike. */
 export const NOT_SHORTLISTED = "That model isn't allowed or isn't offered now.";
 
+/** A chat's model whose provider Rufi doesn't know: nothing goes. */
+export const UNKNOWN_PROVIDER =
+  "Rufi doesn't know which AI runs this chat's model. Choose the model again in the menu.";
+
 /** The person's shortlist, as Settings keeps it; Rufi's own until they choose. */
 export async function shortlist(
   setting: (key: string) => Promise<string | undefined>,

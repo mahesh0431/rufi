@@ -9,7 +9,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
-import { ChatGptError } from "../../server/src/agent/chatgpt/openai.ts";
+import { SIGNED_OUT } from "../../server/src/agent/codex/appserver.ts";
+import { SignedOut } from "../../server/src/agent/runtime.ts";
 import type { Scenario } from "../../server/tests/fake-codex.ts";
 import { readPage, scriptedReader } from "../../server/tests/fake-reader.ts";
 import { backupsPath, makeBackup } from "../../server/src/core/store/backup.ts";
@@ -48,6 +49,7 @@ const SORT: Scenario = {
           ],
           drafts: [1, 2].map((page) => ({
             page,
+            reading: "$reading",
             test_name: "Haemoglobin",
             value_text: "13.2",
             unit: "g/dL",
@@ -229,7 +231,9 @@ test("a Stop in Rufi's reader ends the reply before the AI with Retry, no waitin
   const stopped = await makeBackup(rufi.home, new Date());
 
   await log(page).getByRole("button", { name: "Retry" }).click();
-  await expect(log(page).locator(".reply")).toHaveCount(1);
+  await expect(log(page).locator(".reply")).toHaveCount(1, {
+    timeout: FILE_WORK_MS,
+  });
   // Your message shows once, though it was sent twice.
   await expect(
     log(page).getByText("Sort this please", { exact: true }),
@@ -460,10 +464,9 @@ test("a reading that failed signed out ends the reply with its reason in full, i
   page,
   rufi,
 }) => {
-  const why =
-    "Not signed in. Sign in with ChatGPT: in Rufi, or with pnpm rufi signin.";
+  const why = SIGNED_OUT;
   const reader = scriptedReader([
-    () => Promise.reject(new ChatGptError("not_signed_in", why)),
+    () => Promise.reject(new SignedOut(why)),
     async (turn) => {
       for (const number of [1, 2]) {
         await turn.look(number);
@@ -509,7 +512,9 @@ test("a reading that failed signed out ends the reply with its reason in full, i
 
   await reopen(page);
   await log(page).getByRole("button", { name: "Retry" }).click();
-  await expect(log(page).locator(".reply")).toHaveCount(1);
+  await expect(log(page).locator(".reply")).toHaveCount(1, {
+    timeout: FILE_WORK_MS,
+  });
   await expect(page.getByRole("region", { name: "Items" })).toContainText(
     "2 results",
   );

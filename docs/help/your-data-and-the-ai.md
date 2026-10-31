@@ -24,7 +24,7 @@ Rufi remembers where your data folder is in a small file, the location file: `~/
 
 Keep the data folder on your Mac's own disk or on a disk that you connect to your Mac. Don't put it in iCloud Drive, Dropbox or another folder that syncs to the cloud, or on a network disk: their copies can damage your record. Rufi doesn't move it there (see [Move your data](#move-your-data)). A copy of a backup or of an export can go anywhere.
 
-Your sign-in's secrets aren't in the data folder: they are in your Mac's Keychain (see [Signing in with ChatGPT](signing-in.md)).
+Codex keeps its ChatGPT sign-in in `codex/`, and Claude keeps its sign-in in your Mac's Keychain for `claude/` (see [Signing in](signing-in.md)). The AI's commands can't read Codex's `auth.json`, Claude's folder or your Mac's keychain files; a test on a Mac that this keeps Claude's sign-in from them in practice is still to be run.
 
 | In the data folder | What it is                                                                                                                                                                                                                                                                                                                                                                                             |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -33,11 +33,12 @@ Your sign-in's secrets aren't in the data folder: they are in your Mac's Keychai
 | `files/`           | Your documents, exactly as you added them (see [Documents](documents.md))                                                                                                                                                                                                                                                                                                                              |
 | `backups/`         | Rufi's backups of your record and your documents (see [Backups and export](backups-and-export.md))                                                                                                                                                                                                                                                                                                     |
 | `cache/`           | Copies Rufi makes again when they are missing: the JPEG copy that shows a HEIC photo, and the pages of your PDFs drawn as images for the AI                                                                                                                                                                                                                                                            |
-| `chatgpt.json`     | Your sign-in details, without secrets (see [Signing in with ChatGPT](signing-in.md))                                                                                                                                                                                                                                                                                                                   |
+| `claude/`          | Claude's own files: the conversations it keeps for your chat and its sub-agents, and its sign-in's details (see [Signing in](signing-in.md))                                                                                                                                                                                                                                                           |
+| `claude-plugin/`   | Rufi's skills for Claude, written again each time Rufi starts                                                                                                                                                                                                                                                                                                                                          |
 | `logs/`            | Rufi's log (see below)                                                                                                                                                                                                                                                                                                                                                                                 |
-| `codex/`           | The AI's own files: its settings, Rufi's instructions for the AI, its own copy of your chat, and the pictures it generates                                                                                                                                                                                                                                                                             |
+| `codex/`           | The AI's own files: its settings, Rufi's instructions for the AI, its own copy of your chat, the pictures it generates, and its ChatGPT sign-in                                                                                                                                                                                                                                                        |
 | `ai/`              | The AI's folder: where the AI works, with its programs, notes and research files (see [What the AI can do in its folder](#what-the-ai-can-do-in-its-folder))                                                                                                                                                                                                                                           |
-| `sub-agents/`      | The settings of Rufi's document reader; it holds no document                                                                                                                                                                                                                                                                                                                                           |
+| `sub-agents/`      | The working folder of Rufi's document reader; it holds no document                                                                                                                                                                                                                                                                                                                                     |
 
 Rufi also keeps a few small files there that say what state the folder is in: while Rufi runs, and while a first start, a move or a restore isn't finished. With them, Rufi never opens a folder that another Rufi uses, or one that is only half made.
 
@@ -56,7 +57,7 @@ You can move your data folder to another folder: on your Mac, or on a disk that 
 
 3. Start Rufi as usual. It opens on the new folder.
 
-Rufi copies everything in your data folder into the new folder: your health record and your chat, your documents, your backups and your sign-in. It checks the copy (the record, and each file against the old one) and only then uses the new folder. You stay signed in.
+Rufi copies everything in your data folder into the new folder: your health record and your chat, your documents and your backups. It checks the copy (the record, and each file against the old one) and only then uses the new folder. Codex's and Claude's sign-ins stay in the old folder: sign in to each again (see [Signing in](signing-in.md)).
 
 The AI's own files (`codex/` and `sub-agents/`) and the AI's folder (`ai/`) stay in the old folder, because they name the old folder. Your chat is in your record, so nothing of it is lost: your next message starts a new thread for the AI with the chat's last messages, and the chat shows "New thread started" there. The AI's programs and notes stay in the old folder's `ai/`; copy what you want to keep.
 
@@ -94,7 +95,7 @@ Then Rufi doesn't read or change the location file, and **Settings** › **Data 
 
 ## What goes to the AI
 
-> **Note:** When you ask Rufi something, the AI reads the parts of your health record it needs. That text goes to the AI service you signed in with (today OpenAI, through your ChatGPT plan) so it can answer. See [OpenAI's policies](https://openai.com/policies/) for how they handle it.
+> **Note:** When you ask Rufi something, the AI reads the parts of your health record it needs. That text goes to the AI service your chat's model runs on, so it can answer: OpenAI, through your ChatGPT plan, or Anthropic, through your Claude account, when you chose one of Claude's models. A sub-agent's work goes to the service of its own model. See [OpenAI's policies](https://openai.com/policies/) and [Anthropic's](https://www.anthropic.com/legal/privacy) for how they handle it.
 
 When the AI reads your record with Rufi's tools, it gets only the records of the person whose chat it is: Rufi chooses the person, and the AI can't name another one. The AI can't read the chat or Rufi's settings this way, and it can't change anything. It doesn't read your [device data](device-data.md) yet.
 
@@ -104,18 +105,20 @@ Rufi's tools aren't all that the chat's AI can do: it also works in its own fold
 
 The chat's AI works like a coding agent, in its own folder: the AI's folder, `ai/` in your data folder. There it can write and run small programs, for example to compare two kinds of results, and keep its notes and research files between messages and days. It can use the internet from there, for example to look something up or to install what a program needs. Settings says this too.
 
-Rufi limits what the AI's programs can reach. This is a lock, not only an instruction: Codex's sandbox on your Mac holds it.
+Rufi limits what the AI's programs can reach. This is a lock, not only an instruction: Codex's sandbox on your Mac holds it, or Claude's when the AI runs on Claude, with the same limits.
 
 - They can write only in the AI's folder and in your Mac's folders for temporary files.
 - They can't open your record's database, the AI's working state (`agents.sqlite`) or your backups. So the AI reads and changes your health record only through Rufi's tools: each read shows as a step in the answer's **Activity**, and each save with its receipt.
-- They get none of the sign-in's secrets.
+- They can't read Codex's sign-in file, Claude's folder or your Mac's keychain files (`Library/Keychains` in your home folder), where Claude keeps its sign-in. A test on a Mac that this holds in practice is still to be run.
 - They can read the other files that your Mac account can read. Rufi tells the AI to use only Rufi's tools for your record, but it doesn't lock the rest yet.
 
 Rufi doesn't check what the AI sends to the internet or gets from it. Text from a web page is data for the AI, never an instruction or your yes.
 
 When the AI makes a picture or a page to show you, the reply shows it from the AI's folder, or from `codex/generated_images/` for a picture the AI generated. Rufi shows nothing from anywhere else. See [Pictures, pages and diagrams](chat.md#pictures-pages-and-diagrams).
 
-The AI's folder isn't part of your health record. What you want to keep goes in your record, through the chat, after your yes. The folder isn't in your backups, your export or a move yet, and Rufi doesn't remove anything in it: when you delete a document, notes that the AI made about it stay.
+The AI's folder isn't part of your health record. What you want to keep goes in your record, through the chat, after your yes. The folder isn't in your backups, your export or a move yet.
+
+The AI keeps its working notes in `ai/work/`, a folder for each day: for example its copy of a document's pages while it reads them. At each start and once a day, Rufi removes the days older than 3. When you delete a document, Rufi also removes the AI's working notes on it; other files the AI made from it stay.
 
 ## The pages the AI looks at
 

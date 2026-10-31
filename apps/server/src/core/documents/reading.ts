@@ -78,6 +78,86 @@ const jobOf = (row: Tables["jobs"]): Job => ({
   startedAt: row.started_at,
 });
 
+/** The copies a reading saved of its document's pages, by position. */
+const copiedBy = async (
+  trx: Trx | Store["query"],
+  run: Pick<Run, "jobId" | "personId" | "documentId">,
+) =>
+  new Map(
+    (
+      await trx
+        .selectFrom("page_copies as c")
+        .innerJoin("document_pages as p", (join) =>
+          join
+            .onRef("p.person_id", "=", "c.person_id")
+            .onRef("p.file_id", "=", "c.file_id")
+            .onRef("p.page_in_file", "=", "c.page_in_file"),
+        )
+        .select(["p.position", "c.outcome", "c.why"])
+        .where("c.person_id", "=", run.personId)
+        .where("c.job_id", "=", run.jobId)
+        .where("p.document_id", "=", run.documentId)
+        .execute()
+    ).map((c) => [c.position, c] as const),
+  );
+
+/**
+ * In `trx`: a running reading's normal end, once per job: each target's
+ * state (its copy's outcome, or not looked at), the document's version
+ * raised, the job done. A reading with nothing to sort (only unreadable
+ * pages) is sorted as it ends. Draft items come from Rufi AI's sort
+ * (sorting.ts), never from here. The old reader's finish and save_reading
+ * (save-reading.ts) both end a reading through it.
+ */
+export async function finishIn(
+  trx: Trx,
+  run: Pick<Run, "jobId" | "attempt" | "personId" | "documentId" | "targets">,
+  at: string,
+) {
+  const copied = await copiedBy(trx, run);
+  const sorts = [...copied.values()].some(
+    (copy) => copy.outcome !== "unreadable",
+  );
+  const ended = await trx
+    .updateTable("jobs")
+    .set({
+      state: "done",
+      ended_at: at,
+      error: null,
+      sorted_at: sorts ? null : at,
+    })
+    .where("id", "=", run.jobId)
+    .where("state", "=", "running")
+    .where("attempt", "=", run.attempt)
+    .executeTakeFirst();
+  if (ended.numUpdatedRows !== 1n) {
+    throw await notRunning(
+      trx,
+      run.jobId,
+      "The reading isn't running any more.",
+    );
+  }
+  for (const target of run.targets) {
+    const copy = copied.get(target);
+    await trx
+      .updateTable("document_pages")
+      .set({
+        state: copy?.outcome ?? "not_looked_at",
+        state_why: copy?.outcome === "unreadable" ? copy.why : null,
+      })
+      .where("person_id", "=", run.personId)
+      .where("document_id", "=", run.documentId)
+      .where("position", "=", target)
+      .execute();
+  }
+  await trx
+    .updateTable("documents")
+    .set((eb) => ({ version: eb("version", "+", 1) }))
+    .where("person_id", "=", run.personId)
+    .where("id", "=", run.documentId)
+    .execute();
+}
+
 /** What a job does when its reply starts, for a document sent with it. */
 type Plan =
   | { kind: "new"; targets: number[] }
@@ -175,29 +255,6 @@ export function readings(
       .execute();
     return rows.map(jobOf).find((job) => job.targets.some((t) => mine.has(t)));
   };
-
-  /** This job's page copies of the document, by position. */
-  const copiedBy = async (
-    trx: Trx | Store["query"],
-    run: Pick<Run, "jobId" | "personId" | "documentId">,
-  ) =>
-    new Map(
-      (
-        await trx
-          .selectFrom("page_copies as c")
-          .innerJoin("document_pages as p", (join) =>
-            join
-              .onRef("p.person_id", "=", "c.person_id")
-              .onRef("p.file_id", "=", "c.file_id")
-              .onRef("p.page_in_file", "=", "c.page_in_file"),
-          )
-          .select(["p.position", "c.outcome", "c.why"])
-          .where("c.person_id", "=", run.personId)
-          .where("c.job_id", "=", run.jobId)
-          .where("p.document_id", "=", run.documentId)
-          .execute()
-      ).map((c) => [c.position, c] as const),
-    );
 
   /**
    * Starts a run of a queued job: running, the next attempt. Returns the
@@ -511,59 +568,9 @@ export function readings(
       changed(run.personId);
     },
 
-    /**
-     * A reading's normal end, once per job: each target's state (its
-     * copy's outcome, or not looked at), the document's version raised, the
-     * job done. A reading with nothing to sort (only unreadable pages) is
-     * sorted as it ends. Draft items come from Rufi AI's sort (sorting.ts),
-     * never from here.
-     */
+    /** A reading's normal end, once per job: see finishIn. */
     finish: async (run: Run) => {
-      await db.transaction().execute(async (trx) => {
-        const at = now();
-        const copied = await copiedBy(trx, run);
-        const sorts = [...copied.values()].some(
-          (copy) => copy.outcome !== "unreadable",
-        );
-        const ended = await trx
-          .updateTable("jobs")
-          .set({
-            state: "done",
-            ended_at: at,
-            error: null,
-            sorted_at: sorts ? null : at,
-          })
-          .where("id", "=", run.jobId)
-          .where("state", "=", "running")
-          .where("attempt", "=", run.attempt)
-          .executeTakeFirst();
-        if (ended.numUpdatedRows !== 1n) {
-          throw await notRunning(
-            trx,
-            run.jobId,
-            "The reading isn't running any more.",
-          );
-        }
-        for (const target of run.targets) {
-          const copy = copied.get(target);
-          await trx
-            .updateTable("document_pages")
-            .set({
-              state: copy?.outcome ?? "not_looked_at",
-              state_why: copy?.outcome === "unreadable" ? copy.why : null,
-            })
-            .where("person_id", "=", run.personId)
-            .where("document_id", "=", run.documentId)
-            .where("position", "=", target)
-            .execute();
-        }
-        await trx
-          .updateTable("documents")
-          .set((eb) => ({ version: eb("version", "+", 1) }))
-          .where("person_id", "=", run.personId)
-          .where("id", "=", run.documentId)
-          .execute();
-      });
+      await db.transaction().execute((trx) => finishIn(trx, run, now()));
       changed(run.personId);
     },
 

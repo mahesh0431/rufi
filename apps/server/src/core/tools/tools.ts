@@ -13,7 +13,7 @@ import {
 } from "./agents.ts";
 import { briefResult, createBrief } from "./brief.ts";
 import { readChat } from "./chat.ts";
-import { getDocuments, sortDocuments } from "./documents.ts";
+import { getDocuments, saveReading, sortDocuments } from "./documents.ts";
 import { showFace } from "./face.ts";
 import { getOverview } from "./overview.ts";
 import {
@@ -39,6 +39,13 @@ import type { Log } from "../../platform/logs.ts";
 import type { ChatRow, ToolCall, Transcripts } from "../chat/transcript.ts";
 import { createBrief as makeBrief } from "../briefs/briefs.ts";
 import type { Pages } from "../documents/pages.ts";
+import {
+  keptReading,
+  keptUnsaved,
+  type SaveReadingAnswer,
+  type SaveReadingInput,
+  type SaveReadingScope,
+} from "../documents/save-reading.ts";
 import type { SortAnswer, SortInput, SortScope } from "../documents/sorting.ts";
 import { dismissItems as dismissDrafts } from "../record/items.ts";
 import { saveChanges as saveToRecord } from "../record/save.ts";
@@ -53,6 +60,7 @@ export const TOOLS: readonly Tool[] = [
   saveChanges,
   dismissItems,
   sortDocuments,
+  saveReading,
   createBrief,
   showFace,
   startAgent,
@@ -149,6 +157,15 @@ export function rufiCaller(
   },
   /** The calling agent's agents, from its scope (server/sub-agents.ts). */
   agents?: (scope: TurnScope) => AgentTools,
+  reading?: {
+    run: (
+      scope: SaveReadingScope,
+      input: SaveReadingInput,
+      trx: Transaction<Tables>,
+    ) => Promise<SaveReadingAnswer>;
+    /** After a reading is kept. */
+    done: (personId: string) => void;
+  },
 ) {
   return (scope: TurnScope) => {
     const { chat, ref } = scope;
@@ -230,6 +247,24 @@ export function rufiCaller(
           sort.done(chat.personId);
           return sorted;
         },
+        // Kept without its page text: that goes with its document.
+        saveReading: async (input, callId) => {
+          if (!reading) throw new Refusal("Rufi can't save a reading here.");
+          const saved = await transcripts.withToolCall(
+            chat,
+            { ...made, input: keptReading(input, true) },
+            (trx) =>
+              reading.run(
+                { personId: chat.personId, chatId: chat.id, callId },
+                input,
+                trx,
+              ),
+            answerOf,
+          );
+          kept();
+          reading.done(chat.personId);
+          return saved;
+        },
         brief: async (input, callId) => {
           const written = await transcripts.briefWithLine(
             chat,
@@ -279,7 +314,14 @@ export function rufiCaller(
           },
         ),
       );
-      return own.kept ? { ...answer, kept: true } : answer;
+      if (own.kept) return { ...answer, kept: true };
+      // A reading not saved is kept without its page text too.
+      return name === saveReading.name
+        ? {
+            ...answer,
+            keep: await keptUnsaved(reader, chat.personId, input, answer),
+          }
+        : answer;
     };
   };
 }
