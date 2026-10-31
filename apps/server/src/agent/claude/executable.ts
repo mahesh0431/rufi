@@ -4,7 +4,8 @@
 // keeps and renews its sign-in and its conversations. Rufi finds it, checks
 // it's new enough, starts its sign-in, and asks whether it is signed in and
 // with what kind of sign-in, never whose.
-import { execFile, spawn } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
+import { once } from "node:events";
 import { access, constants, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
@@ -165,23 +166,43 @@ export function claudeSignIn(
 
 /**
  * Whether Claude is signed in, as `claude auth status` says, never whose.
- * `env` names Claude's folder (claudeEnvironment).
+ * `env` names Claude's folder (claudeEnvironment). Aborting `signal` ends
+ * it; it settles once Claude's process has exited.
  */
 export async function claudeSignedIn(
   claude: InstalledClaude,
   env: Record<string, string>,
+  signal?: AbortSignal,
 ): Promise<boolean> {
+  const asked = promisify(execFile)(claude.path, ["auth", "status", "--json"], {
+    env,
+    timeout: ASK_MS,
+    ...(signal && { signal }),
+  });
   // Signed out, it exits 1 and still says so.
-  const { stdout } = await promisify(execFile)(
-    claude.path,
-    ["auth", "status", "--json"],
-    { env, timeout: ASK_MS },
-  ).catch((error: unknown) => {
+  const { stdout } = await asked.catch(async (error: unknown) => {
+    // Node settles an aborted call at once: wait until Claude has exited.
+    if (signal?.aborted) {
+      await exitOf(asked.child);
+      throw error;
+    }
     const said = (error as { stdout?: unknown }).stdout;
     if (typeof said === "string" && said.trim() !== "") return { stdout: said };
     throw error;
   });
   return (JSON.parse(stdout) as { loggedIn?: unknown }).loggedIn === true;
+}
+
+/** How long a stopped Claude process may take to exit before it's killed. */
+const EXIT_MS = 5_000;
+
+/** Settles once `child` has exited; one still running after EXIT_MS is killed. */
+async function exitOf(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const exited = once(child, "exit");
+  const late = setTimeout(() => child.kill("SIGKILL"), EXIT_MS);
+  await exited;
+  clearTimeout(late);
 }
 
 /**
@@ -213,7 +234,12 @@ export function claudeLogIn(
     });
   }
   return new Promise((resolve, reject) => {
-    login.on("error", reject);
+    login.on("error", (error) => {
+      // Node reports a cancel at once: it settles on the exit below, once
+      // Claude has exited (killed if it hasn't after EXIT_MS).
+      if (handlers.signal.aborted) void exitOf(login);
+      else reject(error);
+    });
     login.on("exit", (code) => {
       if (code === 0) resolve();
       else {

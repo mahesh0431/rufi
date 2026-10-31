@@ -60,6 +60,10 @@ const isBriefPage = (pathname: string) =>
 const isVisitPage = (pathname: string) =>
   /^\/people\/[^/]+\/visits\/[^/]+$/.test(pathname);
 
+/** Whether the address is one of a person's tests. */
+const isTestPage = (pathname: string) =>
+  /^\/people\/[^/]+\/tests\/[^/]+$/.test(pathname);
+
 /** The kind of a person's record page at the address, if it is one. */
 const recordKind = (pathname: string) => {
   const kind = /^\/people\/[^/]+\/record\/([^/]+)$/.exec(pathname)?.[1];
@@ -94,7 +98,8 @@ const hasBar = (pathname: string) =>
   isFollowUpsPage(pathname) ||
   isDocumentsPage(pathname) ||
   isBriefPage(pathname) ||
-  isVisitPage(pathname);
+  isVisitPage(pathname) ||
+  isTestPage(pathname);
 
 export function Frame() {
   useAppearance();
@@ -229,10 +234,12 @@ export function Frame() {
                       ? "Visit brief"
                       : isVisitPage(pathname)
                         ? "Visit"
-                        : isProfilePage(pathname)
-                          ? "Profile"
-                          : (TITLES[pathname.split("/")[1] ?? ""] ??
-                            "Overview")}
+                        : isTestPage(pathname)
+                          ? "Test"
+                          : isProfilePage(pathname)
+                            ? "Profile"
+                            : (TITLES[pathname.split("/")[1] ?? ""] ??
+                              "Overview")}
           </h1>
         </header>
         <Offline shown={connection === "offline"} />

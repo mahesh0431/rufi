@@ -3,7 +3,7 @@
 Rufi is in early development and not ready for use yet. These pages describe what works today.
 
 1. [Getting started](getting-started.md): start Rufi, open it as an app, open it again, the first run, and what you see.
-2. [Your health record](record.md): Overview with Needs you, your health record as tiles and recent changes; Lab results, Measurements and a page for each other kind of record; a record's sources, history and values over time; Ask Rufi.
+2. [Your health record](record.md): Overview with Needs you, your health record as tiles and recent changes; Lab results by test and a test's page, Measurements and a page for each other kind of record; a record's sources, history and values over time; Ask Rufi.
 3. [Talking to Rufi](chat.md): your one chat with Rufi as the bar, panel and page; reading back; asking about your health record and where an answer comes from; changing it and undo; stopping a reply, steering or queueing while it runs, waiting messages, Rufi's lines, the model, the AI's memory and drafts.
 4. [Signing in](signing-in.md): sign Codex in with your ChatGPT account and Claude with your Claude account, in Rufi or in the terminal, and what is kept.
 5. [Documents](documents.md): add lab reports and other documents as PDFs or photos, how Rufi reads them and Rufi AI sorts them into documents, check the drafts, and look at the originals.
