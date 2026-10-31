@@ -63,7 +63,7 @@ You can add your records and documents to a message, so the AI knows exactly wha
 
 **Ask Rufi** never takes you away from the page, and doesn't open the panel: collect what you want to ask about while you read, then click the bar to write and send. When the panel is open, **Ask Rufi** adds to its box, and the panel stays open. If Rufi can't add it at that moment, the bar says why and what to do: the box is still loading, a message is being sent, or your last message may not have reached Rufi (send it again or change it first).
 
-A chip shows only a name and what it is; it has no reading state. A chip marked **· read again** is a document whose unreadable pages Rufi reads again when you send (see [Retry](documents.md#retry)). While a file you added is on its way, the box says "Adding" and its name until its chip comes.
+A chip shows only a name and what it is; it has no reading state. A chip marked **· read again** is a document whose unreadable pages Rufi AI has read again when you send (see [Retry](documents.md#retry)). While a file you added is on its way, the box says "Adding" and its name until its chip comes.
 
 To take a chip out, click its **×**. This changes nothing in your health record. A file that was never sent is removed from Rufi, with its pages; a document you already sent only leaves the box. The chips are kept with what you typed, also when you reload or Rufi starts again, and they go with the message: your message in the chat shows them too.
 
@@ -198,11 +198,11 @@ If you stop the reply while the AI saves, the save can still finish. Then its re
 
 ### When the AI starts agents of its own
 
-For a task that can run on its own, the AI can start an agent of its own, a sub-agent. It gets only the task the AI gives it, never your chat, and works with the AI's tools or fewer, on the AI's model or another one you ticked in **Settings** › **Models**. Between a sub-agent's turns, the AI can move it to another of those models, never while it works. On another provider's model, the sub-agent starts a new conversation there, which has its last 10 turns. It can go on after the reply ends: what it saves shows in the chat with Rufi's receipt, also after the reply, with its title after **Saved**. It saves only what you said yes to. In the Activity of the reply that started it, it is one line, which opens what it did (see [Activity](#activity)).
+For a task that can run on its own, the AI can start an agent of its own, a sub-agent. It gets only the task the AI gives it, never your chat, and works with the AI's tools or fewer, on the AI's model or another one you ticked in **Settings** › **Models**. Between a sub-agent's turns, the AI can move it to another of those models, never while it works. On another provider's model, the sub-agent starts a new conversation there, which has its last 10 turns. It can go on after the reply ends: what it saves shows in the chat with Rufi's receipt, also after the reply, with its title after **Saved**. It saves only what you said yes to. A reader that copies your files' pages saves its copies with no receipt: they aren't part of your health record (see [Documents](documents.md#when-the-reading-ends)). In the Activity of the reply that started it, it is one line, which opens what it did (see [Activity](#activity)).
 
 When a sub-agent finishes, the AI hears it by itself. If the AI isn't replying then, it replies by itself, and a small line above that reply says which agent and why, such as "Reading report.pdf: done" or "Reading report.pdf asks a question". The AI tells you what it found, or asks you what it asks. While a sub-agent works, the AI may end its reply and say so: the sub-agent's result wakes it. The AI can also write to a sub-agent, for example to answer its question.
 
-You can ask the AI to stop a sub-agent: just that one, or with every sub-agent it started. Its result goes to the AI, which says it stopped. When you ask the AI to stop everything, it stops every sub-agent and its own reply too. Then none of the stopped sub-agents' results wakes the AI, and your waiting messages don't go: each shows **Not sent · Stopped.**, for you to **Send**, edit or remove. What waited for the stopped sub-agents is held the same way: the AI can send it again when you ask.
+You can ask the AI to stop a sub-agent: just that one, or with every sub-agent it started. Its result goes to the AI, which says it stopped. When you ask the AI to stop everything, it stops every sub-agent and its own reply too. Then none of the stopped sub-agents' results wakes the AI, and your waiting messages don't go, also one with files: each shows **Not sent · Stopped.**, for you to **Send**, edit or remove. What waited for the stopped sub-agents is held the same way: the AI can send it again when you ask.
 
 ## While the AI replies
 
@@ -218,14 +218,14 @@ If you click Stop, what the AI did so far stays in Activity, and the folded line
 
 If Rufi closes again and again while they work, they stop carrying on: after 5 restarts in a row, the AI and its sub-agents stay stopped, and your waiting messages show **Not sent · Stopped after 5 restarts in a row.** They go when you click **Send**, or with the next message you send. Choose how many times in **Settings** › **After a restart**. With 0, the AI never carries on by itself: the reply stays stopped, and your waiting messages go as usual. The count starts again when a reply finishes, or when you send a message.
 
-**Rufi's reader.** When your message brings files, your reply starts with Rufi's part: Rufi's reader copies the pages before the AI starts. Each file is a step in Activity, **Rufi's reader · thyrocare-aug.pdf**, with how far it is. Stop ends the reading too. The AI starts when all files are copied, and answers your message in the same reply (see [Documents](documents.md#while-a-document-is-read)). If the reading doesn't finish, the reply ends before the AI, with the reason and **Retry** (see [Documents](documents.md#when-a-reading-stops)).
+**Files.** When your message brings files that aren't read yet, Rufi tells the AI which ones. The AI has them read by readers, sub-agents it starts, and each reader is a line in the reply's Activity. A reader's result wakes the AI, which sorts the file and tells you what it found (see [Documents](documents.md#while-a-document-is-read)). Stop ends the reply, not the readers.
 
 **Sending while the AI replies.** You choose where a message goes:
 
-- **Steer** puts it into the reply. The AI carries on with it in mind: it adds your message to what it is doing, and drops its work only if it has to. The message shows as waiting until the AI takes it, then in the reply. While the reply is still starting, or Rufi's reader is copying, it goes in once the AI runs.
+- **Steer** puts it into the reply. The AI carries on with it in mind: it adds your message to what it is doing, and drops its work only if it has to. The message shows as waiting until the AI takes it, then in the reply. While the reply is still starting, it goes in once the AI runs.
 - **Queue** keeps it until the reply ends. Then it goes in a reply of its own, in order with your other waiting messages.
 
-Enter does what you chose in **Settings** › **Sending while Rufi replies**: **Steer** (the start) or **Queue**. The other button beside the box does the other. A message with new files always waits for a reply of its own, which reads its files first.
+Enter does what you chose in **Settings** › **Sending while Rufi replies**: **Steer** (the start) or **Queue**. The other button beside the box does the other. A message with files goes the same way.
 
 If the reply ends before your steer reaches it, your message goes in a following reply.
 
@@ -245,7 +245,7 @@ The line above them says what happens next:
 - **Waiting · these go in order after the reply**: they go by themselves.
 - **Not sent · Rufi sends these only when you say**: some messages are held, as below.
 
-A message with new files waits like any other, and gets a reply of its own, which reads its files first. Removing a waiting message doesn't remove its files: they stay sent, and the Documents page shows **Not read yet** with **Retry**. A message whose reply ended while Rufi read its files isn't listed here: it is in the chat already, and its reply's last line has **Retry** (see [Documents](documents.md#when-a-reading-stops)).
+A message with files waits like any other. Removing it doesn't remove its files: they stay sent, and the Documents page shows **Not read yet** with **Retry**.
 
 A held message says why under it, and goes only when you click **Send** (the paper plane); you can also edit or remove it:
 
@@ -258,7 +258,7 @@ When Rufi couldn't open the AI's memory of the chat (its thread), or start a new
 
 ## Rufi's lines
 
-Some things happen outside your chat. Rufi tells you with its own line in the chat. For example, after you delete a document, a line says **Deleted Sunrise Labs August.pdf**. When you chose **Delete file and results**, the chat opens, and the AI asks you about the document's results (see [Documents](documents.md#when-results-from-it-are-in-your-health-record)). Rufi writes these lines, not the AI, and they are never your words. Reading a file is not one of them: it is a step in your reply (see [While the AI replies](#while-the-ai-replies)). Lines from an earlier version, such as "Reading thyrocare-aug.pdf · 5 pages", stay in the chat as they were.
+Some things happen outside your chat. Rufi tells you with its own line in the chat. For example, after you delete a document, a line says **Deleted Sunrise Labs August.pdf**. When you chose **Delete file and results**, the chat opens, and the AI asks you about the document's results (see [Documents](documents.md#when-results-from-it-are-in-your-health-record)). Rufi writes these lines, not the AI, and they are never your words. Reading a file is not one of them: a reader is a line in your reply's Activity (see [Documents](documents.md#while-a-document-is-read)). Lines from an earlier version, such as "Reading thyrocare-aug.pdf · 5 pages", stay in the chat as they were.
 
 When the AI should know too, Rufi gives it a note:
 

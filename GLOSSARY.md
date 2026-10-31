@@ -29,23 +29,19 @@ What the user added for a person in one go: one PDF, or photos added together, s
 _Avoid_: upload, attachment
 
 **Reading**:
-Rufi's reader copying one document, one page at a time, when a message sends it: the first part of the reply (**Rufi's part**), shown as a step in its Activity with how far it is. Only a reading that finished goes on to **Rufi AI**, which sorts the file (**sorting**) and makes the draft items. One that does not finish (Stop, the account, the deadline, Rufi closing) ends the reply before the AI, keeps the pages copied, and goes on from the next page with **Retry** on the reply or the document; nothing is read by itself after Rufi starts again. One that failed for a passing reason, such as a lost connection, tries again by itself up to three times; one stopped by the account (signed out, a usage limit) says why and waits for **Retry**. Pages that could not be read are read again only when the user asks (a chip marked **read again**).
+A **reader** copying a document's pages, for Rufi AI to sort. When a message sends files that aren't read yet, Rufi names them, with the pages to read, in its note to **Rufi AI**, which starts a reader for each file or gives a file to a reader at work; the message itself steers or queues like any other. The reader saves its copies all at once, and its result wakes Rufi AI, which sorts the file (**sorting**). A reading that fails or stops saves nothing; Rufi AI hears it, and may start a reader again or tell the user. Pages that could not be read are read again only when the user asks: a chip marked **read again**, or in the chat. An older Rufi read files itself, in the reply before the AI; its readings keep what they saved, and one that stopped shows **Failed** with **Retry**.
 _Avoid_: import, scan, parsing, extraction
 
 **Reader**:
-The AI that does a reading: a separate AI that Rufi starts for one document, with only two tools (look at a page, save its copy of the page) and no access to your record, chat, files or the internet; it doesn't know whose document it is. It copies what is printed, and marks what is unclear; it decides nothing (not the kind, date or results), never judges your results and never saves to the record.
+A **sub-agent** Rufi AI starts to read a document, with Rufi's instructions for copying pages and the Rufi tools Rufi AI gives it (look at a page, save its copies). It copies what is printed, and marks what is unclear; it decides nothing (not the kind, date or results), never judges your results and never saves to the record. Its saved copies get no **receipt**: they aren't the record.
 _Avoid_: parser, OCR, extractor
-
-**Rufi's part**:
-The first part of a reply to a message that brings files: Rufi (not the AI) has its reader copy each file's pages, one file after another, shown as steps in the reply's Activity. It ends with the hand-over of the message to Rufi AI, with a short note of what was copied; a Stop, a failure or Rufi closing ends the reply here, and the AI never gets half a message. The pages copied are kept.
-_Avoid_: pre-processing, import step
 
 **Page copy**:
 The reader's copy of one page of a document, as Markdown, exactly as printed, with its marks where something was unclear (a smudged digit, handwriting, a crossed-out value). One for each page and reading, kept as the reader wrote it; it decides nothing and is not your record. It is known by the file and its page, not by the document the page is in. A page's current copy is the one from its latest finished reading.
 _Avoid_: extraction, transcription, OCR text
 
 **Sorting**:
-Rufi AI's work on a file once it is read, in the reply to the message that sent the file, after **Rufi's part**: it splits the file into documents and drafts their results from the page copies, in one call that is kept whole or not at all, then answers what the user wrote, or tells them what it found when they wrote nothing. It saves nothing without the user's yes. A file read and not sorted shows **Not sorted yet** (Rufi AI asked the user, or its part of the reply failed or was stopped) with **Ask Rufi**; Rufi does not sort by itself or try again by itself. The user can ask Rufi AI to sort a file again in the chat.
+Rufi AI's work on a file once it is read, usually when its reader's result wakes it: it splits the file into documents and drafts their results from the page copies, in one call that is kept whole or not at all, then answers what the user wrote, or tells them what it found when they wrote nothing. It saves nothing without the user's yes. A file read and not sorted shows **Not sorted yet** (Rufi AI asked the user, or its reply failed or was stopped) with **Ask Rufi**; nothing tries again by itself. The user can ask Rufi AI to sort a file again in the chat.
 _Avoid_: classification, grouping, parsing
 
 **Draft item**:
@@ -184,11 +180,11 @@ A message sent while the AI is replying, passed into that reply; the AI carries 
 _Avoid_: nudge, interrupt
 
 **Queue**:
-What waits to go to the AI, kept by Rufi with the chat: your messages and Rufi's notes about **Rufi events**. Rufi gives the AI one at a time, and never the same message twice: a message counts as sent once Rufi hands it to the AI. Each starts a turn of its own, except a message you **steer** into the running reply; one you queue while the AI replies waits for a reply of its own. A message with new files always waits for its own. It survives a restart and a model change. Shown in the chat as the **waiting messages**.
+What waits to go to the AI, kept by Rufi with the chat: your messages and Rufi's notes about **Rufi events**. Rufi gives the AI one at a time, and never the same message twice: a message counts as sent once Rufi hands it to the AI. Each starts a turn of its own, except a message you **steer** into the running reply; one you queue while the AI replies waits for a reply of its own. A message with files goes the same way. It survives a restart and a model change. Shown in the chat as the **waiting messages**.
 _Avoid_: inbox, outbox
 
 **Waiting messages**:
-What the queue holds, shown in the chat after its last message as soon as you send; you can steer, edit, reorder or remove your messages there. A held one says **Failed** with the error as it came, or **Not sent** with why (Stop cut its start off, or it came from a backup), and goes only when you send it. A message that brings new files waits for a reply of its own, which reads them first. A message whose reply ended in Rufi's part is not listed: its reply has **Retry**. Signed out, a send takes nothing: the text and chips stay in the box. After a Stop, what waits goes on, in order; a message whose start a Stop cut off is held, **Not sent · Stopped.** After a **restart**, a reply that ran carries on first, then what waits goes on; when the AI stopped carrying on, what waits is held, **Not sent · Stopped after 5 restarts in a row.**, until you send it or a new message. The AI can do the same when you ask, and with what waits for its sub-agents (`waiting_messages`); steering a held one sends it.
+What the queue holds, shown in the chat after its last message as soon as you send; you can steer, edit, reorder or remove your messages there. A held one says **Failed** with the error as it came, or **Not sent** with why (Stop cut its start off, or it came from a backup), and goes only when you send it. Signed out, a send takes nothing: the text and chips stay in the box. After a Stop, what waits goes on, in order; a message whose start a Stop cut off is held, **Not sent · Stopped.** After a **restart**, a reply that ran carries on first, then what waits goes on; when the AI stopped carrying on, what waits is held, **Not sent · Stopped after 5 restarts in a row.**, until you send it or a new message. The AI can do the same when you ask, and with what waits for its sub-agents (`waiting_messages`); steering a held one sends it.
 _Avoid_: backlog, pending messages
 
 **Rufi event**:
@@ -264,7 +260,7 @@ An AI working in a conversation of its own, on a model and effort, with the tool
 _Avoid_: worker, thread (a conversation is the agent's, not the agent)
 
 **Sub-agent**:
-An agent another agent started for one task, with a title, such as checking a set of results. It sees its task and nothing of the chat, runs on the model and effort of the agent that started it, or others of the **shortlist** it was given, with the same tools or fewer, and goes on after the reply ends. What it saves shows in the chat with Rufi's **receipt**, which names it by its title. When its turn ends, the agent that started it hears how it went (its **done message**), and Rufi AI says what it found. In the **Activity** of the reply that started it, it is one line that opens what it did.
+An agent another agent started for one task, with a title, such as checking a set of results. It sees its task and nothing of the chat, runs on the model and effort of the agent that started it, or others of the **shortlist** it was given, with the same tools or fewer, and goes on after the reply ends. What it saves to the record shows in the chat with Rufi's **receipt**, which names it by its title. When its turn ends, the agent that started it hears how it went (its **done message**), and Rufi AI says what it found. In the **Activity** of the reply that started it, it is one line that opens what it did.
 _Avoid_: helper, child (in screens and help), delegate
 
 **Done message**:
@@ -373,7 +369,7 @@ _Avoid_: download, dump
 
 - **You** keep the **records** of one or more **people**.
 - A **document** can hold **reports**; a **report** has **results**. A **result** can also be typed in without a report.
-- A **reading** of a **document** makes **page copies**, in **Rufi's part** of the reply to the message that sent the file; then Rufi AI, in the same reply, does its **sorting**, which makes **documents** and their **draft items**; they become **results** only when you save them.
+- A **reader** Rufi AI starts makes a **reading** of a **document**: its **page copies**. The reader's result wakes Rufi AI, whose **sorting** makes **documents** and their **draft items**; they become **results** only when you save them.
 - A **save** changes one **person**'s **records**, rests on their messages, **documents**' pages or **visits** as its **sources**, and gives one **receipt**; an **undo** is a new save.
 - A **visit** rests on its paper's page; the **records** saved from it (a **medicine use**, a condition, a **follow-up**) cite it, and one record can cite several visits.
 - A message's **chips** point at the person's **results**, **documents** or **draft items**; "save it" with a document's chip saves its **draft items** as **results**.

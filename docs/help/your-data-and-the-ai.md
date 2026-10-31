@@ -37,7 +37,7 @@ Your sign-in's secrets aren't in the data folder: they are in your Mac's Keychai
 | `logs/`            | Rufi's log (see below)                                                                                                                                                                                                                                                                                                                                                                                 |
 | `codex/`           | The AI's own files: its settings, Rufi's instructions for the AI, its own copy of your chat, and the pictures it generates                                                                                                                                                                                                                                                                             |
 | `ai/`              | The AI's folder: where the AI works, with its programs, notes and research files (see [What the AI can do in its folder](#what-the-ai-can-do-in-its-folder))                                                                                                                                                                                                                                           |
-| `sub-agents/`      | The settings of Rufi's document reader; it holds no document                                                                                                                                                                                                                                                                                                                                           |
+| `sub-agents/`      | The settings of the document reader an earlier version of Rufi used; it holds no document                                                                                                                                                                                                                                                                                                              |
 
 Rufi also keeps a few small files there that say what state the folder is in: while Rufi runs, and while a first start, a move or a restore isn't finished. With them, Rufi never opens a folder that another Rufi uses, or one that is only half made.
 
@@ -98,7 +98,7 @@ Then Rufi doesn't read or change the location file, and **Settings** › **Data 
 
 When the AI reads your record with Rufi's tools, it gets only the records of the person whose chat it is: Rufi chooses the person, and the AI can't name another one. The AI can't read the chat or Rufi's settings this way, and it can't change anything. It doesn't read your [device data](device-data.md) yet.
 
-Rufi's tools aren't all that the chat's AI can do: it also works in its own folder (see below). The [reader](#reading-your-documents) is different: Rufi locks it to two tools for one document.
+Rufi's tools aren't all that the chat's AI can do: it also works in its own folder (see below).
 
 ## What the AI can do in its folder
 
@@ -132,15 +132,13 @@ Rufi draws a page again when it needs it; the drawn pages aren't in your backups
 
 ## Reading your documents
 
-Rufi reads each document you send with its own reader, when you send it (see [Documents](documents.md#how-rufi-reads-a-document)). A file you add goes nowhere until you send the message: it waits in the box, on your Mac. Nothing goes to any other service, and when the AI can't be reached, Rufi doesn't fall back to another one: the reading waits or fails, and says so.
+A file you add goes nowhere until you send the message: it waits in the box, on your Mac. When you send it, Rufi tells Rufi AI, the AI you chat with, which files aren't read yet, and Rufi AI has them read by readers, sub-agents it starts (see [Documents](documents.md#how-rufi-reads-a-document)).
 
-The reader sends the document's pages to the AI service you signed in with, the same way as above. It is a separate AI that Rufi starts for that one document:
+- A reader is one of the AI's sub-agents, like any other (see [When the AI starts agents of its own](chat.md#when-the-ai-starts-agents-of-its-own)). It gets the task Rufi AI gives it, never your chat, and works in the AI's folder with the Rufi tools Rufi AI gives it, on a model you ticked. Rufi AI points it to Rufi's instructions for copying pages.
+- It looks at each page with Rufi's tool, as above, so the pages go to the AI service it runs on, one you signed in with. Rufi's tools give it only the documents of the person whose chat it is.
+- It keeps its notes on the pages in `ai/work/`, and saves its copy of each page with Rufi's tool. Rufi keeps the copies in `rufi.sqlite`; what the reader did is its **Activity**, in `agents.sqlite`. Pages an older Rufi read keep what its reader saved then.
 
-- It gets Rufi's instructions for copying pages, the file's name and the list of its pages. It doesn't get whose document it is, your chat or your record.
-- It can do two things only, both through Rufi: look at a page of that document, and save its copy of the page. It has no files, no commands and no internet, and it can't start other work. This is a lock, not only an instruction: Rufi starts the reader without them, and stops a reading that uses anything else.
-- Rufi keeps the reader's copy of each page in `rufi.sqlite`, with how much of your plan the reading used. The reader's own record of its work isn't kept. Pages an older Rufi read keep what its reader saved then (its notebook).
-
-When the reading ends, Rufi gives the page copies to Rufi AI, the AI you chat with, with your message, in the same reply. Rufi AI sorts the file into documents and drafts their results, then answers you (see [Documents](documents.md#how-rufi-ai-sorts-a-file)). Rufi AI reads the copies with Rufi's tools, as it reads your record, and saves nothing to your record without your yes. What it did shows in **Activity**, like any reply. Rufi starts no reply of its own to sort a file.
+When a reader's result comes back, Rufi AI sorts the file into documents and drafts their results, then tells you what it found (see [Documents](documents.md#how-rufi-ai-sorts-a-file)). Rufi AI reads the copies with Rufi's tools, as it reads your record, and saves nothing to your record without your yes. What it did shows in **Activity**, like any reply.
 
 Draft items aren't your record until you save them. They are in your backups and your export (the `draft_items` table), apart from your record, with the page copies (`page_copies`).
 

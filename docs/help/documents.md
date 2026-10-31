@@ -204,7 +204,7 @@ When every result is saved or set aside, the page says **These results were save
 - On a reading from an older Rufi, values from a report's column of earlier results are rows of their own, marked **earlier**. Rufi doesn't count them as results.
 - Turn on **Worth a look only** to see only the drafts worth a look, each with why.
 - A draft marked **Out of date: this page was read again** comes from an earlier reading of its page; it can't be fixed or saved.
-- **View original** opens the file as you added it. **View reading** shows the reader's copy of each page, also while it reads.
+- **View original** opens the file as you added it. **View reading** shows the reader's copy of each page, once its reading is saved.
 
 ### Fix a result
 
