@@ -80,7 +80,7 @@ When you delete a document (see [Documents](documents.md#delete-a-document)), it
 - **A visit brief's line**, with a page sign and **Open**, when the AI made a brief for you. Rufi writes it. See [Visit brief](visit-brief.md).
 - **Rufi's lines**, with a bell and "Rufi" above them, when something happened outside the chat. Rufi writes them, never the AI, and they are never your words. See [Rufi's lines](#rufis-lines).
 - **How a reply ended**, when it didn't finish: for example "Stopped.". When the AI service stopped the reply with an error, the line shows the error as the service reported it, such as "exceeded retry limit, last status: 429 Too Many Requests". Rufi doesn't put it in other words. When the service gave no words, the line says "This reply didn't finish.", and for your ChatGPT plan's usage limit, the time it resets.
-- **Quiet lines** about the AI's memory of the chat: "Compacting chat history…" while the AI compacts it, "Chat history compacted" once it has, and "New thread started" where the AI started with a new memory of the chat. See [The AI's memory of the chat](#the-ais-memory-of-the-chat).
+- **Quiet lines**: "Model changed", with the models and efforts before and after, such as "Model changed: GPT-6-Astra XHigh → Claude Opus 5.5 High", where a reply runs on another model or effort than the one before (see [The model and effort](#the-model-and-effort)); and about the AI's memory of the chat, "Compacting chat history…" while the AI compacts it and "Chat history compacted" once it has (see [The AI's memory of the chat](#the-ais-memory-of-the-chat)).
 
 ## Activity
 
@@ -209,7 +209,7 @@ You can stop a sub-agent in its pop-up, or ask the AI to stop one: just that one
 
 ## While the AI replies
 
-While the AI replies, three buttons are where the send button was: **Steer** (two arrows that meet), **Queue** (a list with an arrow) and **Stop** (the square). The chat bar also shows a turning circle before its text, from the moment you send until the reply ends, because Activity doesn't show there.
+While the AI replies, the round button is **Stop** (the square) while the box is empty, and the send button once you type. Enter, or a click on it, does what **Settings** › **Sending while Rufi replies** says: **Steer** (the start) or **Queue**. ⌘Enter, or ⌘-click, does the other, and a light line under the box says so: "⌘↵ to queue", or "⌘↵ to steer" when Queue is your choice. The chat bar also shows a turning circle before its text, from the moment you send until the reply ends, because Activity doesn't show there.
 
 **What the AI does.** Activity shows the AI's notes, its thinking and its steps as they happen (see [Activity](#activity)). After a reload, or in another tab, it shows the same.
 
@@ -272,11 +272,13 @@ When the AI should know too, Rufi gives it a note:
 
 ## The model and effort
 
-The model and effort that answer show in the box, next to the send button, in every size of the chat: for example "GPT-6-Astra Medium". Click them to open one menu with both.
+The model and effort that answer show in the box, next to the send button, in every size of the chat: for example "GPT-6-Astra Medium". Click them to open one menu with both. It stays open while you choose, so you can set both in one go; a click outside it, a click on the model and effort again, or Esc closes it.
 
 **The model.** Your chat has one model at a time. To change it, choose another in the menu: a tick shows the one that answers now. Rufi has four models, and the menu always shows all four: GPT-6-Astra and GPT-6.1-Sol with your ChatGPT plan, and Claude Fable 5.1 and Claude Opus 5.5 with Claude. When Codex or Claude isn't signed in, its two models show greyed, with **Sign in with ChatGPT** or **Sign in to Claude** under them (see [Signing in](signing-in.md)). A new chat starts on GPT-6-Astra. Choose another before your first message if you like.
 
 **The effort** is how hard the AI thinks before it answers: Low is faster, Medium gives careful answers at a good speed, and High and XHigh think longer. Every model has the same four. Your chat starts at Medium. A new effort applies from the next reply, and the AI keeps its memory of the chat.
+
+**When the model changes.** A reply that runs on another model or effort than the reply before it shows a quiet line above your message, with both: "Model changed: GPT-6.1-Sol XHigh → Claude Opus 5.5 High". Each reply keeps the model and effort it ran with, so the line stays after a reload. Replies from before this version of Rufi kept no effort: after one, the line shows only when the model changed, and names no effort for it. A sub-agent's pop-up shows the same line when the AI moves it to another model or effort.
 
 Rufi keeps the model and effort for your chat. You can't change them while a reply runs. Rufi says so: stop the reply, then change them. A new model answers from your next message, and it has the whole chat: the AI keeps its memory of the chat. A model of another provider starts a new thread there, with the chat's last messages. Messages that wait go to the new model.
 
@@ -290,7 +292,7 @@ Your chat is always kept whole in Rufi, and the AI can read all of it. The AI al
 
 **Compacted.** When that memory gets near full, Codex, the AI's agent, compacts the chat history: it replaces the older part of the AI's memory with a summary, in the same thread. The chat shows "Compacting chat history…" while it runs, and "Chat history compacted" once it is done. A message you send meanwhile waits, as during any reply. If you stop the reply, or Rufi closes, while it compacts, the line goes away. Another model or effort keeps the same thread; if the new model has a smaller memory, the AI can compact, and the chat says so.
 
-**New thread.** The AI starts a new thread only when its own copy of the chat is gone (for example after a restore, a move of Rufi's data, when its files were deleted, or when the AI's working state, `agents.sqlite`, is missing), or when you click **New thread** on a waiting message. The chat shows "New thread started" there. The new thread has the chat's last 10 messages that reached the AI, never one still waiting, and the AI reads further back when it needs to. When Rufi can't open the AI's thread for another reason, it doesn't start a new one by itself: your message waits as **Failed** with the error, **Send** and **New thread** (see [Waiting messages](#waiting-messages)).
+**New thread.** The AI starts a new thread only when its own copy of the chat is gone (for example after a restore, a move of Rufi's data, when its files were deleted, or when the AI's working state, `agents.sqlite`, is missing), or when you click **New thread** on a waiting message. The new thread has the chat's last 10 messages that reached the AI, never one still waiting, and the AI reads further back when it needs to. When Rufi can't open the AI's thread for another reason, it doesn't start a new one by itself: your message waits as **Failed** with the error, **Send** and **New thread** (see [Waiting messages](#waiting-messages)).
 
 **New rules.** When Rufi's rules for the AI change, after a Rufi update or when you choose another emergency region, the AI gets the new rules with your next message, and the chat shows no line. If the AI can't take them, your message waits as **Failed · The AI couldn't take Rufi's new instructions, so it can't reply now. Try again.**, with **Send** and **New thread**.
 
