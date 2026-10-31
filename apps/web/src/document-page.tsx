@@ -802,6 +802,7 @@ function PageView({
       >
         <PageImage
           key={position}
+          personId={personId}
           path={pagePath(personId, documentId, position)}
           alt={`Page ${String(index + 1)} of ${String(of)}`}
           className="h-fit max-w-full rounded-md shadow-sm"

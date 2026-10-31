@@ -187,7 +187,7 @@ test("a file shows Reading, with no Retry, while the reader Rufi AI set on it wo
   await accessible(page);
 });
 
-test("a step that read a page opens in Activity to the page's image, then its text", async ({
+test("a step that read a page opens in Activity to the page's image, then its text, also once a sort moved the page to another document", async ({
   page,
   rufi,
 }) => {
@@ -198,6 +198,18 @@ test("a step that read a page opens in Activity to the page's image, then its te
           id: "look",
           tool: "get_documents",
           arguments: { document: "$document", page: 2 },
+        },
+        {
+          id: "split",
+          tool: "sort_documents",
+          arguments: {
+            document: "$document",
+            documents: [
+              { id: "$document", pages: [1], kind: "lab_report" },
+              { pages: [2], kind: "lab_report" },
+            ],
+            drafts: [],
+          },
         },
       ],
     },
@@ -214,6 +226,7 @@ test("a step that read a page opens in Activity to the page's image, then its te
     await image.evaluate((img) => (img as HTMLImageElement).naturalWidth),
   ).toBeGreaterThan(0);
   await expect(step).toContainText('"page":2,"of":2');
+  await expect(row(page)).toHaveCount(2);
   await accessible(page);
 });
 
