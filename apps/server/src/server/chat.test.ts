@@ -726,20 +726,33 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     async () => {
       await startChat(name);
       const c = await newChat();
-      // Two requests, each with the chat as it read it.
+      // Two requests, each with the chat as it read it, both queued:
+      // either may reach the queue first, and each has a reply of its own.
       const again = await chatRow(c.id);
-      await Promise.all([say(c, "slow first"), say(again, "B", "queue")]);
+      await Promise.all([
+        say(c, "slow first", "queue"),
+        say(again, "B", "queue"),
+      ]);
       await ended(c.id, 2);
       const { entries, turns } = await transcript(c.id);
-      expect(
-        entries.filter(([kind]) => kind === "message" || kind === "reply"),
-      ).toEqual([
-        ["message", "slow first"],
-        ["reply", "ok:slow first"],
-        ["message", "B"],
-        ["reply", "ok:B"],
-      ]);
+      const shown = entries.filter(
+        ([kind]) => kind === "message" || kind === "reply",
+      );
+      expect(shown).toHaveLength(4);
+      expect([shown.slice(0, 2), shown.slice(2)]).toEqual(
+        expect.arrayContaining([
+          [
+            ["message", "slow first"],
+            ["reply", "ok:slow first"],
+          ],
+          [
+            ["message", "B"],
+            ["reply", "ok:B"],
+          ],
+        ]),
+      );
       expect(turns.map((t) => t.status)).toEqual(["completed", "completed"]);
+      expect(threadsUsed()).toBe(1);
     },
   );
 
