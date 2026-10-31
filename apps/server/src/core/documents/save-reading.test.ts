@@ -132,23 +132,28 @@ describe("a reading agent's saved reading", () => {
       ok: true,
       result: { pages: "1–2", unreadable: "2" },
     });
-    expect(
-      rows(rufi.store, "SELECT state, targets, sorted_at, error FROM jobs"),
-    ).toEqual([
-      { state: "done", targets: "[1,2]", sorted_at: null, error: null },
+    expect(rows(rufi.store, "SELECT state, targets, error FROM jobs")).toEqual([
+      { state: "done", targets: "[1,2]", error: null },
     ]);
     expect(
       rows(
         rufi.store,
-        "SELECT page_in_file, outcome, copy, why FROM page_copies ORDER BY page_in_file",
+        "SELECT page_in_file, outcome, copy, why, sorted_at FROM page_copies ORDER BY page_in_file",
       ),
     ).toEqual([
-      { page_in_file: 1, outcome: "read", copy: PAGE_1, why: null },
+      {
+        page_in_file: 1,
+        outcome: "read",
+        copy: PAGE_1,
+        why: null,
+        sorted_at: null,
+      },
       {
         page_in_file: 2,
         outcome: "unreadable",
         copy: PAGE_2,
         why: "The lower half is blurred.",
+        sorted_at: null,
       },
     ]);
     expect(
@@ -210,6 +215,34 @@ describe("a reading agent's saved reading", () => {
     );
     expect(states()).toEqual([
       { position: 1, state: "read" },
+      { position: 2, state: "unreadable" },
+    ]);
+  });
+
+  it("counts only a finished reading's copy: a page an older stopped reading copied, and no reading since, stays not looked at", async () => {
+    rufi.store.db.exec(`
+      INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, error, created_at)
+        VALUES ('job-stopped', 'asha', 'document_read', 'doc-asha-aug', 'failed', 1, '[1,2]', 'Rufi closed while reading', '${NOW}');
+      INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at)
+        SELECT 'asha', file_id, page_in_file, 'job-stopped', 1, 'read', 'Half a copy', '${NOW}'
+        FROM document_pages WHERE document_id = 'doc-asha-aug' AND position = 1;
+    `);
+    const saved = await call(
+      "save_reading",
+      { document: "doc-asha-aug", pages: [PAGES[1]] },
+      "call-page-2",
+    );
+    expect(saved).toMatchObject({
+      ok: true,
+      result: { pages: "2", not_read: "1" },
+    });
+    expect(
+      rows(
+        rufi.store,
+        "SELECT position, state FROM document_pages WHERE document_id = 'doc-asha-aug' ORDER BY position",
+      ),
+    ).toEqual([
+      { position: 1, state: "not_looked_at" },
       { position: 2, state: "unreadable" },
     ]);
   });

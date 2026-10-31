@@ -287,7 +287,11 @@ export async function startRufiAi(
   options: Omit<
     Parameters<typeof startAgents>[0],
     "host" | "live" | "apply" | "opened"
-  > & { transcripts: Transcripts },
+  > & {
+    transcripts: Transcripts;
+    /** Tells the person's documents screens that a sub-agent changed. */
+    documents?: (personId: string) => void;
+  },
 ): Promise<
   AgentSystem & {
     rufiAi: (host: RufiAiHost) => RufiAi;
@@ -581,7 +585,7 @@ export async function startRufiAi(
       [claim.id],
     );
   }
-  const shown = agentLogs({ agents, kept });
+  const shown = agentLogs({ agents, kept, documents: options.documents });
   screens.logs = shown;
   // A chat's replies' steps show from the agent database, by its own agent;
   // a step that started a sub-agent names it.

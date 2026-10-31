@@ -431,7 +431,7 @@ it("keeps the backup made before the category upgrade at version 3, and a restor
 
 /**
  * Rows as a Rufi before sorting (version 11) had them: the columns
- * migrations 12 and 15 add are left out, to compare an older test's rows.
+ * migrations 12, 15 and 20 add are left out, to compare an older test's rows.
  */
 const beforeSorting = (rows: readonly object[]) =>
   rows.map((row) =>
@@ -445,10 +445,26 @@ const beforeSorting = (rows: readonly object[]) =>
             "sorted_at",
             "quote",
             "sent_at",
+            "reader_agent",
           ].includes(key),
       ),
     ),
   );
+
+/**
+ * An older reading as migration 20 leaves it: one that hadn't finished
+ * failed, as Rufi's start failed them, since the older reader is gone.
+ */
+const closed = (job: Record<string, unknown>) =>
+  job["state"] === "queued" || job["state"] === "running"
+    ? {
+        ...job,
+        state: "failed",
+        error: "Rufi closed while reading",
+        ended_at: expect.any(String),
+        retry_at: null,
+      }
+    : job;
 
 /** The documents and their pages as stored. */
 function documentsIn(path: string) {
@@ -608,11 +624,12 @@ it("upgrades a record of version 8 so a reading no longer waits for the account:
     const after = stored();
     expect(beforeSorting(after.jobs)).toEqual(
       before.jobs.map(
-        ({ waiting: _waiting, wait_until: _until, retried, ...job }) => ({
-          ...job,
-          retries: retried,
-          retry_at: null,
-        }),
+        ({ waiting: _waiting, wait_until: _until, retried, ...job }) =>
+          closed({
+            ...job,
+            retries: retried,
+            retry_at: null,
+          }),
       ),
     );
     expect(after.pages).toEqual(before.pages);
@@ -755,7 +772,7 @@ it("upgrades a record of version 10 so the reader can keep page copies: every pa
   }
 });
 
-it("upgrades a record of version 11 so Rufi AI sorts: every document, reading and draft kept, and an ended reading counted sorted", async () => {
+it("upgrades a record of version 11 so Rufi AI sorts: every document, reading and draft kept", async () => {
   const path = databasePath(home);
   migrate(path, MIGRATIONS.slice(0, 11));
   // Readings as Rufi of version 11 left them: a done one with entries and
@@ -817,8 +834,18 @@ it("upgrades a record of version 11 so Rufi AI sorts: every document, reading an
 
   const after = stored();
   expect(beforeSorting(after.documents)).toEqual(before.documents);
-  expect(beforeSorting(after.jobs)).toEqual(before.jobs);
-  expect(after.pages).toEqual(before.pages);
+  expect(beforeSorting(after.jobs)).toEqual(before.jobs.map(closed));
+  // A page an unfinished reading was copying is free for the next one.
+  const unfinished = before.jobs
+    .filter((job) => closed(job) !== job)
+    .map((job) => job["id"]);
+  expect(after.pages).toEqual(
+    before.pages.map((page) =>
+      unfinished.includes(page["entry_job_id"])
+        ? { ...page, entry_attempt: 0 }
+        : page,
+    ),
+  );
   expect(beforeSorting(after.drafts)).toEqual(before.drafts);
   expect(
     after.documents.map((d) => [
@@ -828,14 +855,6 @@ it("upgrades a record of version 11 so Rufi AI sorts: every document, reading an
       d["from_document"],
     ]),
   ).toEqual(before.documents.map((d) => [d["id"], null, null, null]));
-  expect(
-    after.jobs
-      .filter((j) => String(j["id"]).startsWith("job-v11"))
-      .map((j) => [j["id"], j["sorted_at"]]),
-  ).toEqual([
-    ["job-v11-aug", "2026-10-16T08:02:00Z"],
-    ["job-v11-sep", null],
-  ]);
   expect(
     after.drafts
       .filter((d) => String(d["id"]).startsWith("d-v11"))
@@ -1107,7 +1126,11 @@ it("upgrades a record of version 15 so files start on Send: every document sent 
 
   const after = stored();
   expect(after.documents).toEqual(
-    before.documents.map((row) => ({ ...row, sent_at: row["added_at"] })),
+    before.documents.map((row) => ({
+      ...row,
+      sent_at: row["added_at"],
+      reader_agent: null,
+    })),
   );
   expect(after.turns).toEqual(
     before.turns.map((row) => ({ ...row, cause: null })),
@@ -1202,6 +1225,41 @@ it("opens a record the migrations made as this Rufi's own (schema.sql is what th
   db.close();
 
   expect(() => openReadOnly(path)?.close()).not.toThrow();
+});
+
+it("upgrades a record of version 19 so Rufi AI can sort part of an add: each page copy keeps its reading's sorted mark", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 19));
+  // Two readings of Asha's August report, one sorted, as Rufi of version
+  // 19 kept them: page 1 copied by the sorted one, page 2 by the other.
+  const old = new DatabaseSync(path);
+  try {
+    old.exec(`
+      INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, sorted_at, created_at) VALUES
+        ('job-sorted', 'asha', 'document_read', 'doc-asha-aug', 'done', 1, '[1]', '2026-10-20T09:00:00Z', '2026-10-20T08:00:00Z'),
+        ('job-waiting', 'asha', 'document_read', 'doc-asha-aug', 'done', 1, '[2]', NULL, '2026-10-20T08:30:00Z');
+      INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at)
+        SELECT 'asha', file_id, page_in_file, CASE position WHEN 1 THEN 'job-sorted' ELSE 'job-waiting' END, 1, 'read', 'A copy', '2026-10-20T08:00:00Z'
+        FROM document_pages WHERE document_id = 'doc-asha-aug';
+    `);
+  } finally {
+    old.close();
+  }
+
+  const store = await openRecord(home);
+  try {
+    expect(
+      store.db
+        .prepare("SELECT job_id, sorted_at FROM page_copies ORDER BY job_id")
+        .all()
+        .map((row) => ({ ...row })),
+    ).toEqual([
+      { job_id: "job-sorted", sorted_at: "2026-10-20T09:00:00Z" },
+      { job_id: "job-waiting", sorted_at: null },
+    ]);
+  } finally {
+    store.close();
+  }
 });
 
 it("upgrades a record of version 20 so every agent's calls can be kept: each call kept before stays as it was, with no agent", async () => {

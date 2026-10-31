@@ -11,6 +11,9 @@
 --   while they were read (held for that reply's Retry), waits again, with
 --   no reply of its own yet; it is in the chat already, so it shows there
 --   once.
+-- - Rufi AI sorts as much of an add as it chooses: each page copy says
+--   when it was sorted, from its reading's mark, which goes.
+-- - a document keeps the agent Rufi AI set to read it (reader_agent).
 -- - the older reader goes: its readings that hadn't finished fail, their
 --   copies kept, as Rufi's start failed them; nothing reads them by itself.
 -- A row held from a restored backup, or for the person's choice, stays
@@ -26,6 +29,11 @@ UPDATE chat_queue SET state = 'waiting', turn_id = NULL
   WHERE state = 'handing_over' AND sent_as IS NULL;
 UPDATE chat_queue SET state = 'handing_over', sent_as = COALESCE(sent_as, id)
   WHERE state = 'not_sure';
+ALTER TABLE page_copies ADD COLUMN sorted_at TEXT;
+UPDATE page_copies
+  SET sorted_at = (SELECT sorted_at FROM jobs WHERE jobs.id = page_copies.job_id);
+ALTER TABLE jobs DROP COLUMN sorted_at;
+ALTER TABLE documents ADD COLUMN reader_agent TEXT;
 UPDATE document_pages SET entry_attempt = 0
   WHERE entry_attempt > 0
     AND entry_job_id IN (SELECT id FROM jobs WHERE state IN ('queued', 'running'))

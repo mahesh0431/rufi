@@ -16,6 +16,7 @@ import type { Tables } from "../store/tables.ts";
 import type { ReadingRun } from "./copies.ts";
 import type { Checks, Entry } from "./notebook.ts";
 import { documentName, ranges } from "./naming.ts";
+import { readersOf } from "./readers.ts";
 import { pagesOf } from "./sorting.ts";
 
 export interface Job {
@@ -87,8 +88,8 @@ const copiedBy = async (
  * state (its copy's outcome, or not looked at), the document's version
  * raised, the job done. A reading with nothing to sort (only unreadable
  * pages) is sorted as it ends. Draft items come from Rufi AI's sort
- * (sorting.ts), never from here. The old reader's finish and save_reading
- * (save-reading.ts) both end a reading through it.
+ * (sorting.ts), never from here. save_reading (save-reading.ts) ends a
+ * reading through it.
  */
 export async function finishIn(
   trx: Trx,
@@ -101,18 +102,21 @@ export async function finishIn(
   );
   const ended = await trx
     .updateTable("jobs")
-    .set({
-      state: "done",
-      ended_at: at,
-      error: null,
-      sorted_at: sorts ? null : at,
-    })
+    .set({ state: "done", ended_at: at, error: null })
     .where("id", "=", run.jobId)
     .where("state", "=", "running")
     .where("attempt", "=", run.attempt)
     .executeTakeFirst();
   if (ended.numUpdatedRows !== 1n) {
     throw new Error("The reading isn't running any more.");
+  }
+  if (!sorts) {
+    await trx
+      .updateTable("page_copies")
+      .set({ sorted_at: at })
+      .where("person_id", "=", run.personId)
+      .where("job_id", "=", run.jobId)
+      .execute();
   }
   for (const target of run.targets) {
     const copy = copied.get(target);
@@ -145,7 +149,13 @@ type Plan =
 /** Why a reading Rufi stopped in the middle failed, for the person. */
 export const CLOSED_WHILE_READING = "Rufi closed while reading";
 
-export function readings(store: Store) {
+export function readings(
+  store: Store,
+  options: {
+    /** Whether an agent is at work (server/sub-agents.ts); none when not given. */
+    runs?: (agent: string) => boolean;
+  } = {},
+) {
   const db = store.query;
   const listeners = new Map<string, Set<() => void>>();
 
@@ -312,6 +322,13 @@ export function readings(store: Store) {
      * Worked out from the document's own pages, so a document split from
      * an add has the add's reading of its pages.
      */
+    /**
+     * These documents' readers: each one's agent, and whether it is reading
+     * the document now (readers.ts).
+     */
+    readers: (personId: string, documentIds: readonly string[]) =>
+      readersOf(db, personId, documentIds, options.runs ?? (() => false)),
+
     statuses: async (personId: string) => {
       const jobs = (
         await db

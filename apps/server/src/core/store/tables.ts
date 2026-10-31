@@ -175,6 +175,7 @@ export interface Tables {
     deleted_at: string | null;
     from_document: string | null;
     sent_at: string | null;
+    reader_agent: string | null;
   };
   draft_items: {
     id: string;
@@ -244,7 +245,6 @@ export interface Tables {
     error: string | null;
     usage: string | null;
     reader: string | null;
-    sorted_at: string | null;
     created_at: string;
   };
   medicine_uses: {
@@ -289,6 +289,7 @@ export interface Tables {
     copy: string;
     why: string | null;
     saved_at: string;
+    sorted_at: string | null;
   };
   people: {
     id: string;

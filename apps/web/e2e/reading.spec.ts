@@ -4,14 +4,18 @@
 // Activity, and the reader's result wakes it to sort the file and answer.
 // View reading shows the reader's copies. Retry on the Documents page puts
 // a read again chip in the box, and Send has the pages that couldn't be read
-// read again.
-import { readFile } from "node:fs/promises";
+// read again. A file message waiting when a backup is made waits held after
+// a restore.
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import type { Scenario } from "../../server/tests/fake-codex.ts";
 import { readOf, readThen } from "../../server/tests/readers.ts";
-import { expect, FILE_WORK_MS, sendFiles, test, type Rufi } from "./rufi.ts";
+import { backupsPath, makeBackup } from "../../server/src/core/store/backup.ts";
+import { restore } from "../../server/src/core/store/restore.ts";
+import { expect, FILE_WORK_MS, Rufi, sendFiles, test } from "./rufi.ts";
 
 // Wide enough for the Documents page beside the chat panel.
 test.use({ viewport: { width: 2000, height: 800 } });
@@ -84,6 +88,11 @@ const chips = (page: Page) =>
 /** The replies' Activity buttons, oldest first. */
 const activity = (page: Page) =>
   log(page).getByRole("button", { name: /^Activity · / });
+/** A click outside the chat panel steps back to the bar: open it again. */
+const reopen = (page: Page) =>
+  chat(page)
+    .getByRole("button", { name: /^Open the chat/ })
+    .click();
 const row = (page: Page) =>
   page.getByRole("row").filter({ hasText: "sunrise-labs-august.pdf" });
 
@@ -141,6 +150,37 @@ test("a file waits in the box until Send; then Rufi AI has a reader read it, a l
   await expect(sheet).toContainText("sunrise-labs-august.pdf · read");
   await expect(sheet.locator("pre")).toHaveCount(2);
   await expect(sheet.locator("pre").nth(1)).toContainText("| Haemoglobin |");
+  await accessible(page);
+});
+
+test("a file shows Reading, with no Retry, while the reader Rufi AI set on it works", async ({
+  page,
+  rufi,
+}) => {
+  // Rufi AI starts a reader and sets it on the file; the reader works on.
+  await opened(page, rufi, {
+    callsByText: {
+      "Read it": [
+        {
+          id: "start-reader",
+          tool: "start_agent",
+          arguments: {
+            title: "Reading",
+            task: "hang: read (document $document) with the reading-documents skill.",
+            tools: ["get_documents", "save_reading"],
+          },
+        },
+        {
+          id: "set-reader",
+          tool: "set_reader",
+          arguments: { documents: ["$document"], agent: "$started" },
+        },
+      ],
+    },
+  });
+  await sendFiles(page, await report(), "Read it");
+  await expect(row(page)).toContainText("Reading", { timeout: FILE_WORK_MS });
+  await expect(row(page).getByRole("button", { name: "Retry" })).toHaveCount(0);
   await accessible(page);
 });
 
@@ -217,4 +257,67 @@ test("keeps unreadable pages to check, and Nothing to save for a reading with no
   expect(await rufi.given("Once more")).toMatch(
     /\(document [^)]+\): pages 1 of 2 again, which couldn't be read/,
   );
+});
+
+test("a file message waiting when a backup is made waits held after a restore, with Send and Remove: Send has its file read and sorted, Remove leaves the file not read", async ({
+  page,
+  rufi,
+}) => {
+  const scenario: Scenario = {
+    callsByText: readThen("Sort this please", [readOf(1), readOf(2)], SORT),
+  };
+  await opened(page, rufi, scenario);
+  // A reply runs, and the file message is queued behind it.
+  await reopen(page);
+  const box = chat(page).getByRole("textbox", { name: "Message to Rufi" });
+  await box.fill("hang on");
+  await chat(page).getByRole("button", { name: "Send" }).click();
+  await expect(chat(page).getByRole("button", { name: "Stop" })).toBeVisible();
+  await page
+    .getByLabel("Choose documents", { exact: true })
+    .setInputFiles(await report());
+  await expect(chips(page)).toHaveText(["sunrise-labs-august.pdf"], {
+    timeout: FILE_WORK_MS,
+  });
+  await box.fill("Sort this please");
+  await chat(page).getByRole("button", { name: "Queue" }).click();
+  await expect(
+    chat(page).getByRole("region", { name: "Waiting messages" }),
+  ).toContainText("Sort this please");
+  const backup = await makeBackup(rufi.home, new Date());
+
+  // Restored, the message waits held from the backup, with Send and Remove.
+  for (const action of ["Remove", "Send"] as const) {
+    const target = await mkdtemp(join(tmpdir(), "rufi-restored-"));
+    const restored = new Rufi(target);
+    try {
+      await restore(join(backupsPath(rufi.home), backup.name), target);
+      await restored.start({ scenario });
+      await page.goto(restored.link());
+      await page.getByRole("link", { name: "Documents" }).click();
+      await reopen(page);
+      const waiting = chat(page).getByRole("region", {
+        name: "Waiting messages",
+      });
+      await expect(waiting).toContainText("Sort this please");
+      await expect(waiting).toContainText("From a backup");
+      await expect(
+        waiting.getByRole("button", { name: "Send", exact: true }),
+      ).toBeVisible();
+      await expect(
+        waiting.getByRole("button", { name: "Remove" }),
+      ).toBeVisible();
+      await waiting.getByRole("button", { name: action, exact: true }).click();
+      await expect(waiting).toHaveCount(0);
+      // Sent, Rufi AI has the file read and sorts it; removed, the file
+      // stays sent and not read.
+      await expect(row(page)).toContainText(
+        action === "Send" ? "Not saved · 2 results" : "Not read yet",
+        { timeout: FILE_WORK_MS },
+      );
+    } finally {
+      await restored.close();
+      await rm(target, { recursive: true, force: true });
+    }
+  }
 });

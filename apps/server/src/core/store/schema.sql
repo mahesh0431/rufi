@@ -56,6 +56,7 @@ CREATE TABLE documents (
   deleted_at TEXT,       -- when the person deleted it: a tombstone, out of every list and action
   from_document TEXT,    -- the add Rufi AI split it from; null for an add
   sent_at TEXT,          -- when the person sent it in a message; null while it waits unsent in the chat box (a split document has its add's)
+  reader_agent TEXT,     -- the agent Rufi AI set to read it (set_reader), in agents.sqlite; whether it is reading is worked out when shown
   UNIQUE (person_id, id),
   FOREIGN KEY (person_id, from_document) REFERENCES documents (person_id, id)
 ) STRICT;
@@ -116,7 +117,6 @@ CREATE TABLE jobs (
   error TEXT,                          -- why it failed, in words for the person
   usage TEXT,                          -- its runs' AI use as the agent reported it, summed (JSON)
   reader TEXT,                         -- the reader version of its last run (JSON)
-  sorted_at TEXT,                      -- when Rufi AI sorted the pages it copied; null until then
   created_at TEXT NOT NULL,
   UNIQUE (person_id, id),
   FOREIGN KEY (person_id, document_id) REFERENCES documents (person_id, id)
@@ -172,6 +172,7 @@ CREATE TABLE page_copies (
   copy TEXT NOT NULL,          -- the page as Markdown (HTML tables allowed), as the reader wrote it
   why TEXT,                    -- why it is unreadable
   saved_at TEXT NOT NULL,
+  sorted_at TEXT,              -- when Rufi AI sorted this page from it; null until then
   PRIMARY KEY (person_id, file_id, page_in_file, job_id),
   FOREIGN KEY (person_id, file_id, page_in_file) REFERENCES document_pages (person_id, file_id, page_in_file),
   FOREIGN KEY (person_id, job_id) REFERENCES jobs (person_id, id)

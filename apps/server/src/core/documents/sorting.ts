@@ -16,8 +16,8 @@
 // from it (documents.from_document). Every document of an add shares its
 // page positions: a page keeps its place in the add when a split moves it.
 // A page is not sorted yet while its current copy (the one from its latest
-// finished reading) comes from a reading Rufi AI hasn't sorted
-// (jobs.sorted_at).
+// finished reading) isn't (page_copies.sorted_at). A sort marks the pages
+// it names; how much of an add to sort at once is Rufi AI's call.
 import { Schema } from "effect";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
@@ -152,7 +152,7 @@ export const SortInput = Schema.Struct({
     .check(Schema.isMinLength(1), Schema.isMaxLength(500))
     .annotate({
       description:
-        "The documents the add holds, each with its pages. Every page not sorted yet must be in one of them.",
+        "The documents of the pages you sort now, each with its pages. Pages you leave out that aren't sorted yet wait for a later call.",
     }),
   drafts: Schema.Array(Draft).check(Schema.isMaxLength(5_000)).annotate({
     description:
@@ -297,7 +297,7 @@ export async function pagesOf(
       "c.page_in_file",
       "c.job_id",
       "c.outcome",
-      "j.sorted_at",
+      "c.sorted_at",
       "j.created_at",
     ])
     .$if(text, (q) => q.select("c.copy"))
@@ -484,14 +484,6 @@ export function sorting(
           );
         } else named.set(page, index);
       }
-    }
-    const left = waiting.filter((p) => !named.has(p.position));
-    if (left.length > 0) {
-      problem(
-        "documents",
-        ranges(left.map((p) => p.position)),
-        `Pages ${ranges(left.map((p) => p.position))} aren't sorted yet: put each of them in one of the documents too.`,
-      );
     }
     if (waiting.length === 0 && named.size === 0) {
       throw new Refusal("Nothing in this add is left to sort.");
@@ -761,16 +753,16 @@ export function sorting(
         .execute();
     }
 
-    // The readings whose pages are sorted now.
-    const jobs = [
-      ...new Set(waiting.flatMap((p) => (p.copy ? [p.copy.jobId] : []))),
-    ];
-    if (jobs.length > 0) {
+    // The pages sorted now: the waiting ones the call names.
+    for (const page of waiting) {
+      if (!page.copy || !named.has(page.position)) continue;
       await trx
-        .updateTable("jobs")
+        .updateTable("page_copies")
         .set({ sorted_at: at })
         .where("person_id", "=", personId)
-        .where("id", "in", jobs)
+        .where("file_id", "=", page.fileId)
+        .where("page_in_file", "=", page.pageInFile)
+        .where("job_id", "=", page.copy.jobId)
         .execute();
     }
     // Each document as it is now, with all its pages.

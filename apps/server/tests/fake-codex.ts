@@ -121,9 +121,11 @@ export interface Scenario {
    * `id` is Codex's call id (`call-<n>`; `exec-…` for a call made from exec).
    * The text "$document" in a call's arguments becomes the first document
    * the turn's input names ("(document <id>)", as Rufi's note on files
-   * names one, or a document chip), and "$document2" the second. A draft's
-   * reading "$reading" becomes the reading of its page's copy, which the
-   * fake reads with get_documents first, as the model would (not a step).
+   * names one, or a document chip), and "$document2" the second;
+   * "$started" becomes the agent the turn's last start_agent started, as
+   * its answer gives it. A draft's reading "$reading" becomes the reading of
+   * its page's copy, which the fake reads with get_documents first, as the
+   * model would (not a step).
    */
   calls?: {
     id?: string;
@@ -502,6 +504,8 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
   const named = documents[0];
   // An agent a message names, "(agent <id>)", as a test writes it.
   const agent = /\(agent ([^)\s]+)\)/.exec(input)?.[1];
+  /** The agent this turn's last start_agent started, as its answer gives it. */
+  let started: string | undefined;
   for (const [i, { id, ...scripted }] of calls.entries()) {
     const call = {
       ...scripted,
@@ -509,7 +513,8 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
         JSON.stringify(scripted.arguments)
           .replaceAll("$document2", documents[1] ?? "$document2")
           .replaceAll("$document", named ?? "$document")
-          .replaceAll("$agent", agent ?? "$agent"),
+          .replaceAll("$agent", agent ?? "$agent")
+          .replaceAll("$started", started ?? "$started"),
       ) as unknown,
     };
     const drafts = (call.arguments as { drafts?: unknown } | null)?.drafts;
@@ -567,6 +572,12 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
     record({ answered: "tools/call", reply });
     if (thread.running?.turnId !== turnId) return;
     const failed = !reply.result || reply.result["isError"] === true;
+    if (call.tool === "start_agent" && !failed) {
+      const [answer] = (reply.result?.["content"] ?? []) as { text: string }[];
+      started =
+        (JSON.parse(answer?.text ?? "{}") as { result?: { agent?: string } })
+          .result?.agent ?? started;
+    }
     event("item/completed", {
       item: {
         ...item,

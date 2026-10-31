@@ -11,7 +11,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { databasePath, openWritable, type Store } from "../store/database.ts";
 import { documents as openDocuments } from "./documents.ts";
 import { draftItems } from "./items.ts";
-import { sorting, type SortInput, type SortScope } from "./sorting.ts";
+import {
+  sorting,
+  unsorted,
+  type SortInput,
+  type SortScope,
+} from "./sorting.ts";
 
 const T0 = "2026-10-18T09:00:00.000Z";
 let clock = T0;
@@ -375,7 +380,9 @@ describe("a sort", () => {
       },
     ]);
     // Its reading is sorted.
-    expect(rows("SELECT sorted_at FROM jobs")).toEqual([{ sorted_at: T0 }]);
+    expect(rows("SELECT DISTINCT sorted_at FROM page_copies")).toEqual([
+      { sorted_at: T0 },
+    ]);
     expect(
       answer.documents.map((d) => [d.kind, d.pages, d.drafts, d.worth_a_look]),
     ).toEqual([
@@ -383,6 +390,51 @@ describe("a sort", () => {
       ["lab_report", "3–4", 3, 0],
       ["prescription", "5", 0, 0],
     ]);
+  });
+
+  it("sorts only the pages it is given: the rest of the add waits, not sorted yet, for a later sort", async () => {
+    const sorted = () =>
+      rows(
+        "SELECT page_in_file AS page, sorted_at FROM page_copies ORDER BY page_in_file",
+      );
+
+    // Rufi AI sorts the first report now.
+    await sorts.sort(personal(), {
+      document: "pile",
+      documents: THREE.documents.slice(0, 1),
+      drafts: THREE.drafts.filter((d) => d.page <= 2),
+    });
+    expect(sorted()).toEqual([
+      { page: 1, sorted_at: T0 },
+      { page: 2, sorted_at: T0 },
+      { page: 3, sorted_at: null },
+      { page: 4, sorted_at: null },
+      { page: 5, sorted_at: null },
+    ]);
+    expect([...(await unsorted(store.query, "asha"))]).toEqual(["pile"]);
+    expect(drafts().map((d) => d["page"])).toEqual([1, 1, 2, 2]);
+
+    // Later, the rest: the first report and its drafts stay as they are.
+    clock = "2026-10-18T10:00:00.000Z";
+    await sorts.sort(personal(), {
+      document: "pile",
+      documents: THREE.documents.slice(1),
+      drafts: THREE.drafts.filter((d) => d.page > 2),
+    });
+    expect(sorted().map((p) => p.sorted_at)).toEqual([
+      T0,
+      T0,
+      clock,
+      clock,
+      clock,
+    ]);
+    expect(await unsorted(store.query, "asha")).toEqual(new Set());
+    expect(documents().map((d) => d["kind"])).toEqual([
+      "lab_report",
+      "lab_report",
+      "prescription",
+    ]);
+    expect(drafts().map((d) => d["page"])).toEqual([1, 1, 2, 2, 3, 3, 4]);
   });
 
   it("refuses a call with every problem in it, and writes nothing", async () => {
@@ -403,16 +455,14 @@ describe("a sort", () => {
           path: "documents.1.pages",
           fix: "documents.0 already holds page 2: every page goes in one document.",
         }),
-        expect.objectContaining({
-          path: "documents",
-          fix: "Pages 4–5 aren't sorted yet: put each of them in one of the documents too.",
-        }),
         expect.objectContaining({ path: "drafts.0.page" }),
       ],
     });
     expect({ documents: documents(), pages: pagesOfEach() }).toEqual(before);
     expect(drafts()).toEqual([]);
-    expect(rows("SELECT sorted_at FROM jobs")).toEqual([{ sorted_at: null }]);
+    expect(rows("SELECT DISTINCT sorted_at FROM page_copies")).toEqual([
+      { sorted_at: null },
+    ]);
   });
 
   it("refuses a document id not of this add or named twice, a new document without its kind, and the add's own document left out", async () => {

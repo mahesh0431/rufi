@@ -49,7 +49,7 @@ import { chatAgents } from "../core/chat/agents.ts";
 import { shortlist, SHORTLIST_SETTING } from "../core/chat/models.ts";
 import { agentsPath } from "./agents.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
-import { subAgents } from "./sub-agents.ts";
+import { agentRuns, subAgents } from "./sub-agents.ts";
 import { agentSetup } from "./core.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "./mcp.ts";
 
@@ -1183,8 +1183,8 @@ describe("the chat, on the scripted Codex", () => {
         ('asha', 'doc-1', 1, 'f-1', 1, 'Sunrise Labs August.pdf'),
         ('ravi', 'doc-r', 1, 'f-1', 1, 'Ravi lipid panel.pdf');
       -- Read long ago: nothing of it is read again.
-      INSERT INTO jobs (id, person_id, kind, document_id, state, targets, sorted_at, created_at)
-        VALUES ('job-1', 'asha', 'document_read', 'doc-1', 'done', '[1]', '2026-10-01T09:00:00Z', '2026-10-01T09:00:00Z');
+      INSERT INTO jobs (id, person_id, kind, document_id, state, targets, created_at)
+        VALUES ('job-1', 'asha', 'document_read', 'doc-1', 'done', '[1]', '2026-10-01T09:00:00Z');
       INSERT INTO results (id, person_id, category, test_name, value_text, unit, measured_at, entered_at)
         VALUES ('res-1', 'asha', 'lab', 'HbA1c', '6.8', '%', '2026-08-12', '2026-08-13T00:00:00Z');
       INSERT INTO reports (id, person_id, document_id, issuer, collected) VALUES
@@ -1200,10 +1200,10 @@ describe("the chat, on the scripted Codex", () => {
         VALUES ('f-correction', 1, 'application/pdf', '2026-10-01T09:00:00Z');
       INSERT INTO document_pages (person_id, document_id, position, file_id, page_in_file, file_name, state)
         VALUES ('asha', 'doc-correction', 1, 'f-correction', 1, 'Corrected report.pdf', 'read');
-      INSERT INTO jobs (id, person_id, kind, document_id, state, targets, sorted_at, created_at)
-        VALUES ('job-correction', 'asha', 'document_read', 'doc-correction', 'done', '[1]', '2026-10-01T09:00:00Z', '2026-10-01T09:00:00Z');
-      INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at)
-        VALUES ('asha', 'f-correction', 1, 'job-correction', 1, 'read', 'Sunrise Labs · CORRECTED · Collected 12/08/2026 · CRP 4 mg/L', '2026-10-01T09:00:00Z');
+      INSERT INTO jobs (id, person_id, kind, document_id, state, targets, created_at)
+        VALUES ('job-correction', 'asha', 'document_read', 'doc-correction', 'done', '[1]', '2026-10-01T09:00:00Z');
+      INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at, sorted_at)
+        VALUES ('asha', 'f-correction', 1, 'job-correction', 1, 'read', 'Sunrise Labs · CORRECTED · Collected 12/08/2026 · CRP 4 mg/L', '2026-10-01T09:00:00Z', '2026-10-01T09:00:00Z');
       INSERT INTO draft_items (id, person_id, document_id, page, seq, job_id, kind, fields, original, quote, created_at)
         VALUES ('item-correction', 'asha', 'doc-correction', 1, 1, 'job-correction', 'lab_result',
           '{"test_name":"CRP","value_text":"4","unit":"mg/L","date":{"label":"Collected","date":"12/08/2026","iso":"2026-08-12"}}',
@@ -2275,18 +2275,23 @@ describe("the chat, on the scripted Codex", () => {
       );
       return added[0] ?? "";
     };
-    /** The person's message with these documents; its id. */
+    /** The person's message with these documents (`again`: Retry's chips); its id. */
     const sendWith = async (
       text: string,
       ids: readonly string[],
       kind?: "steer" | "queue",
+      again = false,
     ) => {
       const id = uuid();
       await chat?.send(
         await chatRow(),
         id,
         text,
-        ids.map((doc) => ({ type: "document" as const, id: doc })),
+        ids.map((doc) => ({
+          type: "document" as const,
+          id: doc,
+          ...(again && { readAgain: true }),
+        })),
         kind,
       );
       return id;
@@ -2322,6 +2327,31 @@ describe("the chat, on the scripted Codex", () => {
         drafts: [],
       },
     });
+    /** Rufi AI sets the agent its last start_agent started on the document. */
+    const setOn = (name: string, document = "$document") => ({
+      id: `set-${name}`,
+      tool: "set_reader",
+      arguments: { documents: [document], agent: "$started" },
+    });
+    /** Rufi AI's sub-agents, oldest first. */
+    const readers = () =>
+      agentRows(
+        "SELECT id, title, status FROM agents WHERE parent_id IS NOT NULL ORDER BY rowid",
+      );
+    /** A document's status and reader, as the Documents page has them. */
+    const shown = async (id: string) => {
+      const found = (
+        await documents(
+          store,
+          home,
+          undefined,
+          readings(store, {
+            runs: (agent) => ai !== undefined && agentRuns(ai.agents, agent),
+          }),
+        ).list("asha")
+      ).find((document) => document.id === id);
+      return { status: found?.status, agent: found?.reader };
+    };
     /** Each document's kind and whether it waits to be sorted. */
     const listed = async () =>
       (await documents(store, home).list("asha")).map(
@@ -2401,57 +2431,123 @@ describe("the chat, on the scripted Codex", () => {
       expect(all.filter((entry) => entry.kind === "receipt")).toEqual([]);
     });
 
-    it("lets Rufi AI start a reader again when a reading fails, and sorts what the second one read", async () => {
+    it("shows a document as Reading while the reader Rufi AI set on it works, then read once it saves", async () => {
+      const report = await addFile("sunrise-labs-august.pdf");
+      const saving = Promise.withResolvers<undefined>();
+      await startChat("fake", {
+        scenario: {
+          callsByText: {
+            // Rufi AI starts a reader and sets it on the document.
+            "Read this": [
+              reader(
+                "Reading",
+                "Read (document $document) with the reading-documents skill.",
+              ),
+              setOn("Reading"),
+            ],
+            "Read (document": [saves([1, 2])],
+            "Reading (": [sorts(report, [1, 2])],
+          },
+        },
+        waitFor: (tool) =>
+          tool === "save_reading" ? saving.promise : undefined,
+      });
+      const c = await newChat();
+      await sendWith("Read this", [report]);
+      await ended(c.id);
+      await until(() => Promise.resolve(admitted.includes("save_reading")));
+      const [started] = readers();
+      expect(await shown(report)).toEqual({
+        status: "reading",
+        agent: started?.["id"],
+      });
+
+      saving.resolve(undefined);
+      await ended(c.id, 2);
+      await settled(c.id);
+      expect(await shown(report)).toEqual({
+        status: "done",
+        agent: started?.["id"],
+      });
+    });
+
+    it("lets Rufi AI start a reader again when a reading fails; a Retry while that one reads starts no other, and Rufi AI sorts what it read", async () => {
       const report = await addFile("sunrise-labs-august.pdf");
       const replied = Promise.withResolvers<undefined>();
+      const retried = Promise.withResolvers<undefined>();
       await startChat("fake", {
         scenario: {
           callsByText: {
             "Read this": [
               reader(
-                "Reading (document $document)",
+                "Reading",
                 "fail Read (document $document) with the reading-documents skill.",
               ),
+              setOn("first"),
             ],
             // It looks at a page, then its turn fails.
             "fail Read": [
               { tool: "get_documents", arguments: { document: "$document" } },
             ],
-            // Its failure wakes Rufi AI, which starts another reader.
-            "Reading (document": [
+            // Its failure wakes Rufi AI, which starts another reader and
+            // sets it on the document.
+            "Reading (": [
               reader(
                 "Reading again",
-                "Read again (document $document) with the reading-documents skill.",
+                `Read again (document ${report}) with the reading-documents skill.`,
               ),
+              setOn("again", report),
             ],
             "Read again": [saves([1, 2])],
+            // The user's Retry while it reads: Rufi AI looks at the
+            // document, as the sorting-documents skill offers, sees it being
+            // read, and starts none.
+            "Read it again": [
+              {
+                id: "look-retry",
+                tool: "get_documents",
+                arguments: { document: "$document" },
+              },
+            ],
             "Reading again (": [sorts(report, [1, 2])],
           },
         },
         waitFor: (tool) =>
-          tool === "get_documents" ? replied.promise : undefined,
+          tool === "get_documents"
+            ? replied.promise
+            : tool === "save_reading"
+              ? retried.promise
+              : undefined,
       });
       const c = await newChat();
       await sendWith("Read this", [report]);
       await ended(c.id);
       replied.resolve(undefined);
+      await ended(c.id, 2);
+      // The second reader is at its save, which waits.
+      await until(() => Promise.resolve(admitted.includes("save_reading")));
+      const again = readers()[1]?.["id"];
+      expect(await shown(report)).toEqual({ status: "reading", agent: again });
+      await sendWith("Read it again", [report], undefined, true);
       await ended(c.id, 3);
+      expect(readers()).toHaveLength(2);
+      retried.resolve(undefined);
+      await ended(c.id, 4);
       await settled(c.id);
 
       const { turns } = await transcript(c.id);
       expect(turns.map((turn) => [turn.status, turn.cause?.about])).toEqual([
         ["completed", undefined],
         ["completed", "failed"],
+        ["completed", undefined],
         ["completed", "done"],
       ]);
-      expect(
-        agentRows(
-          "SELECT title, status FROM agents WHERE parent_id IS NOT NULL ORDER BY rowid",
-        ),
-      ).toEqual([
-        { title: `Reading (document ${report})`, status: "failed" },
-        { title: "Reading again", status: "done" },
-      ]);
+      expect(readers().map(({ title, status }) => ({ title, status }))).toEqual(
+        [
+          { title: "Reading", status: "failed" },
+          { title: "Reading again", status: "done" },
+        ],
+      );
       expect(await listed()).toEqual([
         { id: report, kind: "letter", notSorted: false },
       ]);

@@ -65,7 +65,7 @@ import { mcpEndpoint, mcpKeys, skillResources } from "./mcp.ts";
 import { startRufiAi, type OfferedModel } from "./rufi-ai.ts";
 import { converter as openConverter } from "./converter.ts";
 import { secret, sessions } from "./session.ts";
-import { subAgents } from "./sub-agents.ts";
+import { agentRuns, subAgents } from "./sub-agents.ts";
 import { signInFlow, type SignIn } from "./signin.ts";
 
 export interface CoreOptions {
@@ -231,7 +231,11 @@ export const startCore = (options: CoreOptions) =>
     const transcripts = openTranscripts(writer, options.now);
     const drafts = openDrafts(writer, options.now);
     const queue = chatQueue(writer, options.now);
-    const readings = openReadings(writer);
+    // Whether a document's reader is at work: the agent system is made by
+    // the time anything lists documents.
+    const readings = openReadings(writer, {
+      runs: (agent) => agentRuns(agentSystem.agents, agent),
+    });
     const sorting = openSorting(writer, options.now);
     const deviceData = openDevices(
       writer,
@@ -274,6 +278,9 @@ export const startCore = (options: CoreOptions) =>
           ).specs.map((spec) => spec.name),
           cwd: aiSandbox(home).folder,
           model: DEFAULT_SHORTLIST[0] ?? "",
+          documents: (personId) => {
+            readings.changed(personId);
+          },
           log,
           ...(options.now && { now: options.now }),
         }),

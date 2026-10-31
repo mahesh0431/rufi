@@ -29,11 +29,11 @@ What the user added for a person in one go: one PDF, or photos added together, s
 _Avoid_: upload, attachment
 
 **Reading**:
-A **reader** copying a document's pages, for Rufi AI to sort. When a message sends files that aren't read yet, Rufi names them, with the pages to read, in its note to **Rufi AI**, which starts a reader for each file or gives a file to a reader at work; the message itself steers or queues like any other. The reader saves its copies all at once, and its result wakes Rufi AI, which sorts the file (**sorting**). A reading that fails or stops saves nothing; Rufi AI hears it, and may start a reader again or tell the user. Pages that could not be read are read again only when the user asks: a chip marked **read again**, or in the chat. An older Rufi read files itself, in the reply before the AI; its readings keep what they saved, and one that stopped shows **Failed** with **Retry**.
+A **reader** copying a document's pages, for Rufi AI to sort. When a message sends files that aren't read yet, Rufi names them, with the pages to read, in its note to **Rufi AI**, which starts a reader for each file or gives a file to a reader at work, and sets it on the document; the message itself steers or queues like any other. The document shows **Reading** while that reader is at work and hasn't saved. The reader saves its copies all at once, and its result wakes Rufi AI, which sorts the file (**sorting**). A reading that fails or stops saves nothing; Rufi AI hears it, and may start a reader again or tell the user. Pages that could not be read are read again only when the user asks: a chip marked **read again**, or in the chat. An older Rufi read files itself, in the reply before the AI; its readings keep what they saved, and one that stopped shows **Failed** with **Retry**.
 _Avoid_: import, scan, parsing, extraction
 
 **Reader**:
-A **sub-agent** Rufi AI starts to read a document, with Rufi's instructions for copying pages and the Rufi tools Rufi AI gives it (look at a page, save its copies). It copies what is printed, and marks what is unclear; it decides nothing (not the kind, date or results), never judges your results and never saves to the record. Its saved copies get no **receipt**: they aren't the record.
+A **sub-agent** Rufi AI starts to read a document, with Rufi's instructions for copying pages and the Rufi tools Rufi AI gives it (look at a page, save its copies). A document keeps its reader, the one Rufi AI set on it last; one reader can read several documents. It copies what is printed, and marks what is unclear; it decides nothing (not the kind, date or results), never judges your results and never saves to the record. Its saved copies get no **receipt**: they aren't the record.
 _Avoid_: parser, OCR, extractor
 
 **Page copy**:
@@ -41,7 +41,7 @@ The reader's copy of one page of a document, as Markdown, exactly as printed, wi
 _Avoid_: extraction, transcription, OCR text
 
 **Sorting**:
-Rufi AI's work on a file once it is read, usually when its reader's result wakes it: it splits the file into documents and drafts their results from the page copies, in one call that is kept whole or not at all, then answers what the user wrote, or tells them what it found when they wrote nothing. It saves nothing without the user's yes. A file read and not sorted shows **Not sorted yet** (Rufi AI asked the user, or its reply failed or was stopped) with **Ask Rufi**; nothing tries again by itself. The user can ask Rufi AI to sort a file again in the chat.
+Rufi AI's work on a file once it is read, usually when its reader's result wakes it: it splits the file into documents and drafts their results from the page copies, as much of it at once as it chooses, each call kept whole or not at all, then answers what the user wrote, or tells them what it found when they wrote nothing. It saves nothing without the user's yes. A file read and not sorted shows **Not sorted yet** (Rufi AI asked the user, or its reply failed or was stopped) with **Ask Rufi**; nothing tries again by itself. The user can ask Rufi AI to sort a file again in the chat.
 _Avoid_: classification, grouping, parsing
 
 **Draft item**:
