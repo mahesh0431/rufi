@@ -1,6 +1,7 @@
 // What the record's screens get from Rufi's local API: Overview, a page per
-// kind, a row with its sources and history, and a test's series. Rows carry
-// their fields by the names save_changes uses, as stored.
+// kind (Lab results by test), a test's page, a row with its sources and
+// history, and a series. Rows carry their fields by the names save_changes
+// uses, as stored.
 import { Schema } from "effect";
 
 /** A date at the precision known: YYYY, YYYY-MM, YYYY-MM-DD or YYYY-MM-DDTHH:MM. */
@@ -38,8 +39,23 @@ export const ResultRow = Schema.Struct({
   measured: When,
   /** The result this amended one replaces. */
   replaces: Text,
+  /** The person's test it is in. */
+  in_test: Id,
+  /** Its numbers in its test's unit, when the AI could give them. */
+  test_number: Schema.optionalKey(Schema.Number),
+  test_second_number: Schema.optionalKey(Schema.Number),
 });
 export type ResultRow = typeof ResultRow.Type;
+
+/** One of the person's tests: its name, section and unit, in the AI's words. */
+export const TestRow = Schema.Struct({
+  kind: Schema.Literal("test"),
+  id: Id,
+  name: Schema.String,
+  section: Text,
+  unit: Text,
+});
+export type TestRow = typeof TestRow.Type;
 
 export const MedicineUseRow = Schema.Struct({
   kind: Schema.Literal("medicine_use"),
@@ -168,6 +184,7 @@ export type BadRow = typeof BadRow.Type;
 /** One stored record, as the screens show it. */
 export const RecordRow = Schema.Union([
   ResultRow,
+  TestRow,
   MedicineUseRow,
   VisitRow,
   SymptomRow,
@@ -231,6 +248,48 @@ export const RecordPage = Schema.Struct({
 });
 export type RecordPage = typeof RecordPage.Type;
 
+/** A test on Lab results: its latest current lab result, and how many there are. */
+export const LabTest = Schema.Struct({
+  test: ShownRow,
+  latest: ShownRow,
+  count: Schema.Int,
+});
+export type LabTest = typeof LabTest.Type;
+/**
+ * Lab results: each of the person's tests that has a current lab result,
+ * by section in name order, no section last; a section's tests by name.
+ * Its latest is the newest by sample date, undated only when none is dated.
+ */
+export const LabResults = Schema.Struct({
+  sections: Schema.Array(
+    Schema.Struct({
+      /** In the AI's words; none for tests with no section. */
+      section: Schema.NullOr(Schema.String),
+      tests: Schema.Array(LabTest),
+    }),
+  ),
+  /** A test's small trend, by its latest's id, as on a results page. */
+  trends: Schema.Record(Schema.String, Schema.Array(ResultRow)),
+});
+export type LabResults = typeof LabResults.Type;
+/** A value on a test's page: a result, and the report it was printed in. */
+export const TestValue = Schema.Struct({
+  row: ShownRow,
+  /** Its report, with the lab or clinic as printed; null: not from a report. */
+  report: Schema.NullOr(
+    Schema.Struct({ issuer: Schema.optionalKey(Schema.String) }),
+  ),
+});
+export type TestValue = typeof TestValue.Type;
+/**
+ * A test's page: the test, and its current values newest first, by sample
+ * date, then the undated ones, the later saved first.
+ */
+export const TestPage = Schema.Struct({
+  test: ShownRow,
+  values: Schema.Array(TestValue),
+});
+export type TestPage = typeof TestPage.Type;
 /** Where a record came from. */
 export const RecordSource = Schema.Union([
   Schema.Struct({
@@ -317,7 +376,7 @@ export type Series = typeof Series.Type;
 /** A page's tile on Overview: what it counts, worked out from the record. */
 export const Tile = Schema.Struct({
   kind: PageKind,
-  /** Current records on the page. */
+  /** Current records on the page; on Lab results, its tests. */
   count: Schema.Int,
   /**
    * Those that apply now: medicines taken now, conditions ongoing, allergies

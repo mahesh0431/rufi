@@ -25,6 +25,7 @@ import { isPageKind, pageOf, RecordPage } from "./record.tsx";
 import { usePeople, useRecordDetail } from "./reads.ts";
 import { SettingsPage } from "./settings.tsx";
 import { SignIn } from "./signin.tsx";
+import { LabResultsPage, TestPage } from "./tests.tsx";
 import { VisitPage } from "./visit.tsx";
 import { buttonLook, ICON, Problem } from "./ui.tsx";
 
@@ -154,6 +155,33 @@ function ResultBefore({
   );
 }
 
+/**
+ * A lab result's address, `record/lab_result?open=<id>`: it opens on its
+ * test's page, or Lab results when it can't be read.
+ */
+function LabResultAt({ personId, open }: { personId: string; open: string }) {
+  const detail = useRecordDetail(personId, "result", open);
+  if (detail.isPending) return null;
+  const row = detail.data?.row;
+  if (row === undefined || "problem" in row || row.kind !== "result") {
+    return (
+      <Navigate
+        to="/people/$personId/record/$kind"
+        params={{ personId, kind: "lab_result" }}
+        replace
+      />
+    );
+  }
+  return (
+    <Navigate
+      to="/people/$personId/tests/$testId"
+      params={{ personId, testId: row.in_test }}
+      search={{ open }}
+      replace
+    />
+  );
+}
+
 /** `?open=<id>`: the row to open and bring into view. */
 const openSearch = (search: Record<string, unknown>): { open?: string } =>
   typeof search["open"] === "string" ? { open: search["open"] } : {};
@@ -180,6 +208,14 @@ const record = createRoute({
           personId={personId}
           {...(open !== undefined && { open })}
         />
+      );
+    }
+    // Lab results lists tests; a lab result opens on its test's page.
+    if (person && kind === "lab_result") {
+      return open === undefined ? (
+        <LabResultsPage key={personId} person={person} />
+      ) : (
+        <LabResultAt key={open} personId={personId} open={open} />
       );
     }
     // A visit opens on its own page, whichever link asked for it.
@@ -224,6 +260,36 @@ const visit = createRoute({
       return <div className="px-6 py-8 text-muted">There is no page here.</div>;
     }
     return <VisitPage key={visitId} person={person} visitId={visitId} />;
+  },
+});
+
+const test = createRoute({
+  getParentRoute: () => root,
+  path: "/people/$personId/tests/$testId",
+  validateSearch: openSearch,
+  component: function Test() {
+    const { personId, testId } = test.useParams();
+    const { open } = test.useSearch();
+    const people = usePeople();
+    if (people.data === undefined) {
+      return people.error ? (
+        <div className="px-6 py-8">
+          <Problem error={people.error} retry={() => void people.refetch()} />
+        </div>
+      ) : null;
+    }
+    const person = people.data.find((p) => p.id === personId);
+    if (!person) {
+      return <div className="px-6 py-8 text-muted">There is no page here.</div>;
+    }
+    return (
+      <TestPage
+        key={`${personId}/${testId}/${open ?? ""}`}
+        person={person}
+        testId={testId}
+        {...(open !== undefined && { opened: open })}
+      />
+    );
   },
 });
 
@@ -366,6 +432,7 @@ export const router = createRouter({
     document,
     record,
     visit,
+    test,
     followUps,
     brief,
     profile,

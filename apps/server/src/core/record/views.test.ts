@@ -404,10 +404,11 @@ describe("a row opened", () => {
 
   it("shows a stored row that doesn't fit as can't-show, and the page and tiles still answer", async () => {
     store.db.exec(
-      "INSERT INTO results (id, person_id, category, test_name, value_text, measured_at, entered_at, test_id) VALUES ('res-bad', 'asha', 'lab', 'Iron', '80', 'last week', '2026-10-01T10:00:00Z', 'tst-hba1c')",
+      `INSERT INTO tests (id, person_id, name) VALUES ('tst-iron', 'asha', 'Iron');
+       INSERT INTO results (id, person_id, category, test_name, value_text, measured_at, entered_at, test_id) VALUES ('res-bad', 'asha', 'lab', 'Iron', '80', 'last week', '2026-10-01T10:00:00Z', 'tst-iron')`,
     );
-    const page = await views.page("asha", "lab_result");
-    expect(page.groups.at(-1)?.rows).toEqual([
+    const lab = await views.labResults("asha");
+    expect(lab.sections.at(-1)?.tests.map((test) => test.latest)).toEqual([
       expect.objectContaining({
         kind: "result",
         id: "res-a8",
@@ -542,6 +543,64 @@ describe("a visit", () => {
         height: { value: 162, unit: "cm" },
       }),
     ]);
+  });
+});
+
+describe("lab results by test", () => {
+  it("list each test with a lab result once, in its section, its latest by sample date; a test's page has its current values newest first, and not another person's", async () => {
+    // Creatinine from two labs and an older report saved last; Albumin has
+    // no value.
+    store.db.exec(`
+      INSERT INTO tests (id, person_id, name, section, unit) VALUES
+        ('tst-crea', 'asha', 'Creatinine', 'Kidney', 'mg/dL'),
+        ('tst-alb', 'asha', 'Albumin', 'Kidney', 'g/dL');
+      INSERT INTO results (id, person_id, report_id, category, test_name, value_text, value_number, unit, measured_at, entered_at, test_id, test_number) VALUES
+        ('crea-1', 'asha', NULL, 'lab', 'S. Creatinine', '1.0', 1.0, 'mg/dL', '2026-03-01', '2026-03-02T09:00:00Z', 'tst-crea', 1.0),
+        ('crea-2', 'asha', 'rep-asha-sep', 'lab', 'Creatinine, serum', '1.2', 1.2, 'mg/dl', '2026-09-01', '2026-09-02T09:00:00Z', 'tst-crea', 1.2),
+        ('crea-old', 'asha', NULL, 'lab', 'CREA', '97', 97, 'µmol/L', '2023-01-10', '2026-10-01T09:00:00Z', 'tst-crea', 1.1);`);
+    const lab = await views.labResults("asha");
+    expect(
+      lab.sections.map(({ section, tests }) => [
+        section,
+        tests.map(({ test, latest, count }) => [test.id, latest.id, count]),
+      ]),
+    ).toEqual([
+      ["Inflammation", [["tst-crp", "res-a3", 1]]],
+      ["Kidney", [["tst-crea", "crea-2", 3]]],
+      [
+        "Sugar",
+        [
+          ["tst-glucose", "res-a2", 1],
+          ["tst-hba1c", "res-a1", 1],
+        ],
+      ],
+      [
+        "Thyroid",
+        [
+          ["tst-ft4", "res-a6", 1],
+          ["tst-tsh", "res-a5", 1],
+        ],
+      ],
+      ["Vitamins", [["tst-vitd", "res-a7", 1]]],
+      [null, [["tst-blood-group", "res-a8", 1]]],
+    ]);
+    const tiles = await views.overview("asha");
+    expect(tiles?.tiles.find((tile) => tile.kind === "lab_result")?.count).toBe(
+      8,
+    );
+
+    const page = await views.test("asha", "tst-crea");
+    expect(page?.values.map(({ row, report }) => [row.id, report])).toEqual([
+      ["crea-2", { issuer: "Sunrise Labs" }],
+      ["crea-1", null],
+      ["crea-old", null],
+    ]);
+    expect(await views.test("asha", "tst-ldl")).toBeUndefined();
+    expect(
+      (await views.labResults("ravi")).sections.flatMap(({ tests }) =>
+        tests.map(({ test }) => test.id),
+      ),
+    ).toEqual(["tst-hdl", "tst-ldl"]);
   });
 });
 

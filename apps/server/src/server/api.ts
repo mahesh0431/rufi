@@ -91,7 +91,10 @@ export interface ApiDeps {
   /** A person's Overview: Needs you, the tiles and the latest saves. */
   overview: (personId: string) => Promise<Overview>;
   /** The record's pages, rows and series, read only. */
-  record: Pick<RecordViews, "page" | "detail" | "series" | "followUps">;
+  record: Pick<
+    RecordViews,
+    "page" | "labResults" | "test" | "detail" | "series" | "followUps"
+  >;
   /** A person's profile with its history; what they enter in its form. */
   profile: {
     read: (personId: string) => Promise<Profile | undefined>;
@@ -684,8 +687,19 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     c.json({ overview: await deps.overview((await person(c)).id) }),
   );
 
-  // The record, read only: a kind's page, a row, a test's series. Changes
-  // start in the chat.
+  // The record, read only: a kind's page, Lab results by test, a test's
+  // page, a row, a series. Changes start in the chat.
+  app.get("/api/people/:personId/lab-results", async (c) =>
+    c.json(await deps.record.labResults((await person(c)).id)),
+  );
+  app.get("/api/people/:personId/tests/:testId", async (c) => {
+    const found = await deps.record.test(
+      (await person(c)).id,
+      c.req.param("testId"),
+    );
+    if (!found) throw new HttpError(404, "Not found.");
+    return c.json(found);
+  });
   app.get("/api/people/:personId/record/:kind", async (c) => {
     const { id } = await person(c);
     const kind = c.req.param("kind");
