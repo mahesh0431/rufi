@@ -337,6 +337,9 @@ const KIND_CASES: KindCase[] = [
       second_number: 84,
       unit: "mmHg",
       measured: { date: "2026-10-04", words: "this morning" },
+      in_test: "tst-bp",
+      test_number: 128,
+      test_second_number: 84,
     },
     stored: {
       test_name: "Blood pressure",
@@ -348,18 +351,21 @@ const KIND_CASES: KindCase[] = [
       measured_at: "2026-10-04",
       measured_words: "this morning",
       entered_at: SUNDAY_10AM,
+      test_id: "tst-bp",
+      test_number: 128,
+      test_second_number: 84,
     },
     added: [
       "Saved",
-      'Added result Blood pressure 128/84 mmHg: category measurement, measured 4 Oct 2026 ("this morning")',
+      'Added result Blood pressure 128/84 mmHg: category measurement, measured 4 Oct 2026 ("this morning"), in test Blood pressure',
     ],
     change: {
       said: "Sorry, the blood pressure was 126/84",
-      fields: { value: "126/84", number: 126 },
-      stored: { value_text: "126/84", value_number: 126 },
+      fields: { value: "126/84", number: 126, test_number: 126 },
+      stored: { value_text: "126/84", value_number: 126, test_number: 126 },
       receipt: [
         "Saved",
-        "Changed result Blood pressure 126/84 mmHg: value 128/84 → 126/84; number 128 → 126",
+        "Changed result Blood pressure 126/84 mmHg: value 128/84 → 126/84; number 128 → 126; in the test's unit 128 → 126",
       ],
     },
     removed: ["Saved", "Removed result Blood pressure 126/84 mmHg"],
@@ -1033,7 +1039,7 @@ describe("the health rules", () => {
       },
     ]);
     expect(refused.body.issues.map((issue) => issue.fix)).toEqual([
-      "This result was read from a document, so what it prints and its date change only by amendment: add a new result with replaces set to this id. Only its category changes in place, in a change of its own.",
+      "This result was read from a document, so what it prints and its date change only by amendment: add a new result with replaces set to this id. Only its category, its test and its numbers in the test's unit change in place, in a change of their own.",
     ]);
     const amended = await save(
       [

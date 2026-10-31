@@ -19,7 +19,7 @@ export const RESULTS_SHOWN = 20;
 
 export const getOverview = defineTool({
   name: "get_overview",
-  description: `The active person's health record in Rufi at a glance: their name, their profile (its id; name, never empty; birth date at the precision given, with its words, and age_today from it: one number, or two when the date leaves it open; sex_for_ranges, only for choosing lab ranges; blood group; height; not_set lists the fields with no value; save_changes changes it as kind profile), how many documents and reports they have, their current results exactly as printed (id, test, value, category: lab or measurement, unit, reference range, flag, method or context, measured date at the precision known), their other records by kind (medicine uses, visits, symptoms, conditions, allergies, care events: procedures and immunisations, "none known" statements, follow-ups; each with its id and fields as save_changes takes them; a visit without its as_written words, which get_records gives), their latest saves with what each changed (made_in: chat, or welcome, profile (its page) or settings, where the person entered it themselves; and from: the document pages and visits it added to a record, or took off one), and record_version: a number every save raises, which create_brief takes. At most ${String(RESULTS_SHOWN)} results, newest measured first, undated last; at most ${String(RECORDS_SHOWN)} records of a kind, newest first; the latest ${String(SAVES_SHOWN)} saves, newest first. An amended result replaces the one it corrects and says "amended": true. Removed records aren't shown. Takes no input: Rufi chooses the person, not you.`,
+  description: `The active person's health record in Rufi at a glance: their name, their profile (its id; name, never empty; birth date at the precision given, with its words, and age_today from it: one number, or two when the date leaves it open; sex_for_ranges, only for choosing lab ranges; blood group; height; not_set lists the fields with no value; save_changes changes it as kind profile), how many documents, reports and tests they have (get_records with kind test lists the tests), their current results exactly as printed (id, test, value, category: lab or measurement, in_test: the id and name of the user's test it is in, unit, reference range, flag, method or context, measured date at the precision known), their other records by kind (medicine uses, visits, symptoms, conditions, allergies, care events: procedures and immunisations, "none known" statements, follow-ups; each with its id and fields as save_changes takes them; a visit without its as_written words, which get_records gives), their latest saves with what each changed (made_in: chat, or welcome, profile (its page) or settings, where the person entered it themselves; and from: the document pages and visits it added to a record, or took off one), and record_version: a number every save raises, which create_brief takes. At most ${String(RESULTS_SHOWN)} results, newest measured first, undated last; at most ${String(RECORDS_SHOWN)} records of a kind, newest first; the latest ${String(SAVES_SHOWN)} saves, newest first. An amended result replaces the one it corrects and says "amended": true. Removed records aren't shown. Takes no input: Rufi chooses the person, not you.`,
   input: NoInput,
   callers: "both",
   readOnly: true,
@@ -67,7 +67,7 @@ async function readOverview(store: Store, personId: string) {
     .where("id", "=", personId)
     .executeTakeFirst();
   if (!person) return undefined;
-  const count = async (table: "reports" | "results") =>
+  const count = async (table: "reports" | "results" | "tests") =>
     (
       await query
         .selectFrom(table)
@@ -96,9 +96,16 @@ async function readOverview(store: Store, personId: string) {
       .executeTakeFirstOrThrow()
   ).n;
   const rows = await current
+    .innerJoin("tests as t", (join) =>
+      join
+        .onRef("t.person_id", "=", "r.person_id")
+        .onRef("t.id", "=", "r.test_id"),
+    )
     .select([
       "r.id",
       "r.test_name",
+      "t.id as test_id",
+      "t.name as test",
       "r.value_text",
       "r.category",
       "r.unit",
@@ -129,6 +136,7 @@ async function readOverview(store: Store, personId: string) {
         .executeTakeFirstOrThrow()
     ).n,
     reports: await count("reports"),
+    tests: await count("tests"),
     results: currentCount,
     earlier_versions_kept: replaced,
     latest_results: rows.map((row) => ({
@@ -136,6 +144,7 @@ async function readOverview(store: Store, personId: string) {
       test: row.test_name,
       value: row.value_text,
       category: row.category,
+      in_test: { id: row.test_id, name: row.test },
       ...(row.unit !== null && { unit: row.unit }),
       ...(row.reference_range !== null && { range: row.reference_range }),
       ...(row.flag_text !== null && { flag: row.flag_text }),
