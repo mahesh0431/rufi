@@ -22,6 +22,12 @@ import {
   getSessionMessages,
   type SDKSystemMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import type {
+  Conversation,
+  ProviderAdapter,
+  ProviderEvent,
+} from "@rufi/agents/provider";
+import { claudeAdapter } from "../src/agent/claude/adapter.ts";
 import {
   claudeSignIn,
   findClaude,
@@ -207,6 +213,82 @@ async function turn(
   if (start === undefined) throw new Error("The turn didn't say its start.");
   return { start, calls: [...calls.values()] };
 }
+
+/** How long a turn through the adapter may take here. */
+const TURN_MS = 120_000;
+
+/**
+ * Runs `body` with the Claude adapter, a conversation's events, and a way to
+ * open one; deletes the conversations it opened.
+ */
+async function withAdapter<T>(
+  { claude, sandbox, env, plugin }: Context,
+  body: (run: {
+    adapter: ProviderAdapter;
+    events: ProviderEvent[];
+    open: () => Promise<Conversation>;
+    until: <F>(pick: (event: ProviderEvent) => F | undefined) => Promise<F>;
+    send: (
+      conversation: Conversation,
+      id: string,
+      text: string,
+    ) => Promise<string>;
+  }) => Promise<T>,
+): Promise<T> {
+  const adapter = claudeAdapter({ claude, sandbox, env, plugin });
+  const events: ProviderEvent[] = [];
+  const opened: string[] = [];
+  const until = async <F>(pick: (event: ProviderEvent) => F | undefined) => {
+    const deadline = Date.now() + TURN_MS;
+    for (;;) {
+      for (const event of events) {
+        const found = pick(event);
+        if (found !== undefined) return found;
+      }
+      if (Date.now() > deadline) throw new Error("an event didn't come");
+      await sleep(50);
+    }
+  };
+  const open = async () => {
+    const conversation = await adapter.open({
+      cwd: sandbox.folder,
+      instructions: "You help with a fictional test. Keep replies short.",
+      model: MODEL,
+      effort: "low",
+      tools: { url: "http://127.0.0.1:9/mcp", key: "unused" },
+      onEvent: (event) => {
+        events.push(event);
+      },
+    });
+    opened.push(conversation.ref);
+    return conversation;
+  };
+  /** Starts a turn; its reference, once Claude started it. */
+  const send = async (conversation: Conversation, id: string, text: string) => {
+    const delivery = await conversation.startTurn({
+      input: { id, parts: [text] },
+      model: MODEL,
+      effort: "low",
+    });
+    if (delivery.status !== "delivered") {
+      throw new Error(`the turn wasn't delivered: ${JSON.stringify(delivery)}`);
+    }
+    return until((event) =>
+      event.type === "turnStarted" && event.inputs.includes(id)
+        ? event.turn
+        : undefined,
+    );
+  };
+  try {
+    return await body({ adapter, events, open, until, send });
+  } finally {
+    await adapter.close();
+    for (const ref of opened) await adapter.delete(ref);
+  }
+}
+
+const endOf = (turn: string) => (event: ProviderEvent) =>
+  event.type === "turnEnded" && event.turn === turn ? event.end : undefined;
 
 /**
  * One step of the lock-down canary: the tool and what it's given, and what
@@ -539,6 +621,119 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
     }
     return "each of 14 steps tried on its own call: 4 unreadable files and 4 writes refused, its folder and temp written, the internet reached, no token it can use";
   },
+
+  "the adapter lists Claude's models by exact id": async (context) =>
+    withAdapter(context, async ({ adapter }) => {
+      const models = await adapter.models();
+      const ids = models.map((model) => model.id);
+      if (!ids.includes(MODEL))
+        throw new Error(`no ${MODEL} in ${ids.join(", ")}`);
+      const aliases = ids.filter((id) => !id.startsWith("claude-"));
+      if (aliases.length > 0) throw new Error(`aliases ${aliases.join(", ")}`);
+      return `${String(ids.length)} models`;
+    }),
+
+  "two turns through the adapter, the second in a new process": async (
+    context,
+  ) =>
+    withAdapter(context, async ({ open, send, until }) => {
+      const conversation = await open();
+      const [first, second] = [randomUUID(), randomUUID()];
+      const ends = [
+        await until(
+          endOf(
+            await send(
+              conversation,
+              first,
+              "The fictional word is MARIGOLD-7. Reply 'noted'.",
+            ),
+          ),
+        ),
+      ];
+      ends.push(
+        await until(
+          endOf(
+            await send(conversation, second, "Reply with the fictional word."),
+          ),
+        ),
+      );
+      if (ends.some((end) => end.status !== "done")) {
+        throw new Error(`the turns ended ${JSON.stringify(ends)}`);
+      }
+      const received = await conversation.reconcile([first, second]);
+      if ([...received.values()].some((each) => each !== "received")) {
+        throw new Error(`Claude kept ${JSON.stringify([...received])}`);
+      }
+      return "both done; one conversation keeps both";
+    }),
+
+  "a steer at the turn's end starts the next turn with it": async (context) =>
+    withAdapter(context, async ({ open, send, until, events }) => {
+      const conversation = await open();
+      const turn = await send(
+        conversation,
+        randomUUID(),
+        "Write 12 short numbered lines about a fictional morning walk.",
+      );
+      const steer = randomUUID();
+      // A reply with no tools has no point to fold a steer into, so Claude
+      // holds it to the turn's end.
+      const outcome = await conversation.steer({
+        input: { id: steer, parts: ["Add a last line that says PINEAPPLE."] },
+        turn,
+      });
+      if (outcome.status !== "next_turn" && outcome.status !== "delivered") {
+        throw new Error(`the steer came back ${JSON.stringify(outcome)}`);
+      }
+      if (outcome.status === "next_turn") {
+        const ended = events.findIndex(endOf(turn));
+        const next = events.findIndex(
+          (event) =>
+            event.type === "turnStarted" && event.inputs.includes(steer),
+        );
+        if (ended < 0 || next < ended) {
+          throw new Error("the next turn didn't start after the first ended");
+        }
+      }
+      // Either way, every turn of it ended done: a failed one proves nothing.
+      const ends = [
+        await until(endOf(turn)),
+        ...(outcome.status === "next_turn"
+          ? [await until(endOf(outcome.turn))]
+          : []),
+      ];
+      if (ends.some((end) => end.status !== "done")) {
+        throw new Error(`the turns ended ${JSON.stringify(ends)}`);
+      }
+      return outcome.status === "next_turn"
+        ? "it started the next turn, named in its start"
+        : "it joined the running turn";
+    }),
+
+  "Stop sends back a steer Claude held": async (context) =>
+    withAdapter(context, async ({ open, send, until }) => {
+      const conversation = await open();
+      const turn = await send(
+        conversation,
+        randomUUID(),
+        "Run this Bash command: sleep 30. Then reply 'done'.",
+      );
+      // The command is running; a steer joins only after it ends.
+      await sleep(8_000);
+      const outcome = conversation.steer({
+        input: { id: randomUUID(), parts: ["Reply 'steered'."] },
+        turn,
+      });
+      await sleep(1_000);
+      await conversation.stop(turn);
+      const [steered, end] = [await outcome, await until(endOf(turn))];
+      if (steered.status !== "not_delivered" || end.status !== "stopped") {
+        throw new Error(
+          `the steer ${JSON.stringify(steered)}, the turn ${JSON.stringify(end)}`,
+        );
+      }
+      return "the turn stopped; Claude cancelled the steer";
+    }),
 };
 
 const claude = await findClaude();
