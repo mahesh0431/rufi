@@ -1,8 +1,8 @@
 // Rufi's terminal commands. This is the composition root: the real data
-// folder, Keychain, OpenAI and Codex are joined here, as Effect layers, and
+// folder, Codex and Claude are joined here, as Effect layers, and
 // each command gets only the parts it needs. Effect closes every part when the
 // command ends, fails or is stopped with Ctrl-C.
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { access } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -10,12 +10,16 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs, promisify } from "node:util";
-import { setTimeout as sleep } from "node:timers/promises";
 import { NodeRuntime } from "@effect/platform-node";
+import type { Provider } from "@rufi/contracts";
 import { Cause, Console, Effect, Layer } from "effect";
-import { signIn } from "../agent/chatgpt/signin.ts";
-import { accessToken, signOut, status } from "../agent/chatgpt/session.ts";
-import type { ChatGptDeps } from "../agent/chatgpt/openai.ts";
+import { claudeAdapter } from "../agent/claude/adapter.ts";
+import {
+  claudeEnvironment,
+  claudeFolder,
+  findClaude,
+  type InstalledClaude,
+} from "../agent/claude/executable.ts";
 import { codexAdapter } from "../agent/codex/adapter.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
 import { codexRuntime } from "../agent/codex/codex.ts";
@@ -43,7 +47,6 @@ import {
 import { childEnvironment, Home } from "../platform/config.ts";
 import { mountList } from "../platform/disks.ts";
 import { holdRufiLock } from "../platform/files.ts";
-import { Secrets, secretsLayer } from "../platform/keychain.ts";
 import {
   diagnostics,
   errorCode,
@@ -51,7 +54,13 @@ import {
   logsLayer,
   noEffectLogs,
 } from "../platform/logs.ts";
-import { agentSetup, runningLink, startCore } from "../server/core.ts";
+import {
+  agentSetup,
+  claudeSetup,
+  runningLink,
+  startCore,
+} from "../server/core.ts";
+import { claudeSignIn, codexSignIn } from "../server/signin.ts";
 import { ask } from "./ask.ts";
 import { importBatches, peopleLines, sourceLine } from "./devices.ts";
 import { appChannel, closeAppChannel } from "./app.ts";
@@ -59,9 +68,12 @@ import { appChannel, closeAppChannel } from "./app.ts";
 const USAGE = `Usage: pnpm rufi <command>
   start [--no-open]   start Rufi and open it in your browser (Ctrl-C stops it);
                       while it runs, open it again (pnpm start does both)
-  signin [--no-open]  sign in with ChatGPT
-  status              who is signed in
-  signout             sign out and revoke the sign-in
+  signin [codex|claude]
+                      sign Codex in with ChatGPT, or Claude in, in your
+                      browser (Codex when not named; quit Rufi first)
+  status              whether Codex and Claude are signed in
+  signout [codex|claude]
+                      sign Codex or Claude out (quit Rufi first)
   ask "question"      ask the AI and watch the answer stream (Ctrl-C stops it)
       [--person id]   whose record Rufi's tools read (not needed with one person)
       [--debug]       also print Rufi's log lines
@@ -96,17 +108,6 @@ const homeLayer = Layer.effect(
   Effect.map(Folder, (folder) => folder.path),
 ).pipe(Layer.provideMerge(folderLayer));
 
-/** What the sign-in code needs, from the data folder and the Keychain. */
-const chatGpt = Effect.gen(function* () {
-  const deps: ChatGptDeps = {
-    home: yield* Home,
-    secrets: yield* Secrets,
-    issuer: "https://auth.openai.com",
-    sleep: (ms) => sleep(ms),
-  };
-  return deps;
-});
-
 /**
  * rufi.lock for as long as the command runs: a command and the running Rufi
  * never use the data folder at the same time.
@@ -126,12 +127,8 @@ const rufiLock = Layer.effectDiscard(
   ),
 );
 
-/** The data folder, its lock and the Keychain; built only for commands that use them. */
-const base = Layer.mergeAll(
-  homeLayer,
-  secretsLayer,
-  rufiLock.pipe(Layer.provide(homeLayer)),
-);
+/** The data folder and its lock; built only for commands that use them. */
+const base = Layer.mergeAll(homeLayer, rufiLock.pipe(Layer.provide(homeLayer)));
 
 const main = Effect.gen(function* () {
   const [command, ...rest] = process.argv.slice(2);
@@ -144,16 +141,25 @@ const main = Effect.gen(function* () {
       // No rufi.lock here: the core takes it for as long as it runs.
       return yield* startCommand(!rest.includes("--no-open")).pipe(
         Effect.scoped,
-        Effect.provide(Layer.mergeAll(homeLayer, secretsLayer)),
+        Effect.provide(homeLayer),
       );
     case "signin":
-      return yield* signinCommand(!rest.includes("--no-open")).pipe(
+    case "signout": {
+      const [provider = "codex", ...more] = rest;
+      if ((provider !== "codex" && provider !== "claude") || more.length > 0) {
+        return yield* usageError;
+      }
+      return yield* providerCommand(provider, command).pipe(
         Effect.provide(base),
       );
+    }
     case "status":
-      return yield* statusCommand.pipe(Effect.provide(base));
-    case "signout":
-      return yield* signoutCommand.pipe(Effect.provide(base));
+      if (rest.length > 0) return yield* usageError;
+      return yield* Effect.gen(function* () {
+        for (const provider of ["codex", "claude"] as const) {
+          yield* providerCommand(provider, "status");
+        }
+      }).pipe(Effect.provide(base));
     case "restore": {
       const [backup, target, ...more] = rest;
       if (backup === undefined || target === undefined || more.length > 0) {
@@ -319,68 +325,57 @@ const usageError = Effect.sync(() => {
   process.exitCode = 2;
 });
 
-const signinCommand = (open: boolean) =>
+/** Each provider's own sign-in commands, run in Rufi's folder for it. */
+const PROVIDER_COMMANDS = {
+  codex: {
+    signin: ["login"],
+    status: ["login", "status"],
+    signout: ["logout"],
+  },
+  claude: {
+    signin: ["auth", "login", "--claudeai"],
+    status: ["auth", "status", "--text"],
+    signout: ["auth", "logout"],
+  },
+} as const;
+
+/**
+ * Runs a provider's own sign-in command in the terminal (`codex login`,
+ * `claude auth login`), on the folder Rufi keeps its sign-in in.
+ */
+const providerCommand = (
+  provider: Provider,
+  what: "signin" | "status" | "signout",
+) =>
   Effect.gen(function* () {
-    const deps = yield* chatGpt;
-    const result = yield* run(() =>
-      signIn(deps, {
-        showLink: (link) => {
-          console.log(
-            open
-              ? "Opening your browser to sign in with ChatGPT."
-              : "Open this link to sign in with ChatGPT:",
-          );
-          console.log(
-            open ? `If it doesn't open, use this link:\n${link}` : link,
-          );
-          console.log("Waiting for you to approve (up to 5 minutes)...");
-        },
-        openBrowser: (link) => {
-          if (open) openBrowser(link);
-        },
-      }),
+    const home = yield* Home;
+    const name = provider === "codex" ? "Codex" : "Claude";
+    const { file, env } = yield* run(async () =>
+      provider === "codex"
+        ? {
+            file: await codexBinary(),
+            env: { ...childEnvironment(), CODEX_HOME: join(home, "codex") },
+          }
+        : {
+            file: (await findClaude()).path,
+            env: claudeEnvironment(home, childEnvironment()),
+          },
     );
-    console.log(`Signed in as ${result.email ?? "your ChatGPT account"}.`);
-    if (!result.planUse) {
-      console.log(
-        "ChatGPT plan use wasn't allowed, so Rufi can't use your plan yet. Run pnpm rufi signin again to allow it.",
-      );
-    }
+    if (what === "status") console.log(`${name}:`);
+    const code = yield* run(
+      () =>
+        new Promise<number | null>((resolve, reject) => {
+          const child = spawn(file, PROVIDER_COMMANDS[provider][what], {
+            env,
+            stdio: "inherit",
+          });
+          child.on("error", reject);
+          child.on("exit", resolve);
+        }),
+    );
+    // Signed out, a status command exits 1, having said so.
+    if (code !== 0 && what !== "status") process.exitCode = 1;
   });
-
-const statusCommand = Effect.gen(function* () {
-  const deps = yield* chatGpt;
-  const now = yield* run(() => status(deps));
-  if (!now.signedIn) {
-    console.log(
-      now.email
-        ? `Not signed in (last account: ${now.email}).`
-        : "Not signed in.",
-    );
-    return;
-  }
-  const until = now.expiresAt
-    ? new Date(now.expiresAt).toLocaleTimeString()
-    : "unknown";
-  console.log(`Signed in as ${now.email ?? "your ChatGPT account"}.`);
-  console.log(`ChatGPT plan use: ${now.planUse ? "allowed" : "not allowed"}.`);
-  console.log(
-    `Current access token valid until ${until}; Rufi renews it when needed.`,
-  );
-});
-
-const signoutCommand = Effect.gen(function* () {
-  const deps = yield* chatGpt;
-  const result = yield* run(() => signOut(deps));
-  if (!result.wasSignedIn) console.log("Not signed in.");
-  else if (result.revoked)
-    console.log("Signed out. ChatGPT confirmed the sign-in is revoked.");
-  else {
-    console.log(
-      "Signed out here, but ChatGPT couldn't confirm the revocation. To be sure, disconnect Rufi in ChatGPT settings.",
-    );
-  }
-});
 
 /**
  * Restores a backup into a new folder. Paths are the person's, from the
@@ -444,6 +439,19 @@ const shellQuoted = (path: string) =>
 const SCREENS = fileURLToPath(new URL("../../../web/dist", import.meta.url));
 
 /**
+ * The installed Claude, looked up when it's first needed and kept once
+ * found: one installed while Rufi runs is found then.
+ */
+function installedClaude(): () => Promise<InstalledClaude> {
+  let found: Promise<InstalledClaude> | undefined;
+  return () =>
+    (found ??= findClaude().catch((error: unknown) => {
+      found = undefined;
+      throw error;
+    }));
+}
+
+/**
  * Starts Rufi and opens it in the browser, until Ctrl-C. When Rufi already
  * runs with this data folder, opens a fresh link to it instead. With
  * `open` false, only shows the link. Started by the Rufi app, it gives the
@@ -471,7 +479,6 @@ const startCommand = (open: boolean) =>
         );
       }),
     );
-    const deps = yield* chatGpt;
     const { log } = diagnostics(home);
     const file = yield* run(() => codexBinary());
     const { version } = createRequire(import.meta.url)(
@@ -480,37 +487,26 @@ const startCommand = (open: boolean) =>
       version: string;
     };
     const { source } = yield* Folder;
+    // Claude's session functions run in this process and find its folder
+    // here; Claude's own processes get it in their environment.
+    process.env["CLAUDE_CONFIG_DIR"] = claudeFolder(home);
+    const codex = codexAdapter({
+      home,
+      ...agentSetup(home),
+      command: { file, args: [] },
+      env: childEnvironment(),
+      version,
+      log,
+    });
+    const claudeSet = yield* run(() => claudeSetup(home, childEnvironment()));
+    const claude = claudeAdapter({ claude: installedClaude(), ...claudeSet });
     const core = yield* startCore({
       home,
       folder: { source, show: showInFinder },
-      adapters: [
-        codexAdapter({
-          home,
-          ...agentSetup(home),
-          command: { file, args: [] },
-          env: childEnvironment(),
-          token: (validForMs) => accessToken(deps, validForMs),
-          version,
-          log,
-        }),
-      ],
-      signIn: ({ showLink }) =>
-        signIn(deps, {
-          showLink,
-          openBrowser: (link) => {
-            openBrowser(link);
-          },
-        }),
-      account: async () => {
-        const now = await status(deps);
-        return {
-          account: !now.signedIn
-            ? "signed_out"
-            : now.planUse
-              ? "signed_in"
-              : "no_plan_use",
-          email: now.email ?? null,
-        };
+      adapters: [codex, claude],
+      signIns: {
+        codex: codexSignIn(codex, openBrowser),
+        claude: claudeSignIn(claudeSet.env),
       },
       screens: SCREENS,
       log,
@@ -541,12 +537,12 @@ const startCommand = (open: boolean) =>
  */
 const askCommand = (question: string, person: string | undefined) =>
   Effect.gen(function* () {
-    const deps = yield* chatGpt;
+    const home = yield* Home;
     const log = yield* Logs;
     const store = yield* RecordStore;
     const personId =
       person ?? (store ? yield* run(() => onlyPersonId(store)) : undefined);
-    const pagesOf = store && pages(store, deps.home);
+    const pagesOf = store && pages(store, home);
     const tools = forAgent(() => ({ store, personId, pages: pagesOf }), log);
     const file = yield* run(() => codexBinary());
     const { version } = createRequire(import.meta.url)(
@@ -559,11 +555,10 @@ const askCommand = (question: string, person: string | undefined) =>
       tools,
       agent: (host) =>
         codexRuntime({
-          home: deps.home,
-          ...agentSetup(deps.home),
+          home,
+          ...agentSetup(home),
           command: { file, args: [] },
           env: childEnvironment(),
-          token: (validForMs) => accessToken(deps, validForMs),
           version,
           host,
           log,

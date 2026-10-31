@@ -89,6 +89,7 @@ export interface Tables {
     context_window: number | null;
     context_thread: string | null;
     created_at: string;
+    model_provider: string | null;
   };
   conditions: {
     id: string;

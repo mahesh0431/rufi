@@ -1,6 +1,8 @@
 // Rufi's Codex settings, in one place. Everything not listed here is Codex's
-// standard behaviour. Codex sees none of the user's own setup: CODEX_HOME is
-// Rufi's (so no ~/.codex), and the app-server process gets its own HOME (so no
+// standard behaviour, its sign-in too: Codex's own ChatGPT login, kept and
+// renewed by Codex in CODEX_HOME. Codex sees none of the user's own setup:
+// CODEX_HOME is Rufi's (so no ~/.codex), and the app-server process gets its
+// own HOME (so no
 // personal skills from ~/.agents/skills), while the agent's commands still get
 // the real HOME. The skills are Rufi's own, written into CODEX_HOME at each
 // start; Codex's bundled ones are off. MCP servers arrive one by one, chosen
@@ -9,33 +11,15 @@
 // permission profile (aiProfile, docs/adr/0016).
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { AgentSandbox, AgentSkill, McpServer } from "../runtime.ts";
+import {
+  withKeychains,
+  type AgentSandbox,
+  type AgentSkill,
+  type McpServer,
+} from "../runtime.ts";
 import type { ConfigReadResponse } from "./protocol/v2/ConfigReadResponse.ts";
 import type { ExperimentalFeatureListResponse } from "./protocol/v2/ExperimentalFeatureListResponse.ts";
 import type { Rpc } from "./rpc.ts";
-import { COMMAND_MS, REFRESH_MS, TOKEN_COMMAND } from "./token-door.ts";
-
-/**
- * OpenAI's documented settings for ChatGPT plan use through app-server
- * (developers.openai.com/siwc/token-sharing-open-source/codex-app-server),
- * but for the token: in place of an ACCESS_TOKEN in its environment, Codex
- * asks Rufi's token door for one with the provider's auth command
- * (token-door.ts, docs/adr/0025), named by its file.
- */
-function provider(door: string): string {
-  return `[model_providers.openai_chatgpt_plan]
-name = "ChatGPT plan"
-base_url = "https://api.openai.com/v1"
-wire_api = "responses"
-requires_openai_auth = false
-supports_websockets = false
-
-[model_providers.openai_chatgpt_plan.auth]
-command = ${key(process.execPath)}
-args = [${key(TOKEN_COMMAND)}, ${key(door)}]
-timeout_ms = ${String(COMMAND_MS)}
-refresh_interval_ms = ${String(REFRESH_MS)}`;
-}
 
 /** Rufi's choices on top of Codex's defaults, each with its reason. */
 const SETTINGS = {
@@ -52,8 +36,8 @@ const SETTINGS = {
     /** Rufi starts and ends app-server itself; nothing keeps running after it. */
     daemon_auto_start: false,
     /**
-     * No plugin catalogs or connectors: they'd only be downloaded, and
-     * connectors don't work with ChatGPT plan sign-in. Chosen ones come later.
+     * No plugin catalogs or connectors: they'd only be downloaded. Chosen
+     * ones come later.
      */
     plugins: false,
     apps: false,
@@ -68,9 +52,9 @@ const SETTINGS = {
 /**
  * The permission profile the chat's AI runs under: Codex's workspace profile
  * (it writes in its working folder, the AI's folder, and the temp folders;
- * it reads the rest), with the network on and Rufi's unreadable paths
- * denied. Threads select it by name; the legacy sandbox setting has no
- * denied reads.
+ * it reads the rest), with the network on and Rufi's unreadable paths and
+ * the person's keychains denied. Threads select it by name; the legacy
+ * sandbox setting has no denied reads.
  */
 export const AI_PROFILE = "rufi-ai";
 
@@ -125,7 +109,6 @@ function configToml(options: CodexHomeOptions, skills: string): string {
     .join("\n");
   // Top-level keys first: in TOML, a key after [features] belongs to it.
   return `# Written by Rufi on every start from src/agent/codex/settings.ts.
-model_provider = "openai_chatgpt_plan"
 model_reasoning_effort = "${SETTINGS.model_reasoning_effort}"
 model_reasoning_summary = "${SETTINGS.model_reasoning_summary}"
 personality = "${SETTINGS.personality}"
@@ -147,14 +130,10 @@ enabled = false
 # *TOKEN*); Codex itself runs with none.
 [shell_environment_policy]
 ignore_default_excludes = false
-${commandsEnvironment(options)}${options.sandbox ? aiProfile(options.sandbox, skills) : ""}
-${provider(options.door)}
-`;
+${commandsEnvironment(options)}${options.sandbox ? aiProfile(withKeychains(options.sandbox, options.userHome), skills) : ""}`;
 }
 
 export interface CodexHomeOptions {
-  /** The file of this Codex's token door (doorFile). */
-  door: string;
   /** The user's real HOME, for the agent's commands. */
   userHome?: string | undefined;
   /** The AI's folder and what its commands may never read. */
@@ -218,8 +197,8 @@ export async function prepareCodexHome(
 }
 
 /**
- * Checks Codex applied the settings Rufi can't do without (its sign-in, the
- * effort, what runs), so a renamed key in a new pin fails loudly instead of
+ * Checks Codex applied the settings Rufi can't do without (the effort, what
+ * runs), so a renamed key in a new pin fails loudly instead of
  * being ignored. The style settings (personality, reasoning summaries) aren't
  * checked: without them the chat still works.
  */
@@ -233,9 +212,6 @@ export async function checkSettings(
     timeoutMs,
   );
   const problems: string[] = [];
-  if (config.model_provider !== "openai_chatgpt_plan") {
-    problems.push(`model_provider is ${String(config.model_provider)}`);
-  }
   if (config.model_reasoning_effort !== SETTINGS.model_reasoning_effort) {
     problems.push(
       `model_reasoning_effort is ${String(config.model_reasoning_effort)}`,

@@ -651,7 +651,7 @@ it("upgrades a record of version 9 so a chat keeps the context its thread used a
   const old = new DatabaseSync(path);
   try {
     old.exec(`
-      UPDATE chats SET thread_id = 'thread-asha', thread_provider = 'codex', thread_model = 'gpt-6.1-sol', thread_tools = 'rules-1'
+      UPDATE chats SET model = 'gpt-6.1-sol', thread_id = 'thread-asha', thread_provider = 'codex', thread_model = 'gpt-6.1-sol', thread_tools = 'rules-1'
         WHERE person_id = 'asha';
       INSERT INTO chat_queue (id, person_id, chat_id, origin, text, position, state, held, held_text, created_at, updated_at)
         SELECT 'held-1', person_id, id, 'person', 'Is my HbA1c better?', 1, 'waiting', 'failed', 'Codex stopped.', '2026-10-17T09:00:00Z', '2026-10-17T09:00:00Z'
@@ -682,7 +682,12 @@ it("upgrades a record of version 9 so a chat keeps the context its thread used a
         context_tokens: null,
         context_window: null,
         context_thread: null,
+        // A model chosen then is Codex's, the one provider Rufi had.
+        model_provider: chat["model"] === null ? null : "codex",
       })),
+    );
+    expect(after.chats.map((chat) => chat["model_provider"])).toContain(
+      "codex",
     );
     expect(after.queue).toEqual(
       before.queue.map((row) => ({

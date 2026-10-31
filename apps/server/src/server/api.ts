@@ -16,6 +16,7 @@ import {
   SelectEffort,
   SelectModel,
   SendMessage,
+  StartSignIn,
   WhileReplying,
   type Backups,
   type DataFolder,
@@ -485,7 +486,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     }
     if ((await transcripts.people()).length === 0) return { step: "name" };
     if (
-      (await deps.account()).account === "signed_out" &&
+      (await deps.account()).codex.state !== "signed_in" &&
       !(await transcripts.setting(FIRST_RUN.sign_in))
     ) {
       return { step: "sign_in" };
@@ -545,7 +546,10 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   app.get("/api/status", async (c) => c.json(await deps.account()));
 
   app.get("/api/signin", (c) => c.json(deps.signIn.state()));
-  app.post("/api/signin", (c) => c.json(deps.signIn.start()));
+  app.post("/api/signin", async (c) => {
+    const { provider } = await body(c, StartSignIn);
+    return c.json(deps.signIn.start(provider));
+  });
 
   const backups = (): Backups => {
     const { last, failed, running } = deps.backups.status();

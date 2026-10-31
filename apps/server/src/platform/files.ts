@@ -80,22 +80,20 @@ export async function sha256(path: string): Promise<string> {
 class BusyError extends Error {}
 
 /**
- * Rufi's locks, folders. Whoever needs more than one takes them in this
- * order: `location.lock`, then `rufi.lock`, then `credentials.lock`.
+ * Rufi's locks, folders. Whoever needs both takes them in this order:
+ * `location.lock`, then `rufi.lock`.
  * - `location.lock`: beside the location file, held while Rufi finds its
  *   data folder (and makes it, at the first start) or moves it.
  * - `rufi.lock`: in the data folder, held for its whole life by the running
  *   Rufi, or by a terminal command, so only one of them uses the data
  *   folder at a time.
- * - `credentials.lock`: in the data folder, held briefly while the sign-in
- *   is changed or renewed.
  * A lock left by a crashed process goes stale after 10 s.
  */
 const STALE_MS = 10_000;
 
 async function lock(
   folder: string,
-  name: "location" | "rufi" | "credentials",
+  name: "location" | "rufi",
   waitMs: number,
   busy: string,
   onLost?: (error: Error) => void,
@@ -158,28 +156,6 @@ export async function withLocationLock<T>(
     "location",
     waitMs,
     "Another Rufi command is finding or moving Rufi's data folder. Try again when it finishes.",
-  );
-  try {
-    return await task();
-  } finally {
-    await release();
-  }
-}
-
-/**
- * Runs `task` while holding `credentials.lock`. `waitMs` = 0 fails at once
- * when it's taken.
- */
-export async function withCredentialsLock<T>(
-  folder: string,
-  waitMs: number,
-  task: () => Promise<T>,
-): Promise<T> {
-  const release = await lock(
-    folder,
-    "credentials",
-    waitMs,
-    "Another Rufi sign-in command is running. Try again when it finishes.",
   );
   try {
     return await task();

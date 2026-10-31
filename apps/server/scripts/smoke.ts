@@ -1,17 +1,21 @@
 // The live smoke set: the real core, the real Codex and the real AI, on a
-// scratch data folder holding the fictional family. Only the sign-in comes
-// from RUFI_HOME (the test sign-in). Every case runs once, at most JOBS at a
-// time (--jobs n for another cap), each on its own data folder and core. Each
-// case's transcript is written to the output folder as it ends, with what
+// data folder holding the fictional family for each case. Only the sign-in
+// comes from RUFI_HOME (the test sign-in, Codex's own): Codex renews it there
+// before any case starts, and each case runs on a copy of it, removed when
+// the case ends. No case's AI can read the test sign-in or another case's
+// copy. Every case runs once, at most JOBS at a
+// time (--jobs n for another cap), each on its own data folder and core, in
+// the run's folder (--out, new or empty): `cases/<case>`. Each
+// case's transcript is written to the run's folder as it ends, with what
 // code could check, then report.md with every case's status: passed, FAILED,
 // needs a person's verdict (a part code can't check) or INFRA (a timeout, a
 // usage limit, the sign-in, the provider). Nothing is run again by itself.
 // Every case also checks that each reply completed with words. Anything but
 // passed or a person's verdict makes the exit code nonzero. A case's data
 // folder goes once it has passed or waits only for a person's verdict; any
-// other case's stays in the Mac's temporary folder, and its line names it.
+// other case's stays, and its line names it.
 //
-//   RUFI_HOME=<test sign-in folder> pnpm smoke [--only a,b] [--jobs n] [--out empty-dir]
+//   RUFI_HOME=<test sign-in folder> pnpm smoke --out <empty folder> [--only a,b] [--jobs n]
 import { randomUUID } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { readFile, writeFile } from "node:fs/promises";
@@ -27,15 +31,15 @@ import { Effect, Exit, Scope } from "effect";
 import { everyTurnAnswered } from "./answered.ts";
 import {
   HarnessTimeout,
+  caseFolder,
+  caseSandbox,
   outFolder,
   onScratch,
   runAll,
-  sharedToken,
   statusOf,
+  testSignIn,
   type Status,
 } from "./live-run.ts";
-import type { ChatGptDeps } from "../src/agent/chatgpt/openai.ts";
-import { accessToken, status } from "../src/agent/chatgpt/session.ts";
 import { codexBinary } from "../src/agent/codex/binary.ts";
 import { codexAdapter } from "../src/agent/codex/adapter.ts";
 import { DEFAULT_SHORTLIST } from "../src/core/chat/models.ts";
@@ -45,10 +49,10 @@ import {
   openWritable,
 } from "../src/core/store/database.ts";
 import { childEnvironment, rufiHome } from "../src/platform/config.ts";
-import { Secrets, secretsLayer } from "../src/platform/keychain.ts";
 import { diagnostics } from "../src/platform/logs.ts";
 import { PROOF_HEADER } from "../src/server/api.ts";
 import { agentSetup, startCore, type Core } from "../src/server/core.ts";
+import { codexSignIn } from "../src/server/signin.ts";
 import { FAMILY, familyFiles } from "../tests/fixtures/golden.ts";
 import { textPdf } from "../tests/pack/pdf.ts";
 import { layout, PRESCRIPTION, REPORTS } from "../tests/pack/reports.ts";
@@ -77,18 +81,6 @@ if (!Number.isInteger(jobs) || jobs < 1) {
   console.error("--jobs takes a whole number of cases, 1 or more.");
   process.exit(2);
 }
-// The test sign-in, renewed in its own folder when needed.
-const signIn: ChatGptDeps = {
-  home: rufiHome(),
-  secrets: await Effect.runPromise(
-    Effect.provide(Effect.service(Secrets), secretsLayer),
-  ),
-  issuer: "https://auth.openai.com",
-  sleep: (ms) => sleep(ms),
-};
-/** One token source for every core and reader of the run. */
-const token = sharedToken((validForMs) => accessToken(signIn, validForMs));
-
 /**
  * Cases with a part code can't check: a person reads each one, after its
  * checks pass.
@@ -2417,14 +2409,22 @@ if (unknown.length > 0) {
   );
   process.exit(2);
 }
-// The sign-in once before any case starts: a run that can't sign in stops
-// here, and the cases share the token it gets.
-await token(10 * 60_000).catch((error: unknown) => {
+const out = await outFolder(values.out).catch((error: unknown) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(2);
 });
-const out = await outFolder("smoke", values.out);
 const file = await codexBinary();
+// The sign-in once before any case starts: a run that can't sign in stops
+// here.
+const signIn = await testSignIn(rufiHome(), {
+  file,
+  args: [],
+}).catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(2);
+});
+/** Every sign-in of the run, which no case's AI may read. */
+const signIns = signIn.signIns(names.map((name) => caseFolder(out, name)));
 const { version } = createRequire(import.meta.url)("../package.json") as {
   version: string;
 };
@@ -2445,7 +2445,7 @@ async function runCase(
   const keeps = (status: Status) =>
     status !== "passed" && status !== "needs a person's verdict";
   const { result } = await onScratch(
-    "rufi-smoke-",
+    caseFolder(out, name),
     async (home) => {
       const { status, why, seconds, outcome } = await playCase(name, home);
       const line = `${name}: ${status}${why ? ` (${why})` : ""}, ${String(seconds)} s${keeps(status) ? `; data folder: ${home}` : ""}`;
@@ -2472,6 +2472,7 @@ async function playCase(name: string, home: string) {
   const seed = SEEDS[name];
   if (seed !== undefined) store.db.exec(seed);
   store.close();
+  await signIn.give(home);
   const stalls = monitorEventLoopDelay({ resolution: 20 });
   stalls.enable();
   const began = Date.now();
@@ -2479,32 +2480,21 @@ async function playCase(name: string, home: string) {
   let outcome: Outcome | undefined;
   let error: unknown;
   try {
+    const codex = codexAdapter({
+      home,
+      ...agentSetup(home),
+      sandbox: caseSandbox(home, signIns),
+      command: { file, args: [] },
+      env: childEnvironment(),
+      version,
+      log: diagnostics(home).log,
+    });
     const core = await Effect.runPromise(
       startCore({
         home,
-        adapters: [
-          codexAdapter({
-            home,
-            ...agentSetup(home),
-            command: { file, args: [] },
-            env: childEnvironment(),
-            token,
-            version,
-            log: diagnostics(home).log,
-          }),
-        ],
+        adapters: [codex],
         log: diagnostics(home).log,
-        account: async () => {
-          const now = await status(signIn);
-          return {
-            account: !now.signedIn
-              ? "signed_out"
-              : now.planUse
-                ? "signed_in"
-                : "no_plan_use",
-            email: now.email ?? null,
-          };
-        },
+        signIns: { codex: codexSignIn(codex, () => undefined) },
       }).pipe(Scope.provide(scope)),
     );
     outcome = await check(await page(core), home);
@@ -2512,6 +2502,7 @@ async function playCase(name: string, home: string) {
     error = caught;
   } finally {
     await Effect.runPromise(Scope.close(scope, Exit.void));
+    await signIn.take(home);
     stalls.disable();
   }
   const failed = outcome
