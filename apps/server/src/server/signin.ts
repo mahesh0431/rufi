@@ -14,6 +14,8 @@ import { errorCode, type Log } from "../platform/logs.ts";
 
 /** How long Rufi waits for the person to finish signing in. */
 const WAIT_MS = 5 * 60_000;
+/** How often Rufi asks each provider again how it's signed in. */
+const KEEP_MS = 5 * 60_000;
 
 /** A provider's sign-in: how it stands, and how to start it. */
 export interface ProviderSignIn {
@@ -32,6 +34,8 @@ export interface ProviderSignIn {
 export function signInFlow(
   providers: Partial<Record<Provider, ProviderSignIn>>,
   log: Log,
+  /** Done once Rufi has heard the provider is signed in. */
+  signedIn: (provider: Provider) => Promise<void> = () => Promise.resolve(),
 ) {
   let state: SignInState = {
     provider: null,
@@ -64,7 +68,8 @@ export function signInFlow(
           signal,
         })
         .then(
-          () => {
+          async () => {
+            await signedIn(provider);
             state = { provider, state: "done", link: null, error: null };
           },
           (error: unknown) => {
@@ -87,6 +92,75 @@ export function signInFlow(
 }
 
 export type SignInFlow = ReturnType<typeof signInFlow>;
+
+/**
+ * Each provider's sign-in as it last said (T3 Code's way), so a send and
+ * its hand-over ask neither Codex nor Claude. Rufi asks each at its start,
+ * every 5 minutes, and on each sign-in or sign-out in Rufi, one ask per
+ * provider at a time; only the first answer is waited for. One not signed
+ * in is asked again at the next read, which doesn't wait for it, so a
+ * sign-in outside Rufi shows soon.
+ */
+export function keptSignIns(
+  providers: Partial<Record<Provider, ProviderSignIn>>,
+  everyMs = KEEP_MS,
+) {
+  interface Kept {
+    status: ProviderStatus;
+    first: Promise<void>;
+    /** The ask under way, if one is. */
+    asking?: Promise<void>;
+  }
+  const kept = new Map<Provider, Kept>();
+  const ask = (provider: Provider, one: Kept): Promise<void> => {
+    one.asking ??= (
+      providers[provider]?.status() ?? Promise.resolve(SIGNED_OUT)
+    )
+      .catch(unavailable)
+      .then((status) => {
+        one.status = status;
+      })
+      .finally(() => {
+        one.asking = undefined;
+      });
+    return one.asking;
+  };
+  for (const provider of ["codex", "claude"] as const) {
+    const one: Kept = { status: SIGNED_OUT, first: Promise.resolve() };
+    one.first = ask(provider, one);
+    kept.set(provider, one);
+  }
+  const timer = setInterval(() => {
+    for (const [provider, one] of kept) void ask(provider, one);
+  }, everyMs);
+  timer.unref();
+  return {
+    /** The provider's sign-in as it last said. */
+    status: async (provider: Provider): Promise<ProviderStatus> => {
+      const one = kept.get(provider);
+      if (!one) return SIGNED_OUT;
+      await one.first;
+      if (one.status.state !== "signed_in") void ask(provider, one);
+      return one.status;
+    },
+    /** Asks it again once any ask under way has ended; resolves once it said. */
+    refresh: async (provider: Provider): Promise<void> => {
+      const one = kept.get(provider);
+      if (!one) return;
+      await one.asking;
+      await ask(provider, one);
+    },
+    close: () => {
+      clearInterval(timer);
+    },
+  };
+}
+
+const SIGNED_OUT: ProviderStatus = {
+  state: "signed_out",
+  account: null,
+  text: null,
+};
 
 /** What a provider's sign-in says when Rufi can't ask it. */
 const unavailable = (error: unknown): ProviderStatus => ({
