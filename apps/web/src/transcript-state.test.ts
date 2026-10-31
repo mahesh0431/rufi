@@ -1,6 +1,6 @@
 import type { Entry, Page, Turn } from "@rufi/contracts";
 import { describe, expect, it } from "vitest";
-import { addOlder, apply, emptyTranscript } from "./transcript-state.ts";
+import { addOlder, apply, emptyTranscript, lines } from "./transcript-state.ts";
 
 const at = "2026-10-04T10:00:00.000Z";
 const entry = (
@@ -30,7 +30,6 @@ const turn = (status: Turn["status"], id = "t1"): Turn => ({
   startedAt: at,
   endedAt: null,
   newThread: false,
-  how: null,
 });
 const chat = { model: "gpt-6.1-sol", effort: "medium", context: null } as const;
 const page = (
@@ -171,5 +170,24 @@ describe("older pages", () => {
     );
     expect(late).toBe(reconnected);
     expect(late.before).toBe(20);
+  });
+});
+
+describe("what the transcript shows", () => {
+  it("keeps a reply's Activity under it when its steps are gone, and gives a reply without steps none", () => {
+    const shown = apply(emptyTranscript, {
+      type: "snapshot",
+      ...page(
+        1,
+        [entry("a", 1, "Asha's last HbA1c"), entry("b", 2, "Hello", "t2")],
+        [{ ...turn("completed"), stepsGone: true }, turn("completed", "t2")],
+        null,
+      ),
+    });
+    expect(lines(shown).filter((line) => !line.startsWith("d:"))).toEqual([
+      "e:a",
+      "s:t1",
+      "e:b",
+    ]);
   });
 });

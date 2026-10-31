@@ -331,7 +331,7 @@ describe("Rufi's tools on the pinned Codex, over MCP", () => {
   );
 
   it(
-    "binds each call to its reply by the call's own id, shows it in the activity and Based on, and saves with a receipt",
+    "binds each call to its reply by the call's own id, shows it in the activity, and saves with a receipt",
     { timeout: 120_000 },
     async () => {
       await start([

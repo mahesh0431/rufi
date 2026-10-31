@@ -614,16 +614,16 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
   );
 
   it.each(["commentary", "seeded commentary"])(
-    "keeps the AI's progress note as a step of the reply's Activity, as it streams, and its answer as the one reply, with How (%s)",
+    "keeps the AI's progress note as a step of the reply's Activity, as it streams, and its answer as the one reply (%s)",
     timeout,
     async (text) => {
       await startChat(name);
       const c = await newChat();
       const shown: Entry[] = [];
       transcripts.subscribe(c.id, (change) => shown.push(...change.entries));
-      await say(c, `${text}\n\n\`\`\`rufi-basis\nFrom the note test.\n\`\`\``);
+      await say(c, text);
       await ended(c.id);
-      const { all, turns } = await transcript(c.id);
+      const { all } = await transcript(c.id);
       expect(
         all
           .filter((e) => e.kind === "reply" || e.activity === "note")
@@ -632,7 +632,6 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
         ["activity", "note", NOTE, "done"],
         ["reply", null, `ok:${text}`, null],
       ]);
-      expect(turns[0]?.how).toBe("From the note test.");
       // Never a reply, not even while it streamed; it grew as it came.
       expect(
         shown.some((e) => e.kind === "reply" && e.text.includes("Checking")),
@@ -1709,7 +1708,7 @@ describe("the chat, on the scripted Codex", () => {
     expect((await transcript(c.id)).all).toEqual(all);
   });
 
-  it("splits How off a completed reply, also while it streams; small talk has none; Activity names each read", async () => {
+  it("names each read in the reply's Activity, as Codex reported it", async () => {
     await startChat("fake", {
       scenario: {
         calls: [
@@ -1721,34 +1720,12 @@ describe("the chat, on the scripted Codex", () => {
       },
     });
     const c = await newChat();
-    const shown: Entry[] = [];
-    transcripts.subscribe(c.id, (change) => shown.push(...change.entries));
-    const asked =
-      "Your HbA1c\n\n```rufi-basis\nFrom the record, read now.\n```";
-    await say(c, asked);
+    await say(c, "Your HbA1c");
     await ended(c.id);
-    // Small talk: the AI reads nothing and writes no block.
-    await say(await chatRow(c.id), "quiet thanks");
-    await ended(c.id, 2);
-    const { entries, turns } = await transcript(c.id);
-    // Activity names the read as Codex reported it.
+    const { entries } = await transcript(c.id);
     expect(entries).toContainEqual(["activity", "rufi.get_records"]);
     expect(entries.filter(([kind]) => kind === "reply")).toEqual([
       ["reply", "ok:Your HbA1c"],
-      ["reply", "ok:quiet thanks"],
-    ]);
-    // Not even while it streamed.
-    expect(
-      shown.some((e) => e.kind === "reply" && e.text.includes("rufi-basis")),
-    ).toBe(false);
-    expect(
-      store.db
-        .prepare("SELECT text FROM transcript_entries WHERE kind = 'reply'")
-        .all()[0],
-    ).toEqual({ text: `ok:${asked}` });
-    expect(turns.map((t) => t.how)).toEqual([
-      "From the record, read now.",
-      null,
     ]);
   });
 
@@ -4184,7 +4161,7 @@ describe("the chat, on the scripted Codex", () => {
     );
   });
 
-  it("shows a cut reply's answer without How or half a block, and passes it on marked, with its progress note", async () => {
+  it("shows a cut reply's answer, and passes it on marked, with its progress note", async () => {
     const c = await newChat();
     await transcripts.startTurn(c, "t-1", {
       id: "thread-cut",
@@ -4198,19 +4175,13 @@ describe("the chat, on the scripted Codex", () => {
       "Your record has one HbA1c, from August.",
       false,
     );
-    await transcripts.appendReply(
-      c,
-      "t-1",
-      "item-1",
-      "Your HbA1c was 6.8 %.\n\n```rufi-basis\nFrom the rec",
-    );
+    await transcripts.appendReply(c, "t-1", "item-1", "Your HbA1c was 6.8 %.");
     await openTranscripts(store).interruptRunning();
-    const { entries, turns } = await transcript(c.id);
+    const { entries } = await transcript(c.id);
     expect(entries).toEqual([
       ["activity", "Your record has one HbA1c, from August."],
       ["reply", "Your HbA1c was 6.8 %."],
     ]);
-    expect(turns).toMatchObject([{ how: null }]);
     expect(await transcripts.lastMessages(c, 10)).toEqual([
       {
         from: "note",
@@ -4225,12 +4196,7 @@ describe("the chat, on the scripted Codex", () => {
       id: "thread-cut",
       model: "gpt-6.1-sol",
     });
-    await transcripts.appendReply(
-      c,
-      "t-2",
-      "item-3",
-      "Your HbA1c was 6.8 %.\n\n```rufi-ba",
-    );
+    await transcripts.appendReply(c, "t-2", "item-3", "Your HbA1c was 6.8 %.");
     await transcripts.addMessage(c, {
       id: uuid(),
       kind: "steer",
