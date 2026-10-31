@@ -408,6 +408,7 @@ CREATE TABLE turns (
   resets_at TEXT,              -- a usage limit's reset time, when the provider gave one
   started_at TEXT NOT NULL,
   ended_at TEXT,
+  cause TEXT CHECK (cause IS NULL OR json_valid(cause)), -- woken by an agent it started: {"title", "about": done, stopped, failed, asked or wrote}
   UNIQUE (person_id, id),
   UNIQUE (chat_id, agent_turn_id),
   FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id)
@@ -747,4 +748,4 @@ CREATE TABLE agent_cursor (
 ) STRICT;
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 21;
+PRAGMA user_version = 22;

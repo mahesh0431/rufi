@@ -15,6 +15,7 @@ import type { Store } from "../store/database.ts";
 import type {
   AgentStatusInput,
   ReadAgentInput,
+  SendAgentInput,
   StartAgentInput,
 } from "./agents.ts";
 
@@ -67,6 +68,8 @@ export interface AgentTools {
   start: (input: StartAgentInput, callId: string) => Promise<unknown>;
   /** The agents below the caller, as they are now. */
   status: (input: AgentStatusInput) => unknown;
+  /** A message from the caller to an agent below it, or to its parent. */
+  send: (input: SendAgentInput, callId: string) => unknown;
   /** A page of the caller's conversation, or of one below it. */
   read: (input: ReadAgentInput) => Promise<unknown>;
 }

@@ -13,7 +13,7 @@ import {
   type ProviderEvent,
   type TurnEnd as Ended,
 } from "@rufi/agents/provider";
-import { SIGNED_OUT } from "@rufi/contracts";
+import { type Cause, SIGNED_OUT } from "@rufi/contracts";
 import { type AgentEvent, type Model, type TurnEnd } from "../agent/runtime.ts";
 import { chatAgents, sentAs } from "../core/chat/agents.ts";
 import type { ChatRow, Transcripts } from "../core/chat/transcript.ts";
@@ -29,6 +29,8 @@ export type RufiAiEvent = (
       turnId: string;
       /** The inputs it took: the chat's rows, by their ids. */
       inputs: readonly string[];
+      /** It took only messages from agents below: the first one's. */
+      cause?: Cause;
     }
 ) & {
   /** Its item's place in its turn, as the package keeps it. */
@@ -94,6 +96,8 @@ export interface RufiAi {
   rules: (chat: ChatRow) => Promise<string | undefined>;
   /** Whether a turn of the chat's agent starts or runs now. */
   busy: (chat: ChatRow) => Promise<boolean>;
+  /** The message a turn of the chat's agent starts with now, before it runs. */
+  starting: (chat: ChatRow) => Promise<string | undefined>;
   /** Whether a reply starts or runs in the thread now. */
   running: (threadId: string) => boolean;
   /** The running reply that may still use Rufi's tools, unless it stops. */
@@ -321,6 +325,20 @@ export async function startRufiAi(
     };
   };
 
+  /**
+   * Why Rufi AI replies by itself: a turn that took only messages from the
+   * agents below it, by the first one's agent and reason.
+   */
+  const causeOf = (inputs: readonly string[]): Cause | undefined => {
+    const taken = inputs.map((id) => system.agents.input(id));
+    const [first] = taken;
+    if (!first || taken.some((input) => !input?.about)) return undefined;
+    const title = system.agents.get(first.sender)?.title;
+    return first.about && title !== undefined
+      ? { title, about: first.about }
+      : undefined;
+  };
+
   // The package keeps out what an older conversation reports: what comes
   // is the agent's open conversation's.
   const live = (
@@ -347,8 +365,11 @@ export async function startRufiAi(
         return;
       }
     }
+    const cause =
+      event.type === "turnStarted" ? causeOf(event.inputs) : undefined;
     chat?.onEvent({
       ...eventOf(ref, event),
+      ...(cause && { cause }),
       ...(position !== undefined && { position }),
     });
   };
@@ -372,15 +393,17 @@ export async function startRufiAi(
     };
     switch (event.type) {
       case "turn.started": {
-        const { ref, inputs } = event.payload as {
+        const { ref, inputs, from } = event.payload as {
           ref: string;
           inputs: string[];
+          from?: { title: string; about: Cause["about"] };
         };
         await transcripts.applyStart(
           row,
           ref,
           { id: row.threadId ?? "", model: row.model ?? row.threadModel ?? "" },
           inputs,
+          from && { title: from.title, about: from.about },
           advance,
         );
         break;
@@ -512,6 +535,11 @@ export async function startRufiAi(
 
       busy: async (row) =>
         agents.current(await system.root(row.id)) !== undefined,
+
+      starting: async (row) => {
+        const current = agents.current(await system.root(row.id));
+        return current?.status === "starting" ? current.input : undefined;
+      },
 
       running: (threadId) => {
         const agent = threads.get(threadId);

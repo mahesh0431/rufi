@@ -122,6 +122,11 @@ export function mcpEndpoint(options: {
   toolMs?: number;
   /** What it offers to read; nothing when not given. */
   resources?: readonly McpResource[];
+  /**
+   * The work Rufi finishes before it stops: each call goes in until it
+   * ends, as its answer streams after the response has begun.
+   */
+  working?: Set<Promise<unknown>>;
 }): (request: Request) => Promise<Response> {
   const { keys, log } = options;
   const toolMs = options.toolMs ?? DEADLINES.toolMs;
@@ -130,7 +135,7 @@ export function mcpEndpoint(options: {
     (context) => {
       const scope = context.authInfo?.extra?.["scope"] as McpScope | undefined;
       if (!scope) throw new Error("An MCP request came without its scope.");
-      return serverFor(scope, toolMs, resources);
+      return serverFor(scope, toolMs, resources, options.working);
     },
     {
       onerror: (error) => {
@@ -194,6 +199,7 @@ function serverFor(
   scope: McpScope,
   toolMs: number,
   resources: readonly McpResource[],
+  working: Set<Promise<unknown>> | undefined,
   // oxlint-disable-next-line typescript/no-deprecated -- see above
 ): Server {
   // oxlint-disable-next-line typescript/no-deprecated -- see above
@@ -246,14 +252,19 @@ function serverFor(
       text: JSON.stringify({ ok: false, error: `${name} took too long.` }),
     };
     const deadline = new AbortController();
+    const call = scope.call({
+      tool: name,
+      input: input ?? {},
+      meta: _meta,
+      signal: deadline.signal,
+    });
+    // Also once the agent no longer waits for it: until it ends.
+    working?.add(call);
+    const ended = () => working?.delete(call);
+    call.then(ended, ended);
     let timer: NodeJS.Timeout | undefined;
     const answer = await Promise.race([
-      scope.call({
-        tool: name,
-        input: input ?? {},
-        meta: _meta,
-        signal: deadline.signal,
-      }),
+      call,
       new Promise<ToolAnswer>((resolve) => {
         timer = setTimeout(() => {
           deadline.abort();

@@ -1,7 +1,8 @@
 // Rufi's agent tools: an agent starts agents of its own, sees how the ones
-// below it are, and reads its own conversation or one below it. Rufi's chat
-// does them in the agent system (server/sub-agents.ts); a sub-agent never
-// gets more tools than the agent that starts it.
+// below it are, writes to one or to the agent that started it, and reads its
+// own conversation or one below it. Rufi's chat does them in the agent
+// system (server/sub-agents.ts); a sub-agent never gets more tools than the
+// agent that starts it.
 import { Schema } from "effect";
 import { defineTool, Refusal } from "./registry.ts";
 
@@ -31,6 +32,23 @@ export const AgentStatusInput = Schema.Struct({
   ),
 });
 export type AgentStatusInput = typeof AgentStatusInput.Type;
+
+export const SendAgentInput = Schema.Struct({
+  to: Schema.String.annotate({
+    description:
+      'An agent below you, by id, or "parent": the agent that started you.',
+  }).check(Schema.isMinLength(1)),
+  text: Schema.String.annotate({
+    description: "What you tell or ask it, whole: it sees only this.",
+  }).check(Schema.isMinLength(1)),
+  kind: Schema.optionalKey(
+    Schema.Literals(["steer", "queue"]).annotate({
+      description:
+        "steer (the default): into its turn as soon as it can take it, or it starts one; queue: after its turn ends.",
+    }),
+  ),
+});
+export type SendAgentInput = typeof SendAgentInput.Type;
 
 export const ReadAgentInput = Schema.Struct({
   agent: Schema.String.annotate({
@@ -81,6 +99,23 @@ export const agentStatus = defineTool({
   run: (input, { agents }) => {
     if (!agents) throw outside();
     return agents.status(input);
+  },
+});
+
+export const sendAgent = defineTool({
+  name: "send_agent",
+  description:
+    'Writes to an agent below you, or to the agent that started you ("parent"): a question, feedback, more to do, anything. It gets your words with your title, and an idle one starts a turn for it. Answers steered, queued or will start the next turn; it is never refused for being busy. An agent you started sends you its answer by itself when its turn ends; one further below sends its answer to the agent that started it. To answer an agent you started, write to it by its id: your own answer at the end of your turn doesn\'t go to it.',
+  input: SendAgentInput,
+  callers: "model",
+  readOnly: false,
+  destructive: false,
+  examples: [
+    { to: "parent", text: "Page 3 is cut off. Shall I read the rest?" },
+  ],
+  run: (input, { agents, callId }) => {
+    if (!agents || callId === undefined) throw outside();
+    return agents.send(input, callId);
   },
 });
 

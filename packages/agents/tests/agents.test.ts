@@ -1070,10 +1070,12 @@ describe("forget", () => {
     agents.admit(reader.id);
     fake.script.picture = "ZmljdGlvbmFs";
     agents.send(reader.id, note("note-1"));
+    // Its done message wakes its parent, which answers it.
     await until(() => {
       expect(agents.get(reader.id)?.status).toBe("done");
+      expect(agents.get(ASHA.id)?.status).toBe("done");
     });
-    expect(rows("SELECT id FROM items")).toHaveLength(2);
+    expect(rows("SELECT id FROM items")).toHaveLength(4);
 
     await agents.forget([ASHA.id]);
 
@@ -1083,7 +1085,9 @@ describe("forget", () => {
     expect(store.eventsAfter(0).map((event) => event.type)).toEqual([
       "agents.forgotten",
     ]);
-    expect(closed).toEqual([ledger[0]?.ref]);
+    expect(closed.toSorted()).toEqual(
+      ledger.map((entry) => entry.ref).toSorted(),
+    );
     // Again, it does nothing.
     await agents.forget([ASHA.id]);
     expect(store.eventsAfter(0)).toHaveLength(1);

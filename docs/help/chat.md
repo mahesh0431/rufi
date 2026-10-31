@@ -196,7 +196,9 @@ If you stop the reply while the AI saves, the save can still finish. Then its re
 
 ### When the AI starts agents of its own
 
-For a task that can run on its own, the AI can start an agent of its own, a sub-agent. It gets only the task the AI gives it, never your chat, and works on the same model with the AI's tools or fewer. It can go on after the reply ends: what it saves shows in the chat with Rufi's receipt, also after the reply, with its title after **Saved**. It saves only what you said yes to. Ask the AI what it found. You don't see sub-agents on the screen yet.
+For a task that can run on its own, the AI can start an agent of its own, a sub-agent. It gets only the task the AI gives it, never your chat, and works on the same model with the AI's tools or fewer. It can go on after the reply ends: what it saves shows in the chat with Rufi's receipt, also after the reply, with its title after **Saved**. It saves only what you said yes to. You don't see sub-agents on the screen yet.
+
+When a sub-agent finishes, the AI hears it by itself. If the AI isn't replying then, it replies by itself, and a small line above that reply says which agent and why, such as "Reading report.pdf: done" or "Reading report.pdf asks a question". The AI tells you what it found, or asks you what it asks. While a sub-agent works, the AI may end its reply and say so: the sub-agent's result wakes it. The AI can also write to a sub-agent, for example to answer its question.
 
 ## While the AI replies
 

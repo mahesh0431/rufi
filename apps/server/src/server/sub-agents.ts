@@ -2,8 +2,10 @@
 // system (docs/adr/0026). A child of the calling agent is made by the call
 // that starts it, and its id is that call's, so the same call again finds
 // it; it is the caller's chat's, on the caller's model and effort, with no
-// more of Rufi's tools than the caller has. An agent sees how the agents
-// below it are, and reads its own conversation or one below it, by pages.
+// more of Rufi's tools than the caller has. Each turn's end goes to its
+// parent as a done message (the package's). An agent sees how the agents
+// below it are, writes to one or to its parent, and reads its own
+// conversation or one below it, by pages.
 import type { Agents } from "@rufi/agents/agents";
 import type { chatAgents } from "../core/chat/agents.ts";
 import type { ChatQueue } from "../core/chat/queue.ts";
@@ -82,6 +84,35 @@ export function subAgents(deps: {
               result: found.result,
             };
           }),
+        };
+      },
+
+      send: ({ to, text, kind = "steer" }, callId) => {
+        const self = agents.get(scope.agent);
+        const target =
+          to === "parent" ? (self?.parent ?? undefined) : reachable(to)?.id;
+        if (!self || target === undefined || target === scope.agent) {
+          throw new Refusal(
+            to === "parent"
+              ? "You have no parent: you are Rufi AI. Answer the user in your reply."
+              : `No agent ${to} is below you: write to "parent", or to an agent agent_status lists.`,
+          );
+        }
+        agents.send(target, {
+          id: callId,
+          sender: scope.agent,
+          kind,
+          parts: [`${self.title} (${self.id}) writes:\n\n${text}`],
+          about: "wrote",
+        });
+        return {
+          agent: target,
+          sent:
+            kind === "queue"
+              ? "queued"
+              : agents.current(target)?.status === "running"
+                ? "steered"
+                : "will start the next turn",
         };
       },
 

@@ -284,6 +284,7 @@ export function chat(deps: ChatDeps) {
           event.turnId,
           { id: event.threadId, model: chat.model ?? chat.threadModel ?? "" },
           event.inputs,
+          event.cause,
         );
         if (event.inputs.length > 0) queue.changed(chat.id);
         return;
@@ -462,8 +463,15 @@ export function chat(deps: ChatDeps) {
         await queue.hold(fresh, first.id, textOf(error));
         return;
       }
-      // A reply the person started runs: their new messages go into it.
-      const steering = !idle && (await personReply(fresh)) !== undefined;
+      // A reply the person started starts or runs: their new messages go
+      // into it, once it runs.
+      const starting = await agent.starting(fresh);
+      const steering =
+        !idle &&
+        ((await queue.list(fresh)).items.some(
+          (item) => item.id === starting && item.origin === "person",
+        ) ||
+          (await personReply(fresh)) !== undefined);
       const order: string[] = [];
       const added: { id: string; sender: string; kind: "queue" | "steer" }[] =
         [];

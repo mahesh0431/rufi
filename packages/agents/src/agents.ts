@@ -123,17 +123,23 @@ export interface Sent {
   kind: "steer" | "queue";
   /** What is sent; none when the host keeps the words and claims give them. */
   parts?: readonly string[];
+  /** A message one agent wrote to another (its done messages are the package's). */
+  about?: "wrote";
 }
+
+/** Why an input from one agent to another came. */
+export type About = "done" | "stopped" | "failed" | "asked" | "wrote";
 
 /** Why a waiting input isn't handed over by itself. */
 export type Hold = "signed_out" | "open_failed" | "failed" | "restarts";
 
 /**
- * The agent's turn in this process: starting, or admitted, by the
- * provider's reference, and stopping once its Stop is under way.
+ * The agent's turn in this process: starting, with the input it starts
+ * with, or admitted, by the provider's reference, and stopping once its
+ * Stop is under way.
  */
 export type Current =
-  | { status: "starting" }
+  | { status: "starting"; input: string }
   | { status: "running" | "stopping"; turn: string; ref: string };
 
 /** A call to the host's tools, placed in the open turn it left. */
@@ -206,10 +212,19 @@ export interface Agents {
     agent: string,
     page: { before?: string; limit: number },
   ) => { turns: KeptTurn[]; earlier: string | null };
-  /** Where an input is in its agent's queue; nothing when the queue has none. */
-  input: (
-    id: string,
-  ) => { agent: string; state: string; held: Hold | null } | undefined;
+  /**
+   * Where an input is in its agent's queue, who sent it and, from another
+   * agent, why; nothing when the queue has none.
+   */
+  input: (id: string) =>
+    | {
+        agent: string;
+        state: string;
+        held: Hold | null;
+        sender: string;
+        about: About | null;
+      }
+    | undefined;
   /** The agent's turn now, if one starts or runs. */
   current: (agent: string) => Current | undefined;
   /**
@@ -426,6 +441,39 @@ const now = () => new Date().toISOString();
 
 const message = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
+
+/**
+ * What an agent's parent is told when its turn ends, in its done message:
+ * its title and id, and its whole answer and its questions with their
+ * options, in plain words, or how it stopped or failed.
+ */
+function doneText(
+  agent: Agent,
+  end: TurnEnd,
+  by: string | null,
+  questions: readonly { title: string; options: readonly string[] }[],
+): string {
+  const who = `${agent.title} (${agent.id})`;
+  switch (end.status) {
+    case "done":
+      return [
+        `${who} ${questions.length > 0 ? "asks" : "done"}:`,
+        end.answer,
+        ...questions.map((question) =>
+          [
+            question.title,
+            ...question.options.map((option) => `- ${option}`),
+          ].join("\n"),
+        ),
+      ]
+        .filter((part) => part !== "")
+        .join("\n\n");
+    case "stopped":
+      return `${who} stopped${by === null ? "" : ` (by ${by})`}.`;
+    case "failed":
+      return `${who} failed: ${end.text ?? end.reason}.`;
+  }
+}
 
 export function createAgents(options: {
   store: AgentStore;
@@ -784,11 +832,30 @@ export function createAgents(options: {
       db.prepare(
         "UPDATE agents SET status = 'running', stopped_by = NULL, updated_at = ? WHERE id = ?",
       ).run(at, live.id);
+      // It took only messages from other agents: the first one's, and why.
+      const taken = db
+        .prepare(
+          "SELECT queue.sender, queue.about, agents.title FROM queue LEFT JOIN agents ON agents.id = queue.sender WHERE queue.id IN (SELECT value FROM json_each(?)) ORDER BY queue.position",
+        )
+        .all(JSON.stringify(inputs)) as {
+        sender: string;
+        about: About | null;
+        title: string | null;
+      }[];
+      const [first] = taken;
+      const from =
+        first?.about &&
+        first.title !== null &&
+        taken.length === inputs.length &&
+        taken.every((input) => input.about !== null)
+          ? { agent: first.sender, title: first.title, about: first.about }
+          : undefined;
       event("turn.started", live.id, {
         turn: id,
         ref,
         inputs,
         by: starting ? "package" : "provider",
+        ...(from && { from }),
       });
       return id;
     });
@@ -864,6 +931,8 @@ export function createAgents(options: {
     live.places.delete(ref);
     const stopBy =
       end.status === "stopped" ? (live.stopBy ?? "provider") : null;
+    const agent = get(live.id);
+    const parent = agent?.parent ?? null;
     store.change(({ event }) => {
       const at = now();
       db.prepare(
@@ -895,7 +964,42 @@ export function createAgents(options: {
       // A whole answer names the item it streamed as, when it did.
       const item = end.status === "done" ? answer : undefined;
       event("turn.ended", live.id, { turn: turn.id, ref, ...end, item });
+      // Its parent hears how it went: a steer from it, until it takes it.
+      if (agent && parent !== null) {
+        const questions = (
+          db
+            .prepare(
+              "SELECT title, options FROM questions WHERE turn_id = ? ORDER BY rowid",
+            )
+            .all(turn.id) as { title: string; options: string }[]
+        ).map((question) => ({
+          title: question.title,
+          options: JSON.parse(question.options) as string[],
+        }));
+        const about: About =
+          end.status === "done"
+            ? questions.length > 0
+              ? "asked"
+              : "done"
+            : end.status;
+        const input = `done:${turn.id}`;
+        db.prepare(
+          `INSERT INTO queue (id, agent_id, sender, kind, parts, about, state, position, created_at, updated_at)
+           VALUES (?, ?, ?, 'steer', ?, ?, 'waiting', (SELECT COALESCE(MAX(position), 0) + 1 FROM queue WHERE agent_id = ?), ?, ?)`,
+        ).run(
+          input,
+          parent,
+          live.id,
+          JSON.stringify([doneText(agent, end, stopBy, questions)]),
+          about,
+          parent,
+          at,
+          at,
+        );
+        event("input.added", parent, { input, kind: "steer", about });
+      }
     });
+    if (parent !== null) pump(parent);
     if (live.current?.ref === ref) {
       live.current = undefined;
       if (live.stops === 0) live.stopBy = undefined;
@@ -1352,15 +1456,23 @@ export function createAgents(options: {
     input: (id) =>
       db
         .prepare(
-          "SELECT agent_id AS agent, state, held FROM queue WHERE id = ?",
+          "SELECT agent_id AS agent, state, held, sender, about FROM queue WHERE id = ?",
         )
         .get(id) as
-        | { agent: string; state: string; held: Hold | null }
+        | {
+            agent: string;
+            state: string;
+            held: Hold | null;
+            sender: string;
+            about: About | null;
+          }
         | undefined,
 
     current: (id) => {
       const live = lives.get(id);
-      if (live?.starting) return { status: "starting" };
+      if (live?.starting) {
+        return { status: "starting", input: live.starting.input };
+      }
       if (!live?.current) return undefined;
       return {
         status: live.stopBy === undefined ? "running" : "stopping",
@@ -1586,19 +1698,24 @@ export function createAgents(options: {
       store.change(({ event }) => {
         const at = now();
         db.prepare(
-          `INSERT INTO queue (id, agent_id, sender, kind, parts, position, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue WHERE agent_id = ?), ?, ?)`,
+          `INSERT INTO queue (id, agent_id, sender, kind, parts, about, position, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue WHERE agent_id = ?), ?, ?)`,
         ).run(
           input.id,
           id,
           input.sender,
           input.kind,
           input.parts === undefined ? null : JSON.stringify(input.parts),
+          input.about ?? null,
           id,
           at,
           at,
         );
-        event("input.added", id, { input: input.id, kind: input.kind });
+        event("input.added", id, {
+          input: input.id,
+          kind: input.kind,
+          ...(input.about && { about: input.about }),
+        });
       });
       pump(id);
     },

@@ -2339,6 +2339,47 @@
       ]
     },
     {
+      "name": "rufi.send_agent",
+      "description": "Writes to an agent below you, or to the agent that started you (\"parent\"): a question, feedback, more to do, anything. It gets your words with your title, and an idle one starts a turn for it. Answers steered, queued or will start the next turn; it is never refused for being busy. An agent you started sends you its answer by itself when its turn ends; one further below sends its answer to the agent that started it. To answer an agent you started, write to it by its id: your own answer at the end of your turn doesn't go to it.",
+      "callers": "model",
+      "readOnly": false,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "string",
+            "description": "An agent below you, by id, or \"parent\": the agent that started you.",
+            "minLength": 1
+          },
+          "text": {
+            "type": "string",
+            "description": "What you tell or ask it, whole: it sees only this.",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "steer",
+              "queue"
+            ],
+            "description": "steer (the default): into its turn as soon as it can take it, or it starts one; queue: after its turn ends."
+          }
+        },
+        "required": [
+          "to",
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "to": "parent",
+          "text": "Page 3 is cut off. Shall I read the rest?"
+        }
+      ]
+    },
+    {
       "name": "rufi.read_agent",
       "description": "Reads an agent's conversation, yours (\"self\") or one below you: its turns, the latest page first, each with what it was sent and by whom, its steps, the questions it asked (with their options) and its result. Give before: the page's earlier for the page before it; earlier is null on the first page. An agent that isn't you or below you is not found.",
       "callers": "model",
