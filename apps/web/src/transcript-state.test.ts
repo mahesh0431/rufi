@@ -30,6 +30,8 @@ const entry = (
 const turn = (status: Turn["status"], id = "t1"): Turn => ({
   id,
   model: "gpt-6.1-sol",
+  effort: "medium",
+  before: null,
   status,
   endReason: null,
   endText: null,

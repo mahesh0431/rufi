@@ -1351,3 +1351,34 @@ it("upgrades a record of version 24 to Rufi's four models: a chat on another mod
     store.close();
   }
 });
+
+it("upgrades a record of version 25 so each reply keeps its effort: every reply kept as it was, its effort unknown", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 25));
+  const old = new DatabaseSync(path);
+  try {
+    old.exec(`
+      INSERT INTO turns (id, person_id, chat_id, agent_turn_id, thread_id, model, status, started_at)
+        SELECT 't-before', person_id, id, 'codex-turn', 'codex-thread', 'gpt-6.1-sol', 'completed', '2026-10-30T09:00:00Z'
+        FROM chats WHERE person_id = 'asha';
+    `);
+  } finally {
+    old.close();
+  }
+  const turns = () => {
+    const db = new DatabaseSync(path, { readOnly: true });
+    try {
+      return db
+        .prepare("SELECT * FROM turns ORDER BY id")
+        .all()
+        .map((row) => ({ ...row }));
+    } finally {
+      db.close();
+    }
+  };
+  const before = turns();
+
+  const store = await openRecord(home);
+  store.close();
+  expect(turns()).toEqual(before.map((row) => ({ ...row, effort: null })));
+});

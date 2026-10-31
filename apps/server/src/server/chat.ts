@@ -274,7 +274,11 @@ export function chat(deps: ChatDeps) {
         await transcripts.startTurn(
           chat,
           event.turnId,
-          { id: event.threadId, model: chat.model ?? chat.threadModel ?? "" },
+          {
+            id: event.threadId,
+            model: chat.model ?? chat.threadModel ?? "",
+            effort: chat.effort,
+          },
           event.inputs,
           event.messages,
         );
