@@ -751,10 +751,10 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     async () => {
       await startChat(name);
       const c = await newChat();
-      await Promise.all([chat?.selectModel(c, "gpt-6-astra"), say(c, "Hello")]);
+      await Promise.all([chat?.selectModel(c, "gpt-6.1-sol"), say(c, "Hello")]);
       await ended(c.id);
       expect((await transcript(c.id)).turns).toMatchObject([
-        { model: "gpt-6-astra" },
+        { model: "gpt-6.1-sol" },
       ]);
     },
   );
@@ -3355,6 +3355,18 @@ describe("the chat, on the scripted Codex", () => {
       { model: "gpt-6-astra" },
       { model: "claude-opus-5-5", effort: "high" },
     ]);
+    // Its Activity says so before its next turn.
+    const log = await ai?.logs.log(c.id, helper, 50);
+    expect(
+      log?.lines.flatMap((line) =>
+        line.kind === "model" ? [line.changed] : [],
+      ),
+    ).toEqual([
+      {
+        from: { model: "gpt-6-astra", effort: "medium" },
+        to: { model: "claude-opus-5-5", effort: "high" },
+      },
+    ]);
     const [moved] = agentRows(
       `SELECT provider, provider_ref, conversation FROM agents WHERE id = '${helper}'`,
     );
@@ -3999,7 +4011,7 @@ describe("the chat, on the scripted Codex", () => {
     await say(c, "first");
     await ended(c.id, 1);
     // A new model: the thread goes on.
-    await chat?.selectModel(c, "gpt-6-astra");
+    await chat?.selectModel(c, "gpt-6.1-sol");
     await say(await chatRow(), "second");
     await ended(c.id, 2);
     // The thread is lost; the first message to the new one is stopped while
@@ -4490,7 +4502,7 @@ describe("When the AI's thread doesn't open", () => {
     });
 
     // A model change keeps the thread, and its last report.
-    await chat?.selectModel(await chatRow(), "gpt-6-astra");
+    await chat?.selectModel(await chatRow(), "gpt-6.1-sol");
     expect((await chatRow()).context).toEqual({
       tokens: 38_000,
       window: 100_000,

@@ -380,9 +380,12 @@ test("waiting messages show in the chat: edit, reorder, steer, queue and remove;
   await items.nth(1).getByRole("button", { name: "Steer" }).click();
   await expect(items).toHaveText([/^Second, edited/]);
   await expect(log(chat(page))).toContainText("hangThird");
-  // Queue, beside the box, keeps a new one for after the reply.
+  // ⌘ and the box's button keeps a new one for after the reply.
   await box(chat(page)).fill("Fourth");
-  await chat(page).getByRole("button", { name: "Queue" }).click();
+  await chat(page)
+    .locator("form")
+    .getByRole("button", { name: "Steer" })
+    .click({ modifiers: ["ControlOrMeta"] });
   await expect(items).toHaveText([/^Second, edited/, /^Fourth/]);
   await items.nth(1).getByRole("button", { name: "Remove" }).click();
   await expect(items).toHaveText([/^Second, edited/]);
@@ -440,33 +443,48 @@ test("an older read of the queue never undoes a newer change", async ({
   await expect(items).toHaveText([/^Second, edited/]);
 });
 
-test("while a reply runs, Enter steers a message into it, as your message; with Queue chosen in Settings, it waits for the reply's end", async ({
+test("while a reply runs, the box's one button is Stop until you type; then Enter steers into the reply and ⌘Enter queues; with Queue chosen in Settings, the other way round", async ({
   page,
   rufi,
 }) => {
   await opened(page, rufi);
   await send(page, "hang");
+  const button = (name: string) => chat(page).getByRole("button", { name });
+  const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
+  await expect(button("Stop")).toBeVisible();
   await box(chat(page)).fill("Only the latest results, please");
-  for (const name of ["Steer", "Queue", "Stop"]) {
-    await expect(chat(page).getByRole("button", { name })).toBeVisible();
-  }
+  await expect(button("Stop")).toHaveCount(0);
+  await expect(button("Steer")).toBeVisible();
+  await expect(button("Queue")).toHaveCount(0);
   await box(chat(page)).press("Enter");
   await expect(box(chat(page))).toHaveValue("");
   await expect(log(chat(page))).toContainText(
     "hangOnly the latest results, please",
   );
-  const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
   await expect(waiting).toHaveCount(0);
+  await expect(button("Stop")).toBeVisible();
+  await box(chat(page)).fill("Then my ferritin");
+  await box(chat(page)).press("ControlOrMeta+Enter");
+  await expect(waiting).toContainText("Then my ferritin");
 
   await sidebar(page).getByRole("link", { name: "Settings" }).click();
   await page.getByRole("radio", { name: "Queue" }).check();
   await expect(page.getByRole("radio", { name: "Queue" })).toBeChecked();
   await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
-  await box(page).fill("And after that, my ferritin");
+  await box(page).fill("And after that, my iron");
+  await expect(page.getByRole("button", { name: "Queue" })).toBeVisible();
   await box(page).press("Enter");
   await expect(
     page.getByRole("region", { name: "Waiting messages" }),
-  ).toContainText("And after that, my ferritin");
+  ).toContainText("And after that, my iron");
+  await box(page).fill("Only HbA1c");
+  await page
+    .getByRole("button", { name: "Queue" })
+    .click({ modifiers: ["ControlOrMeta"] });
+  await expect(log(page)).toContainText("Only HbA1c");
+  await expect(
+    page.getByRole("region", { name: "Waiting messages" }),
+  ).not.toContainText("Only HbA1c");
 });
 
 test("the menu always shows Rufi's four models: a provider that isn't signed in shows its two greyed, with a line that signs in", async ({
@@ -513,7 +531,7 @@ test("the menu always shows Rufi's four models: a provider that isn't signed in 
   ).toHaveCount(0);
 });
 
-test("the model and effort are chosen in the box, also in the bar, and kept for the chat; a new effort doesn't start a new thread; neither changes while a reply runs", async ({
+test("the model and effort are chosen in one go in the box's menu, which stays open until a click outside, the button or Esc; kept for the chat, also in the bar; a change shows as a quiet line before the next reply, also after a reload; neither changes while a reply runs", async ({
   page,
   rufi,
 }) => {
@@ -522,28 +540,38 @@ test("the model and effort are chosen in the box, also in the bar, and kept for 
     page.getByRole("button", { name: `Model and effort: ${now}` });
   const option = (name: string) =>
     page.getByRole("menuitemradio", { name, exact: true });
-  // The bar shows both before the panel opens.
+  const menu = page.getByRole("menu");
+  const changed = log(chat(page)).getByText(/^Model changed/);
+  // The bar shows both before the panel opens; one menu sets both.
   await expect(log(chat(page))).toHaveCount(0);
-  await expect(choice("GPT-6-Astra, Medium")).toBeVisible();
   await choice("GPT-6-Astra, Medium").click();
   await expect(option("GPT-6-Astra")).toHaveAttribute("aria-checked", "true");
   await expect(option("Medium")).toHaveAttribute("aria-checked", "true");
   await option("GPT-6.1-Sol").click();
-  await expect(choice("GPT-6.1-Sol, Medium")).toBeVisible();
-  await send(page, "Hello");
-  await expect(log(chat(page)).locator(".reply")).toHaveText("ok:Hello");
-
-  // A new effort applies from the next reply, with no quiet line.
-  await choice("GPT-6.1-Sol, Medium").click();
+  await expect(option("GPT-6.1-Sol")).toHaveAttribute("aria-checked", "true");
   await option("XHigh").click();
   await expect(choice("GPT-6.1-Sol, XHigh")).toBeVisible();
-  await send(page, "Again");
-  await expect(log(chat(page)).locator(".reply").last()).toHaveText("ok:Again");
-  await expect(log(chat(page))).not.toContainText("New thread started");
+  await expect(menu).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await send(page, "Hello");
+  await expect(log(chat(page)).locator(".reply")).toHaveText("ok:Hello");
   expect(await ranOn(rufi)).toEqual({ model: "gpt-6.1-sol", effort: "xhigh" });
+  // The chat's first reply: nothing changed.
+  await expect(changed).toHaveCount(0);
+
+  // Only the effort: it applies from the next reply, which a line comes before.
   await choice("GPT-6.1-Sol, XHigh").click();
   await option("High").click();
   await expect(choice("GPT-6.1-Sol, High")).toBeVisible();
+  await log(chat(page)).click();
+  await expect(menu).toHaveCount(0);
+  await send(page, "Again");
+  await expect(log(chat(page)).locator(".reply").last()).toHaveText("ok:Again");
+  await expect(changed).toHaveCount(1);
+  await expect(changed.locator("xpath=following-sibling::*[1]")).toContainText(
+    "Again",
+  );
 
   // Neither changes while a reply runs.
   await send(page, "hang");
@@ -552,23 +580,32 @@ test("the model and effort are chosen in the box, also in the bar, and kept for 
   await expect(chat(page).getByRole("alert")).toHaveText(
     "Stop the reply before changing the model.",
   );
-  await choice("GPT-6.1-Sol, High").click();
   await option("Low").click();
   await expect(chat(page).getByRole("alert")).toHaveText(
     "Stop the reply before changing the effort.",
   );
+  await page.keyboard.press("Escape");
   await chat(page).getByRole("button", { name: "Stop" }).click();
   await expect(log(chat(page))).toContainText("Stopped.");
   await choice("GPT-6.1-Sol, High").click();
   await option("GPT-6-Astra").click();
   await expect(choice("GPT-6-Astra, High")).toBeVisible();
+  // The button closes it again.
+  await choice("GPT-6-Astra, High").click();
+  await expect(menu).toHaveCount(0);
+  await send(page, "On Astra");
+  await expect(log(chat(page)).locator(".reply").last()).toHaveText(
+    "ok:On Astra",
+  );
+  await expect(changed).toHaveCount(2);
 
-  // Kept for the chat: in the bar after a reload, and in the chat page's box,
-  // whose top has nothing to choose.
+  // Kept for the chat: in the bar after a reload, with its lines, and in the
+  // chat page's box, whose top has nothing to choose.
   await page.reload();
   await expect(choice("GPT-6-Astra, High")).toBeVisible();
   await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
   await expect(toolbar(page)).toHaveText("Chat with Rufi");
+  await expect(log(page).getByText(/^Model changed/)).toHaveCount(2);
   await expect(
     page.getByRole("main").getByRole("button", { name: /^Model/ }),
   ).toHaveCount(1);
@@ -893,7 +930,6 @@ test("the AI's memory: a compaction shows while it runs, then as done; the meter
   await expect(quiet("Chat history compacted")).toBeVisible();
   await expect(quiet("Compacting chat history…")).toHaveCount(0);
   await expect(log(chat(page)).locator(".reply")).toHaveText("ok:Hello");
-  await expect(log(chat(page))).not.toContainText("New thread started");
 
   await expect(meter).toHaveAccessibleName("Context used: 38%");
   await expect(meter).toHaveText("38%");
@@ -934,10 +970,8 @@ test("the AI's memory: a compaction shows while it runs, then as done; the meter
   await stop.click();
   await waiting.getByRole("button", { name: "New thread" }).click();
   await expect(log(chat(page)).locator(".reply").last()).toHaveText("ok:Again");
-  await expect(quiet("New thread started")).toHaveCount(1);
-  await expect(
-    quiet("New thread started").locator("xpath=following-sibling::*[1]"),
-  ).toContainText("Again");
+  // A new thread on the same model and effort: no line.
+  await expect(log(chat(page)).getByText(/^Model changed/)).toHaveCount(0);
   await expect(waiting).toHaveCount(0);
   // The new thread hasn't said how full it is.
   await expect(meter).toHaveCount(0);
@@ -1094,6 +1128,11 @@ test("a click outside the panel steps back to the bar and keeps what you typed; 
     .getByRole("button", { name: /^Model and effort: / })
     .click();
   await page.getByRole("menuitemradio", { name: "GPT-6.1-Sol" }).click();
+  // The menu stays open; its button closes it, and the panel stays.
+  await expect(page.getByRole("menu")).toBeVisible();
+  await chat(page)
+    .getByRole("button", { name: /^Model and effort: / })
+    .click();
   await expect(page.getByRole("menu")).toHaveCount(0);
   await expect(minimise).toBeVisible();
 

@@ -405,6 +405,7 @@ CREATE TABLE turns (
   resets_at TEXT,              -- a usage limit's reset time, when the provider gave one
   started_at TEXT NOT NULL,
   ended_at TEXT,
+  effort TEXT,                 -- the effort it ran with, as Rufi passed it; null: from before replies kept it
   UNIQUE (person_id, id),
   UNIQUE (chat_id, agent_turn_id),
   FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id)
@@ -745,4 +746,4 @@ CREATE TABLE agent_cursor (
 ) STRICT;
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 25;
+PRAGMA user_version = 26;

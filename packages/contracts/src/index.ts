@@ -238,10 +238,23 @@ export const EndReason = Schema.Literals([
 ]);
 export type EndReason = typeof EndReason.Type;
 
+/** A reply's model and the effort it ran with; null: from before replies kept it. */
+const RanOn = Schema.Struct({
+  model: Schema.String,
+  effort: Schema.NullOr(Schema.String),
+});
+
 /** One reply the AI ran: how it went, and how it ended. */
 export const Turn = Schema.Struct({
   id: Schema.String,
   model: Schema.String,
+  /** The effort it ran with; null: from before replies kept it. */
+  effort: Schema.NullOr(Schema.String),
+  /**
+   * What the reply before it in the chat ran on, also when that one isn't
+   * on the page; null: it is the chat's first.
+   */
+  before: Schema.NullOr(RanOn),
   status: Schema.Literals(["running", "completed", "interrupted", "failed"]),
   endReason: Schema.NullOr(EndReason),
   /** Why it didn't complete, in plain words. */
@@ -493,8 +506,9 @@ export const SubAgents = Schema.Struct({ agents: Schema.Array(SubAgent) });
 /**
  * One line of a sub-agent's Activity, as its agent reported it: a message
  * it took (`from` whom), its answer (reply), a note or a step (activity),
- * its thinking, a question it asked (`detail`: the options), or how a turn
- * that didn't finish ended.
+ * its thinking, a question it asked (`detail`: the options), how a turn
+ * that didn't finish ended, or that a turn ran on another model or effort
+ * than the one before (model).
  */
 export const AgentLine = Schema.Struct({
   id: Schema.String,
@@ -505,7 +519,10 @@ export const AgentLine = Schema.Struct({
     "reasoning",
     "question",
     "end",
+    "model",
   ]),
+  /** A model line: the turn before ran on `from`, this one on `to`. */
+  changed: Schema.optionalKey(Schema.Struct({ from: RanOn, to: RanOn })),
   text: Schema.String,
   from: Schema.optionalKey(Schema.String),
   activity: Schema.NullOr(ActivityKind),

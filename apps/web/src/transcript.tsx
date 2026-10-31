@@ -50,6 +50,7 @@ import { unified } from "unified";
 import remend from "remend";
 import {
   AgentLog,
+  modelOf,
   type ActivityShown,
   type AgentLine,
   type Chip,
@@ -84,6 +85,7 @@ import {
   workingOf,
 } from "./transcript-state.ts";
 import { Dog, LiveDog } from "./dog.tsx";
+import { effortName } from "./model-menu.tsx";
 import { Button, buttonLook, ICON, Problem } from "./ui.tsx";
 import { anyWaiting, WaitingView } from "./waiting.tsx";
 
@@ -490,8 +492,8 @@ function Line({ live, line }: { live: StoreApi<Live>; line: string }) {
   switch (line.slice(0, 2)) {
     case "d:":
       return <DayLine live={live} id={id} />;
-    case "a:":
-      return <QuietLine>New thread started</QuietLine>;
+    case "m:":
+      return <ModelChanged live={live} turnId={id} />;
     case "k:":
       return <QuietLine>Compacting chat history…</QuietLine>;
     case "c:":
@@ -614,10 +616,39 @@ function DayLine({ live, id }: { live: StoreApi<Live>; id: string }) {
   );
 }
 
-/** Where a new AI thread started, or Codex compacts the chat history. */
+/** Where the model or effort changed, or Codex compacts the chat history. */
 function QuietLine({ children }: { children: ReactNode }) {
   return <p className="text-center text-xs text-muted italic">{children}</p>;
 }
+
+/** "GPT-6-Astra XHigh": a model and effort by their names; no effort, none. */
+const ranOn = (model: string, effort: string | null) =>
+  [modelOf(model)?.name ?? model, effort === null ? [] : effortName(effort)]
+    .flat()
+    .join(" ");
+
+/**
+ * Before a reply on another model or effort than the one before: both, as
+ * "Model changed: GPT-6-Astra XHigh → Claude Opus 5.5 High".
+ */
+function ModelChanged({
+  live,
+  turnId,
+}: {
+  live: StoreApi<Live>;
+  turnId: string;
+}) {
+  const turn = useStore(live, (state) => state.turns[turnId]);
+  if (!turn?.before) return null;
+  return <QuietLine>{modelLine(turn.before, turn)}</QuietLine>;
+}
+
+/** The words of a model change, from what ran before to what runs now. */
+const modelLine = (
+  from: { model: string; effort: string | null },
+  to: { model: string; effort: string | null },
+) =>
+  `Model changed: ${ranOn(from.model, from.effort)} → ${ranOn(to.model, to.effort)}`;
 
 /** Your message in the chat, with what you added to it. */
 function MessageView({
@@ -1269,6 +1300,10 @@ function AgentLineView({
       return (
         <StepView entry={{ ...line, kind: line.kind }} details={details} />
       );
+    case "model":
+      return line.changed ? (
+        <QuietLine>{modelLine(line.changed.from, line.changed.to)}</QuietLine>
+      ) : null;
   }
 }
 

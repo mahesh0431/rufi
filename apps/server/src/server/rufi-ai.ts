@@ -472,7 +472,11 @@ export async function startRufiAi(
         await transcripts.applyStart(
           row,
           ref,
-          { id: row.threadId ?? "", model: row.model ?? row.threadModel ?? "" },
+          {
+            id: row.threadId ?? "",
+            model: row.model ?? row.threadModel ?? "",
+            effort: row.effort,
+          },
           inputs,
           messages ?? [],
           advance,

@@ -191,6 +191,15 @@ export function clockOf(
   };
 }
 
+/**
+ * The reply ran on another model or effort than the reply before it in the
+ * chat. A reply from before replies kept their effort says only a new model.
+ */
+const modelChanged = ({ model, effort, before }: Turn) =>
+  before !== null &&
+  (before.model !== model ||
+    (before.effort !== null && effort !== null && before.effort !== effort));
+
 /** A reply that ended without completing says how. */
 const cut = (turn: Turn) =>
   turn.status !== "running" && turn.status !== "completed";
@@ -212,7 +221,7 @@ export const inActivity = (entry: Entry) =>
 
 /**
  * What the transcript shows, in order, each as a key: "d:" a day's line
- * before an entry, "a:" a new thread started for a turn, "k:" a compaction
+ * before an entry, "m:" the model or effort changed for a turn, "k:" a compaction
  * running, "c:" a compaction completed, "e:" an entry, "s:" a turn's
  * Activity, "x:" how a turn ended. A turn's Activity takes the place of its
  * first line while it runs, or comes after its last one before it has a
@@ -254,12 +263,12 @@ export function lines(state: Transcript): string[] {
         order.findLast(
           (id) => (entries[id]?.createdAt ?? "") <= turn.startedAt,
         ) ?? "";
-      if (turn.newThread) add(after, at, `a:${turn.id}`);
+      if (modelChanged(turn)) add(after, at, `m:${turn.id}`);
       if (turn.status === "running") add(after, at, `s:${turn.id}`);
       if (cut(turn)) add(after, at, `x:${turn.id}`);
       continue;
     }
-    if (turn.newThread) add(before, opens, `a:${turn.id}`);
+    if (modelChanged(turn)) add(before, opens, `m:${turn.id}`);
     const step = firstStep.get(turn.id);
     const answer = lastReply.get(turn.id);
     if (turn.status !== "running" && answer !== undefined) {

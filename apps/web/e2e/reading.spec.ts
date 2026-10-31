@@ -284,7 +284,8 @@ test("a file message waiting when a backup is made waits held after a restore, w
     timeout: FILE_WORK_MS,
   });
   await box.fill("Sort this please");
-  await chat(page).getByRole("button", { name: "Queue" }).click();
+  // ⌘Enter queues it for after the reply.
+  await box.press("ControlOrMeta+Enter");
   await expect(
     chat(page).getByRole("region", { name: "Waiting messages" }),
   ).toContainText("Sort this please");
