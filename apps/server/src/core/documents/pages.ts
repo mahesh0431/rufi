@@ -2,8 +2,7 @@
 // it. A PDF page is drawn as an image in the worker, with the page's own text
 // when the PDF has text; a JPEG or PNG is used as it is; a HEIC through its
 // display copy (JPEG). Drawn pages are a cache: made again when missing,
-// never backed up. The reader's get_page and the chat's get_documents both
-// read pages here, so the AI sees the same page either way.
+// never backed up. get_documents reads pages here, for every agent.
 import { readFile } from "node:fs/promises";
 import type { Store } from "../store/database.ts";
 import { fileGate, type FileGate } from "./gate.ts";

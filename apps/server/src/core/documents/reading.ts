@@ -40,7 +40,7 @@ interface Usage {
   outputTokens: number;
   reasoningOutputTokens: number;
   totalTokens: number;
-  /** Calls to get_page and save_page. */
+  /** An older reader's calls to get_page and save_page. */
   looks: number;
   saves: number;
   compactions: number;

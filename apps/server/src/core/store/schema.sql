@@ -73,10 +73,10 @@ CREATE TABLE document_pages (
   file_id TEXT REFERENCES files (id), -- null once its document is deleted
   page_in_file INTEGER NOT NULL, -- 1, 2, 3... in the file
   file_name TEXT NOT NULL,     -- the file's name as it was added
-  -- The reader's notebook: this page's entry (JSON, as save_page checked it)
-  -- and the job that saved it. A later save_page for the page replaces it.
-  -- The reader that copies keeps its copy in page_copies and sets only the
-  -- job, attempt and time here, with no entry.
+  -- An older reader's notebook: this page's entry (JSON, as its save_page
+  -- checked it) and the job that saved it. A reading saved now keeps its
+  -- copy in page_copies and sets only the job, attempt and time here, with
+  -- no entry.
   entry TEXT,
   entry_job_id TEXT,
   entry_attempt INTEGER,      -- run that saved it; 0 if that run failed
@@ -92,15 +92,10 @@ CREATE TABLE document_pages (
   FOREIGN KEY (person_id, entry_job_id) REFERENCES jobs (person_id, id)
 ) STRICT;
 
--- A document's readings, one row per job, run one at a time across Rufi.
--- A job is made when the reply of the message that sent its document
--- starts, and runs in Rufi's part of that reply: queued or running only
--- while that reply lives, failed when it ends otherwise or at the next
--- start. A reading targets some of its document's pages (all of them
--- first; a read-again only the failed ones), and each run of it is a new
--- attempt: save_page accepts entries only from the running job's current
--- attempt, for its target pages. Only a reader turn that completed
--- normally finishes the job.
+-- A document's readings, one row per job. A reader's save_reading writes
+-- one whole, done (save-reading.ts). An older reader's job ran in Rufi's
+-- part of a reply, one attempt at a time, and was queued or running only
+-- while it ran; one that hadn't finished failed when Rufi upgraded.
 CREATE TABLE jobs (
   id TEXT PRIMARY KEY,
   person_id TEXT NOT NULL,

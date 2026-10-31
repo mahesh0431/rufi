@@ -63,7 +63,7 @@ const Item = Schema.Struct({
   ),
 });
 
-/** A page's entry, as the reader saves it with save_page. */
+/** A page's entry, as an older reader saved it with save_page. */
 export const Entry = Schema.Struct({
   outcome: Schema.Literals(["read", "nothing_here", "unreadable"]).annotate({
     description:

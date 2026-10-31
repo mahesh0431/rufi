@@ -12,7 +12,7 @@ A family's health record on their Mac, with an AI that reads their documents and
 
 ## Tests
 
-- Code decides it: a code test with exact assertions. The AI decides it: a live test with the real AI on fictional data: `pnpm smoke` covers the agent, its instructions and tools; the reader pack covers the reader. Never mock the AI's judgement, and no test modes in `src`.
+- Code decides it: a code test with exact assertions. The AI decides it: a live test with the real AI on fictional data: `pnpm smoke` covers the agent, its instructions and tools. Never mock the AI's judgement, and no test modes in `src`.
 - A live test checks facts in code, such as what was saved and stored values against the fixture; what the AI's words mean gets a verdict from an AI judge or a person, never word matching in code.
 - Tests meet the `tdd` skill's bar and never show a window or take the focus.
 - Don't test purely visual sizes, colours, wrapping or layout (a screenshot shows them); the wording of copy, skills or tool descriptions; code restated (its constants, a copied list, its logic mirrored) or only wired; the words of an AI reply. Behaviour, so tested: a control visible to keyboard users and reachable by the pointer, and accessibility (axe, keyboard, reduced motion).
