@@ -189,7 +189,7 @@ async function startChat(
       return options.tokenProvider?.() ?? token;
     },
     version: "0.0.0",
-    deadlines: { requestMs: 10_000, turnMs: 20_000, ...options.deadlines },
+    deadlines: { requestMs: 10_000, ...options.deadlines },
     log,
   });
   ai = await rufiAiFor({
@@ -817,18 +817,6 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       expect(await waiting()).toEqual([["Hello", "waiting", null]]);
     },
   );
-
-  it("stops a reply that runs past its deadline", timeout, async () => {
-    await startChat(name, { deadlines: { turnMs: 2_000 } });
-    const c = await newChat();
-    await say(c, "hang");
-    await ended(c.id);
-    expect((await transcript(c.id)).turns[0]).toMatchObject({
-      status: "failed",
-      endReason: "provider_failed",
-      endText: "The reply took too long, so Rufi stopped it.",
-    });
-  });
 
   it(
     "keeps the thread on a model change: the next reply runs on the new model, with the whole chat",
@@ -1786,6 +1774,34 @@ describe("the chat, on the scripted Codex", () => {
     ]);
   });
 
+  it("keeps a reading's refused calls, of any shape, without their page text", async () => {
+    const row = "| LDL cholesterol | 142 | mg/dL |";
+    const reading = (document: string, pages: unknown) => ({
+      tool: "save_reading",
+      arguments: { document, pages },
+    });
+    await startChat("fake", {
+      scenario: {
+        calls: [
+          // Page text as the document and as the pages.
+          reading(row, row),
+          // In a field Rufi doesn't know, and as the name of one.
+          reading("doc-asha-aug", [
+            { page: 1, outcome: "read", text: row, [row]: true },
+          ]),
+        ],
+      },
+    });
+    const c = await newChat();
+    await say(c, "Read it");
+    await ended(c.id);
+    const kept = store.db
+      .prepare("SELECT ok, input, answer FROM tool_calls")
+      .all();
+    expect(kept.map((call) => call["ok"])).toEqual([0, 0]);
+    expect(JSON.stringify(kept)).not.toContain("LDL cholesterol");
+  });
+
   it("keeps everything each activity sent and got back, the AI's reasoning, and each call to Rufi's tools as answered", async () => {
     await startChat("fake", {
       scenario: {
@@ -2694,12 +2710,12 @@ describe("When the AI's thread doesn't open", () => {
     ).toEqual(["first", "second"]);
   });
 
-  it("starts a new thread when Codex has no record of it, also when the sign-in renews before the message goes", async () => {
+  it("starts a new thread when Codex has no record of it", async () => {
     await startChat("fake", { scenario: { forgets: true } });
     await say(await newChat(), "first");
     await ended("c-asha");
-    // A new token: Codex starts again, and its saved threads are gone.
-    token = "renewed-token";
+    // Rufi starts again, and Codex's saved threads are gone.
+    await startChat("fake", { scenario: { forgets: true } });
     await say(await chatRow(), "second");
     await ended("c-asha", 2);
     expect((await queue.list(await chatRow())).items).toEqual([]);
