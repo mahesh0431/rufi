@@ -1343,16 +1343,12 @@
                         "due": {
                           "anyOf": [
                             {
-                              "anyOf": [
-                                {
-                                  "$ref": "#/$defs/DateSaid"
-                                },
-                                {
-                                  "type": "string",
-                                  "enum": [
-                                    "next_visit"
-                                  ]
-                                }
+                              "$ref": "#/$defs/DateSaid"
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "next_visit"
                               ]
                             },
                             {
