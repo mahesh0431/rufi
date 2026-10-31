@@ -239,7 +239,8 @@ export function TestPage({
 
 /**
  * Its numbers in the test's unit, when either differs from the printed
- * ones: "1.1 mg/dL" beside "97 µmol/L".
+ * ones, with its stored comparator: "1.1 mg/dL" beside "97 µmol/L", "<0.5
+ * mg/dL" beside "<45 µmol/L".
  */
 function inTestUnit(row: ResultRow, unit: string | undefined) {
   if (row.test_number === undefined) return undefined;
@@ -253,7 +254,7 @@ function inTestUnit(row: ResultRow, unit: string | undefined) {
     row.test_second_number === undefined
       ? String(row.test_number)
       : `${String(row.test_number)}/${String(row.test_second_number)}`;
-  return join(numbers, unit);
+  return join(`${row.comparator ?? ""}${numbers}`, unit);
 }
 
 /** A value on a test's page: its date opens it to its sources and history. */

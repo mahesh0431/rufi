@@ -283,12 +283,12 @@ test("a test's page draws one line across labs at the numbers in its unit, then 
 }) => {
   await rufi.family(
     `INSERT INTO tests (id, person_id, name, section, unit) VALUES ('tst-ferritin', 'asha', 'Ferritin', 'Iron', 'µg/L');
-     INSERT INTO results (id, person_id, report_id, category, test_name, value_text, value_number, unit, reference_range, flag_text, measured_at, entered_at, test_id, test_number) VALUES
-       ('fer-0', 'asha', NULL, 'lab', 'Ferritin (CLIA)', '0.022', 0.022, 'mg/L', NULL, NULL, '2024-05-01', '2026-10-01T10:00:00Z', 'tst-ferritin', 22),
-       ('fer-w', 'asha', NULL, 'lab', 'Ferritin', 'Haemolysed', NULL, NULL, NULL, NULL, '2025-01-10', '2026-10-01T10:00:00Z', 'tst-ferritin', NULL),
-       ('fer-1', 'asha', NULL, 'lab', 'Ferritin', '31', 31, 'µg/L', '30 - 400', NULL, '2025-10-12', '2026-10-01T10:00:00Z', 'tst-ferritin', 31),
-       ('fer-2', 'asha', NULL, 'lab', 'Ferritin', '18', 18, 'µg/L', '30 - 400', 'Low', '2026-03-04', '2026-10-01T10:00:00Z', 'tst-ferritin', 18),
-       ('fer-3', 'asha', 'rep-asha-sep', 'lab', 'Ferritin', '26', 26, 'µg/L', '30 - 400', 'Low', '2026-09-01', '2026-10-01T10:00:00Z', 'tst-ferritin', 26);`,
+     INSERT INTO results (id, person_id, report_id, category, test_name, value_text, comparator, value_number, unit, reference_range, flag_text, measured_at, entered_at, test_id, test_number) VALUES
+       ('fer-0', 'asha', NULL, 'lab', 'Ferritin (CLIA)', '<0.03', '<', 0.03, 'mg/L', NULL, NULL, '2024-05-01', '2026-10-01T10:00:00Z', 'tst-ferritin', 30),
+       ('fer-w', 'asha', NULL, 'lab', 'Ferritin', 'Haemolysed', NULL, NULL, NULL, NULL, NULL, '2025-01-10', '2026-10-01T10:00:00Z', 'tst-ferritin', NULL),
+       ('fer-1', 'asha', NULL, 'lab', 'Ferritin', '31', NULL, 31, 'µg/L', '30 - 400', NULL, '2025-10-12', '2026-10-01T10:00:00Z', 'tst-ferritin', 31),
+       ('fer-2', 'asha', NULL, 'lab', 'Ferritin', '18', NULL, 18, 'µg/L', '30 - 400', 'Low', '2026-03-04', '2026-10-01T10:00:00Z', 'tst-ferritin', 18),
+       ('fer-3', 'asha', 'rep-asha-sep', 'lab', 'Ferritin', '26', NULL, 26, 'µg/L', '30 - 400', 'Low', '2026-09-01', '2026-10-01T10:00:00Z', 'tst-ferritin', 26);`,
   );
   await rufi.start();
   await page.goto(rufi.link());
@@ -297,7 +297,7 @@ test("a test's page draws one line across labs at the numbers in its unit, then 
     .click();
   // Its row's small trend: its line's latest values, the converted one too.
   const said =
-    "Ferritin (µg/L) over time: 22 on 1 May 2024, 31 on 12 Oct 2025, 18 on 4 Mar 2026, 26 on 1 Sep 2026. Lab range 30 - 400 µg/L";
+    "Ferritin (µg/L) over time: <30 on 1 May 2024, 31 on 12 Oct 2025, 18 on 4 Mar 2026, 26 on 1 Sep 2026. Lab range 30 - 400 µg/L";
   const ferritin = page
     .getByRole("listitem")
     .filter({ has: page.getByRole("link", { name: "Ferritin" }) });
@@ -313,7 +313,7 @@ test("a test's page draws one line across labs at the numbers in its unit, then 
     name: `${said} · Sunrise Labs`,
   });
   await expect(line).toContainText("Lab range 30 - 400 µg/L · Sunrise Labs");
-  await expect(line).toContainText("22");
+  await expect(line).toContainText("<30");
   const values = page.getByRole("region", { name: "5 values" });
   await expect(values.getByRole("button", { name: /\d{4}$/ })).toHaveText([
     "1 Sep 2026",
@@ -328,9 +328,10 @@ test("a test's page draws one line across labs at the numbers in its unit, then 
       .filter({ has: page.getByRole("button", { name: date }) });
   await expect(value("4 Mar 2026")).toContainText("18 µg/LFerritin");
   await expect(value("4 Mar 2026")).toContainText("30 - 400Low");
-  // Another lab's unit: as printed, with its number in the test's unit.
+  // Another lab's unit: as printed, with its number in the test's unit,
+  // still a bound.
   await expect(value("1 May 2024")).toContainText(
-    "0.022 mg/L= 22 µg/LFerritin (CLIA)Typed in the chat",
+    "<0.03 mg/L= <30 µg/LFerritin (CLIA)Typed in the chat",
   );
   await expect(value("10 Jan 2025")).toContainText("HaemolysedNot on the line");
   await expect(value("1 May 2024")).not.toContainText("Not on the line");
