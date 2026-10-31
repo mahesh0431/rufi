@@ -778,11 +778,18 @@ describe("a document Rufi AI split from an add", () => {
         drafts: [
           {
             page: 1,
+            reading: "job-pile",
             test_name: "HbA1c",
             value_text: "6.9",
             quote: "HbA1c | 6.9",
           },
-          { page: 2, test_name: "TSH", value_text: "2.3", quote: "TSH | 2.3" },
+          {
+            page: 2,
+            reading: "job-pile",
+            test_name: "TSH",
+            value_text: "2.3",
+            quote: "TSH | 2.3",
+          },
         ],
       },
     );

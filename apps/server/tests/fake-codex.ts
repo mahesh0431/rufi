@@ -120,7 +120,9 @@ export interface Scenario {
    * `id` is Codex's call id (`call-<n>`; `exec-…` for a call made from exec).
    * The text "$document" in a call's arguments becomes the document the
    * turn's input names: in Rufi's note on what its reader copied
-   * ("(document <id>)"), or else the first document chip.
+   * ("(document <id>)"), or else the first document chip. A draft's
+   * reading "$reading" becomes the reading of its page's copy, which the
+   * fake reads with get_documents first, as the model would (not a step).
    */
   calls?: {
     id?: string;
@@ -485,6 +487,33 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
               JSON.stringify(scripted.arguments).replaceAll("$document", named),
             ) as unknown,
           };
+    const drafts = (call.arguments as { drafts?: unknown } | null)?.drafts;
+    if (
+      thread.mcp &&
+      named !== undefined &&
+      Array.isArray(drafts) &&
+      JSON.stringify(drafts).includes('"$reading"')
+    ) {
+      const read = await callTool(thread.mcp, {
+        name: "get_documents",
+        arguments: { document: named, copies: true },
+        callId: `${id ?? `call-${String(i)}`}-copies`,
+        threadId,
+        turnId,
+      });
+      const [text] = (read.result?.["content"] ?? []) as { text: string }[];
+      const copies =
+        (
+          JSON.parse(text?.text ?? "{}") as {
+            result?: { copies?: { page: number; reading?: string }[] };
+          }
+        ).result?.copies ?? [];
+      for (const draft of drafts as { page: number; reading?: string }[]) {
+        if (draft.reading === "$reading") {
+          draft.reading = copies.find((c) => c.page === draft.page)?.reading;
+        }
+      }
+    }
     // Like Codex: the item starts, then the call goes to Rufi's MCP server.
     const item = {
       id: id ?? `call-${String(i)}`,

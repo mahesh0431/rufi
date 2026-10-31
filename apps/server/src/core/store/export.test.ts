@@ -369,12 +369,13 @@ second line', NULL, '');
     );
   });
 
-  it("holds every table, a README and its own record, and nothing of the sign-in, the AI's files or logs", async () => {
+  it("holds every table, a README and its own record, and nothing of the sign-in, the AI's files, the agent database or logs", async () => {
     const sentinel = "NOT FOR THE EXPORT";
     await writeFile(join(home, "chatgpt.json"), `{"hostId":"${sentinel}"}`);
     await writeFile(join(home, "models.json"), `{"models":["${sentinel}"]}`);
     await mkdir(join(home, "codex"));
     await writeFile(join(home, "codex", "config.toml"), sentinel);
+    await writeFile(join(home, "agents.sqlite"), sentinel);
     await mkdir(join(home, "logs"));
     await writeFile(join(home, "logs", "rufi.log"), sentinel);
 
