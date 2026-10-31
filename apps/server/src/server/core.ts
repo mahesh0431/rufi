@@ -288,9 +288,14 @@ export const startCore = (options: CoreOptions) =>
     const isProvider = (id: string): id is Provider =>
       id === "codex" || id === "claude";
     // How each provider is signed in, as it last said (server/signin.ts).
+    // Each ends, with its provider's process, before Rufi stops.
     const signedIn = yield* Effect.acquireRelease(
       Effect.sync(() => keptSignIns(signIns)),
-      (kept) => Effect.sync(kept.close),
+      (kept) => Effect.promise(() => kept.close()),
+    );
+    const signIn = yield* Effect.acquireRelease(
+      Effect.sync(() => signInFlow(signIns, log, signedIn.refresh)),
+      (flow) => Effect.promise(() => flow.close()),
     );
     const agentSystem = yield* Effect.acquireRelease(
       attempt(() =>
@@ -496,7 +501,7 @@ export const startCore = (options: CoreOptions) =>
         folder: aiSandbox(home).folder,
         generated: generatedImages(home),
       }),
-      signIn: signInFlow(signIns, log, signedIn.refresh),
+      signIn,
       launcher,
       launchUrl,
       ...(options.screens !== undefined && { screens: options.screens }),
