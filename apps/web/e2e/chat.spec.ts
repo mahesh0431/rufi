@@ -134,6 +134,7 @@ test("the bar, the panel and Chat with Rufi are one chat: the reply streams in, 
   // The reminder is under the panel, where answers are read.
   await expect(chat(page).getByText(/AI can make mistakes/)).toHaveCount(0);
   await expect(sidebar(page).getByRole("link")).toHaveText([
+    "Asha Fictional",
     "Chat with Rufi",
     "Overview",
     "Lab results7",
