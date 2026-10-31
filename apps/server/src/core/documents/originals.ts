@@ -21,9 +21,17 @@ export const originalPath = (home: string, id: string) =>
   join(filesPath(home), id);
 export const displayPath = (home: string, id: string) =>
   join(home, "cache", "display", `${id}.jpg`);
-/** A PDF page drawn for the AI, and its text: a cache like display copies. */
-export const pagePath = (home: string, id: string, page: number) =>
-  join(home, "cache", "pages", id, `${String(page)}.png`);
+/**
+ * A PDF page drawn for the AI, at the usual size or full size, and its
+ * text: a cache like display copies.
+ */
+export const pagePath = (
+  home: string,
+  id: string,
+  page: number,
+  full = false,
+) =>
+  join(home, "cache", "pages", id, `${String(page)}${full ? "-full" : ""}.png`);
 export const pageTextPath = (home: string, id: string, page: number) =>
   join(home, "cache", "pages", id, `${String(page)}.json`);
 

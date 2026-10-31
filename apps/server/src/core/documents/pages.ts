@@ -88,14 +88,18 @@ export async function displayCopy(
   return display;
 }
 
-/** A PDF page drawn and its text, from the cache or drawn now and kept. */
+/**
+ * A PDF page drawn, at full size when `full`, and its text, from the cache
+ * or drawn now and kept.
+ */
 async function drawn(
   home: string,
   fileId: string,
   page: number,
+  full: boolean,
   publish: Publish,
 ): Promise<{ png: Uint8Array; text: string | undefined } | undefined> {
-  const png = await readIfThere(pagePath(home, fileId, page));
+  const png = await readIfThere(pagePath(home, fileId, page, full));
   const meta = await readIfThere(pageTextPath(home, fileId, page));
   if (png && meta) {
     const { text } = JSON.parse(new TextDecoder().decode(meta)) as {
@@ -103,11 +107,15 @@ async function drawn(
     };
     return { png, text: text ?? undefined };
   }
-  const made = await draw(await readFile(originalPath(home, fileId)), page);
+  const made = await draw(
+    await readFile(originalPath(home, fileId)),
+    page,
+    full,
+  );
   if (!made.ok) return undefined;
   // The text last: a page counts as kept once both are there.
   await publish(fileId, async () => {
-    await keepCached(pagePath(home, fileId, page), made.png);
+    await keepCached(pagePath(home, fileId, page, full), made.png);
     await keepCached(
       pageTextPath(home, fileId, page),
       new TextEncoder().encode(JSON.stringify({ text: made.text ?? null })),
@@ -136,13 +144,15 @@ export function pages(store: Store, home: string, gate: FileGate = fileGate()) {
     },
 
     /**
-     * Page `position` of the person's document `documentId`; undefined when
+     * Page `position` of the person's document `documentId`, a PDF's drawn
+     * at full size when `full` (a photo is always whole); undefined when
      * that person has no such document or page.
      */
     page: async (
       personId: string,
       documentId: string,
       position: number,
+      full = false,
     ): Promise<PageView | undefined> => {
       const all = await db
         .selectFrom("document_pages as p")
@@ -195,6 +205,7 @@ export function pages(store: Store, home: string, gate: FileGate = fileGate()) {
             home,
             row.file_id,
             row.page_in_file,
+            full,
             publish,
           );
           if (!made) return { ...about, ok: false, reason: "couldnt_prepare" };
