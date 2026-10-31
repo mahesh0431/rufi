@@ -91,11 +91,16 @@ export interface Step {
   text: string | null;
   createdAt: string;
   updatedAt: string;
+  /** The sub-agent this step started. */
+  agent?: string;
 }
 
 /** Where the agent system keeps the steps of a chat's replies, by its agent. */
 export interface Steps {
-  /** What these turns of the agent reported, by agent turn. */
+  /**
+   * What these turns of the agent reported, by agent turn: each turn it
+   * keeps, also one that reported nothing.
+   */
   of: (
     agent: string,
     agentTurns: readonly string[],
@@ -168,12 +173,31 @@ const stepId = (turnId: string, itemId: string) =>
   `${turnId}.${Buffer.from(itemId).toString("base64url")}`;
 
 /**
+ * A step's status as the screens show it, as reported; a note or a
+ * reasoning is done once whole. One still running when its turn `ended`
+ * was stopped.
+ */
+export function shownStatus(
+  step: Pick<Step, "type" | "status">,
+  ended: boolean,
+): Entry["status"] {
+  const reported = step.status as Entry["status"];
+  return step.type === "step"
+    ? reported === "running" && ended
+      ? "stopped"
+      : reported
+    : reported === "done"
+      ? "done"
+      : ended
+        ? "stopped"
+        : "running";
+}
+
+/**
  * A step as the screens get it, after `anchor` by its place in its reply.
  * One still running when its reply ended was stopped.
  */
 function stepEntry(turn: TurnRow, step: Step, anchor: number): Entry {
-  const ended = turn.status !== "running";
-  const reported = step.status as Entry["status"];
   return {
     id: stepId(turn.id, step.id),
     seq: anchor + step.position / STEP_PLACES,
@@ -187,18 +211,10 @@ function stepEntry(turn: TurnRow, step: Step, anchor: number): Entry {
           ? (step.kind as ActivityKind)
           : null,
     detail: step.type === "step" ? step.detail : null,
-    status:
-      step.type === "step"
-        ? reported === "running" && ended
-          ? "stopped"
-          : reported
-        : reported === "done"
-          ? "done"
-          : ended
-            ? "stopped"
-            : "running",
+    status: shownStatus(step, turn.status !== "running"),
     createdAt: step.createdAt,
     updatedAt: step.updatedAt,
+    ...(step.agent !== undefined && { agent: step.agent }),
   };
 }
 
@@ -608,15 +624,17 @@ export function transcripts(
 
   /**
    * The steps of these replies the agent system keeps, as the screens get
-   * them. A reply whose steps Rufi stored itself (one from before) has
-   * none from there.
+   * them, and the replies whose steps it no longer keeps (`gone`: a new
+   * agent database). A reply whose steps Rufi stored itself (one from
+   * before) has none from there.
    */
   async function stepsOf(
     trx: Db,
     chat: ChatRow,
     turns: readonly TurnRow[],
-  ): Promise<Entry[]> {
-    if (!steps) return [];
+  ): Promise<{ entries: Entry[]; gone: Set<string> }> {
+    const gone = new Set<string>();
+    if (!steps) return { entries: [], gone };
     const fresh: (TurnRow & { agent_turn_id: string })[] = [];
     for (const turn of turns) {
       if (turn.agent_turn_id === null) continue;
@@ -638,19 +656,21 @@ export function transcripts(
       if (!stored) fresh.push({ ...turn, agent_turn_id: turn.agent_turn_id });
     }
     const agent = await rootOf(trx, chat);
-    if (fresh.length === 0 || agent === undefined) return [];
+    if (fresh.length === 0 || agent === undefined) return { entries: [], gone };
     const kept = steps.of(
       agent,
       fresh.map((turn) => turn.agent_turn_id),
     );
     const out: Entry[] = [];
     for (const turn of fresh) {
-      const shown = (kept.get(turn.agent_turn_id) ?? []).filter(isStep);
+      const reported = kept.get(turn.agent_turn_id);
+      if (!reported) gone.add(turn.id);
+      const shown = (reported ?? []).filter(isStep);
       if (shown.length === 0) continue;
       const anchor = await anchorOf(trx, turn);
       out.push(...shown.map((step) => stepEntry(turn, step, anchor)));
     }
-    return out;
+    return { entries: out, gone };
   }
 
   async function insertEntry(
@@ -1107,14 +1127,16 @@ export function transcripts(
                 .orderBy("started_at")
                 .orderBy("id")
                 .execute();
+        const kept = await stepsOf(trx, chat, turns);
         return {
           revision: row.revision,
           chat: shown(toChat(row)),
-          entries: [
-            ...(await entriesOut(trx, entries)),
-            ...(await stepsOf(trx, chat, turns)),
-          ].toSorted((a, b) => a.seq - b.seq),
-          turns: await turnsOut(trx, turns),
+          entries: [...(await entriesOut(trx, entries)), ...kept.entries].toSorted(
+            (a, b) => a.seq - b.seq,
+          ),
+          turns: (await turnsOut(trx, turns)).map((turn) =>
+            kept.gone.has(turn.id) ? { ...turn, stepsGone: true as const } : turn,
+          ),
           before: older ? (low ?? null) : null,
         };
       }),
@@ -1135,7 +1157,9 @@ export function transcripts(
         const turn = await turnOf(trx, chat.id, agentTurnId);
         if (!turn) return undefined;
         let entries: Entry[];
-        if (shown === undefined) entries = await stepsOf(trx, chat, [turn]);
+        if (shown === undefined) {
+          entries = (await stepsOf(trx, chat, [turn])).entries;
+        }
         else {
           const anchor = await anchorOf(trx, turn);
           entries = shown

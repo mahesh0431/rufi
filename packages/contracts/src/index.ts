@@ -196,6 +196,8 @@ export const Entry = Schema.Struct({
       action: Schema.Literals(["open", "retry"]),
     }),
   ),
+  /** The sub-agent this step started: its line shows it (SubAgent). */
+  agent: Schema.optionalKey(Schema.String),
 });
 export type Entry = typeof Entry.Type;
 
@@ -244,6 +246,8 @@ export const Turn = Schema.Struct({
       about: Schema.Literals(["done", "stopped", "failed", "asked", "wrote"]),
     }),
   ),
+  /** Its steps are gone: the agent database that kept them is new. */
+  stepsGone: Schema.optionalKey(Schema.Literal(true)),
 });
 export type Turn = typeof Turn.Type;
 
@@ -359,6 +363,8 @@ export const StreamLine = Schema.Union([
   Schema.Struct({ type: Schema.Literal("queue") }),
   /** The person's documents or their readings changed; read them again. */
   Schema.Struct({ type: Schema.Literal("documents") }),
+  /** The chat's sub-agents did something; read what shows them again. */
+  Schema.Struct({ type: Schema.Literal("agents") }),
   /** Nothing happened for a while; the stream is still open. */
   Schema.Struct({ type: Schema.Literal("ping") }),
 ]);
@@ -454,6 +460,62 @@ export type Settings = typeof Settings.Type;
  */
 export const EntryDetails = Schema.Struct({ details: Schema.Unknown });
 export type EntryDetails = typeof EntryDetails.Type;
+
+/** A sub-agent of the chat, as its line shows it. */
+export const SubAgent = Schema.Struct({
+  id: Schema.String,
+  /** The name the agent that started it gave it. */
+  title: Schema.String,
+  status: Schema.Literals([
+    "idle",
+    "running",
+    "continuing",
+    "done",
+    "stopped",
+    "failed",
+  ]),
+  /** Its latest result, its start: its last answer, or why it stopped or failed. */
+  result: Schema.NullOr(Schema.String),
+});
+export type SubAgent = typeof SubAgent.Type;
+
+export const SubAgents = Schema.Struct({ agents: Schema.Array(SubAgent) });
+
+/**
+ * One line of a sub-agent's Activity, as its agent reported it: a message
+ * it took (`from` whom), its answer (reply), a note or a step (activity),
+ * its thinking, a question it asked (`detail`: the options), or how a turn
+ * that didn't finish ended.
+ */
+export const AgentLine = Schema.Struct({
+  id: Schema.String,
+  kind: Schema.Literals([
+    "message",
+    "reply",
+    "activity",
+    "reasoning",
+    "question",
+    "end",
+  ]),
+  text: Schema.String,
+  from: Schema.optionalKey(Schema.String),
+  activity: Schema.NullOr(ActivityKind),
+  detail: Schema.NullOr(Schema.String),
+  status: Schema.NullOr(
+    Schema.Literals(["running", "done", "failed", "stopped"]),
+  ),
+  updatedAt: Schema.String,
+  /** The sub-agent this step started. */
+  agent: Schema.optionalKey(Schema.String),
+});
+export type AgentLine = typeof AgentLine.Type;
+
+/** A sub-agent's latest lines, and whether it has earlier ones. */
+export const AgentLog = Schema.Struct({
+  lines: Schema.Array(AgentLine),
+  earlier: Schema.Boolean,
+});
+export type AgentLog = typeof AgentLog.Type;
 
 /** The ChatGPT sign-in, as the screens need it. */
 export const Status = Schema.Struct({

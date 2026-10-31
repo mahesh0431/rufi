@@ -336,6 +336,7 @@ export function chat(deps: ChatDeps) {
           detail: event.detail ?? null,
           status: event.status,
           since,
+          ...(event.agent !== undefined && { agent: event.agent }),
         });
         return;
       }
@@ -363,7 +364,7 @@ export function chat(deps: ChatDeps) {
     chat: ChatRow,
     event: RufiAiEvent & { turnId: string; itemId: string },
     step: Pick<Step, "type" | "status"> &
-      Partial<Pick<Step, "kind" | "title" | "detail" | "text">> & {
+      Partial<Pick<Step, "kind" | "title" | "detail" | "text" | "agent">> & {
         since: string;
       },
   ): Promise<void> {

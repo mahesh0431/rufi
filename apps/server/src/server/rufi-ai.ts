@@ -15,8 +15,9 @@ import {
 import { type Cause, SIGNED_OUT } from "@rufi/contracts";
 import { type AgentEvent, type Model, type TurnEnd } from "../agent/runtime.ts";
 import { chatAgents, sentAs } from "../core/chat/agents.ts";
-import type { ChatRow, Transcripts } from "../core/chat/transcript.ts";
+import type { ChatRow, Step, Transcripts } from "../core/chat/transcript.ts";
 import { startAgents, type AgentSystem, type Apply } from "./agents.ts";
+import { agentLogs, type AgentLogs } from "./agent-logs.ts";
 import type { Placed } from "./door.ts";
 
 /** What Rufi AI does, as it comes: its thread is its conversation. */
@@ -34,6 +35,8 @@ export type RufiAiEvent = (
 ) & {
   /** Its item's place in its turn, as the package keeps it. */
   position?: number;
+  /** The sub-agent its step started. */
+  agent?: string;
 };
 
 /** What the chat gives Rufi AI, and hears from it. */
@@ -268,7 +271,9 @@ export async function startRufiAi(
     Parameters<typeof startAgents>[0],
     "host" | "live" | "apply" | "opened"
   > & { transcripts: Transcripts },
-): Promise<AgentSystem & { rufiAi: (host: RufiAiHost) => RufiAi }> {
+): Promise<
+  AgentSystem & { rufiAi: (host: RufiAiHost) => RufiAi; logs: AgentLogs }
+> {
   const { transcripts, adapters } = options;
   const kept = chatAgents(options.record, options.now);
   /** The chat, once it runs. */
@@ -378,8 +383,12 @@ export async function startRufiAi(
     position?: number,
   ) => {
     if (threads.get(ref) !== agent) follow(agent, ref);
-    // The chat shows Rufi AI's conversation; a sub-agent's is its own.
-    if (system.agents.get(agent)?.parent !== null) return;
+    // The chat shows Rufi AI's conversation; a sub-agent's is its own, and
+    // the screens read it again.
+    if (system.agents.get(agent)?.parent !== null) {
+      logs.changed(agent);
+      return;
+    }
     if (event.type === "turnEnded") {
       const own = ends.get(event.turn);
       ends.delete(event.turn);
@@ -395,10 +404,20 @@ export async function startRufiAi(
     }
     const cause =
       event.type === "turnStarted" ? causeOf(event.inputs) : undefined;
+    const started =
+      event.type === "step"
+        ? logs.started(agent, {
+            type: "step",
+            conversation: system.agents.get(agent)?.conversation ?? 0,
+            id: event.item,
+          })
+        : undefined;
+    if (started !== undefined) logs.changed(started);
     chat?.onEvent({
       ...eventOf(ref, event),
       ...(cause && { cause }),
       ...(position !== undefined && { position }),
+      ...(started !== undefined && { agent: started }),
     });
   };
 
@@ -533,10 +552,22 @@ export async function startRufiAi(
       [claim.id],
     );
   }
-  // A chat's replies' steps show from the agent database, by its own agent.
+  const logs = agentLogs({ agents, kept });
+  // A chat's replies' steps show from the agent database, by its own agent;
+  // a step that started a sub-agent names it.
   transcripts.readSteps({
-    of: (agent, agentTurns) =>
-      Map.groupBy(agents.items(agent, agentTurns), (item) => item.turn),
+    of: (agent, agentTurns) => {
+      const found = new Map<string, Step[]>(
+        agents.known(agent, agentTurns).map((turn) => [turn, []]),
+      );
+      for (const item of agents.items(agent, agentTurns)) {
+        const child = logs.started(agent, item);
+        const turn = found.get(item.turn) ?? [];
+        turn.push(child === undefined ? item : { ...item, agent: child });
+        found.set(item.turn, turn);
+      }
+      return found;
+    },
     details: (agent, agentTurn, id) => {
       const found = agents.item(agent, agentTurn, id);
       return found && { details: found.payload };
@@ -697,7 +728,9 @@ export async function startRufiAi(
   return {
     ...system,
     rufiAi,
+    logs,
     close: async () => {
+      logs.close();
       await system.close();
       const failed: unknown[] = [];
       for (const adapter of adapters) {
