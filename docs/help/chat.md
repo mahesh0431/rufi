@@ -87,7 +87,7 @@ When you delete a document (see [Documents](documents.md#delete-a-document)), it
 Activity shows what the AI did for a reply, as the AI's agent reported it. Rufi doesn't put it in other words.
 
 - **The AI's notes**, in full, such as "I'll check your fasting glucose and HbA1c first." The AI writes these while it works. They are part of Activity, not answers.
-- **The AI's thinking**, as the headings the AI service sends, such as "Comparing the reports", in their place among the steps. When a heading has more under it, click it to read the AI's summary. When the AI service sends nothing, there is no line.
+- **The AI's thinking**, as the headings the AI service sends, such as "Comparing the reports", in their place among the steps. When a heading has more under it, click it to read the AI's summary. On Codex and on Claude, the summary shows as the AI writes it, and once it's whole it shows as the AI finished it. If you stop the reply while the AI thinks, what showed stays. When the AI service sends nothing, there is no line.
 - **The steps**, each as it was reported: a command the AI ran, with its exit code; one of Rufi's tools, such as `rufi.get_records`, with what the AI asked for; the files the AI changed; a web search. A long step is cut in the middle, so the start and the file name show. A tick means it was done. Other signs mean it is running, it failed, or it stopped.
 
 Click a step to open everything the agent reported about it: for a command, the whole command, its folder, its exit code, how long it took and what it printed; for a tool, what the AI sent and what came back. Long output shows 12 lines, then **Show all**. A step from before Rufi kept these says "Rufi kept no details for this step."

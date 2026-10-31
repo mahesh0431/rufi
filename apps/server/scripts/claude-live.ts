@@ -265,6 +265,7 @@ async function withAdapter<T>(
       conversation: Conversation,
       id: string,
       text: string,
+      effort?: string,
     ) => Promise<string>;
   }) => Promise<T>,
 ): Promise<T> {
@@ -315,11 +316,16 @@ async function withAdapter<T>(
     return conversation;
   };
   /** Starts a turn; its reference, once Claude started it. */
-  const send = async (conversation: Conversation, id: string, text: string) => {
+  const send = async (
+    conversation: Conversation,
+    id: string,
+    text: string,
+    effort = "low",
+  ) => {
     const delivery = await conversation.startTurn({
       input: { id, parts: [text] },
       model: MODEL,
-      effort: "low",
+      effort,
     });
     if (delivery.status !== "delivered") {
       throw new Error(`the turn wasn't delivered: ${JSON.stringify(delivery)}`);
@@ -891,9 +897,7 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
       return `${String(ids.length)} models`;
     }),
 
-  "two turns through the adapter, the second in a new process": async (
-    context,
-  ) =>
+  "two turns through the adapter, in one process": async (context) =>
     withAdapter(context, async ({ open, send, until }) => {
       const conversation = await open();
       const [first, second] = [randomUUID(), randomUUID()];
@@ -924,6 +928,47 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
       }
       return "both done; the second knew the first's word";
     }),
+
+  "Claude's thinking streams in parts, then comes whole as the same item":
+    async (context) =>
+      withAdapter(context, async ({ open, send, until, events }) => {
+        const conversation = await open();
+        const turn = await send(
+          conversation,
+          randomUUID(),
+          "Think it through: which is larger, 17 × 23 or 19 × 21? Reply with the larger product only.",
+          "high",
+        );
+        const end = await until(endOf(turn));
+        if (end.status !== "done") {
+          throw new Error(`the turn ended ${JSON.stringify(end)}`);
+        }
+        const mine = events.filter((event) => event.turn === turn);
+        const parts = new Map<string, string>();
+        for (const event of mine) {
+          if (event.type === "thinking") {
+            parts.set(event.item, (parts.get(event.item) ?? "") + event.delta);
+          }
+        }
+        const whole = mine.flatMap((event) =>
+          event.type === "reasoning" ? [event] : [],
+        );
+        if (![...parts.values()].some((text) => text !== "")) {
+          throw new Error("no thinking streamed");
+        }
+        const unmatched = [...parts.keys()].filter(
+          (item) => !whole.some((block) => block.item === item),
+        );
+        if (
+          unmatched.length > 0 ||
+          whole.some((block) => block.summary === "")
+        ) {
+          throw new Error(
+            `streamed ${JSON.stringify([...parts])}, whole ${JSON.stringify(whole.map(({ item, summary }) => ({ item, summary })))}`,
+          );
+        }
+        return `${String(parts.size)} thinking block(s) streamed, each whole under its item`;
+      }),
 
   "a steer at the turn's end starts a turn of Claude's own, shown with it":
     async (context) =>
@@ -964,6 +1009,9 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
       const conversation = await open();
       const turn = await send(conversation, randomUUID(), "Reply 'noted'.");
       await until(endOf(turn));
+      // Its process closes, as after resting: Claude deletes only a
+      // conversation long unused.
+      await conversation.close();
       await adapter.delete(conversation.ref);
       const delivery = await conversation.startTurn({
         input: { id: randomUUID(), parts: ["Reply 'again'."] },

@@ -449,8 +449,11 @@ const newChat = () => chatRow();
  * Claude as Rufi runs it (claudeSetup), on the scripted Claude: what each
  * of its sessions was given, and each conversation it opened.
  */
-async function scriptedClaude(script: { signedIn?: boolean } = {}) {
-  const fake = fakeClaude(script);
+async function scriptedClaude(
+  script: { signedIn?: boolean } = {},
+  more: Parameters<typeof fakeClaude>[1] = {},
+) {
+  const fake = fakeClaude(script, more);
   const asked: Options[] = [];
   const opened: OpenOptions[] = [];
   const adapter = claudeAdapter({
@@ -3700,6 +3703,141 @@ describe("the chat, on the scripted Codex", () => {
         (denied) => plugin === denied || plugin.startsWith(`${denied}/`),
       ),
     ).toEqual([]);
+  });
+
+  describe("Claude's thinking", () => {
+    const shortlist = [...ALLOWED, "claude-fictional-1"];
+    /** Claude's streaming event for its message's block `index`. */
+    const part = (event: object) => ({
+      type: "stream_event",
+      parent_tool_use_id: null,
+      event,
+    });
+    const begins = [
+      { type: "system", subtype: "init", user_message_uuids: ["$input"] },
+      part({ type: "message_start", message: { id: "msg_fictional_1" } }),
+    ];
+    /** A thinking block: it starts, its parts stream, it stops. */
+    const thinking = (index: number, parts: string[]) => [
+      part({
+        type: "content_block_start",
+        index,
+        content_block: { type: "thinking", thinking: "" },
+      }),
+      ...parts.map((thinking) =>
+        part({
+          type: "content_block_delta",
+          index,
+          delta: { type: "thinking_delta", thinking },
+        }),
+      ),
+      part({ type: "content_block_stop", index }),
+    ];
+    /** What Claude finished, as its own message. */
+    const whole = (uuid: string, block: object) => ({
+      type: "assistant",
+      uuid,
+      message: { id: "msg_fictional_1", content: [block] },
+    });
+    /** Asha's chat on Claude, giving these frames for each message. */
+    const onClaude = async (frames: object[]) => {
+      const claude = await scriptedClaude({}, { frames });
+      await startChat("fake", { shortlist, other: claude.adapter });
+      const c = await newChat();
+      await chat?.selectModel(c, "claude-fictional-1");
+      const shown: [string, string | null][] = [];
+      transcripts.subscribe(c.id, (change) => {
+        for (const entry of change.entries) {
+          if (entry.kind === "reasoning")
+            shown.push([entry.text, entry.status]);
+        }
+      });
+      return { c: await chatRow(c.id), shown, claude };
+    };
+    const thoughts = async (id: string) =>
+      (await transcript(id)).entries.filter(([kind]) => kind !== "activity");
+
+    it("shows as Claude writes it, then once, whole, for each block, also after a restart", async () => {
+      const { c, shown } = await onClaude([
+        ...begins,
+        ...thinking(0, ["Asha asks ", "about her TSH."]),
+        whole("a-1", {
+          type: "thinking",
+          thinking: "Asha asks about her TSH.",
+          signature: "fictional",
+        }),
+        ...thinking(1, ["Look it up."]),
+        whole("a-2", {
+          type: "thinking",
+          thinking: "Look it up in the record.",
+          signature: "fictional",
+        }),
+        whole("a-3", { type: "text", text: "Her last TSH was 2.1." }),
+        {
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          result: "Her last TSH was 2.1.",
+          usage: { input_tokens: 3, output_tokens: 1 },
+          modelUsage: {},
+          user_message_uuids: ["$input"],
+        },
+      ]);
+      await say(c, "What was my last TSH?");
+      await ended(c.id);
+
+      // Its parts as they came, each block's growing, then whole.
+      expect(shown).toContainEqual(["Asha asks ", "running"]);
+      expect(shown).toContainEqual(["Look it up.", "running"]);
+      const kept = [
+        ["message", "What was my last TSH?"],
+        ["reasoning", "Asha asks about her TSH."],
+        ["reasoning", "Look it up in the record."],
+        ["reply", "Her last TSH was 2.1."],
+      ];
+      expect(await thoughts(c.id)).toEqual(kept);
+      await startChat("fake", {
+        shortlist,
+        other: (await scriptedClaude()).adapter,
+      });
+      expect(await thoughts(c.id)).toEqual(kept);
+    });
+
+    it("keeps what showed when the reply stops while Claude thinks, also after a restart", async () => {
+      const { c, shown } = await onClaude([
+        ...begins,
+        part({
+          type: "content_block_start",
+          index: 0,
+          content_block: { type: "thinking", thinking: "" },
+        }),
+        part({
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "thinking_delta", thinking: "Asha asks" },
+        }),
+      ]);
+      await say(c, "What was my last TSH?");
+      await until(() =>
+        Promise.resolve(shown.some(([text]) => text === "Asha asks")),
+      );
+      await chat?.stop(c);
+      await ended(c.id);
+
+      const kept = [
+        ["message", "What was my last TSH?"],
+        ["reasoning", "Asha asks"],
+      ];
+      expect(await thoughts(c.id)).toEqual(kept);
+      expect((await transcript(c.id)).turns).toMatchObject([
+        { status: "interrupted" },
+      ]);
+      await startChat("fake", {
+        shortlist,
+        other: (await scriptedClaude()).adapter,
+      });
+      expect(await thoughts(c.id)).toEqual(kept);
+    });
   });
 
   it("keeps a chat on Claude with Claude, also after a restart: signed out of Claude, it takes nothing and says so; signed in, it sends while Codex is signed out", async () => {
