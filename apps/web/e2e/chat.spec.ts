@@ -1686,8 +1686,10 @@ test("a helper's long Activity shows its latest lines, and earlier ones on reque
     },
   });
   await send(page, "Read every page");
+  // Once the reply ended, its Activity is folded: open it then. A click
+  // while it works folds it, and it stays folded when the reply ends.
   await log(chat(page))
-    .getByRole("button", { name: /^Activity · / })
+    .getByRole("button", { name: /^Activity · \d+ steps? · / })
     .first()
     .click();
   const reader = log(chat(page)).getByRole("button", { name: /Reader · / });
