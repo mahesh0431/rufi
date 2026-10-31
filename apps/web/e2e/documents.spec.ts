@@ -225,6 +225,7 @@ const SPLIT = {
     drafts: [
       {
         page: 1,
+        reading: "$reading",
         test_name: "Haemoglobin",
         value_text: "13.2",
         unit: "g/dL",
