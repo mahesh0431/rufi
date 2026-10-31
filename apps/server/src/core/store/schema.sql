@@ -371,8 +371,8 @@ CREATE TABLE settings (
 CREATE TABLE chats (
   id TEXT PRIMARY KEY,
   person_id TEXT NOT NULL UNIQUE REFERENCES people (id), -- one chat per person
-  model TEXT,                  -- the model chosen for it; null: the first allowed one, set when the first message goes
-  effort TEXT CHECK (effort IN ('low', 'medium', 'high')), -- how hard the AI thinks, chosen for it; null: Rufi's default
+  model TEXT,                  -- the model chosen for it, one of Rufi's four; null: a new chat's, set when the first message goes
+  effort TEXT CHECK (effort IN ('low', 'medium', 'high', 'xhigh')), -- how hard the AI thinks, chosen for it; null: Rufi's default
   thread_id TEXT,              -- the agent's thread; none until the first message
   thread_provider TEXT,        -- whose thread it is, so another agent never reuses it
   thread_model TEXT,           -- the model the thread started with
@@ -745,4 +745,4 @@ CREATE TABLE agent_cursor (
 ) STRICT;
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 24;
+PRAGMA user_version = 25;

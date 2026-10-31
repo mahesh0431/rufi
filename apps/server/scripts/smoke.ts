@@ -42,7 +42,7 @@ import {
 } from "./live-run.ts";
 import { codexBinary } from "../src/agent/codex/binary.ts";
 import { codexAdapter } from "../src/agent/codex/adapter.ts";
-import { DEFAULT_SHORTLIST } from "../src/core/chat/models.ts";
+import { DEFAULT_MODEL } from "../src/core/chat/models.ts";
 import {
   databasePath,
   openReadOnly,
@@ -2450,8 +2450,7 @@ async function playCase(name: string, home: string) {
     ? Object.entries({
         every_turn_answered: everyTurnAnswered(outcome.snapshot),
         // The set tests the model a new chat gets by default.
-        on_default_model:
-          outcome.snapshot.turns[0]?.model === DEFAULT_SHORTLIST[0],
+        on_default_model: outcome.snapshot.turns[0]?.model === DEFAULT_MODEL,
         ...outcome.checks,
       })
         .filter(([, ok]) => !ok)

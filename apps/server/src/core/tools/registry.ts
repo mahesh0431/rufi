@@ -88,8 +88,6 @@ export interface AgentTools {
   runs: (agent: string) => boolean;
   /** What waits for the caller and the agents below it: listed or changed. */
   waiting: (input: WaitingMessagesInput) => Promise<unknown>;
-  /** The models of the user's shortlist offered now. */
-  models: () => Promise<unknown>;
   /** An idle agent below the caller, on another model from its next turn. */
   setModel: (input: SetAgentModelInput) => Promise<unknown>;
   /** Each provider's usage now and when its limits reset, as it reported them. */
