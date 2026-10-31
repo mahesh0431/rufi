@@ -508,6 +508,39 @@ describe("a visit", () => {
       },
     ]);
   });
+
+  it("lists the profile when a visit changed it", async () => {
+    const [visit] = await saveSaid(
+      "The clinic measured me at 162 cm; save that visit and my height",
+      [
+        {
+          kind: "visit",
+          action: "add",
+          ref: "clinic",
+          fields: {
+            setting: "Clinic",
+            date: { date: "2026-10-02", words: "on 2 Oct" },
+            as_written: "Height 162 cm.",
+          },
+        },
+        {
+          kind: "profile",
+          action: "change",
+          id: "asha",
+          from: [{ visit: { ref: "clinic" } }],
+          fields: { height: { value: 162, unit: "cm" } },
+        },
+      ],
+    );
+    const opened = await views.detail("asha", "visit", visit ?? "");
+    expect(opened?.fromVisit).toEqual([
+      expect.objectContaining({
+        kind: "profile",
+        id: "asha",
+        height: { value: 162, unit: "cm" },
+      }),
+    ]);
+  });
 });
 
 describe("series", () => {

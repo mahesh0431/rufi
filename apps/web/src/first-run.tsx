@@ -11,7 +11,7 @@ import {
 import { useMutation } from "@tanstack/react-query";
 import { Schema } from "effect";
 import { ArrowRight, Check } from "lucide-react";
-import type { ProfileValues } from "@rufi/contracts/record";
+import type { ProfileField, ProfileValues } from "@rufi/contracts/record";
 import type { ExpressionKey } from "@rufi/brand/mark";
 import { type ReactNode, useState } from "react";
 import { ApiError, read } from "./api.ts";
@@ -189,10 +189,17 @@ function AboutYou() {
       }
     },
   });
+  // Fields typed in a way Rufi can't keep, such as a height that isn't a number.
+  const [problems, setProblems] = useState<ReadonlySet<ProfileField>>(
+    new Set(),
+  );
   const trimmed = name.trim();
   const { birth_date, sex_for_ranges, blood_group, height } = profile;
   const ready =
-    trimmed !== "" && birth_date !== null && sex_for_ranges !== null;
+    trimmed !== "" &&
+    birth_date !== null &&
+    sex_for_ranges !== null &&
+    problems.size === 0;
   return (
     <form
       aria-labelledby="step"
@@ -239,6 +246,14 @@ function AboutYou() {
         asTyped
         commit={(field, value) => {
           setProfile((now) => ({ ...now, [field]: value }));
+        }}
+        report={(field, problem) => {
+          setProblems((now) => {
+            const next = new Set(now);
+            if (problem === undefined) next.delete(field);
+            else next.add(field);
+            return next;
+          });
         }}
       />
       {add.error && (

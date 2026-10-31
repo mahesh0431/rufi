@@ -1642,8 +1642,11 @@ describe("the profile", () => {
       string,
       unknown
     >[];
-    expect(latest).toMatchObject({
+    // What the AI reverses: no page or visit to take off.
+    expect(latest).toEqual({
+      at: SUNDAY_10AM,
       made_in: "settings",
+      receipt: expect.any(String) as unknown,
       changes: [
         {
           kind: "profile",
@@ -1654,6 +1657,18 @@ describe("the profile", () => {
         },
       ],
     });
+    // Where it came from: entered in Settings, and when.
+    const read = await forAgent(
+      () => ({ store: reader, personId: "asha" }),
+      () => undefined,
+    ).call("get_records", { kind: "profile" });
+    expect(
+      (
+        JSON.parse(read.text) as {
+          result: { records: { sources?: unknown }[] };
+        }
+      ).result.records[0]?.sources,
+    ).toEqual([{ entered_in: "settings", at: SUNDAY_10AM }]);
     await say("Undo my last profile change");
     const undone = await save([
       {

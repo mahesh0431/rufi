@@ -12,7 +12,13 @@ import type {
 } from "@rufi/contracts/record";
 import { useMutation } from "@tanstack/react-query";
 import { Check, Pencil } from "lucide-react";
-import { type FocusEvent, type ReactNode, useId, useState } from "react";
+import {
+  type FocusEvent,
+  type ReactNode,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { printedDate } from "./dates.ts";
 import { savedAt } from "./overview.tsx";
 import { saveProfile, useProfile } from "./reads.ts";
@@ -90,18 +96,28 @@ const MADE_IN: Record<MadeIn, string> = {
   settings: "in Settings",
 };
 
+/** Says what keeps a typed field from being saved, or undefined once nothing does. */
+type Report = (field: ProfileField, problem: string | undefined) => void;
+
 /**
  * The profile's fields, each saved by `commit` once it is complete: a
- * choice when it is chosen, a typed field when you leave it.
+ * choice when it is chosen, a typed field when you leave it after changing
+ * it. A typed field shows `values` until you change it, and keeps what you
+ * typed until `values` has it.
  */
 export function ProfileFields({
   values,
   commit,
+  report,
   asTyped = false,
 }: {
   values: ProfileValues;
   commit: <K extends ProfileField>(field: K, value: ProfileValues[K]) => void;
-  /** Commit a typed field as it is typed, an unfinished one as not set: the welcome's. */
+  report: Report;
+  /**
+   * Commit a typed field as it is typed, an unfinished one as not set, and
+   * keep what was typed: the welcome's, where nothing else changes it.
+   */
   asTyped?: boolean;
 }) {
   const id = useId();
@@ -113,6 +129,9 @@ export function ProfileFields({
         asTyped={asTyped}
         commit={(value) => {
           commit("birth_date", value);
+        }}
+        report={(problem) => {
+          report("birth_date", problem);
         }}
       />
       <fieldset className="flex flex-col gap-1.5">
@@ -176,6 +195,9 @@ export function ProfileFields({
         commit={(value) => {
           commit("height", value);
         }}
+        report={(problem) => {
+          report("height", problem);
+        }}
       />
     </div>
   );
@@ -185,63 +207,90 @@ export function ProfileFields({
 const leaves = (event: FocusEvent<HTMLElement>) =>
   !event.currentTarget.contains(event.relatedTarget);
 
+interface TypedDate {
+  day: string;
+  month: string;
+  year: string;
+}
+
+/** A saved birth date as its inputs show it. */
+function typedDate(value: ProfileValues["birth_date"]): TypedDate {
+  const [, year = "", month = "", day = ""] =
+    /^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?/.exec(value?.date ?? "") ?? [];
+  return {
+    day: day === "" ? "" : String(Number(day)),
+    month: month === "" ? "" : String(Number(month)),
+    year,
+  };
+}
+
+/** What was typed as a birth date; null when emptied, undefined when incomplete. */
+function dateOf(typed: TypedDate): ProfileValues["birth_date"] | undefined {
+  if (typed.day === "" && typed.month === "" && typed.year === "") return null;
+  if (!/^\d{4}$/.test(typed.year) || (typed.day !== "" && typed.month === "")) {
+    return undefined;
+  }
+  const two = (n: string) => n.padStart(2, "0");
+  const date = [
+    typed.year,
+    typed.month && two(typed.month),
+    typed.day && two(typed.day),
+  ]
+    .filter((part) => part !== "")
+    .join("-");
+  const words = [
+    typed.day,
+    typed.month && MONTHS[Number(typed.month) - 1],
+    typed.year,
+  ]
+    .filter((part) => part !== "")
+    .join(" ");
+  return { date, words };
+}
+
 /**
  * A birth date: a year, a month and year, or a full date, with its words
- * as shown ("March 1990"). Saved when focus leaves it complete; emptied, it
- * clears.
+ * as shown ("March 1990"). Saved when focus leaves it changed and complete;
+ * emptied, it clears.
  */
 function BirthDate({
   id,
   value,
   asTyped,
   commit,
+  report,
 }: {
   id: string;
   value: ProfileValues["birth_date"];
   asTyped: boolean;
   commit: (value: ProfileValues["birth_date"]) => void;
+  report: (problem: string | undefined) => void;
 }) {
-  const [, year = "", month = "", day = ""] =
-    /^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?/.exec(value?.date ?? "") ?? [];
-  const [typed, setTyped] = useState({
-    day: day === "" ? "" : String(Number(day)),
-    month: month === "" ? "" : String(Number(month)),
-    year,
-  });
+  // What you typed, until the profile has it; untouched, the field shows the profile.
+  const [draft, setDraft] = useState<TypedDate>();
   const [problem, setProblem] = useState<string>();
-  const type = (now: typeof typed) => {
-    setTyped(now);
-    if (asTyped) done(now, false);
+  if (draft !== undefined && !asTyped) {
+    const date = dateOf(draft);
+    if (date !== undefined && date?.date === value?.date) setDraft(undefined);
+  }
+  const typed = draft ?? typedDate(value);
+  const problemOf = (date: ProfileValues["birth_date"] | undefined) =>
+    date === undefined ? "Give a year, and a month with a day." : undefined;
+  const setTyped = (next: TypedDate) => {
+    setDraft(next);
+    if (!asTyped) return;
+    // An unfinished date is said when you leave it, not while you type.
+    const date = dateOf(next);
+    if (date !== undefined) setProblem(undefined);
+    report(problemOf(date));
+    if ((date ?? null)?.date !== value?.date) commit(date ?? null);
   };
-  /** Commits what is typed; `left`: focus left it, so an unfinished one says so. */
-  const done = (now = typed, left = true) => {
-    if (now.day === "" && now.month === "" && now.year === "") {
-      setProblem(undefined);
-      if (value !== null) commit(null);
-      return;
-    }
-    if (!/^\d{4}$/.test(now.year) || (now.day !== "" && now.month === "")) {
-      if (left) setProblem("Give a year, and a month with a day.");
-      else if (value !== null) commit(null);
-      return;
-    }
-    setProblem(undefined);
-    const two = (n: string) => n.padStart(2, "0");
-    const date = [
-      now.year,
-      now.month && two(now.month),
-      now.day && two(now.day),
-    ]
-      .filter((part) => part !== "")
-      .join("-");
-    const words = [
-      now.day,
-      now.month && MONTHS[Number(now.month) - 1],
-      now.year,
-    ]
-      .filter((part) => part !== "")
-      .join(" ");
-    if (date !== value?.date) commit({ date, words });
+  const done = () => {
+    if (draft === undefined) return;
+    const date = dateOf(draft);
+    setProblem(problemOf(date));
+    report(problemOf(date));
+    if (date !== undefined && date?.date !== value?.date) commit(date);
   };
   return (
     <fieldset
@@ -259,7 +308,7 @@ function BirthDate({
           placeholder="Day"
           value={typed.day}
           onChange={(event) => {
-            type({
+            setTyped({
               ...typed,
               day: event.target.value.replace(/\D/g, "").slice(0, 2),
             });
@@ -270,7 +319,7 @@ function BirthDate({
           aria-label="Month"
           value={typed.month}
           onChange={(event) => {
-            type({ ...typed, month: event.target.value });
+            setTyped({ ...typed, month: event.target.value });
           }}
           className="w-36 rounded-lg border border-line bg-surface px-2 py-1.5"
         >
@@ -287,7 +336,7 @@ function BirthDate({
           placeholder="Year"
           value={typed.year}
           onChange={(event) => {
-            type({
+            setTyped({
               ...typed,
               year: event.target.value.replace(/\D/g, "").slice(0, 4),
             });
@@ -302,44 +351,78 @@ function BirthDate({
   );
 }
 
-/** A height, a number and its unit; saved when focus leaves it, cleared when emptied. */
+interface TypedHeight {
+  number: string;
+  unit: "cm" | "in";
+}
+
+/** What was typed as a height; null when emptied, undefined when not a number. */
+function heightOf(typed: TypedHeight): ProfileValues["height"] | undefined {
+  if (typed.number.trim() === "") return null;
+  const number = Number(typed.number);
+  return Number.isFinite(number) && number > 0
+    ? { value: number, unit: typed.unit }
+    : undefined;
+}
+
+/** Whether a typed height is the one saved; an empty one only in the unit shown for none. */
+const sameHeight = (typed: TypedHeight, value: ProfileValues["height"]) => {
+  const height = heightOf(typed);
+  return height === null
+    ? value === null && typed.unit === "cm"
+    : height !== undefined &&
+        height.value === value?.value &&
+        height.unit === value.unit;
+};
+
+/**
+ * A height, a number and its unit; saved when focus leaves it changed,
+ * cleared when emptied.
+ */
 function Height({
   id,
   value,
   asTyped,
   commit,
+  report,
 }: {
   id: string;
   value: ProfileValues["height"];
   asTyped: boolean;
   commit: (value: ProfileValues["height"]) => void;
+  report: (problem: string | undefined) => void;
 }) {
-  const [typed, setTyped] = useState({
-    number: value === null ? "" : String(value.value),
-    unit: value?.unit ?? ("cm" as const),
-  });
+  // What you typed, until the profile has it; untouched, the field shows the profile.
+  const [draft, setDraft] = useState<TypedHeight>();
   const [problem, setProblem] = useState<string>();
-  /** Commits what is typed; `left`: focus left it, so a wrong one says so. */
-  const done = (now = typed, left = true) => {
-    if (now.number.trim() === "") {
-      setProblem(undefined);
-      if (value !== null) commit(null);
-      return;
-    }
-    const number = Number(now.number);
-    if (!Number.isFinite(number) || number <= 0) {
-      if (left) setProblem("Give your height as a number.");
-      else if (value !== null) commit(null);
-      return;
-    }
-    setProblem(undefined);
-    if (number !== value?.value || now.unit !== value.unit) {
-      commit({ value: number, unit: now.unit });
+  if (draft !== undefined && !asTyped && sameHeight(draft, value)) {
+    setDraft(undefined);
+  }
+  const typed = draft ?? {
+    number: value === null ? "" : String(value.value),
+    unit: value?.unit ?? "cm",
+  };
+  /** Says what is wrong with a typed height, and commits it if it differs. */
+  const check = (now: TypedHeight) => {
+    const height = heightOf(now);
+    const problem =
+      height === undefined ? "Give your height as a number." : undefined;
+    setProblem(problem);
+    report(problem);
+    const kept = height ?? null;
+    if (
+      (asTyped || height !== undefined) &&
+      (kept?.value !== value?.value || kept?.unit !== value?.unit)
+    ) {
+      commit(kept);
     }
   };
-  const type = (now: typeof typed) => {
-    setTyped(now);
-    if (asTyped) done(now, false);
+  const setTyped = (next: TypedHeight) => {
+    setDraft(next);
+    if (asTyped) check(next);
+  };
+  const done = () => {
+    if (draft !== undefined) check(draft);
   };
   return (
     <fieldset
@@ -359,7 +442,7 @@ function Height({
           placeholder="Height"
           value={typed.number}
           onChange={(event) => {
-            type({ ...typed, number: event.target.value });
+            setTyped({ ...typed, number: event.target.value });
           }}
           className="w-24 rounded-lg border border-line bg-surface px-2 py-1.5"
         />
@@ -367,7 +450,10 @@ function Height({
           aria-label="Unit"
           value={typed.unit}
           onChange={(event) => {
-            type({ ...typed, unit: event.target.value as "cm" | "in" });
+            setTyped({
+              ...typed,
+              unit: event.target.value as TypedHeight["unit"],
+            });
           }}
           className="w-20 rounded-lg border border-line bg-surface px-2 py-1.5"
         >
@@ -383,15 +469,19 @@ function Height({
 /**
  * The form, saving each field as it is committed, from the profile page or
  * Settings (`in`). One save at a time, so the last change is the one kept.
+ * A change shows until it is saved, and one that fails stays, with why and
+ * Retry. On the page, Done closes the form once nothing is left unsaved.
  */
 function SavedFields({
   personId,
   values,
   in: where,
+  done,
 }: {
   personId: string;
   values: ProfileValues;
   in: "profile" | "settings";
+  done?: () => void;
 }) {
   const save = useMutation({
     scope: { id: `profile-${personId}` },
@@ -402,18 +492,79 @@ function SavedFields({
         changes,
       }),
   });
+  // Changes sent and not saved yet, shown over the profile; kept when they fail.
+  const [unsaved, setUnsaved] = useState<Partial<ProfileValues>>({});
+  const [failure, setFailure] = useState<Error>();
+  const sending = useRef<{
+    unsaved: Partial<ProfileValues>;
+    saves: Set<Promise<unknown>>;
+    problems: Map<ProfileField, string>;
+  }>({ unsaved: {}, saves: new Set(), problems: new Map() });
+  const keep = (next: Partial<ProfileValues>) => {
+    sending.current.unsaved = next;
+    setUnsaved(next);
+  };
+  const send = (changes: Partial<ProfileValues>) => {
+    keep({ ...sending.current.unsaved, ...changes });
+    const saved = save.mutateAsync(changes).then(
+      () => {
+        // A field changed again since keeps its newer value.
+        const left = Object.fromEntries(
+          Object.entries(sending.current.unsaved).filter(
+            ([field, value]) =>
+              JSON.stringify(value) !==
+              JSON.stringify(changes[field as ProfileField]),
+          ),
+        );
+        keep(left);
+        if (Object.keys(left).length === 0) setFailure(undefined);
+      },
+      (error: unknown) => {
+        setFailure(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
+    sending.current.saves.add(saved);
+    void saved.finally(() => sending.current.saves.delete(saved));
+    return saved;
+  };
+  const retry = () => send(sending.current.unsaved);
+  const finish = async () => {
+    await Promise.all(sending.current.saves);
+    if (sending.current.problems.size > 0) return;
+    if (Object.keys(sending.current.unsaved).length > 0) await retry();
+    if (Object.keys(sending.current.unsaved).length === 0) done?.();
+  };
   return (
     <div className="flex flex-col gap-3">
       <ProfileFields
-        values={values}
+        values={{ ...values, ...unsaved }}
         commit={(field, value) => {
-          save.mutate({ [field]: value });
+          void send({ [field]: value });
+        }}
+        report={(field, problem) => {
+          if (problem === undefined) sending.current.problems.delete(field);
+          else sending.current.problems.set(field, problem);
         }}
       />
-      {save.error && (
-        <p role="alert" className="text-muted">
-          {save.error.message} Your entry is still here: try again.
-        </p>
+      {failure && Object.keys(unsaved).length > 0 && (
+        <Problem
+          error={failure}
+          retry={() => {
+            void retry();
+          }}
+        />
+      )}
+      {done && (
+        <div>
+          <Button
+            icon={Check}
+            onClick={() => {
+              void finish();
+            }}
+          >
+            Done
+          </Button>
+        </div>
       )}
     </div>
   );
@@ -495,32 +646,41 @@ export function ProfilePage({ person }: { person: Person }) {
     <div className="mx-auto max-w-[620px] px-6 py-8">
       <div className="rounded-xl border border-line bg-surface p-4">
         {editing ? (
-          <SavedFields personId={person.id} values={values} in="profile" />
-        ) : (
-          <dl>
-            <Row name="Name">{person.displayName}</Row>
-            {(Object.keys(FIELD_NAMES) as ProfileField[]).map((field) => (
-              <Row key={field} name={FIELD_NAMES[field]}>
-                <span className={values[field] === null ? "text-muted" : ""}>
-                  {shownValue(field, values[field])}
-                </span>
-                {field === "birth_date" && age !== null && (
-                  <span className="text-muted"> · {ageText(age)}</span>
-                )}
-              </Row>
-            ))}
-          </dl>
-        )}
-        <div className="mt-3">
-          <Button
-            icon={editing ? Check : Pencil}
-            onClick={() => {
-              setEditing(!editing);
+          <SavedFields
+            personId={person.id}
+            values={values}
+            in="profile"
+            done={() => {
+              setEditing(false);
             }}
-          >
-            {editing ? "Done" : "Edit"}
-          </Button>
-        </div>
+          />
+        ) : (
+          <>
+            <dl>
+              <Row name="Name">{person.displayName}</Row>
+              {(Object.keys(FIELD_NAMES) as ProfileField[]).map((field) => (
+                <Row key={field} name={FIELD_NAMES[field]}>
+                  <span className={values[field] === null ? "text-muted" : ""}>
+                    {shownValue(field, values[field])}
+                  </span>
+                  {field === "birth_date" && age !== null && (
+                    <span className="text-muted"> · {ageText(age)}</span>
+                  )}
+                </Row>
+              ))}
+            </dl>
+            <div className="mt-3">
+              <Button
+                icon={Pencil}
+                onClick={() => {
+                  setEditing(true);
+                }}
+              >
+                Edit
+              </Button>
+            </div>
+          </>
+        )}
       </div>
       <h2 className="mt-8 mb-2 px-0.5 font-semibold">History</h2>
       <div className="rounded-xl border border-line bg-surface p-4">
