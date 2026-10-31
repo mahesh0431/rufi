@@ -805,19 +805,19 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     },
   );
 
-  // Only the scripted Codex can hold its sign-in check.
+  // Only the scripted Codex can hold the thread's start.
   it.runIf(name === "fake")(
     "a message sent while a reply starts or runs goes into that reply; one sent after goes as a new message",
     timeout,
     async () => {
       const hold = join(home, "hold");
       await startChat(name, {
-        scenario: { held: { methods: ["account/read"], file: hold } },
+        scenario: { held: { methods: ["thread/start"], file: hold } },
       });
       const c = await newChat();
       await chat?.selectModel(c, "gpt-6.1-sol");
-      // Its conversation opens: Codex holds its sign-in check, then the reply
-      // starts.
+      // Its conversation opens: Codex holds the thread's start, then the
+      // reply starts.
       await writeFile(hold, "");
       await say(await chatRow(c.id), "slow");
       await until(async () => (await chat?.agent.busy(c)) === true);

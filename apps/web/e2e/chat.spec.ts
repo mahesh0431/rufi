@@ -418,6 +418,11 @@ test("while a reply runs, Enter steers a message into it, as your message; with 
 }) => {
   await opened(page, rufi);
   await send(page, "hang");
+  // In the reply, not waiting: a waiting message has a Steer of its own.
+  await expect(log(chat(page))).toContainText("hang");
+  await expect(
+    chat(page).getByRole("region", { name: "Waiting messages" }),
+  ).toHaveCount(0);
   await box(chat(page)).fill("Only the latest results, please");
   for (const name of ["Steer", "Queue", "Stop"]) {
     await expect(chat(page).getByRole("button", { name })).toBeVisible();
