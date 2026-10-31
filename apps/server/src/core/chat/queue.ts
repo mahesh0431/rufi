@@ -545,6 +545,22 @@ export function chatQueue(
       }),
 
     /**
+     * Signed out, what waits free is held so, with the line on how to sign
+     * in: nothing goes, and nothing shows as starting.
+     */
+    signedOut: (chat: ChatOf, text: string) =>
+      write(chat, async (trx) => {
+        await trx
+          .updateTable("chat_queue")
+          .set({ held: "signed_out", held_text: text, updated_at: now() })
+          .where("person_id", "=", chat.personId)
+          .where("chat_id", "=", chat.id)
+          .where("state", "=", "waiting")
+          .where("held", "is", null)
+          .execute();
+      }),
+
+    /**
      * Rows held as signed out go again, now the sign-in is back; returns
      * their ids.
      */
