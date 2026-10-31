@@ -234,7 +234,12 @@ export function claudeLogIn(
     });
   }
   return new Promise((resolve, reject) => {
-    login.on("error", reject);
+    login.on("error", (error) => {
+      // Node reports a cancel at once: it settles on the exit below, once
+      // Claude has exited (killed if it hasn't after EXIT_MS).
+      if (handlers.signal.aborted) void exitOf(login);
+      else reject(error);
+    });
     login.on("exit", (code) => {
       if (code === 0) resolve();
       else {
