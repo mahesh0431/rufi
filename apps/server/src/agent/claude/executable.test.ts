@@ -31,7 +31,7 @@ async function emptyFolder(): Promise<string> {
 describe("the installed Claude", () => {
   it("is the first on PATH, else the one in an installer's place", async () => {
     const [onPath, installed, empty] = await Promise.all([
-      folderWith("2.1.312"),
+      folderWith("2.1.314"),
       folderWith("2.1.400"),
       emptyFolder(),
     ]);
@@ -39,7 +39,7 @@ describe("the installed Claude", () => {
       await findClaude({ PATH: `${empty}:${onPath}` }, [installed]),
     ).toEqual({
       path: join(onPath, "claude"),
-      version: "2.1.312",
+      version: "2.1.314",
     });
     expect(await findClaude({ PATH: empty }, [installed])).toEqual({
       path: join(installed, "claude"),
@@ -49,7 +49,7 @@ describe("the installed Claude", () => {
 
   it("is refused when it's older than Rufi needs, and missing when nowhere", async () => {
     const [old, newer, empty] = await Promise.all([
-      folderWith("2.1.311"),
+      folderWith("2.1.313"),
       folderWith("2.10.0"),
       emptyFolder(),
     ]);
