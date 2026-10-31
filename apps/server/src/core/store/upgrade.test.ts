@@ -431,7 +431,7 @@ it("keeps the backup made before the category upgrade at version 3, and a restor
 
 /**
  * Rows as a Rufi before sorting (version 11) had them: the columns
- * migrations 12 and 15 add are left out, to compare an older test's rows.
+ * migrations 12, 15 and 20 add are left out, to compare an older test's rows.
  */
 const beforeSorting = (rows: readonly object[]) =>
   rows.map((row) =>
@@ -445,6 +445,7 @@ const beforeSorting = (rows: readonly object[]) =>
             "sorted_at",
             "quote",
             "sent_at",
+            "reader_agent",
           ].includes(key),
       ),
     ),
@@ -1099,7 +1100,11 @@ it("upgrades a record of version 15 so files start on Send: every document sent 
 
   const after = stored();
   expect(after.documents).toEqual(
-    before.documents.map((row) => ({ ...row, sent_at: row["added_at"] })),
+    before.documents.map((row) => ({
+      ...row,
+      sent_at: row["added_at"],
+      reader_agent: null,
+    })),
   );
   expect(after.turns).toEqual(
     before.turns.map((row) => ({ ...row, cause: null })),

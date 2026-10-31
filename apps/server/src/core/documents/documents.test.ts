@@ -68,6 +68,7 @@ describe("adding documents", () => {
         lab: null,
         place: null,
         status: "not_read",
+        reader: null,
         reading: null,
         notSorted: false,
         files: [
