@@ -63,7 +63,9 @@ export interface Move {
  * keeps this folder's paths in them, and a thread resumed from a copy writes
  * to the old folder, so after a move the AI starts a fresh thread with the
  * saved chat. The AI's folder (`ai/`) isn't moved yet (a TODO): its
- * programs hold links and this folder's paths.
+ * programs hold links and this folder's paths. Nor is the agent database
+ * (`agents.sqlite`, packages/agents): its conversations are the ones left
+ * behind, so the copy starts a new one, as when it's lost.
  */
 const NOT_COPIED = new Set([
   "rufi.lock",
@@ -78,6 +80,10 @@ const NOT_COPIED = new Set([
   "codex",
   "sub-agents",
   "ai",
+  "agents.sqlite",
+  "agents.sqlite-wal",
+  "agents.sqlite-shm",
+  "agents.sqlite-journal",
 ]);
 
 /** Where an active data folder can't be: a folder that syncs to a cloud. */

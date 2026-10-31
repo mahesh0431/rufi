@@ -34,7 +34,7 @@ const people = (path: string) =>
     .map((row) => ({ ...row }));
 
 describe("a backup", () => {
-  it("is a checked copy of the record only: never the sign-in, the AI's files, logs, locks or the model list", async () => {
+  it("is a checked copy of the record only: never the sign-in, the AI's files, the agent database, logs, locks or the model list", async () => {
     const store = openWritable(databasePath(home));
     store.db.exec(
       "INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional')",
@@ -44,6 +44,7 @@ describe("a backup", () => {
     await writeFile(join(home, "models.json"), '{"models":["gpt-6-astra"]}');
     await writeFile(join(home, "core.json"), '{"port":1,"launcher":"x"}');
     await mkdir(join(home, "codex"));
+    await writeFile(join(home, "agents.sqlite"), "fictional agent log");
     await mkdir(join(home, "logs"));
     await mkdir(join(home, "rufi.lock"));
 
