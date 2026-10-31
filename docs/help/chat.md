@@ -103,7 +103,7 @@ Choose how Activity opens in **Settings** › **Activity**:
 
 In each one, you can still fold or open a reply's Activity yourself. That holds on this page until the reply ends; after a reload, Activity follows the setting again. Another tab or window shows the same steps and folds by itself.
 
-A reply that has no steps, such as an answer to "thanks", has no Activity line. In replies from before this version of Rufi, the AI's notes show as replies, and each step keeps the words Rufi gave it then.
+A reply that has no steps, such as an answer to "thanks", has no Activity line. In replies from before this version of Rufi, the AI's notes show as replies, and each step keeps the words Rufi gave it then. If the AI's working state is lost, replies show without their Activity (see [Your data and the AI](your-data-and-the-ai.md#your-chat)).
 
 ## Pictures, pages and diagrams
 

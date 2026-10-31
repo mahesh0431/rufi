@@ -146,6 +146,25 @@ export interface Placed {
   call: string;
 }
 
+/** One thing a turn reported, as the package kept it. */
+export interface Item {
+  /** The provider's reference for its turn. */
+  turn: string;
+  /** The provider's item id. */
+  id: string;
+  /** Its place in its turn, from when the turn first reported it. */
+  position: number;
+  type: "text" | "note" | "reasoning" | "step";
+  kind: string | null;
+  title: string | null;
+  detail: string | null;
+  /** A step's, as reported; `done` for text, a note or a reasoning once whole. */
+  status: string | null;
+  text: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Agents {
   /** Adds an agent, not admitted: it runs only once the host admits it. */
   create: (agent: NewAgent) => Agent;
@@ -158,6 +177,18 @@ export interface Agents {
   input: (id: string) => { agent: string; state: string } | undefined;
   /** The agent's turn now, if one starts or runs. */
   current: (agent: string) => Current | undefined;
+  /**
+   * What these turns of the agent reported, by the provider's references,
+   * each turn's items in order; without what the provider gave about each.
+   * Text, a note or a reasoning still streaming is there as far as it came.
+   */
+  items: (agent: string, turns: readonly string[]) => Item[];
+  /** One item, with everything the provider gave about it. */
+  item: (
+    agent: string,
+    turn: string,
+    id: string,
+  ) => (Item & { payload: unknown }) | undefined;
   /**
    * Opens the admitted agent's conversation now, if it isn't open: its
    * own, or a new one when it has none or the provider no longer has it.
@@ -232,6 +263,11 @@ export interface Agents {
   close: () => Promise<void>;
 }
 
+/** An item's columns, as `Item`. */
+const ITEM = `turns.provider_turn AS turn, items.id, items.position, items.type, items.kind,
+  items.title, items.detail, items.status, items.text,
+  items.created_at AS createdAt, items.updated_at AS updatedAt`;
+
 /** An agent's conversation and turns while this process runs it. */
 interface Live {
   id: string;
@@ -253,13 +289,22 @@ interface Live {
   stops: number;
   /** Calls waiting for a turn's admission, by the provider's reference. */
   waiting: Map<string, (() => void)[]>;
-  /** Text and notes as they stream, by turn and item, until whole. */
+  /** Text, notes and reasoning as they stream, by turn and item, until whole. */
   streams: Map<
     string,
-    { turn: string; item: string; type: "text" | "note"; text: string }
+    {
+      turn: string;
+      item: string;
+      type: "text" | "note" | "reasoning";
+      text: string;
+      /** When it began. */
+      at: string;
+    }
   >;
   /** The item of each turn's last text, its answer, by the provider's turn. */
   answers: Map<string, string>;
+  /** Each running turn's items, by the provider's references: their places. */
+  places: Map<string, Map<string, number>>;
   /** Its dispatcher runs; asked again meanwhile, it looks again. */
   pumping: boolean;
   asks: number;
@@ -340,10 +385,16 @@ export function createAgents(options: {
   onError: (error: unknown) => void;
   /**
    * Each event of an agent's open conversation (by its reference), as the
-   * provider reports it, once the package has kept what it keeps of it:
-   * for showing only. What happened is in the package's events.
+   * provider reports it, once the package has kept what it keeps of it,
+   * with its item's place in its turn: for showing only. What happened is
+   * in the package's events.
    */
-  live?: (agent: string, conversation: string, event: ProviderEvent) => void;
+  live?: (
+    agent: string,
+    conversation: string,
+    event: ProviderEvent,
+    position?: number,
+  ) => void;
 }): Agents {
   const { store, host } = options;
   const { db } = store;
@@ -418,6 +469,7 @@ export function createAgents(options: {
         waiting: new Map(),
         streams: new Map(),
         answers: new Map(),
+        places: new Map(),
         pumping: false,
         asks: 0,
       };
@@ -527,53 +579,83 @@ export function createAgents(options: {
     keep(live, event);
     const ref = live.conversation?.ref;
     if (!options.live || ref === undefined) return;
+    const position =
+      "item" in event
+        ? live.places.get(event.turn)?.get(event.item)
+        : undefined;
     try {
-      options.live(live.id, ref, event);
+      options.live(live.id, ref, event, position);
     } catch (error) {
       options.onError(error);
     }
   }
 
   function keep(live: Live, event: ProviderEvent): void {
+    // An item's place is where its turn first reported it.
+    if ("item" in event && turnOf(live, event.turn)) {
+      const places = live.places.get(event.turn) ?? new Map<string, number>();
+      if (!places.has(event.item)) places.set(event.item, places.size + 1);
+      live.places.set(event.turn, places);
+    }
     switch (event.type) {
       case "turnStarted":
         admitTurn(live, event.turn, event.inputs);
         return;
       case "text":
-      case "note": {
+      case "note":
+      case "thinking": {
         const key = `${event.turn}/${event.item}`;
         const stream = live.streams.get(key) ?? {
           turn: event.turn,
           item: event.item,
-          type: event.type,
+          type: event.type === "thinking" ? "reasoning" : event.type,
           text: "",
+          at: now(),
         };
         stream.text += event.delta;
         live.streams.set(key, stream);
         if (event.type === "text") live.answers.set(event.turn, event.item);
-        if (event.done) {
+        if (event.type !== "thinking" && event.done) {
           live.streams.delete(key);
           saveItem(live, event.turn, event.item, {
             type: stream.type,
             text: stream.text,
+            status: "done",
           });
         }
         return;
       }
-      // Only as it streams; the reasoning comes whole.
-      case "thinking":
-        return;
-      case "question":
-        saveItem(live, event.turn, event.item, {
-          type: "question",
-          title: event.title,
-          payload: { options: event.options },
+      // Apart from the item it came with, which it never changes.
+      case "question": {
+        const turn = turnOf(live, event.turn);
+        if (!turn) return;
+        store.change(({ event: record }) => {
+          db.prepare(
+            `INSERT INTO questions (turn_id, item_id, number, title, options, created_at)
+             VALUES (?, ?, (SELECT COALESCE(MAX(number), 0) + 1 FROM questions WHERE turn_id = ? AND item_id = ?), ?, ?, ?)`,
+          ).run(
+            turn.id,
+            event.item,
+            turn.id,
+            event.item,
+            event.title,
+            JSON.stringify(event.options),
+            now(),
+          );
+          record("question.saved", live.id, {
+            turn: turn.id,
+            item: event.item,
+          });
         });
         return;
+      }
+      // Whole: it replaces what streamed.
       case "reasoning":
+        live.streams.delete(`${event.turn}/${event.item}`);
         saveItem(live, event.turn, event.item, {
           type: "reasoning",
           text: event.summary,
+          status: "done",
           payload: event.payload,
         });
         return;
@@ -676,7 +758,7 @@ export function createAgents(options: {
     ref: string,
     item: string,
     fields: {
-      type: "text" | "note" | "question" | "reasoning" | "step";
+      type: "text" | "note" | "reasoning" | "step";
       kind?: string;
       title?: string;
       detail?: string;
@@ -687,16 +769,18 @@ export function createAgents(options: {
   ): void {
     const turn = turnOf(live, ref);
     if (!turn) return;
+    const position = live.places.get(ref)?.get(item);
     store.change(({ event }) => {
       const at = now();
       db.prepare(
         `INSERT INTO items (turn_id, id, position, type, kind, title, detail, status, text, payload, created_at, updated_at)
-         VALUES (?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM items WHERE turn_id = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, COALESCE(?, (SELECT COALESCE(MAX(position), 0) + 1 FROM items WHERE turn_id = ?)), ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (turn_id, id) DO UPDATE SET kind = excluded.kind, title = excluded.title, detail = excluded.detail,
            status = excluded.status, text = excluded.text, payload = excluded.payload, updated_at = excluded.updated_at`,
       ).run(
         turn.id,
         item,
+        position ?? null,
         turn.id,
         fields.type,
         fields.kind ?? null,
@@ -727,6 +811,7 @@ export function createAgents(options: {
         text: stream.text,
       });
     }
+    live.places.delete(ref);
     const stopBy =
       end.status === "stopped" ? (live.stopBy ?? "provider") : null;
     store.change(({ event }) => {
@@ -1227,6 +1312,66 @@ export function createAgents(options: {
         status: live.stopBy === undefined ? "running" : "stopping",
         ...live.current,
       };
+    },
+
+    items: (agent, turns) => {
+      if (turns.length === 0) return [];
+      const saved = db
+        .prepare(
+          `SELECT ${ITEM} FROM items JOIN turns ON turns.id = items.turn_id
+           WHERE turns.agent_id = ? AND turns.provider_turn IN (SELECT value FROM json_each(?))
+           ORDER BY turns.started_at, turns.rowid, items.position`,
+        )
+        .all(agent, JSON.stringify(turns)) as unknown as Item[];
+      // The running turn, the last to start, streams what isn't saved yet.
+      const live = lives.get(agent);
+      const running = live?.current?.ref;
+      if (!live || running === undefined || !turns.includes(running)) {
+        return saved;
+      }
+      const streaming = [...live.streams.values()].flatMap((stream) => {
+        const position = live.places.get(running)?.get(stream.item);
+        if (stream.turn !== running || position === undefined) return [];
+        return [
+          {
+            turn: running,
+            id: stream.item,
+            position,
+            type: stream.type,
+            kind: null,
+            title: null,
+            detail: null,
+            status: null,
+            text: stream.text,
+            createdAt: stream.at,
+            updatedAt: now(),
+          } satisfies Item,
+        ];
+      });
+      const last = (item: Item) => Number(item.turn === running);
+      return [...saved, ...streaming].toSorted((a, b) =>
+        last(a) && last(b) ? a.position - b.position : last(a) - last(b),
+      );
+    },
+
+    item: (agent, turn, id) => {
+      const found = db
+        .prepare(
+          `SELECT ${ITEM}, items.payload FROM items JOIN turns ON turns.id = items.turn_id
+           WHERE turns.agent_id = ? AND turns.provider_turn = ? AND items.id = ?`,
+        )
+        .get(agent, turn, id) as
+        | (Item & { payload: string | null })
+        | undefined;
+      return (
+        found && {
+          ...found,
+          payload:
+            found.payload === null
+              ? null
+              : (JSON.parse(found.payload) as unknown),
+        }
+      );
     },
 
     open: async (id) => {

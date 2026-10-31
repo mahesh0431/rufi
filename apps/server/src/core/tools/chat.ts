@@ -1,6 +1,7 @@
 // read_chat: earlier parts of the chat the AI is in, for when
 // a new thread started with only the last messages.
 import { Schema } from "effect";
+import { withQuestions } from "../chat/transcript.ts";
 import { defineTool, Refusal } from "./registry.ts";
 
 /** Entries in one page at most; the description says the same number. */
@@ -46,6 +47,7 @@ export const readChat = defineTool({
         "activity",
         "detail",
         "status",
+        "questions",
         "created_at",
       ])
       .where("person_id", "=", personId)
@@ -64,7 +66,8 @@ export const readChat = defineTool({
       entries: page.map((row) => ({
         position: row.seq,
         kind: row.kind,
-        text: row.text,
+        // A reply with the questions it asked, as the chat shows it.
+        text: withQuestions(row.text, row.questions),
         ...(row.detail !== null && { detail: row.detail }),
         ...(row.status !== null &&
           row.status !== "done" && { status: row.status }),

@@ -515,7 +515,8 @@ it("upgrades a record of version 5 so a generated picture can be a line of the c
 
   (await openRecord(home)).close();
 
-  expect(lines()).toEqual(before);
+  // Kept as they were; no reply has questions of its own yet (0019).
+  expect(lines()).toEqual(before.map((line) => ({ ...line, questions: null })));
   const db = new DatabaseSync(path);
   try {
     const turn = db
@@ -563,7 +564,8 @@ it("upgrades a record of version 6 so the AI's notes can be steps of its Activit
 
   (await openRecord(home)).close();
 
-  expect(lines()).toEqual(before);
+  // Kept as they were; no reply has questions of its own yet (0019).
+  expect(lines()).toEqual(before.map((line) => ({ ...line, questions: null })));
   const db = new DatabaseSync(path);
   try {
     const turn = db
@@ -1119,7 +1121,9 @@ it("upgrades a record of version 15 so files start on Send: every document sent 
     before.documents.map((row) => ({ ...row, sent_at: row["added_at"] })),
   );
   expect(after.turns).toEqual(before.turns);
-  expect(after.entries).toEqual(before.entries);
+  expect(after.entries).toEqual(
+    before.entries.map((line) => ({ ...line, questions: null })),
+  );
   expect(after.queue).toEqual(
     before.queue.map((row) =>
       row["id"] === "queue-sort" ? { ...row, state: "removed" } : row,

@@ -395,6 +395,7 @@ export interface Tables {
     revision: number;
     created_at: string;
     updated_at: string;
+    questions: string | null;
   };
   turns: {
     id: string;

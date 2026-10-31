@@ -30,7 +30,10 @@ import type { ChatRow, Transcripts } from "../core/chat/transcript.ts";
 import { startAgents, type AgentSystem, type Apply } from "./agents.ts";
 
 /** What Rufi AI does, as it comes: its thread is its conversation. */
-export type RufiAiEvent = Exclude<AgentEvent, { type: "message" }>;
+export type RufiAiEvent = Exclude<AgentEvent, { type: "message" }> & {
+  /** Its item's place in its turn, as the package keeps it. */
+  position?: number;
+};
 
 /** What the chat gives Rufi AI, and hears from it. */
 export interface RufiAiHost {
@@ -253,7 +256,12 @@ export async function startRufiAi(
     else waiting.done.resolve(outcome);
   };
 
-  const live = (agent: string, ref: string, event: ProviderEvent) => {
+  const live = (
+    agent: string,
+    ref: string,
+    event: ProviderEvent,
+    position?: number,
+  ) => {
     if (threads.get(ref) !== agent) return;
     // A turn's own usage is for the usage tool; the chat shows the context.
     if (event.type === "turnUsage") return;
@@ -270,7 +278,10 @@ export async function startRufiAi(
         return;
       }
     }
-    chat?.onEvent(eventOf(ref, event));
+    chat?.onEvent({
+      ...eventOf(ref, event),
+      ...(position !== undefined && { position }),
+    });
   };
 
   // A root's turn from the package's events, after what the chat was told
@@ -352,6 +363,15 @@ export async function startRufiAi(
     },
   });
   const { agents } = system;
+  // A chat's replies' steps show from the agent database, by its own agent.
+  transcripts.readSteps({
+    of: (agent, agentTurns) =>
+      Map.groupBy(agents.items(agent, agentTurns), (item) => item.turn),
+    details: (agent, agentTurn, id) => {
+      const found = agents.item(agent, agentTurn, id);
+      return found && { details: found.payload };
+    },
+  });
 
   /** What became of the hand-overs, from the package's events. */
   const outcome = (event: StoredEvent) => {

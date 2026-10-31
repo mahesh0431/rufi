@@ -142,7 +142,12 @@ export type Face = typeof Face.Type;
 /** One item of a chat's transcript, in order by `seq`. */
 export const Entry = Schema.Struct({
   id: Schema.String,
-  seq: Schema.Int,
+  /**
+   * Its place: Rufi's own entries count up by one; a step of a reply, kept
+   * by the agent system, sits after what its reply started with and before
+   * the next of Rufi's entries.
+   */
+  seq: Schema.Number,
   /** The reply it belongs to. */
   turnId: Schema.NullOr(Schema.String),
   /**

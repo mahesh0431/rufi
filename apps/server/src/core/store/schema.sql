@@ -435,6 +435,7 @@ CREATE TABLE transcript_entries (
   revision INTEGER NOT NULL,   -- the chat's revision when it last changed
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  questions TEXT CHECK (questions IS NULL OR kind = 'reply'), -- a reply's questions, as the AI gave them (JSON), kept apart from its answer; null: none
   UNIQUE (person_id, id),
   UNIQUE (chat_id, seq),
   FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id),
@@ -742,4 +743,4 @@ CREATE TABLE agent_cursor (
 ) STRICT;
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 18;
+PRAGMA user_version = 19;

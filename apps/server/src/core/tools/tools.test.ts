@@ -685,10 +685,17 @@ describe("read_chat", () => {
       )
       .join("");
 
-  it("pages back through the chat, newest first", async () => {
-    const store = makeDatabase(family, chats);
+  it("pages back through the chat, newest first, a reply with the questions it asked", async () => {
+    const store = makeDatabase(
+      family,
+      `${chats}
+      UPDATE transcript_entries SET questions = '[{"title":"Which report?","options":["March","May"]}]'
+        WHERE id IN ('c-asha-30', 'c-asha-26');
+      UPDATE transcript_entries SET text = '' WHERE id = 'c-asha-26';`,
+    );
     const context = { store, personId: "asha", chatId: "c-asha" };
-    const first = await call(context, "read_chat", { limit: 4 });
+    const first = await call(context, "read_chat", { limit: 5 });
+    const asked = "**Which report?**\n- March\n- May";
     expect(first.body).toEqual({
       ok: true,
       result: {
@@ -696,7 +703,7 @@ describe("read_chat", () => {
           {
             position: 30,
             kind: "reply",
-            text: "c-asha entry 30",
+            text: `c-asha entry 30\n\n${asked}`,
             at: "2026-10-01T10:00:00Z",
           },
           {
@@ -718,8 +725,14 @@ describe("read_chat", () => {
             detail: "ls",
             at: "2026-10-01T10:00:00Z",
           },
+          {
+            position: 26,
+            kind: "reply",
+            text: asked,
+            at: "2026-10-01T10:00:00Z",
+          },
         ],
-        next_before: 27,
+        next_before: 26,
       },
     });
     const last = await call(context, "read_chat", { before: 3 });

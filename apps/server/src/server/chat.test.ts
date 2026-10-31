@@ -504,11 +504,13 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     const shown: Entry[] = [];
     let unsaved = 0;
     transcripts.subscribe(c.id, (change) => {
-      // What is shown is already in the database, exactly so.
+      // What is shown is already in the database, exactly so; steps show as
+      // the agent reports them, and the agent database keeps them.
       const rows = store.db
         .prepare("SELECT id, text FROM transcript_entries WHERE chat_id = ?")
         .all(c.id) as { id: string; text: string }[];
       for (const entry of change.entries) {
+        if (entry.kind === "activity" || entry.kind === "reasoning") continue;
         if (rows.find((row) => row.id === entry.id)?.text !== entry.text)
           unsaved++;
         shown.push(entry);
@@ -592,11 +594,6 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       const note = shown.filter((e) => e.activity === "note");
       expect(note[0]?.status).toBe("running");
       expect(note.map((e) => e.text)).toContain(NOTE.slice(0, 9));
-      // The new thread's seed has it as the AI's progress note.
-      expect(await transcripts.lastMessages(c, 10)).toContainEqual({
-        from: "note",
-        text: NOTE,
-      });
     },
   );
 
@@ -625,9 +622,11 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
     async (text) => {
       await startChat(name);
       const c = await newChat();
+      const shown: Entry[] = [];
+      transcripts.subscribe(c.id, (change) => shown.push(...change.entries));
       await say(c, text);
-      await until(async () =>
-        (await transcript(c.id)).all.some((e) => e.activity === "note"),
+      await until(() =>
+        Promise.resolve(shown.some((e) => e.activity === "note")),
       );
       await chat?.stop(c);
       await ended(c.id);
@@ -1825,16 +1824,16 @@ describe("the chat, on the scripted Codex", () => {
       ["command", "ls", "exit 0", "done"],
       ["other", "teleport", null, "done"],
     ]);
-    const kept = store.db
-      .prepare(
-        "SELECT kind, text, details FROM transcript_entries WHERE kind IN ('activity', 'reasoning') ORDER BY seq",
-      )
-      .all()
-      .map((row): unknown[] => [
-        row["kind"],
-        row["text"],
-        JSON.parse(String(row["details"])),
-      ]);
+    // Everything else only when a line opens, from the agent database.
+    const kept = await Promise.all(
+      all
+        .filter((e) => e.kind === "activity" || e.kind === "reasoning")
+        .map(async (e) => [
+          e.kind,
+          e.text,
+          (await transcripts.details(c, e.id))?.details,
+        ]),
+    );
     expect(kept).toMatchObject([
       [
         "activity",
@@ -1862,6 +1861,9 @@ describe("the chat, on the scripted Codex", () => {
       ok: true,
       result: { person: "Asha Fictional" },
     });
+    // After a restart the reply shows the same.
+    await startChat("fake");
+    expect((await transcript(c.id)).all).toEqual(all);
   });
 
   it("splits How off a completed reply, also while it streams; small talk has none; Activity names each read", async () => {
