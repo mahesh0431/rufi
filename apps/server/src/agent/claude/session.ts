@@ -6,7 +6,8 @@
 // Rufi's rules after Claude Code's own prompt, as Codex keeps its own; every
 // message goes as written, so a `/command` or `@file` in it is just text.
 // Claude's own sub-agents, workflows, schedules and background commands are
-// off: their tools aren't given. Rufi picks a new conversation's id, and
+// off: their tools aren't given. Claude works in the AI's folder under Rufi
+// AI's lock-down (sandbox.ts). Rufi picks a new conversation's id, and
 // carries on a kept one by it.
 import { spawn, type ChildProcess } from "node:child_process";
 import type { UUID } from "node:crypto";
@@ -22,9 +23,10 @@ import {
   type Settings,
 } from "@anthropic-ai/claude-agent-sdk";
 import { killTree } from "../codex/processes.ts";
-import type { AgentSkill } from "../runtime.ts";
+import type { AgentSandbox, AgentSkill } from "../runtime.ts";
 import { within } from "./deadline.ts";
 import type { InstalledClaude } from "./executable.ts";
+import { claudeLockDown } from "./sandbox.ts";
 
 /**
  * Claude's own tools the AI gets: those Rufi AI has on Codex (commands, the
@@ -123,8 +125,8 @@ export async function prepareClaudePlugin(
 
 export interface ClaudeSessionOptions {
   claude: InstalledClaude;
-  /** Claude's working folder: the AI's folder. */
-  cwd: string;
+  /** The AI's folder, Claude's working folder, and what it can never read. */
+  sandbox: AgentSandbox;
   /** Claude's environment, without Rufi's secrets (platform/config.ts). */
   env: Readonly<Record<string, string>>;
   /** Rufi's rules, after Claude Code's own prompt. */
@@ -163,20 +165,22 @@ export function openClaudeSession(
   options: ClaudeSessionOptions,
 ): ClaudeSession {
   const query = options.query ?? sdkQuery;
+  const lockDown = claudeLockDown(options.sandbox, options.plugin.path);
   const input = inputQueue();
   let child: ChildProcess | undefined;
   const run = query({
     prompt: input.messages,
     options: {
       pathToClaudeCodeExecutable: options.claude.path,
-      cwd: options.cwd,
-      env: { ...options.env, ...ENVIRONMENT },
+      cwd: options.sandbox.folder,
+      env: { ...options.env, ...lockDown.env, ...ENVIRONMENT },
       settingSources: [],
       strictMcpConfig: true,
       tools: TOOLS,
       plugins: [{ type: "local", path: options.plugin.path }],
       skills: options.plugin.skills,
-      settings: SETTINGS,
+      settings: { ...SETTINGS, ...lockDown.settings },
+      permissionMode: lockDown.permissionMode,
       systemPrompt: {
         type: "preset",
         preset: "claude_code",

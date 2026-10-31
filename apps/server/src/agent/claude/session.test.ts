@@ -55,7 +55,7 @@ describe("closing a conversation", () => {
     }) as unknown as typeof query;
     const session = openClaudeSession({
       claude: { path: "/fictional/claude", version: "2.1.312" },
-      cwd: tmpdir(),
+      sandbox: { folder: tmpdir(), unreadable: [] },
       env: {},
       instructions: "",
       model: "claude-fictional",
