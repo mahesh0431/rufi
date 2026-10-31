@@ -104,6 +104,7 @@ beforeEach(async () => {
     ["workspace/notes.md", "fictional notes"],
     ["logs/rufi.log", '{"event":"core.started"}\n'],
     ["codex/sessions/rollout.jsonl", "{}"],
+    ["agents.sqlite", "fictional agent log"],
     ["core.json", '{"port":1}'],
   ] as const) {
     await mkdir(join(from, path, ".."), { recursive: true });
@@ -187,6 +188,7 @@ describe("a move", () => {
     // goes on in a fresh AI thread.
     expect(await readdir(to)).not.toContain("codex");
     expect(await readdir(to)).not.toContain("ai");
+    expect(await readdir(to)).not.toContain("agents.sqlite");
     expect(await readdir(to)).not.toContain("core.json");
     const db = new DatabaseSync(databasePath(to), { readOnly: true });
     expect(
