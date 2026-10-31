@@ -28,7 +28,7 @@ The AI connects different parts of your record, for example your sleep and your 
 - says that two things happen together, not that one causes the other,
 - says first when the lab flagged a result, such as High, with the lab's range, and only then gives context, such as a common treatment target.
 
-Anything that changes what an answer means, such as only two readings, a gap or a value from the web, is in the answer itself. Under each answer, **Based on** shows where it comes from. See [Where an answer comes from](chat.md#where-an-answer-comes-from).
+Anything that changes what an answer means, such as only two readings, a gap or a value from the web, is in the answer itself, and so is where it comes from when that matters. See [Where an answer comes from](chat.md#where-an-answer-comes-from).
 
 ## It won't help anyone get hurt
 

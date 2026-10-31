@@ -1,5 +1,5 @@
 // A document's page on the real core, after a scripted reading
-// (tests/fake-reader.ts) and Rufi AI's scripted sort: the drafts beside
+// (tests/readers.ts) and Rufi AI's scripted sort: the drafts beside
 // their page with the words they come from, "Worth a look only", a fix that
 // keeps the drafted value, a fix from a second tab refused with the value
 // now, and "Save in chat" putting the words in the box.
@@ -7,8 +7,8 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
-import { readPage, scriptedReader } from "../../server/tests/fake-reader.ts";
-import { expect, sendFiles, test } from "./rufi.ts";
+import { readOf, readThen } from "../../server/tests/readers.ts";
+import { expect, FILE_WORK_MS, sendFiles, test } from "./rufi.ts";
 
 const REPORT = join(
   import.meta.dirname,
@@ -33,6 +33,7 @@ const draft = (
   more = {},
 ) => ({
   page,
+  reading: "$reading",
   test_name,
   value_text,
   unit,
@@ -41,37 +42,33 @@ const draft = (
   ...more,
 });
 
-/** Rufi AI's sort of the report: one document, three drafts. */
-const SORT = {
-  callsByTurn: [
-    [
-      {
-        id: "sort-aug",
-        tool: "sort_documents",
-        arguments: {
-          document: "$document",
-          documents: [
-            {
-              id: "$document",
-              pages: [1, 2],
-              kind: "lab_report",
-              date: "2026-08-12",
-              lab: "Sunrise Labs",
-            },
-          ],
-          drafts: [
-            draft(1, "Haemoglobin", "13.2", "g/dL"),
-            draft(1, "Platelet count", "2.1", "lakh/µL", {
-              reference_range: "1.5-4.1",
-              worth_a_look: "the decimal point is faint",
-            }),
-            draft(2, "Haemoglobin", "13.2", "g/dL"),
-          ],
+/** Rufi AI's sort of the report, once it is read: one document, three drafts. */
+const SORT = [
+  {
+    id: "sort-aug",
+    tool: "sort_documents",
+    arguments: {
+      document: "$document",
+      documents: [
+        {
+          id: "$document",
+          pages: [1, 2],
+          kind: "lab_report",
+          date: "2026-08-12",
+          lab: "Sunrise Labs",
         },
-      },
-    ],
-  ],
-};
+      ],
+      drafts: [
+        draft(1, "Haemoglobin", "13.2", "g/dL"),
+        draft(1, "Platelet count", "2.1", "lakh/µL", {
+          reference_range: "1.5-4.1",
+          worth_a_look: "the decimal point is faint",
+        }),
+        draft(2, "Haemoglobin", "13.2", "g/dL"),
+      ],
+    },
+  },
+];
 
 test("checks a report against its pages: worth a look only, a fix, a fix from another tab, then the chat", async ({
   page,
@@ -79,35 +76,36 @@ test("checks a report against its pages: worth a look only, a fix, a fix from an
   context,
 }) => {
   await page.emulateMedia({ colorScheme: "dark" });
-  const reader = scriptedReader([
-    async (turn) => {
-      await turn.look(1);
-      const first = readPage("13.2");
-      await turn.save(1, {
-        ...first,
-        // A row the reader wrote as HTML: its quote is the row's words.
-        copy: `${first.copy}\n\n<table><tr><td>Platelet count</td><td><strong>2.1</strong></td><td>lakh/µL</td><td>1.5-4.1</td></tr></table>`,
-      });
-      await turn.look(2);
-      await turn.save(2, readPage("13.2"));
-      return undefined;
+  const first = readOf(1);
+  const pages = [
+    {
+      ...first,
+      // A row the reader wrote as HTML: its quote is the row's words.
+      copy: `${first.copy}\n\n<table><tr><td>Platelet count</td><td><strong>2.1</strong></td><td>lakh/µL</td><td>1.5-4.1</td></tr></table>`,
     },
-  ]);
+    readOf(2),
+  ];
   await rufi.family(
     `DELETE FROM record_sources; DELETE FROM results; DELETE FROM reports;
      DELETE FROM document_pages; DELETE FROM documents;`,
   );
-  await rufi.start({ reader: reader.run, scenario: SORT });
+  await rufi.start({
+    scenario: { callsByText: readThen("Sort this report", pages, SORT) },
+  });
   await page.goto(rufi.link());
   await page.getByRole("link", { name: "Documents" }).click();
-  await sendFiles(page, {
-    name: "sunrise-labs-august.pdf",
-    mimeType: "application/pdf",
-    buffer: await readFile(REPORT),
-  });
+  await sendFiles(
+    page,
+    {
+      name: "sunrise-labs-august.pdf",
+      mimeType: "application/pdf",
+      buffer: await readFile(REPORT),
+    },
+    "Sort this report",
+  );
   await expect(
     page.getByRole("cell", { name: /Not saved · 3 results/ }),
-  ).toBeVisible({ timeout: 10_000 });
+  ).toBeVisible({ timeout: FILE_WORK_MS });
   // The reply is on its way; fold the chat back to its bar.
   await page
     .getByRole("region", { name: "Chat" })
@@ -302,8 +300,8 @@ test("checks a report against its pages: worth a look only, a fix, a fix from an
  * fixed the first one's value (drafted as 13.2).
  */
 const DRAFTS = `
-  INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, sorted_at, created_at)
-    VALUES ('job-aug', 'asha', 'document_read', 'doc-asha-aug', 'done', 1, '[1,2]', '2026-10-01T09:00:00Z', '2026-10-01T09:00:00Z');
+  INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, created_at)
+    VALUES ('job-aug', 'asha', 'document_read', 'doc-asha-aug', 'done', 1, '[1,2]', '2026-10-01T09:00:00Z');
   UPDATE document_pages SET state = 'read', entry_job_id = 'job-aug'
     WHERE document_id = 'doc-asha-aug';
   UPDATE documents SET version = 1, kind = 'lab_report', issuer = 'Sunrise Labs', date = '2026-08-12'

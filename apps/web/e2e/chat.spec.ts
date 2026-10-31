@@ -5,7 +5,7 @@
 // the AI's Markdown may and may not do. Each test checks that the strict CSP
 // refused nothing the screens need.
 import { AxeBuilder } from "@axe-core/playwright";
-import { readFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Locator, Page } from "@playwright/test";
 import { Page as ChatPage } from "@rufi/contracts";
@@ -16,7 +16,7 @@ import {
   openWritable,
 } from "../../server/src/core/store/database.ts";
 import { runningLink } from "../../server/src/server/core.ts";
-import { expect, test, type Rufi } from "./rufi.ts";
+import { expect, SIGNED_OUT, signedIn, test, type Rufi } from "./rufi.ts";
 
 async function accessible(page: Page) {
   const { violations } = await new AxeBuilder({ page }).analyze();
@@ -59,11 +59,27 @@ const opener = (scope: Locator) =>
 const log = (scope: Page | Locator) =>
   scope.getByRole("log", { name: "Messages" });
 const sidebar = (page: Page) => page.getByRole("complementary");
+/**
+ * The box's line on a draft it couldn't save: Rufi's own status, never the
+ * live region of the waiting messages' drag and drop.
+ */
+const notSaved = (scope: Page | Locator) =>
+  scope.getByRole("status").filter({ hasText: "Not saved" });
+/**
+ * An ended reply's Activity, folded: open it only then, as a person sees it.
+ * A click while the reply works folds it, and it stays folded at the end.
+ */
+const ENDED = /^Activity · \d+ steps?\b/;
 /** The line that folds or opens a reply's Activity (the last one). */
 const activity = (scope: Page | Locator) =>
   log(scope)
     .getByRole("button", { name: /^(Activity|Working) · / })
     .last();
+/**
+ * The working line before a reply's first step: Thinking, and its timer
+ * (not a button: there is nothing to open).
+ */
+const thinking = (scope: Page | Locator) => scope.getByText(/^Thinking\b/);
 /** The rows of the open Activity (the last one). */
 const steps = (scope: Page | Locator) =>
   log(scope)
@@ -71,6 +87,24 @@ const steps = (scope: Page | Locator) =>
     .last()
     .locator(":scope > li");
 const toolbar = (page: Page) => page.getByRole("banner");
+
+/** The model and effort the scripted Codex's last turn ran on. */
+async function ranOn(rufi: Rufi) {
+  const turns = (await readFile(join(rufi.home, "fake-codex.jsonl"), "utf8"))
+    .trim()
+    .split("\n")
+    .map(
+      (line) =>
+        JSON.parse(line) as {
+          turn?: string;
+          model?: string;
+          effort?: string | null;
+        },
+    )
+    .filter((line) => line.turn !== undefined);
+  const last = turns.at(-1);
+  return { model: last?.model, effort: last?.effort };
+}
 
 /** Rufi with the fictional family, opened at its Overview. */
 async function opened(
@@ -128,6 +162,7 @@ test("the bar, the panel and Chat with Rufi are one chat: the reply streams in, 
   // The reminder is under the panel, where answers are read.
   await expect(chat(page).getByText(/AI can make mistakes/)).toHaveCount(0);
   await expect(sidebar(page).getByRole("link")).toHaveText([
+    "Asha Fictional",
     "Chat with Rufi",
     "Overview",
     "Lab results7",
@@ -254,14 +289,14 @@ test("Stop keeps what the reply wrote so far", async ({ page, rufi }) => {
   await expect(chat(page).getByRole("button", { name: "Stop" })).toHaveCount(0);
 });
 
-/** Two of the person's messages wait, after a Stop. */
+/** Two of the person's messages wait behind a reply that runs on. */
 const WAITING = `
-  UPDATE chats SET paused = 'stopped' WHERE id = 'c-asha';
   INSERT INTO chat_queue (id, person_id, chat_id, origin, text, position, created_at, updated_at) VALUES
-    ('q-2', 'asha', 'c-asha', 'person', 'Second', 1, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z'),
-    ('q-3', 'asha', 'c-asha', 'person', 'Third', 2, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z');`;
+    ('q-1', 'asha', 'c-asha', 'person', 'hang', 1, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z'),
+    ('q-2', 'asha', 'c-asha', 'person', 'Second', 2, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z'),
+    ('q-3', 'asha', 'c-asha', 'person', 'Third', 3, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z');`;
 
-test("waiting messages: edit, reorder, remove, and send one now", async ({
+test("waiting messages show in the chat: edit, reorder, steer, queue and remove; after a Stop, the next one goes", async ({
   page,
   rufi,
 }) => {
@@ -269,9 +304,14 @@ test("waiting messages: edit, reorder, remove, and send one now", async ({
   await rufi.start();
   await page.goto(rufi.link());
   await opener(chat(page)).click();
-  const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
+  // In the transcript's scrolling area, after the chat's last message, in
+  // the order they go.
+  const waiting = log(chat(page)).locator(
+    "xpath=following-sibling::section[@aria-label='Waiting messages']",
+  );
   const items = waiting.getByRole("listitem");
-  await expect(items).toHaveText(["Second", "Third"]);
+  await expect(items).toHaveText([/^Second/, /^Third/]);
+  await expect(log(chat(page))).toContainText("hang");
   await accessible(page);
 
   // Each moves by its handle: dragged, or by keyboard (Space, the arrows,
@@ -293,32 +333,40 @@ test("waiting messages: edit, reorder, remove, and send one now", async ({
     steps: 10,
   });
   await page.mouse.up();
-  await expect(items).toHaveText(["Third", "Second"]);
+  await expect(items).toHaveText([/^Third/, /^Second/]);
   expect((await saved).ok()).toBe(true);
 
-  const top = async (n: number) => (await items.nth(n).boundingBox())?.y ?? 0;
+  /** How far a row is moved down to make room, in rows. */
+  const shifted = (n: number) =>
+    items
+      .nth(n)
+      .evaluate(
+        (row) =>
+          new DOMMatrix(getComputedStyle(row).transform).m42 /
+          row.getBoundingClientRect().height,
+      );
   const liftUp = async (n: number) => {
     await handle(n).focus();
     await page.keyboard.press("Space");
     await expect(handle(n)).toHaveAttribute("aria-pressed", "true");
     // The handle hears the arrows from just after it is picked up: until the
     // row above makes room, press again, as a person would. At the top, a
-    // press does nothing.
-    const was = await top(n - 1);
+    // press does nothing. Room is the row's own shift, not its place: the
+    // last drop still settling moves it down too.
     await expect(async () => {
       await page.keyboard.press("ArrowUp");
       await expect
-        .poll(() => top(n - 1), { timeout: 1_000 })
-        .toBeGreaterThan(was);
+        .poll(() => shifted(n - 1), { timeout: 1_000 })
+        .toBeGreaterThan(0.5);
     }).toPass();
   };
   await liftUp(1);
   await page.keyboard.press("Space");
-  await expect(items).toHaveText(["Second", "Third"]);
+  await expect(items).toHaveText([/^Second/, /^Third/]);
   await liftUp(1);
   await page.keyboard.press("Escape");
   await expect(handle(1)).not.toHaveAttribute("aria-pressed");
-  await expect(items).toHaveText(["Second", "Third"]);
+  await expect(items).toHaveText([/^Second/, /^Third/]);
   await expect(
     chat(page).getByRole("button", { name: "Minimise" }),
   ).toBeVisible();
@@ -328,14 +376,25 @@ test("waiting messages: edit, reorder, remove, and send one now", async ({
     .getByRole("textbox", { name: "Waiting message" })
     .fill("Second, edited");
   await waiting.getByRole("button", { name: "Save" }).click();
-  await expect(items).toHaveText(["Second, edited", "Third"]);
+  await expect(items).toHaveText([/^Second, edited/, /^Third/]);
+  // Steer puts it into the running reply, as your message.
+  await items.nth(1).getByRole("button", { name: "Steer" }).click();
+  await expect(items).toHaveText([/^Second, edited/]);
+  await expect(log(chat(page))).toContainText("hangThird");
+  // ⌘ and the box's button keeps a new one for after the reply.
+  await box(chat(page)).fill("Fourth");
+  await chat(page)
+    .locator("form")
+    .getByRole("button", { name: "Steer" })
+    .click({ modifiers: ["ControlOrMeta"] });
+  await expect(items).toHaveText([/^Second, edited/, /^Fourth/]);
   await items.nth(1).getByRole("button", { name: "Remove" }).click();
-  await expect(items).toHaveText(["Second, edited"]);
+  await expect(items).toHaveText([/^Second, edited/]);
 
   await expect(waiting).toContainText(
-    "Stopped · these go when you send a message",
+    "Waiting · these go in order after the reply",
   );
-  await waiting.getByRole("button", { name: "Send now" }).click();
+  await chat(page).getByRole("button", { name: "Stop" }).click();
   await expect(log(chat(page)).locator(".reply").last()).toHaveText(
     "ok:Second, edited",
   );
@@ -352,7 +411,7 @@ test("an older read of the queue never undoes a newer change", async ({
   await opener(chat(page)).click();
   const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
   const items = waiting.getByRole("listitem");
-  await expect(items).toHaveText(["Second", "Third"]);
+  await expect(items).toHaveText([/^Second/, /^Third/]);
 
   // A read that still sees "Second" as it was is held back.
   const read = Promise.withResolvers<undefined>();
@@ -373,7 +432,7 @@ test("an older read of the queue never undoes a newer change", async ({
     .getByRole("textbox", { name: "Waiting message" })
     .fill("Second, edited");
   await waiting.getByRole("button", { name: "Save" }).click();
-  await expect(items).toHaveText(["Second, edited"]);
+  await expect(items).toHaveText([/^Second, edited/]);
 
   const late = page.waitForResponse(
     (response) =>
@@ -382,56 +441,101 @@ test("an older read of the queue never undoes a newer change", async ({
   );
   release.resolve(undefined);
   await (await late).finished();
-  await expect(items).toHaveText(["Second, edited"]);
+  await expect(items).toHaveText([/^Second, edited/]);
 });
 
-test("a message sent while a reply runs goes into that reply, as your message; Stop is beside Send", async ({
+test("while a reply runs, the box's one button is Stop until you type; then Enter steers into the reply and ⌘Enter queues; with Queue chosen in Settings, the other way round", async ({
   page,
   rufi,
 }) => {
   await opened(page, rufi);
   await send(page, "hang");
+  const button = (name: string) => chat(page).getByRole("button", { name });
+  const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
+  // In the reply, not waiting: a waiting message has a Steer of its own.
+  await expect(log(chat(page))).toContainText("hang");
+  await expect(waiting).toHaveCount(0);
+  await expect(button("Stop")).toBeVisible();
   await box(chat(page)).fill("Only the latest results, please");
-  await expect(chat(page).getByRole("button", { name: "Stop" })).toBeVisible();
+  await expect(button("Stop")).toHaveCount(0);
+  await expect(button("Steer")).toBeVisible();
+  await expect(button("Queue")).toHaveCount(0);
   await box(chat(page)).press("Enter");
   await expect(box(chat(page))).toHaveValue("");
   await expect(log(chat(page))).toContainText(
     "hangOnly the latest results, please",
   );
+  await expect(waiting).toHaveCount(0);
+  await expect(button("Stop")).toBeVisible();
+  await box(chat(page)).fill("Then my ferritin");
+  await box(chat(page)).press("ControlOrMeta+Enter");
+  await expect(waiting).toContainText("Then my ferritin");
+
+  await sidebar(page).getByRole("link", { name: "Settings" }).click();
+  await page.getByRole("radio", { name: "Queue" }).check();
+  await expect(page.getByRole("radio", { name: "Queue" })).toBeChecked();
+  await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
+  await box(page).fill("And after that, my iron");
+  await expect(page.getByRole("button", { name: "Queue" })).toBeVisible();
+  await box(page).press("Enter");
   await expect(
-    chat(page).getByRole("region", { name: "Waiting messages" }),
-  ).toHaveCount(0);
+    page.getByRole("region", { name: "Waiting messages" }),
+  ).toContainText("And after that, my iron");
+  await box(page).fill("Only HbA1c");
+  await page
+    .getByRole("button", { name: "Queue" })
+    .click({ modifiers: ["ControlOrMeta"] });
+  await expect(log(page)).toContainText("Only HbA1c");
+  await expect(
+    page.getByRole("region", { name: "Waiting messages" }),
+  ).not.toContainText("Only HbA1c");
 });
 
-test("signed out, the model's menu signs in", async ({ page, rufi }) => {
-  rufi.account = { account: "signed_out", email: null };
-  // The core can't list the models without the sign-in.
-  await page.route("**/api/models", (route) =>
-    route.fulfill({
-      status: 409,
-      json: {
-        error:
-          "Not signed in. Sign in with ChatGPT: in Rufi, or with pnpm rufi signin.",
-      },
-    }),
-  );
+test("the menu always shows Rufi's four models: a provider that isn't signed in shows its two greyed, with a line that signs in", async ({
+  page,
+  rufi,
+}) => {
+  rufi.codex = SIGNED_OUT;
   await opened(page, rufi);
   await opener(chat(page)).click();
-  await expect(
-    chat(page).getByRole("heading", { name: "Chat with Rufi" }),
-  ).toBeVisible();
   await chat(page)
     .getByRole("button", { name: /^Model and effort/ })
     .click();
-  await expect(page.getByRole("menu")).not.toContainText("pnpm");
+  const models = page.getByRole("menuitemradio", { name: /^(GPT|Claude)/ });
+  await expect(models).toHaveText([
+    "GPT-6-Astra",
+    "GPT-6.1-Sol",
+    "Claude Fable 5.1",
+    "Claude Opus 5.5",
+  ]);
+  for (const model of await models.all()) {
+    await expect(model).toHaveAttribute("aria-disabled", "true");
+  }
+  await expect(
+    page.getByRole("menuitem", { name: "Sign in to Claude" }),
+  ).toBeVisible();
   await page.getByRole("menuitem", { name: "Sign in with ChatGPT" }).click();
   await expect(page).toHaveURL(/\/sign-in$/);
+
+  // Signed in to ChatGPT: its two can be chosen; Claude's stay greyed.
+  rufi.codex = signedIn("asha@example.com");
+  await page.goto(rufi.link());
+  await openChat(page);
+  await chat(page)
+    .getByRole("button", { name: /^Model and effort/ })
+    .click();
   await expect(
-    page.getByRole("button", { name: "Sign in with ChatGPT" }),
-  ).toBeVisible();
+    page.getByRole("menuitemradio", { name: "GPT-6.1-Sol" }),
+  ).not.toHaveAttribute("aria-disabled", "true");
+  await expect(
+    page.getByRole("menuitemradio", { name: "Claude Opus 5.5" }),
+  ).toHaveAttribute("aria-disabled", "true");
+  await expect(
+    page.getByRole("menuitem", { name: "Sign in with ChatGPT" }),
+  ).toHaveCount(0);
 });
 
-test("the model and effort are chosen in the box, also in the bar, and kept for the chat; a new effort doesn't start a new thread; neither changes while a reply runs", async ({
+test("the model and effort are chosen in one go in the box's menu, which stays open until a click outside, the button or Esc; kept for the chat, also in the bar; a change shows as a quiet line before the next reply, also after a reload; neither changes while a reply runs", async ({
   page,
   rufi,
 }) => {
@@ -440,27 +544,38 @@ test("the model and effort are chosen in the box, also in the bar, and kept for 
     page.getByRole("button", { name: `Model and effort: ${now}` });
   const option = (name: string) =>
     page.getByRole("menuitemradio", { name, exact: true });
-  // The bar shows both before the panel opens.
+  const menu = page.getByRole("menu");
+  const changed = log(chat(page)).getByText(/^Model changed/);
+  // The bar shows both before the panel opens; one menu sets both.
   await expect(log(chat(page))).toHaveCount(0);
-  await expect(choice("GPT-6-Astra, Medium")).toBeVisible();
   await choice("GPT-6-Astra, Medium").click();
   await expect(option("GPT-6-Astra")).toHaveAttribute("aria-checked", "true");
   await expect(option("Medium")).toHaveAttribute("aria-checked", "true");
-  await expect(page.getByRole("menu")).toContainText(
-    "Medium: careful answers at a good speed. Low is faster; High thinks longer.",
-  );
   await option("GPT-6.1-Sol").click();
-  await expect(choice("GPT-6.1-Sol, Medium")).toBeVisible();
+  await expect(option("GPT-6.1-Sol")).toHaveAttribute("aria-checked", "true");
+  await option("XHigh").click();
+  await expect(choice("GPT-6.1-Sol, XHigh")).toBeVisible();
+  await expect(menu).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
   await send(page, "Hello");
   await expect(log(chat(page)).locator(".reply")).toHaveText("ok:Hello");
+  expect(await ranOn(rufi)).toEqual({ model: "gpt-6.1-sol", effort: "xhigh" });
+  // The chat's first reply: nothing changed.
+  await expect(changed).toHaveCount(0);
 
-  // A new effort applies from the next reply, with no quiet line.
-  await choice("GPT-6.1-Sol, Medium").click();
+  // Only the effort: it applies from the next reply, which a line comes before.
+  await choice("GPT-6.1-Sol, XHigh").click();
   await option("High").click();
   await expect(choice("GPT-6.1-Sol, High")).toBeVisible();
+  await log(chat(page)).click();
+  await expect(menu).toHaveCount(0);
   await send(page, "Again");
   await expect(log(chat(page)).locator(".reply").last()).toHaveText("ok:Again");
-  await expect(log(chat(page))).not.toContainText("New thread started");
+  await expect(changed).toHaveCount(1);
+  await expect(changed.locator("xpath=following-sibling::*[1]")).toContainText(
+    "Again",
+  );
 
   // Neither changes while a reply runs.
   await send(page, "hang");
@@ -469,33 +584,32 @@ test("the model and effort are chosen in the box, also in the bar, and kept for 
   await expect(chat(page).getByRole("alert")).toHaveText(
     "Stop the reply before changing the model.",
   );
-  await choice("GPT-6.1-Sol, High").click();
   await option("Low").click();
   await expect(chat(page).getByRole("alert")).toHaveText(
     "Stop the reply before changing the effort.",
   );
+  await page.keyboard.press("Escape");
   await chat(page).getByRole("button", { name: "Stop" }).click();
   await expect(log(chat(page))).toContainText("Stopped.");
   await choice("GPT-6.1-Sol, High").click();
   await option("GPT-6-Astra").click();
   await expect(choice("GPT-6-Astra, High")).toBeVisible();
+  // The button closes it again.
+  await choice("GPT-6-Astra, High").click();
+  await expect(menu).toHaveCount(0);
+  await send(page, "On Astra");
+  await expect(log(chat(page)).locator(".reply").last()).toHaveText(
+    "ok:On Astra",
+  );
+  await expect(changed).toHaveCount(2);
 
-  // Kept for the chat: in the bar after a reload, and in the chat page's box,
-  // whose top has nothing to choose. While the list of models is slow, the
-  // button keeps the name's place empty: never "Model" or the model's id.
-  const slow = Promise.withResolvers<undefined>();
-  await page.route("**/api/models", async (route) => {
-    await slow.promise;
-    await route.continue();
-  });
+  // Kept for the chat: in the bar after a reload, with its lines, and in the
+  // chat page's box, whose top has nothing to choose.
   await page.reload();
-  await expect(
-    chat(page).getByRole("button", { name: /^Model and effort/ }),
-  ).toHaveText("High");
-  slow.resolve(undefined);
   await expect(choice("GPT-6-Astra, High")).toBeVisible();
   await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
   await expect(toolbar(page)).toHaveText("Chat with Rufi");
+  await expect(log(page).getByText(/^Model changed/)).toHaveCount(2);
   await expect(
     page.getByRole("main").getByRole("button", { name: /^Model/ }),
   ).toHaveCount(1);
@@ -540,16 +654,14 @@ test("a save that fails says so and keeps the text in the tab, also on the chat'
       : route.continue(),
   );
   await box(chat(page)).fill("Half a question");
-  await expect(chat(page).getByRole("status")).toHaveText(
-    /^Not saved\s*Retry$/,
-  );
+  await expect(notSaved(chat(page))).toHaveText(/^Not saved\s*Retry$/);
   await expect(chat(page).getByRole("alert")).toHaveText("Rufi couldn't save.");
 
   // Off to the chat's page: its box has the text, still not saved, and
   // what is typed there fails to save too.
   await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
   await expect(box(page)).toHaveValue("Half a question");
-  await expect(page.getByRole("status")).toHaveText(/^Not saved\s*Retry$/);
+  await expect(notSaved(page)).toHaveText(/^Not saved\s*Retry$/);
   const refused = page.waitForResponse(
     (response) =>
       response.url().endsWith("/chat/draft") &&
@@ -558,13 +670,13 @@ test("a save that fails says so and keeps the text in the tab, also on the chat'
   );
   await box(page).fill("Half a question, and more");
   await refused;
-  await expect(page.getByRole("status")).toHaveText(/^Not saved\s*Retry$/);
+  await expect(notSaved(page)).toHaveText(/^Not saved\s*Retry$/);
 
   await page.unroute("**/chat/draft");
   const saved = kept(page, "and more");
   await page.getByRole("button", { name: "Retry" }).click();
   await saved;
-  await expect(page.getByRole("status")).toHaveCount(0);
+  await expect(notSaved(page)).toHaveCount(0);
   await page.reload();
   await expect(box(page)).toHaveValue("Half a question, and more");
 });
@@ -682,7 +794,7 @@ test("a quick send whose answer was lost keeps its id through Help and reload: t
   }
 });
 
-test("when Rufi stops while it hands a message to the AI, the message is not sure, and is never sent again by itself", async ({
+test("when Rufi stops while it hands a message to the AI, the message counts as sent: it stays in the chat, its reply stopped, and the chat goes on", async ({
   page,
   rufi,
 }) => {
@@ -690,7 +802,9 @@ test("when Rufi stops while it hands a message to the AI, the message is not sur
   await opened(page, rufi, { scenario: { hang: ["turn/start"] } });
   await send(page, "Questions before my visit");
   const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
-  await expect(waiting).toContainText("Sending…");
+  await expect(thinking(chat(page))).toBeVisible();
+  await expect(log(chat(page))).toContainText("Questions before my visit");
+  await expect(waiting).toHaveCount(0);
   // Claiming a row precedes preparation: wait until Codex has the request.
   await expect
     .poll(async () => {
@@ -715,47 +829,38 @@ test("when Rufi stops while it hands a message to the AI, the message is not sur
   await rufi.start({ port });
   await page.goto(rufi.link());
   await opener(chat(page)).click();
-  await expect(waiting).toContainText(
-    "Not sure this reached the AI. Check the chat before you send it again.",
-  );
-  await expect(
-    waiting.getByRole("button", { name: "Send again" }),
-  ).toBeVisible();
+  await expect(log(chat(page))).toContainText("Questions before my visit");
+  await expect(log(chat(page))).toContainText("Stopped.");
+  await expect(waiting).toHaveCount(0);
   await expect(box(chat(page))).toHaveValue("");
-  await expect(log(chat(page))).toHaveCount(0);
   await accessible(page);
+  // The chat goes on with the next message.
+  await send(page, "And now?");
+  await expect(log(chat(page)).locator(".reply").last()).toHaveText(
+    "ok:And now?",
+  );
 });
 
-test("a Rufi event shows as Rufi's line; after a Stop its note waits and goes with your next message", async ({
+test("a Rufi event shows as Rufi's line, and its note goes to the AI in a reply of its own", async ({
   page,
   rufi,
 }) => {
   await rufi.family(`
-    UPDATE chats SET paused = 'stopped' WHERE id = 'c-asha';
     INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, details, revision, created_at, updated_at)
       VALUES ('e-1', 'asha', 'c-asha', 1, 'event', 'Lab report · 12 Aug · 42 results read · 1 to check', '{"kind":"test"}', 1, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z');
     INSERT INTO chat_queue (id, person_id, chat_id, origin, text, event_id, position, held, created_at, updated_at)
-      VALUES ('q-e1', 'asha', 'c-asha', 'rufi', 'A lab report was read; one value is unsure.', 'e-1', 1, 'paused', '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z');`);
+      VALUES ('q-e1', 'asha', 'c-asha', 'rufi', 'A lab report was read; one value is unsure.', 'e-1', 1, NULL, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z');`);
   await rufi.start();
   await page.goto(rufi.link());
   await opener(chat(page)).click();
   await expect(log(chat(page))).toContainText(
     "RufiLab report · 12 Aug · 42 results read · 1 to check",
   );
-  const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
-  await expect(waiting).toContainText(
-    "Stopped · these go when you send a message",
-  );
-  await expect(waiting).toContainText(
-    "Rufi's note: Lab report · 12 Aug · 42 results read · 1 to check",
-  );
-  await expect(waiting).toContainText("Goes to the AI with your next message.");
+  await expect(log(chat(page)).locator(".reply")).toHaveCount(1);
+  await expect(
+    chat(page).getByRole("region", { name: "Waiting messages" }),
+  ).toHaveCount(0);
   await accessible(page);
-  await send(page, "What's new?");
-  await expect(log(chat(page)).locator(".reply").last()).toHaveText(
-    "ok:What's new?",
-  );
-  await expect(waiting).toHaveCount(0);
 });
 
 test("a draft longer than Rufi takes says so, and isn't kept or sent", async ({
@@ -807,7 +912,7 @@ test("a failed send keeps your text and says why; nothing is sent again by itsel
   );
 });
 
-test("the AI's memory: a compaction shows while it runs, then as done; the meter shows after a reply and after a reload; a thread that doesn't open holds the message with Try again and New thread", async ({
+test("the AI's memory: a compaction shows while it runs, then as done; the meter shows after a reply and after a reload; a thread that doesn't open holds the message with Send and New thread", async ({
   page,
   rufi,
 }) => {
@@ -829,7 +934,6 @@ test("the AI's memory: a compaction shows while it runs, then as done; the meter
   await expect(quiet("Chat history compacted")).toBeVisible();
   await expect(quiet("Compacting chat history…")).toHaveCount(0);
   await expect(log(chat(page)).locator(".reply")).toHaveText("ok:Hello");
-  await expect(log(chat(page))).not.toContainText("New thread started");
 
   await expect(meter).toHaveAccessibleName("Context used: 38%");
   await expect(meter).toHaveText("38%");
@@ -847,8 +951,10 @@ test("the AI's memory: a compaction shows while it runs, then as done; the meter
   const why =
     "Codex refused thread/resume: failed to read thread: a fictional read error";
   await expect(waiting).toContainText(why);
+  // Held, it isn't on its way: no working line.
+  await expect(thinking(chat(page))).toHaveCount(0);
   await accessible(page);
-  await waiting.getByRole("button", { name: "Try again" }).click();
+  await waiting.getByRole("button", { name: "Send", exact: true }).click();
   // Held again, with the error as it came.
   await expect(
     waiting.getByRole("button", { name: "New thread" }),
@@ -860,7 +966,7 @@ test("the AI's memory: a compaction shows while it runs, then as done; the meter
   const stop = chat(page).getByRole("button", { name: "Stop" });
   await expect(stop).toBeVisible();
   await expect(
-    waiting.getByRole("button", { name: "Try again" }),
+    waiting.getByRole("button", { name: "Send", exact: true }),
   ).toBeVisible();
   await expect(waiting.getByRole("button", { name: "New thread" })).toHaveCount(
     0,
@@ -868,10 +974,8 @@ test("the AI's memory: a compaction shows while it runs, then as done; the meter
   await stop.click();
   await waiting.getByRole("button", { name: "New thread" }).click();
   await expect(log(chat(page)).locator(".reply").last()).toHaveText("ok:Again");
-  await expect(quiet("New thread started")).toHaveCount(1);
-  await expect(
-    quiet("New thread started").locator("xpath=following-sibling::*[1]"),
-  ).toContainText("Again");
+  // A new thread on the same model and effort: no line.
+  await expect(log(chat(page)).getByText(/^Model changed/)).toHaveCount(0);
   await expect(waiting).toHaveCount(0);
   // The new thread hasn't said how full it is.
   await expect(meter).toHaveCount(0);
@@ -999,7 +1103,7 @@ test("⌘J opens the panel; Esc steps back and returns focus; another page close
   await expect(opener(chat(page))).toBeFocused();
 });
 
-test("a click outside the panel steps back to the bar and keeps what you typed; a click in it, its menu, Stop or Based on doesn't", async ({
+test("a click outside the panel steps back to the bar and keeps what you typed; a click in it, its menu or Stop doesn't", async ({
   page,
   rufi,
 }) => {
@@ -1014,18 +1118,10 @@ test("a click outside the panel steps back to the bar and keeps what you typed; 
     },
   });
   const minimise = chat(page).getByRole("button", { name: "Minimise" });
-  await send(
-    page,
-    "Your last HbA1c\n\n```rufi-basis\nFrom your record, read now.\n```",
-  );
+  await send(page, "Your last HbA1c");
   await expect(log(chat(page)).locator(".reply")).toHaveText(
     "ok:Your last HbA1c",
   );
-  await log(chat(page)).getByRole("button", { name: "Based on" }).click();
-  await expect(page.getByRole("dialog", { name: "Based on" })).toContainText(
-    "From your record, read now.",
-  );
-  await expect(minimise).toBeVisible();
   // A reply that runs until it is stopped.
   await send(page, "partial");
   await expect(log(chat(page)).locator(".reply").last()).toHaveText("ok:part");
@@ -1036,6 +1132,11 @@ test("a click outside the panel steps back to the bar and keeps what you typed; 
     .getByRole("button", { name: /^Model and effort: / })
     .click();
   await page.getByRole("menuitemradio", { name: "GPT-6.1-Sol" }).click();
+  // The menu stays open; its button closes it, and the panel stays.
+  await expect(page.getByRole("menu")).toBeVisible();
+  await chat(page)
+    .getByRole("button", { name: /^Model and effort: / })
+    .click();
   await expect(page.getByRole("menu")).toHaveCount(0);
   await expect(minimise).toBeVisible();
 
@@ -1173,7 +1274,9 @@ test("Activity is open and live while the AI works, its notes in full and its th
   });
   await send(page, "drip commentary");
   // While it thinks: open, live, the latest heading in its place.
-  await expect(activity(chat(page))).toHaveText("Activity · working · 1 step");
+  await expect(activity(chat(page))).toHaveText(
+    /^Activity · working · 1 step · \d+:\d\d$/,
+  );
   await expect(activity(chat(page))).toHaveAttribute("aria-expanded", "true");
   await expect(steps(chat(page))).toHaveText([/^Comparing the reports/]);
   await accessible(page);
@@ -1268,14 +1371,16 @@ test("folded by hand while the AI works, Activity stays folded and shows the new
   await expect(steps(chat(page))).toHaveText([/^Checking the record/]);
   await activity(chat(page)).click();
   await expect(activity(chat(page))).toHaveText(
-    "Working · 1 stepChecking the record",
+    /^Working · 1 step · \d+:\d\dChecking the record$/,
   );
   await expect(activity(chat(page))).toHaveAttribute("aria-expanded", "false");
   // A reload rebuilds it from what was stored: the same live row, open
   // again as the setting says.
   await page.reload();
   await opener(chat(page)).click();
-  await expect(activity(chat(page))).toHaveText("Activity · working · 1 step");
+  await expect(activity(chat(page))).toHaveText(
+    /^Activity · working · 1 step · /,
+  );
   await expect(steps(chat(page))).toHaveText([/^Checking the record/]);
   now = "2026-10-11T09:00:08.000Z";
   await chat(page).getByRole("button", { name: "Stop", exact: true }).click();
@@ -1313,7 +1418,7 @@ async function chatPage(page: Page) {
   return Schema.decodeUnknownSync(ChatPage)(body);
 }
 
-test("thinking with no summary shows no line, while it runs or after", async ({
+test("thinking with no summary shows no step: Thinking shows while it runs, and no line after", async ({
   page,
   rufi,
 }) => {
@@ -1324,8 +1429,76 @@ test("thinking with no summary shows no line, while it runs or after", async ({
   await expect(
     chat(page).getByRole("button", { name: "Stop", exact: true }),
   ).toBeVisible();
+  await expect(thinking(log(chat(page)))).toBeVisible();
   await expect(log(chat(page)).locator(".reply")).toHaveText("ok:Hello");
   await expect(activity(chat(page))).toHaveCount(0);
+  await expect(thinking(chat(page))).toHaveCount(0);
+});
+
+test("from Enter, one working line shows while the AI's thread opens and until the first step, also with Activity hidden and after a reload; then the Activity line; Stop shows from Enter and before a step ends it", async ({
+  page,
+  rufi,
+}) => {
+  // The AI's thread doesn't open while this file is there.
+  const opening = join(rufi.home, "opening");
+  await writeFile(opening, "");
+  await opened(page, rufi, {
+    scenario: {
+      held: { methods: ["thread/start"], file: opening },
+      reasoning: ["**Reading the record**"],
+      reasoningMs: 1_500,
+    },
+  });
+  await page.goto(`${new URL(page.url()).origin}/settings`);
+  const hide = page
+    .getByRole("radiogroup", { name: "Activity" })
+    .getByRole("radio", { name: "Always hide" });
+  await hide.check();
+  await expect(hide).toBeChecked();
+  await page.goto(`${new URL(page.url()).origin}/`);
+
+  await send(page, "What does my TSH result mean?");
+  const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
+  await expect(thinking(chat(page))).toHaveText(/^Thinking · \d+:\d\d$/);
+  // Your message shows as sent at once, not as waiting.
+  await expect(log(chat(page))).toContainText("What does my TSH result mean?");
+  await expect(waiting).toHaveCount(0);
+  await expect(activity(chat(page))).toHaveCount(0);
+  await accessible(page);
+  // A reload shows it again, from what Rufi says now.
+  await page.reload();
+  await openChat(page);
+  await expect(thinking(chat(page))).toHaveCount(1);
+  // Stop is there from Enter too.
+  await expect(
+    chat(page).getByRole("button", { name: "Stop", exact: true }),
+  ).toBeVisible();
+
+  // The thread opens: the Activity line takes its place, with its timer.
+  await rm(opening);
+  await expect(activity(chat(page))).toHaveText(/^Working · 1 step · \d+:\d\d/);
+  await expect(thinking(chat(page))).toHaveCount(0);
+  await expect(log(chat(page)).locator(".reply")).toHaveText(
+    "ok:What does my TSH result mean?",
+  );
+  await expect(activity(chat(page))).toHaveText(/^Activity · /);
+  await expect(thinking(chat(page))).toHaveCount(0);
+
+  // Stopped before its first step, the working line goes.
+  await rufi.stop();
+  await rufi.start();
+  await page.goto(rufi.link());
+  await send(page, "hang");
+  await expect(thinking(log(chat(page)))).toBeVisible();
+  // The reply runs: the AI has the message.
+  await expect
+    .poll(() =>
+      readFile(join(rufi.home, "fake-codex.jsonl"), "utf8").catch(() => ""),
+    )
+    .toContain('"text":"hang"');
+  await chat(page).getByRole("button", { name: "Stop", exact: true }).click();
+  await expect(log(chat(page))).toContainText("Stopped.");
+  await expect(thinking(chat(page))).toHaveCount(0);
 });
 
 test("after a restart, a reply a crash cut off shows its Activity folded, stopped, with no time it can't know", async ({
@@ -1398,7 +1571,7 @@ test("the Activity setting: show while working folds at the end; always show sta
   await choose("Always hide");
   await send(page, "Once more");
   await expect(activity(chat(page))).toHaveText(
-    "Working · 1 stepReading the saved result and the fictional lab report page",
+    /^Working · 1 step · \d+:\d\dReading the saved result and the fictional lab report page$/,
   );
   // As drawn: the line is cut just after a space, which stays.
   await expect(activity(chat(page))).toHaveText(/the saved \s*result and/, {
@@ -1424,6 +1597,243 @@ test("the Activity setting: show while working folds at the end; always show sta
       .getByRole("radiogroup", { name: "Activity" })
       .getByRole("radio", { name: "Always hide" }),
   ).toBeChecked();
+});
+
+test("a helper Rufi AI starts is one line in its Activity, which opens the helper's pop-up with its own Activity, where the helper's own helper opens below its line, by mouse and by keyboard", async ({
+  page,
+  rufi,
+}, testInfo) => {
+  await opened(page, rufi, {
+    scenario: {
+      bare: true,
+      callsByText: {
+        "Check my results": [
+          {
+            id: "call-helper",
+            tool: "start_agent",
+            arguments: { title: "Helper", task: "helper: compare the reports" },
+          },
+        ],
+        "helper:": [
+          {
+            id: "call-checker",
+            tool: "start_agent",
+            arguments: {
+              title: "Checker",
+              task: "checker: read the March report",
+            },
+          },
+        ],
+        "checker:": [
+          { server: "files", tool: "read_page", arguments: { page: 1 } },
+        ],
+      },
+    },
+  });
+  await send(page, "Check my results");
+  const first = log(chat(page)).getByRole("button", { name: ENDED }).first();
+  await first.click();
+  const helper = log(chat(page)).getByRole("button", { name: /Helper · / });
+  // One line: its name, its status and its result's start.
+  await expect(helper).toHaveText(/^Helper · done · ok:/);
+
+  // By keyboard: Enter opens the helper's pop-up, with its own Activity.
+  await helper.focus();
+  await helper.press("Enter");
+  const popup = page.getByRole("dialog", { name: "Helper" });
+  const helpers = popup.getByRole("list", { name: "Helper's Activity" });
+  await expect(helpers.locator(":scope > li").first()).toHaveText(
+    "From Rufi AIhelper: compare the reports",
+  );
+  const checker = helpers.getByRole("button", { name: /Checker · / });
+  await expect(checker).toHaveText(/^Checker · done · ok:/);
+  await expect(checker).toHaveAttribute("aria-expanded", "false");
+  await expect(helpers).toContainText("ok:helper: compare the reports");
+
+  // By mouse: the helper's helper opens below its line, with its own steps.
+  await checker.click();
+  const checkers = helpers.getByRole("list", { name: "Checker's Activity" });
+  await expect(checkers.locator(":scope > li")).toHaveText([
+    "From Helperchecker: read the March report",
+    /files\.read_page/,
+    "ok:checker: read the March report",
+  ]);
+  await accessible(page);
+  // For the reviewer: the pop-up with the tree.
+  await page.screenshot({ path: testInfo.outputPath("nested.png") });
+
+  // Enter folds the helper's helper; Esc closes the pop-up.
+  await checker.press("Enter");
+  await expect(checker).toHaveAttribute("aria-expanded", "false");
+  await expect(checkers).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(popup).toHaveCount(0);
+});
+
+test("an agent at work is a chip above the box that opens its pop-up, with its Activity and Stop; stopped, its chip goes and its message shows in the chat, where its name opens the pop-up again", async ({
+  page,
+  rufi,
+}, testInfo) => {
+  await opened(page, rufi, {
+    scenario: {
+      bare: true,
+      callsByText: {
+        "Read my report": [
+          {
+            id: "call-reader",
+            tool: "start_agent",
+            arguments: { title: "Reader", task: "reader: hang on page 1" },
+          },
+        ],
+      },
+    },
+  });
+  await send(page, "Read my report");
+  const row = chat(page).getByRole("list", { name: "Agents at work" });
+  const chip = row.getByRole("button", { name: /^Reader \d+:\d\d$/ });
+  await expect(chip).toBeVisible();
+  // For the reviewer: the row above the box, then the pop-up and the message.
+  await page.screenshot({ path: testInfo.outputPath("row.png") });
+
+  // Its pop-up: its task from Rufi AI first, and Stop while it works.
+  await chip.click();
+  const popup = page.getByRole("dialog", { name: "Reader" });
+  await expect(
+    popup
+      .getByRole("list", { name: "Reader's Activity" })
+      .locator("li")
+      .first(),
+  ).toHaveText("From Rufi AIreader: hang on page 1");
+  await accessible(page);
+  await page.screenshot({ path: testInfo.outputPath("pop-up.png") });
+  await popup.getByRole("button", { name: "Stop" }).click();
+  await expect(popup).toContainText("stopped");
+  await expect(popup.getByRole("button", { name: "Stop" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(popup).toHaveCount(0);
+
+  // Its chip goes; its stopped message shows in the chat, under its name.
+  await expect(row).toHaveCount(0);
+  const named = page.getByRole("button", { name: "Reader", exact: true });
+  const message = log(chat(page))
+    .locator("[data-entry]")
+    .filter({ has: named });
+  await expect(message).toContainText("Reader· stopped");
+  const name = message.getByRole("button", { name: "Reader", exact: true });
+  await page.screenshot({ path: testInfo.outputPath("message.png") });
+  await name.click();
+  await expect(page.getByRole("dialog", { name: "Reader" })).toBeVisible();
+});
+
+test("a helper's long Activity shows its latest lines, and earlier ones on request, each once", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi, {
+    scenario: {
+      bare: true,
+      // Its answer asks two questions, as Codex gives them: one item.
+      unstreamed: {
+        text: "Which pages next?",
+        questions: [
+          { title: "Page 3 or 4?", options: ["3", "4"] },
+          { title: "Both?", options: null },
+        ],
+      },
+      callsByText: {
+        "Read every page": [
+          {
+            id: "call-reader",
+            tool: "start_agent",
+            arguments: { title: "Reader", task: "reader: read every page" },
+          },
+        ],
+        "reader:": Array.from({ length: 60 }, (_, page) => ({
+          server: "files",
+          tool: "read_page",
+          arguments: { page: page + 1 },
+        })),
+      },
+    },
+  });
+  await send(page, "Read every page");
+  await log(chat(page)).getByRole("button", { name: ENDED }).first().click();
+  const reader = log(chat(page)).getByRole("button", { name: /Reader · / });
+  await expect(reader).toHaveText(/^Reader · done/);
+  await reader.click();
+  const popup = page.getByRole("dialog", { name: "Reader" });
+  const lines = popup
+    .getByRole("list", { name: "Reader's Activity" })
+    .locator(":scope > li");
+  /** Each of its questions shows once. */
+  const asked = async () => {
+    for (const question of ["Page 3 or 4? (3 · 4)", "Both?"]) {
+      await expect(lines.filter({ hasText: question })).toHaveCount(1);
+    }
+  };
+  // Its task, 60 steps, its answers and its questions: the latest 50 first.
+  await expect(lines).toHaveCount(50);
+  await expect(lines.last()).toHaveText("Asks: Both?");
+  await asked();
+  await popup.getByRole("button", { name: "Show earlier" }).click();
+  await expect(lines).toHaveCount(65);
+  await expect(lines.first()).toHaveText("From Rufi AIreader: read every page");
+  await asked();
+  await expect(popup.getByRole("button", { name: "Show earlier" })).toHaveCount(
+    0,
+  );
+});
+
+test("what Rufi AI tells a helper while it works shows last in the helper's Activity", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi, {
+    scenario: {
+      bare: true,
+      callsByText: {
+        "Read every page": [
+          {
+            id: "call-reader",
+            tool: "start_agent",
+            arguments: { title: "Reader", task: "reader: hang on every page" },
+          },
+        ],
+        // It reads 60 pages, then works on, quiet.
+        "reader:": Array.from({ length: 60 }, (_, page) => ({
+          server: "files",
+          tool: "read_page",
+          arguments: { page: page + 1 },
+        })),
+        Tell: [
+          {
+            tool: "send_agent",
+            arguments: { to: "$agent", text: "Skip page 3." },
+          },
+        ],
+      },
+    },
+  });
+  await send(page, "Read every page");
+  await log(chat(page)).getByRole("button", { name: ENDED }).first().click();
+  const line = log(chat(page)).getByRole("button", { name: /Reader · / });
+  await line.click();
+  const lines = page
+    .getByRole("dialog", { name: "Reader" })
+    .getByRole("list", { name: "Reader's Activity" })
+    .locator(":scope > li");
+  await expect(lines).toHaveCount(50);
+  await expect(lines.last()).toHaveText(/read_page · \{"page":60\}$/);
+  await page.keyboard.press("Escape");
+
+  const reader = await log(chat(page))
+    .locator("[data-agent]")
+    .getAttribute("data-agent");
+  await send(page, `Tell (agent ${String(reader)}) to skip page 3`);
+  // It came after its steps: last.
+  await line.click();
+  await expect(lines.last()).toHaveText(/^From Rufi AI[\s\S]*Skip page 3\.$/);
+  await expect(lines).toHaveCount(50);
 });
 
 test("an old chat shows as it was stored: its replies in order, and its steps folded under the last, with their stored words and no details", async ({
@@ -1549,70 +1959,6 @@ test("a save made in another window while this one's connection was down shows o
   await expect(results(6)).toBeVisible();
 });
 
-test("Based on, beside Activity once a reply ended, opens the AI's own words and Esc closes it; small talk and a stopped reply have none", async ({
-  page,
-  rufi,
-}) => {
-  await opened(page, rufi, {
-    scenario: {
-      calls: [
-        {
-          tool: "get_records",
-          arguments: { kind: "result", from: "2026-08", to: "2026-08" },
-        },
-      ],
-    },
-  });
-  const basedOn = log(chat(page)).getByRole("button", { name: "Based on" });
-  // The fake answers with the message's own words: here, a rufi-basis block.
-  await send(
-    page,
-    "Your last HbA1c\n\n```rufi-basis\nFrom your record, read now.\n```",
-  );
-  await expect(log(chat(page)).locator(".reply")).toHaveText(
-    "ok:Your last HbA1c",
-  );
-  // On Activity's line.
-  await expect(
-    log(chat(page))
-      .locator("[data-activity]")
-      .getByRole("button", { name: "Based on" }),
-  ).toHaveCount(1);
-  await basedOn.focus();
-  await page.keyboard.press("Enter");
-  const popover = page.getByRole("dialog", { name: "Based on" });
-  await expect(
-    popover.getByText("From your record, read now.", { exact: true }),
-  ).toBeVisible();
-  await accessible(page);
-  // Esc closes the popover only, and the focus goes back to Based on.
-  await page.keyboard.press("Escape");
-  await expect(popover).toHaveCount(0);
-  await expect(basedOn).toBeFocused();
-  await expect(
-    chat(page).getByRole("button", { name: "Minimise" }),
-  ).toBeVisible();
-  // Also from Close, reached with Tab.
-  await page.keyboard.press("Enter");
-  await expect(popover).toBeVisible();
-  await page.keyboard.press("Tab");
-  await expect(popover.getByRole("button", { name: "Close" })).toBeFocused();
-  await page.keyboard.press("Escape");
-  await expect(popover).toHaveCount(0);
-  await expect(basedOn).toBeFocused();
-
-  await send(page, "quiet thanks");
-  await expect(log(chat(page)).locator(".reply").nth(1)).toHaveText(
-    "ok:quiet thanks",
-  );
-  await expect(basedOn).toHaveCount(1);
-  await send(page, "partial");
-  await expect(log(chat(page)).locator(".reply").nth(2)).toHaveText("ok:part");
-  await chat(page).getByRole("button", { name: "Stop" }).click();
-  await expect(log(chat(page)).getByText("Stopped.")).toBeVisible();
-  await expect(basedOn).toHaveCount(1);
-});
-
 test("a tool step shows the tool and its arguments as reported, and opens to its result", async ({
   page,
   rufi,
@@ -1634,6 +1980,8 @@ test("a tool step shows the tool and its arguments as reported, and opens to its
   });
   await send(page, "My results");
   await expect(log(chat(page)).locator(".reply")).toHaveText("ok:My results");
+  // Opened once the reply has ended: a click while it runs closes it.
+  await expect(activity(chat(page))).toHaveText(/^Activity · \d+ steps? · /);
   await activity(chat(page)).click();
   const own = steps(chat(page)).first();
   await expect(own).toHaveText(
@@ -1748,6 +2096,8 @@ test.describe("on the real Codex binary, with a local fake model", () => {
     await expect(log(chat(page)).locator(".reply")).toHaveText(
       "ok:Read my overview",
     );
+    // Opened once the reply has ended: a click while it runs closes it.
+    await expect(activity(chat(page))).toHaveText(/^Activity · \d+ steps? · /);
     await activity(chat(page)).click();
     await expect(
       log(chat(page)).getByRole("list", { name: "Activity" }),
@@ -1756,10 +2106,10 @@ test.describe("on the real Codex binary, with a local fake model", () => {
     await send(page, "partial");
     await expect(log(chat(page))).toContainText("ok:part");
     // What the reply wrote stays, then your message, and the reply goes on
-    // with it.
+    // with it, told it is steered.
     await send(page, "Steered in");
     await expect(log(chat(page))).toContainText(
-      "ok:partSteered inok:Steered in",
+      "ok:partSteered inok:You're being steered: don't drop what you're working on unless you have to; take this into account.",
     );
 
     // Stop works on the reply that goes on.

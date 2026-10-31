@@ -21,6 +21,44 @@ CREATE TABLE people (
   display_name TEXT NOT NULL
 ) STRICT;
 
+-- A person's profile: the few facts about them their record is read with,
+-- such as which lab range fits. One per person, made with the person (its
+-- id is theirs), each value empty until given; never removed: a value is
+-- cleared instead. It changes only by a save, like any record: from the
+-- chat, the welcome, the profile page or Settings.
+CREATE TABLE profiles (
+  id TEXT PRIMARY KEY,
+  person_id TEXT NOT NULL REFERENCES people (id),
+  birth_date TEXT,             -- at the precision given: 'YYYY', 'YYYY-MM' or 'YYYY-MM-DD'
+  birth_date_words TEXT,
+  sex_for_ranges TEXT CHECK (sex_for_ranges IN ('female', 'male')), -- only for choosing lab ranges
+  blood_group TEXT CHECK (blood_group IN ('A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-')),
+  height REAL,                 -- as given, in height_unit
+  height_unit TEXT CHECK (height_unit IN ('cm', 'in')),
+  removed INTEGER NOT NULL DEFAULT 0, -- always 0: the record's reads expect it
+  UNIQUE (person_id, id),
+  CHECK (id = person_id)
+) STRICT;
+
+-- The profile as the record reads and saves it (its kind's table): its
+-- values with the person's name, which stays in people. A save changes it
+-- here, and the trigger puts each value back where it lives.
+CREATE VIEW profile_rows AS
+  SELECT p.rowid AS rowid, p.id, p.person_id, people.display_name AS name,
+    p.birth_date, p.birth_date_words, p.sex_for_ranges, p.blood_group,
+    p.height, p.height_unit, p.removed
+  FROM profiles p JOIN people ON people.id = p.person_id;
+
+CREATE TRIGGER profile_rows_change INSTEAD OF UPDATE ON profile_rows
+BEGIN
+  UPDATE people SET display_name = NEW.name WHERE id = OLD.person_id;
+  UPDATE profiles SET
+    birth_date = NEW.birth_date, birth_date_words = NEW.birth_date_words,
+    sex_for_ranges = NEW.sex_for_ranges, blood_group = NEW.blood_group,
+    height = NEW.height, height_unit = NEW.height_unit, removed = NEW.removed
+  WHERE person_id = OLD.person_id AND id = OLD.id;
+END;
+
 -- Original bytes, exactly as they came, shared across people. The bytes are
 -- in files/<id> in the data folder, written and synced before any row points
 -- to them; a row is only added with a document page that uses it, and goes
@@ -56,6 +94,7 @@ CREATE TABLE documents (
   deleted_at TEXT,       -- when the person deleted it: a tombstone, out of every list and action
   from_document TEXT,    -- the add Rufi AI split it from; null for an add
   sent_at TEXT,          -- when the person sent it in a message; null while it waits unsent in the chat box (a split document has its add's)
+  reader_agent TEXT,     -- the agent Rufi AI set to read it (set_reader), in agents.sqlite; whether it is reading is worked out when shown
   UNIQUE (person_id, id),
   FOREIGN KEY (person_id, from_document) REFERENCES documents (person_id, id)
 ) STRICT;
@@ -72,10 +111,10 @@ CREATE TABLE document_pages (
   file_id TEXT REFERENCES files (id), -- null once its document is deleted
   page_in_file INTEGER NOT NULL, -- 1, 2, 3... in the file
   file_name TEXT NOT NULL,     -- the file's name as it was added
-  -- The reader's notebook: this page's entry (JSON, as save_page checked it)
-  -- and the job that saved it. A later save_page for the page replaces it.
-  -- The reader that copies keeps its copy in page_copies and sets only the
-  -- job, attempt and time here, with no entry.
+  -- An older reader's notebook: this page's entry (JSON, as its save_page
+  -- checked it) and the job that saved it. A reading saved now keeps its
+  -- copy in page_copies and sets only the job, attempt and time here, with
+  -- no entry.
   entry TEXT,
   entry_job_id TEXT,
   entry_attempt INTEGER,      -- run that saved it; 0 if that run failed
@@ -91,15 +130,10 @@ CREATE TABLE document_pages (
   FOREIGN KEY (person_id, entry_job_id) REFERENCES jobs (person_id, id)
 ) STRICT;
 
--- A document's readings, one row per job, run one at a time across Rufi.
--- A job is made when the reply of the message that sent its document
--- starts, and runs in Rufi's part of that reply: queued or running only
--- while that reply lives, failed when it ends otherwise or at the next
--- start. A reading targets some of its document's pages (all of them
--- first; a read-again only the failed ones), and each run of it is a new
--- attempt: save_page accepts entries only from the running job's current
--- attempt, for its target pages. Only a reader turn that completed
--- normally finishes the job.
+-- A document's readings, one row per job. A reader's save_reading writes
+-- one whole, done (save-reading.ts). An older reader's job ran in Rufi's
+-- part of a reply, one attempt at a time, and was queued or running only
+-- while it ran; one that hadn't finished failed when Rufi upgraded.
 CREATE TABLE jobs (
   id TEXT PRIMARY KEY,
   person_id TEXT NOT NULL,
@@ -116,7 +150,6 @@ CREATE TABLE jobs (
   error TEXT,                          -- why it failed, in words for the person
   usage TEXT,                          -- its runs' AI use as the agent reported it, summed (JSON)
   reader TEXT,                         -- the reader version of its last run (JSON)
-  sorted_at TEXT,                      -- when Rufi AI sorted the pages it copied; null until then
   created_at TEXT NOT NULL,
   UNIQUE (person_id, id),
   FOREIGN KEY (person_id, document_id) REFERENCES documents (person_id, id)
@@ -172,6 +205,7 @@ CREATE TABLE page_copies (
   copy TEXT NOT NULL,          -- the page as Markdown (HTML tables allowed), as the reader wrote it
   why TEXT,                    -- why it is unreadable
   saved_at TEXT NOT NULL,
+  sorted_at TEXT,              -- when Rufi AI sorted this page from it; null until then
   PRIMARY KEY (person_id, file_id, page_in_file, job_id),
   FOREIGN KEY (person_id, file_id, page_in_file) REFERENCES document_pages (person_id, file_id, page_in_file),
   FOREIGN KEY (person_id, job_id) REFERENCES jobs (person_id, id)
@@ -375,18 +409,19 @@ CREATE TABLE settings (
 CREATE TABLE chats (
   id TEXT PRIMARY KEY,
   person_id TEXT NOT NULL UNIQUE REFERENCES people (id), -- one chat per person
-  model TEXT,                  -- the model chosen for it; null: the first allowed one, set when the first message goes
-  effort TEXT CHECK (effort IN ('low', 'medium', 'high')), -- how hard the AI thinks, chosen for it; null: Rufi's default
+  model TEXT,                  -- the model chosen for it, one of Rufi's four; null: a new chat's, set when the first message goes
+  effort TEXT CHECK (effort IN ('low', 'medium', 'high', 'xhigh')), -- how hard the AI thinks, chosen for it; null: Rufi's default
   thread_id TEXT,              -- the agent's thread; none until the first message
   thread_provider TEXT,        -- whose thread it is, so another agent never reuses it
   thread_model TEXT,           -- the model the thread started with
   thread_tools TEXT,           -- the tool set it started with (a thread keeps its tools)
-  paused TEXT CHECK (paused IN ('stopped', 'restarted')), -- nothing goes to the AI until the person sends: after a Stop, or Rufi started again with messages waiting
+  paused TEXT CHECK (paused IN ('stopped', 'restarted')), -- no longer used (0020): a chat once paused after a Stop or a restart
   revision INTEGER NOT NULL DEFAULT 0, -- grows with every change to the transcript
   context_tokens INTEGER,      -- the tokens of the thread's last request to the model, as the agent last reported them
   context_window INTEGER,      -- the model's context window then; null: the agent didn't say
   context_thread TEXT,         -- the thread they are of: shown only while it is the chat's thread
   created_at TEXT NOT NULL,
+  model_provider TEXT,         -- the provider its model runs on, kept with the choice
   UNIQUE (person_id, id)
 ) STRICT;
 
@@ -408,6 +443,7 @@ CREATE TABLE turns (
   resets_at TEXT,              -- a usage limit's reset time, when the provider gave one
   started_at TEXT NOT NULL,
   ended_at TEXT,
+  effort TEXT,                 -- the effort it ran with, as Rufi passed it; null: from before replies kept it
   UNIQUE (person_id, id),
   UNIQUE (chat_id, agent_turn_id),
   FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id)
@@ -416,25 +452,27 @@ CREATE TABLE turns (
 -- A chat's transcript, in order: your messages (steers marked), one
 -- line per thing the agent did with everything it sent and got back, the
 -- agent's reasoning and its replies, Rufi's receipts, Rufi's events
--- (its own factual lines, never the person's words) and the line of each
--- visit brief. Stored before anyone is shown it.
+-- (its own factual lines, never the person's words), the line of each
+-- visit brief, and the messages of the agents Rufi AI started, where Rufi
+-- AI took them. Stored before anyone is shown it.
 CREATE TABLE transcript_entries (
   id TEXT PRIMARY KEY,         -- UUIDv7; a message keeps the id the agent got with it
   person_id TEXT NOT NULL,
   chat_id TEXT NOT NULL,
   seq INTEGER NOT NULL,        -- 1, 2, 3... in the chat
   turn_id TEXT,                -- the reply it belongs to
-  kind TEXT NOT NULL CHECK (kind IN ('message', 'steer', 'activity', 'reply', 'reasoning', 'receipt', 'event', 'brief')),
-  text TEXT NOT NULL,          -- the message or the reply as it came; an activity's text as the agent reported it (the command, the tool, a note's words); the reasoning's summary; a receipt's, an event's or a brief's line
+  kind TEXT NOT NULL CHECK (kind IN ('message', 'steer', 'activity', 'reply', 'reasoning', 'receipt', 'event', 'brief', 'agent')),
+  text TEXT NOT NULL,          -- the message or the reply as it came; an activity's text as the agent reported it (the command, the tool, a note's words); the reasoning's summary; a receipt's, an event's or a brief's line; an agent's message in its own words, as it sent it (empty when it stopped)
   activity TEXT CHECK (activity IN ('tool', 'command', 'web_search', 'file_change', 'sub_agent', 'compaction', 'picture', 'note', 'reading', 'other')), -- reading: Rufi's reader copying one document, in Rufi's part of a reply
   detail TEXT,                 -- an activity's second reported part: a tool's arguments, a command's exit code; a picture's path, whole; a reading's progress
-  details TEXT,                -- an activity's or reasoning's everything, as the agent gave it (JSON); a reading's job and document; an event's kind and facts (JSON); null: none
+  details TEXT,                -- an activity's or reasoning's everything, as the agent gave it (JSON); a reading's job and document; an event's kind and facts (JSON); an agent's message's agent, its name then and why it came: {"agent", "title", "about": done, asked, wrote, stopped or failed} (JSON); null: none
   refs TEXT,                   -- a message's references, its chips (JSON); null: none
   status TEXT CHECK (status IN ('running', 'done', 'failed', 'stopped')),
   agent_item_id TEXT,          -- the agent's id for a reply or an activity, to update it
   revision INTEGER NOT NULL,   -- the chat's revision when it last changed
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  questions TEXT CHECK (questions IS NULL OR kind = 'reply'), -- a reply's questions, as the AI gave them (JSON), kept apart from its answer; null: none
   UNIQUE (person_id, id),
   UNIQUE (chat_id, seq),
   FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id),
@@ -446,18 +484,22 @@ CREATE TABLE transcript_entries (
   CHECK ((kind = 'activity') = (activity IS NOT NULL)),
   CHECK (kind != 'activity' OR status IS NOT NULL),
   CHECK (status IS NULL OR kind IN ('activity', 'reply')),
-  CHECK (details IS NULL OR kind IN ('activity', 'reasoning', 'event')),
+  CHECK (details IS NULL OR kind IN ('activity', 'reasoning', 'event', 'agent')),
+  CHECK (kind != 'agent' OR details IS NOT NULL),
   CHECK (refs IS NULL OR kind IN ('message', 'steer'))
 ) STRICT;
 
--- Each call the AI made to one of Rufi's own tools, kept by Rufi as it
--- answered: what the AI sent and exactly what it got back.
+-- Each call an agent made to one of Rufi's own tools, kept by Rufi as it
+-- answered: what the AI sent and exactly what it got back. A write's is
+-- kept in its transaction, with what it changed and its receipt.
 CREATE TABLE tool_calls (
   id TEXT PRIMARY KEY,         -- UUIDv7
   person_id TEXT NOT NULL,
   chat_id TEXT NOT NULL,
-  turn_id TEXT NOT NULL,       -- the reply it belongs to
-  call_id TEXT NOT NULL,       -- the agent's id for the call: its activity line's agent_item_id
+  turn_id TEXT,                -- the reply it belongs to: a root turn's call
+  agent_id TEXT,               -- the agent that made it, in agents.sqlite; none for a call kept before
+  agent_turn_id TEXT,          -- that agent's turn, in agents.sqlite
+  call_id TEXT NOT NULL,       -- Rufi's id for the call: <agent>/<conversation>/<provider call id>; the agent's own for a call kept before
   tool TEXT NOT NULL,          -- 'get_overview', 'get_records'...
   input TEXT NOT NULL,         -- what the AI sent (JSON)
   answer TEXT NOT NULL,        -- exactly what the AI got back (JSON)
@@ -483,27 +525,28 @@ CREATE TABLE drafts (
 ) STRICT;
 
 -- What waits to go to the AI, Rufi's own (docs/adr/0004): the person's
--- messages and Rufi's events that ask the AI. Rufi hands the AI one turn's
--- rows at a time, claimed here before it calls the AI, and never hands a
--- row over twice. sent_as is set just before the AI is called: a
+-- messages and Rufi's events that ask the AI. The agent system hands each
+-- row over in order, claimed here first, and a row is sent once handed
+-- over; Rufi never hands one over twice. sent_as is set by that claim: a
 -- 'handing_over' row without it surely never reached the AI (Rufi's part of
--- its reply ran, or the thread was opening); one with it becomes 'not_sure'
--- when Rufi stops: shown, never sent again by itself.
+-- its reply ran, or reads); one with it counts as sent when Rufi starts
+-- again.
 CREATE TABLE chat_queue (
   id TEXT PRIMARY KEY,         -- UUIDv7, given by the send: the acceptance identity; a person's message keeps it in the transcript
   person_id TEXT NOT NULL,
   chat_id TEXT NOT NULL,
   origin TEXT NOT NULL CHECK (origin IN ('person', 'rufi')),
+  kind TEXT NOT NULL DEFAULT 'queue' CHECK (kind IN ('steer', 'queue')), -- while a reply runs: into it (steer), or after it (queue)
   text TEXT NOT NULL,          -- the person's message, or Rufi's note for the AI
   refs TEXT NOT NULL DEFAULT '[]', -- references sent with it (JSON): the message's chips
   event_id TEXT,               -- a Rufi event's line in the transcript
   position INTEGER NOT NULL,   -- order among the waiting rows
-  state TEXT NOT NULL DEFAULT 'waiting' CHECK (state IN ('waiting', 'handing_over', 'sent', 'not_sure', 'removed')),
-  held TEXT CHECK (held IN ('paused', 'signed_out', 'restored', 'failed', 'open_failed', 'reply_ended')), -- a waiting row Rufi doesn't hand over by itself, and why: an event that came while the chat was paused rides with the person's next message; open_failed: the AI's thread didn't open, and the person chooses Try again or New thread; reply_ended: its reply ended in Rufi's part (a reading stopped or failed), it is in the chat already, and its reply's Retry sends it again
-  held_text TEXT,              -- why a hand-over failed, in words for the person
-  hold_id TEXT,                -- which open_failed or reply_ended hold this is: the person's choice names it, so a stale click changes nothing
-  sent_as TEXT,                -- the id the AI got the hand-over under (the rows of one turn share it); set just before the AI is called
-  turn_id TEXT,                -- the turn that used it; set when Rufi's part of its reply starts
+  state TEXT NOT NULL DEFAULT 'waiting' CHECK (state IN ('waiting', 'handing_over', 'sent', 'removed')),
+  held TEXT CHECK (held IN ('signed_out', 'restored', 'failed', 'stopped', 'open_failed')), -- a waiting row Rufi doesn't hand over by itself, and why: signed_out: the AI found the sign-in missing, and the row goes once it is back; restored: from a restored backup, for the person to send or remove; failed: the AI couldn't take it; stopped: a Stop came before it went; open_failed: the AI's thread didn't open, and the person chooses Send or New thread
+  held_text TEXT,              -- why, as it came
+  hold_id TEXT,                -- which open_failed hold this is: the person's choice names it, so a stale click changes nothing
+  sent_as TEXT,                -- the agent and its conversation (<agent>/<number>) that claimed it
+  turn_id TEXT,                -- the turn that used it
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   UNIQUE (person_id, id),
@@ -512,24 +555,29 @@ CREATE TABLE chat_queue (
   FOREIGN KEY (person_id, turn_id) REFERENCES turns (person_id, id),
   CHECK ((origin = 'rufi') = (event_id IS NOT NULL)),
   CHECK (held IS NULL OR state = 'waiting'),
-  CHECK ((held IS 'open_failed' OR held IS 'reply_ended') = (hold_id IS NOT NULL))
+  CHECK ((held IS 'open_failed') = (hold_id IS NOT NULL))
 ) STRICT;
 
--- One save to the record, made by the AI's call to save_changes in a
--- chat. Its receipt is the transcript entry with the same id. seq is the
--- order of saves, across people: history is read in that order, never by
--- time (the Mac's clock can move back) or rowid (VACUUM may renumber it).
+-- One save to the record: made by the AI's call to save_changes in a chat,
+-- or by what the person entered in the welcome, on the profile page or in
+-- Settings (origin). A chat save's receipt is the transcript entry with the
+-- same id; a form's is kept here, and isn't in the chat. seq is the order
+-- of saves, across people: history is read in that order, never by time
+-- (the Mac's clock can move back) or rowid (VACUUM may renumber it).
 CREATE TABLE operations (
   id TEXT PRIMARY KEY,         -- UUIDv7
   seq INTEGER NOT NULL UNIQUE, -- 1, 2, 3...: set by the save in its transaction
   person_id TEXT NOT NULL,
-  chat_id TEXT NOT NULL,
-  call_id TEXT NOT NULL,       -- the agent's id for the call: the same call again is the same save
-  request TEXT NOT NULL,       -- the changes as the AI sent them (JSON)
+  origin TEXT NOT NULL DEFAULT 'chat' CHECK (origin IN ('chat', 'welcome', 'profile', 'settings')),
+  chat_id TEXT,                -- the chat it was made in; null for a form's
+  call_id TEXT NOT NULL,       -- the agent's id for the call, or the form's id for one sending: the same again is the same save
+  request TEXT NOT NULL,       -- the changes as sent (JSON)
+  receipt TEXT,                -- a form's receipt
   created_at TEXT NOT NULL,
   UNIQUE (person_id, id),
-  UNIQUE (chat_id, call_id),
-  FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id)
+  UNIQUE (person_id, call_id),
+  FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id),
+  CHECK ((origin = 'chat') = (chat_id IS NOT NULL))
 ) STRICT;
 
 -- Each record a save changed: the whole row before and after (JSON), so it
@@ -551,15 +599,16 @@ CREATE TABLE record_changes (
 ) STRICT;
 
 -- Where a record's values came from, several per record: the user's
--- message, a page of a document, or a Visit (the records saved from a
--- visit cite it; the Visit cites its paper's page). Each is added by a save, and a later
+-- message, a page of a document, a Visit (the records saved from a
+-- visit cite it; the Visit cites its paper's page), or what the person
+-- entered in a form (the save that added it says which). Each is added by a save, and a later
 -- save may take it off (removed_by); it is never deleted. Saying "save it"
 -- isn't a source: it only says yes.
 CREATE TABLE record_sources (
   person_id TEXT NOT NULL,
   kind TEXT NOT NULL,          -- the record's kind: 'result', 'symptom'...
   record_id TEXT NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('message', 'document_page', 'visit')),
+  type TEXT NOT NULL CHECK (type IN ('message', 'document_page', 'visit', 'form')),
   entry_id TEXT,               -- message: the user's message
   document_id TEXT,            -- document_page: the document and its page
   page INTEGER,
@@ -573,7 +622,8 @@ CREATE TABLE record_sources (
   FOREIGN KEY (person_id, removed_by) REFERENCES operations (person_id, id),
   CHECK ((type = 'message') = (entry_id IS NOT NULL)),
   CHECK ((type = 'document_page') = (document_id IS NOT NULL AND page IS NOT NULL)),
-  CHECK ((type = 'visit') = (visit_id IS NOT NULL))
+  CHECK ((type = 'visit') = (visit_id IS NOT NULL)),
+  CHECK (type != 'form' OR operation_id IS NOT NULL)
 ) STRICT;
 
 -- A visit brief the AI wrote from the saved record, in a chat. Its line in
@@ -699,5 +749,46 @@ CREATE INDEX device_batches_by_done ON device_batches (done_at);
 CREATE INDEX device_values_by_type ON device_values (person_id, type, start_at);
 CREATE INDEX device_values_by_batch ON device_values (person_id, batch_id) WHERE batch_id IS NOT NULL;
 
+-- Which person and chat each agent of the agent system belongs to
+-- (packages/agents, its own agents.sqlite, docs/adr/0024): the agent system
+-- knows no people, so Rufi keeps this before an agent may run. An agent
+-- with no owner never runs. root: the chat's own agent, Rufi AI.
+CREATE TABLE agent_owners (
+  agent_id TEXT PRIMARY KEY,   -- the agent's id in agents.sqlite
+  person_id TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  root INTEGER NOT NULL CHECK (root IN (0, 1)),
+  created_at TEXT NOT NULL,
+  UNIQUE (person_id, agent_id),
+  FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id)
+) STRICT;
+
+CREATE UNIQUE INDEX agent_owners_root ON agent_owners (chat_id) WHERE root = 1;
+
+-- Every provider conversation a chat's agents had (the ledger), saved before
+-- any of Rufi's content goes into it, and kept when a new conversation
+-- replaces it, when its agent is gone, and when agents.sqlite is lost: a
+-- hand-over is asked about by it, and forgetting the chat deletes each.
+CREATE TABLE agent_conversations (
+  person_id TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,      -- the agent's id, as it was: the agent may be gone
+  conversation INTEGER NOT NULL, -- the agent's number for it: 1, 2, 3...
+  provider TEXT NOT NULL,      -- the adapter it runs on (codex)
+  ref TEXT NOT NULL,           -- the provider's reference for it (a Codex thread)
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (agent_id, conversation),
+  UNIQUE (provider, ref),
+  FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id)
+) STRICT;
+
+-- How far Rufi has applied the agent system's event log: the last event
+-- applied, moved in the same transaction as that event's change. A new
+-- agents.sqlite starts it again at 0.
+CREATE TABLE agent_cursor (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  number INTEGER NOT NULL
+) STRICT;
+
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 17;
+PRAGMA user_version = 27;

@@ -57,17 +57,19 @@ export interface Move {
 }
 
 /**
- * Not copied: the running Rufi's locks and address, the source's own move
+ * Not copied: the running Rufi's lock and address, the source's own move
  * marks, and the database's files (its copy is made with SQLite's backup,
  * which takes in what its WAL holds). The AI's own folders stay too: Codex
  * keeps this folder's paths in them, and a thread resumed from a copy writes
  * to the old folder, so after a move the AI starts a fresh thread with the
- * saved chat. The AI's folder (`ai/`) isn't moved yet (a TODO): its
- * programs hold links and this folder's paths.
+ * saved chat. So do Codex's and Claude's sign-ins: Claude finds its sign-in
+ * by its folder's path, so after a move each provider signs in again. The AI's folder (`ai/`) isn't moved yet (a TODO): its
+ * programs hold links and this folder's paths. Nor is the agent database
+ * (`agents.sqlite`, packages/agents): its conversations are the ones left
+ * behind, so the copy starts a new one, as when it's lost.
  */
 const NOT_COPIED = new Set([
   "rufi.lock",
-  "credentials.lock",
   "core.json",
   MOVING_OUT,
   MOVED_TO,
@@ -76,8 +78,13 @@ const NOT_COPIED = new Set([
   "rufi.sqlite-shm",
   "rufi.sqlite-journal",
   "codex",
+  "claude",
   "sub-agents",
   "ai",
+  "agents.sqlite",
+  "agents.sqlite-wal",
+  "agents.sqlite-shm",
+  "agents.sqlite-journal",
 ]);
 
 /** Where an active data folder can't be: a folder that syncs to a cloud. */

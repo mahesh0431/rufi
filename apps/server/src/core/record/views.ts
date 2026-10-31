@@ -720,10 +720,15 @@ async function tile(
 async function recent(db: Db, personId: string): Promise<RecentChange[]> {
   const rows = await db
     .selectFrom("operations as o")
-    .innerJoin("transcript_entries as e", (join) =>
+    .leftJoin("transcript_entries as e", (join) =>
       join.onRef("e.person_id", "=", "o.person_id").onRef("e.id", "=", "o.id"),
     )
-    .select(["o.id", "o.created_at", "e.text"])
+    .select([
+      "o.id",
+      "o.created_at",
+      // A form's receipt is kept with its save.
+      sql<string>`coalesce(o.receipt, e.text)`.as("text"),
+    ])
     .where("o.person_id", "=", personId)
     .orderBy("o.seq", "desc")
     .limit(RECENT_SHOWN)

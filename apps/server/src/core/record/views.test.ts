@@ -18,8 +18,9 @@ import {
   openWritable,
   type Store,
 } from "../store/database.ts";
-import { chatCaller } from "../tools/tools.ts";
+import { rufiCaller } from "../tools/tools.ts";
 import { recordViews, type RecordViews } from "./views.ts";
+import { turnScope } from "../../../tests/scope.ts";
 
 const family = await readFile(
   new URL("../../../tests/fixtures/fictional-family.sql", import.meta.url),
@@ -60,11 +61,15 @@ async function saveSaid(text: string, changes: object[]) {
     text,
     agentTurnId: "t-1",
   });
-  const answer = await chatCaller(reader, transcripts, () => undefined)(
-    chat,
-    "t-1",
-    "person",
-  )("save_changes", { changes }, `call-${String(++calls)}`);
+  const answer = await rufiCaller(
+    reader,
+    transcripts,
+    () => undefined,
+  )(turnScope(chat, "t-1"))(
+    "save_changes",
+    { changes },
+    `call-${String(++calls)}`,
+  );
   expect(answer.ok).toBe(true);
   return (
     JSON.parse(answer.text) as { result: { changes: { id: string }[] } }
@@ -501,6 +506,39 @@ describe("a visit", () => {
         label: "Dr Rao · 2 Oct 2026",
         removed: false,
       },
+    ]);
+  });
+
+  it("lists the profile when a visit changed it", async () => {
+    const [visit] = await saveSaid(
+      "The clinic measured me at 162 cm; save that visit and my height",
+      [
+        {
+          kind: "visit",
+          action: "add",
+          ref: "clinic",
+          fields: {
+            setting: "Clinic",
+            date: { date: "2026-10-02", words: "on 2 Oct" },
+            as_written: "Height 162 cm.",
+          },
+        },
+        {
+          kind: "profile",
+          action: "change",
+          id: "asha",
+          from: [{ visit: { ref: "clinic" } }],
+          fields: { height: { value: 162, unit: "cm" } },
+        },
+      ],
+    );
+    const opened = await views.detail("asha", "visit", visit ?? "");
+    expect(opened?.fromVisit).toEqual([
+      expect.objectContaining({
+        kind: "profile",
+        id: "asha",
+        height: { value: 162, unit: "cm" },
+      }),
     ]);
   });
 });

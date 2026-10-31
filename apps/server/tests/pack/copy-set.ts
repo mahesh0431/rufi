@@ -1,7 +1,5 @@
-// The copy set: five fictional pages in two files, for the reader that
-// copies (core/documents/copy-reader.ts), with a hand-checked Markdown copy
-// of each page (copy-set/*.md), the rows each copy must hold, and what Rufi
-// AI is expected to make of the files (their documents and drafts).
+// The copy set: five fictional pages in two files, and what Rufi AI is
+// expected to make of them (their documents and drafts), for the smoke run.
 //
 //   mixed.pdf, 4 pages:
 //     1. Sunrise Labs report SL-2231, page 1 of 2: a "Previous" column
@@ -16,7 +14,6 @@
 //   smudged.
 //
 // Every name, lab and value is made up.
-import { readFileSync } from "node:fs";
 import type { NewFile } from "../../src/core/documents/documents.ts";
 import { drawn, inked, photo, scan, type Ink } from "./images.ts";
 import { mixedPdf, type Rule, type Text } from "./pdf.ts";
@@ -408,144 +405,6 @@ export async function copySetFiles(): Promise<{
   };
 }
 
-/** A row a copy must hold: every cell, as printed, on one line or table row. */
-interface CopyRow {
-  /** Its first cell, which names it: "Glucose, Fasting", "Collected". */
-  label: string;
-  /** Its other cells, as printed: values, flags, units, ranges, dates. */
-  cells: readonly string[];
-}
-
-/** A part of the page that is hard to read, and what a copy should do with it. */
-interface Doubt {
-  /** The row it is in (its label). */
-  row: string;
-  /** What is printed or written there: every value a faithful copy holds. */
-  truth: readonly string[];
-  /** A printed value crossed out by hand. */
-  crossed?: string;
-  what: string;
-}
-
-/** A page of the set: its hand-checked copy, the rows a copy must hold, its doubts. */
-export interface KeyPage {
-  file: "mixed" | "photo";
-  page: number;
-  /** The page's copy, checked by hand against the page. */
-  hand: string;
-  rows: readonly CopyRow[];
-  doubts: readonly Doubt[];
-}
-
-const hand = (name: string) =>
-  readFileSync(new URL(`copy-set/${name}.md`, import.meta.url), "utf8");
-
-const row = (label: string, ...cells: string[]): CopyRow => ({ label, cells });
-
-/** Page 1's rows: the printed page, also in the photo. */
-const SUNRISE_1: CopyRow[] = [
-  row("Sunrise Labs"),
-  row("Patient", ASHA),
-  row("Report No", "SL-2231"),
-  row("Collected", "12 Jun 2026 08:10"),
-  row("Reported", "13 Jun 2026 17:45"),
-  row("Glucose, Fasting", "104", "H", "98", "mg/dL", "70 – 100"),
-  row("HbA1c", "6.8", "H", "7.1", "%", "4.0 – 5.6"),
-  row("Creatinine", "0.92", "0.88", "mg/dL", "0.60 – 1.10"),
-  row("CRP", "<0.5", "1.2", "mg/L", "0.0 – 5.0"),
-  row("Haemoglobin", "13.2", "13.0", "g/dL", "12.0 – 15.5"),
-  row("Total Cholesterol", "212", "H", "225", "mg/dL", "<200"),
-  row("Triglycerides", "148", "162", "mg/dL", "<150"),
-  row("HDL Cholesterol", "48", "45", "mg/dL", ">40"),
-  row("Previous", "SL-1874", "03 Mar 2026"),
-  row("Page 1 of 2"),
-];
-
-export const KEY: readonly KeyPage[] = [
-  {
-    file: "mixed",
-    page: 1,
-    hand: hand("mixed-1"),
-    rows: SUNRISE_1,
-    doubts: [],
-  },
-  {
-    file: "mixed",
-    page: 2,
-    hand: hand("mixed-2"),
-    rows: [
-      row("LDL Cholesterol", "134", "H", "150", "mg/dL", "<100"),
-      row("TSH", "5.3", "H", "5.8", "4.9", "mIU/L", "0.4 – 4.0"),
-      row("Free T4", "1.1", "1.2", "ng/dL", "0.8 – 1.8"),
-      row("Vitamin D (25-OH)", "18", "L", "22", "ng/mL", "30 – 100"),
-      row("Vitamin B12", "412", "380", "pg/mL", "200 – 900"),
-      row("Remarks", "Fasting sample"),
-      row("Page 2 of 2"),
-    ],
-    doubts: [
-      {
-        row: "TSH",
-        truth: ["5.3", "5.8"],
-        crossed: "5.3",
-        what: "a printed 5.3 crossed out, 5.8 written by hand",
-      },
-    ],
-  },
-  {
-    file: "mixed",
-    page: 3,
-    hand: hand("mixed-3"),
-    rows: [
-      row("Northgate Clinical Lab"),
-      row("Name", ASHA),
-      row("Lab No.", "NG-58810"),
-      row("Sample collected", "14/08/2026 09:20"),
-      row("Report date", "15/08/2026"),
-      row("Haemoglobin", "12,9", "g/dL", "12,0 – 15,5"),
-      row("Serum Iron", "48", "L", "µg/dL", "50 – 170"),
-      row("TIBC", "412", "H", "µg/dL", "250 – 400"),
-      row("Transferrin Saturation", "11,6", "L", "%", "20,0 – 50,0"),
-      row("Ferritin", "9,8", "L", "ng/mL", "13,0 – 150,0"),
-      row("Creatinine", "1,25", "H", "mg/dL", "0,60 – 1,10"),
-      row("CRP", "<0,5", "mg/L", "<5,0"),
-      row("Page 1 of 1"),
-    ],
-    doubts: [],
-  },
-  {
-    file: "mixed",
-    page: 4,
-    hand: hand("mixed-4"),
-    rows: [
-      row("Lakeview Family Clinic"),
-      row("Patient", ASHA),
-      row("Date", "20 Aug 2026"),
-      row("BP", "128/82 mmHg"),
-      row("Pulse", "76 /min"),
-      row("Weight", "71.5 kg"),
-      row("Tab. Ferrous Ascorbate", "100 mg", "1-0-0", "60 days"),
-      row("Tab. Levothyroxine", "25 mcg", "1-0-0"),
-      row("Advice", "Repeat CBC and ferritin after 8 weeks"),
-      row("Next visit", "15 Oct 2026"),
-      row("Page 1 of 1"),
-    ],
-    doubts: [],
-  },
-  {
-    file: "photo",
-    page: 1,
-    hand: hand("photo-1"),
-    rows: SUNRISE_1,
-    doubts: [
-      {
-        row: "Glucose, Fasting",
-        truth: ["104"],
-        what: "the middle digit of 104 smudged",
-      },
-    ],
-  },
-];
-
 /** A document Rufi AI is expected to make of a file: its kind, date and pages. */
 interface ExpectedDocument {
   file: "mixed" | "photo";
@@ -569,8 +428,6 @@ interface ExpectedDraft {
   date: string;
   /** Why it is worth a look, when it is. */
   look?: string;
-  /** Other values a draft may take, flagged (a crossed-out print). */
-  or?: readonly string[];
 }
 
 /**
@@ -643,7 +500,6 @@ export const EXPECTED: {
       date: "2026-06-12",
       ...(test === "TSH" && {
         look: "the printed 5.3 is crossed out and 5.8 written by hand",
-        or: ["5.3"],
       }),
     })),
     ...[

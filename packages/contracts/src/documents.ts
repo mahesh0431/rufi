@@ -49,10 +49,14 @@ export const DocumentSummary = Schema.Struct({
    */
   notSorted: Schema.Boolean,
   /**
-   * not_read: never read (its message was removed before its reply, or it
-   * was added before Rufi read each document); Retry puts it in the chat.
+   * not_read: no reading of it saved (none started, or its reader stopped
+   * or failed first); Retry puts it in the chat. reading: the agent Rufi AI
+   * set on it runs and hasn't saved a reading of it (or an older reader's
+   * reading ran).
    */
   status: Schema.Literals(["not_read", "reading", "done", "failed"]),
+  /** The agent Rufi AI set to read it, by its id; null when none. */
+  reader: Schema.NullOr(Schema.String),
   /** The latest reading: pages saved of those it reads, and its drafts. */
   reading: Schema.NullOr(
     Schema.Struct({

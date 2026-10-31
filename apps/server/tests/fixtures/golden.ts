@@ -8,7 +8,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { v7 as uuid } from "uuid";
-import { DEFAULT_ALLOWLIST } from "../../src/core/chat/models.ts";
+import { DEFAULT_MODEL } from "../../src/core/chat/models.ts";
 import { transcripts, type ChatRow } from "../../src/core/chat/transcript.ts";
 import {
   databasePath,
@@ -18,7 +18,8 @@ import {
 import { originalPath } from "../../src/core/documents/originals.ts";
 import { shownDate } from "../../src/core/record/dates.ts";
 import { sha256 } from "../../src/platform/files.ts";
-import { chatCaller } from "../../src/core/tools/tools.ts";
+import { rufiCaller } from "../../src/core/tools/tools.ts";
+import { turnScope } from "../scope.ts";
 
 export const FAMILY = join(import.meta.dirname, "fictional-family.sql");
 
@@ -91,8 +92,8 @@ async function ashasChat(home: string, store: Store, today: Date) {
   const chats = transcripts(store, () => clock.toISOString());
   const chat = (await chats.chat("asha")) as ChatRow;
   const reader = openReadOnly(databasePath(home));
-  const tools = chatCaller(reader, chats, () => undefined);
-  const thread = { id: "golden-thread", model: DEFAULT_ALLOWLIST[0] ?? "" };
+  const tools = rufiCaller(reader, chats, () => undefined);
+  const thread = { id: "golden-thread", model: DEFAULT_MODEL };
 
   /**
    * One reply: her message, Rufi's tools as the AI called them, the answer.
@@ -114,7 +115,7 @@ async function ashasChat(home: string, store: Store, today: Date) {
       text: message,
       agentTurnId: agentTurn,
     });
-    const call = tools(chat, agentTurn, "person");
+    const call = tools(turnScope(chat, agentTurn));
     for (const { tool, input } of calls) {
       clock = new Date(clock.getTime() + 2_000);
       const callId = uuid();
@@ -137,13 +138,23 @@ async function ashasChat(home: string, store: Store, today: Date) {
           `The golden chat's ${tool} was refused: ${answer.text}`,
         );
       }
-      await chats.recordToolCall(chat, agentTurn, {
-        callId,
-        tool,
-        input,
-        answer,
-        startedAt,
-      });
+      // A write keeps its own, with what it changed.
+      if (!answer.kept) {
+        const scope = turnScope(chat, agentTurn);
+        await chats.recordToolCall(
+          chat,
+          {
+            agent: scope.agent,
+            agentTurn: scope.turn,
+            ref: agentTurn,
+            callId,
+            tool,
+            input,
+            startedAt,
+          },
+          answer,
+        );
+      }
       await chats.setActivity(chat, agentTurn, callId, {
         ...line,
         status: "done",

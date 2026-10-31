@@ -6,14 +6,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Page } from "@rufi/contracts";
 import { beforeEach, describe, expect, it } from "vitest";
-import { databasePath, openWritable } from "../store/database.ts";
+import { databasePath, openWritable, type Store } from "../store/database.ts";
 import {
   PAGE_ROWS,
   transcripts as openTranscripts,
   type ChatRow,
+  type Step,
   type Transcripts,
 } from "./transcript.ts";
 
+let store: Store;
 let transcripts: Transcripts;
 let chat: ChatRow;
 let minute = 0;
@@ -22,7 +24,7 @@ const clock = () =>
   new Date(Date.UTC(2026, 9, 1, 8, 0) + minute++ * 60_000).toISOString();
 
 beforeEach(async () => {
-  const store = openWritable(
+  store = openWritable(
     databasePath(await mkdtemp(join(tmpdir(), "rufi-pages-"))),
   );
   store.db.exec(`
@@ -36,9 +38,13 @@ beforeEach(async () => {
 });
 
 /** One whole reply: the message, a thought, a command and the answer. */
-async function reply(n: number, thread = "thread-1"): Promise<void> {
+async function reply(
+  n: number,
+  thread = "thread-1",
+  ranOn: { model: string; effort?: string } = { model: "gpt-6-astra" },
+): Promise<void> {
   const turn = `turn-${String(n)}`;
-  await transcripts.startTurn(chat, turn, { id: thread, model: "gpt-6-astra" });
+  await transcripts.startTurn(chat, turn, { id: thread, ...ranOn });
   await transcripts.addMessage(chat, {
     id: `m-${String(n)}`,
     kind: "message",
@@ -101,13 +107,25 @@ describe("the chat's pages", () => {
             text: "Next",
             agentTurnId: "next",
           });
-          await transcripts.saveWithReceipt(chat, "turn-80", () =>
-            Promise.resolve({
-              id: "receipt-80",
-              receipt: "Saved: a fictional headache",
-              fresh: true,
-              changes: [],
-            }),
+          await transcripts.saveWithReceipt(
+            chat,
+            {
+              agent: "agent-1",
+              agentTurn: "agent-turn-80",
+              ref: "turn-80",
+              callId: "agent-1/1/call-80",
+              tool: "save_changes",
+              input: {},
+              startedAt: transcripts.now(),
+            },
+            () =>
+              Promise.resolve({
+                id: "receipt-80",
+                receipt: "Saved: a fictional headache",
+                fresh: true,
+                changes: [],
+              }),
+            () => ({ ok: true, text: '{"ok":true}' }),
           );
           await transcripts.endTurn(chat, "next", { status: "completed" });
         }
@@ -176,6 +194,43 @@ describe("the chat's pages", () => {
     ]);
   });
 
+  it("give each reply its model and effort, and what the reply before it ran on, also when that one is on an older page", async () => {
+    await reply(1, "thread-1", { model: "gpt-6-astra" });
+    await reply(2, "thread-1", { model: "gpt-6-astra", effort: "xhigh" });
+    for (let n = 3; n <= 40; n++) {
+      await reply(n, "thread-1", { model: "claude-opus-5-5", effort: "high" });
+    }
+    const [latest, ...older] = await allPages();
+    expect(older.length).toBeGreaterThan(0);
+    const all = [...older.reverse(), latest].flatMap(
+      (page) => page?.turns ?? [],
+    );
+    expect(
+      all
+        .slice(0, 3)
+        .map(({ model, effort, before }) => ({ model, effort, before })),
+    ).toEqual([
+      { model: "gpt-6-astra", effort: null, before: null },
+      {
+        model: "gpt-6-astra",
+        effort: "xhigh",
+        before: { model: "gpt-6-astra", effort: null },
+      },
+      {
+        model: "claude-opus-5-5",
+        effort: "high",
+        before: { model: "gpt-6-astra", effort: "xhigh" },
+      },
+    ]);
+    // The latest page's first reply names the one before it, on a page not read.
+    const first = latest?.turns[0];
+    const earlier = all[all.findIndex((turn) => turn.id === first?.id) - 1];
+    expect(first?.before).toEqual({
+      model: earlier?.model,
+      effort: earlier?.effort,
+    });
+  });
+
   it("are empty for a new chat", async () => {
     expect(await transcripts.page(chat)).toEqual({
       revision: 0,
@@ -184,5 +239,63 @@ describe("the chat's pages", () => {
       turns: [],
       before: null,
     });
+  });
+});
+
+describe("a reply an agent's message started", () => {
+  it("shows its steps below that message; one steered in later doesn't move them", async () => {
+    store.db.exec(`
+      INSERT INTO agent_owners (agent_id, person_id, chat_id, root, created_at)
+        VALUES ('rufi-ai', 'asha', 'c-asha', 1, '2026-10-01T08:00:00Z');
+    `);
+    const step: Step = {
+      id: "read",
+      position: 1,
+      type: "step",
+      kind: "command",
+      title: "Ran a command",
+      detail: "ls",
+      status: "completed",
+      text: null,
+      createdAt: "2026-10-01T09:00:00Z",
+      updatedAt: "2026-10-01T09:00:00Z",
+    };
+    transcripts.readSteps({
+      of: () => new Map([["turn-1", [step]]]),
+      details: () => undefined,
+    });
+    const message = (input: string, said: string) => ({
+      input,
+      agent: "reader",
+      title: "Reading letter.pdf",
+      about: "wrote" as const,
+      said,
+    });
+    // The clock moves on between the reply's start and its message.
+    await transcripts.startTurn(
+      chat,
+      "turn-1",
+      { id: "thread-1", model: "gpt-6-astra" },
+      ["started"],
+      [message("started", "The letter is from March 2025.")],
+    );
+    const shown = async () =>
+      (await transcripts.page(chat)).entries.map((entry) => entry.text);
+    expect(await shown()).toEqual([
+      "The letter is from March 2025.",
+      "Ran a command",
+    ]);
+
+    await transcripts.applyAgentMessage(
+      chat,
+      message("steered", "It names a TSH of 2.1."),
+      "turn-1",
+      () => Promise.resolve(),
+    );
+    expect(await shown()).toEqual([
+      "The letter is from March 2025.",
+      "Ran a command",
+      "It names a TSH of 2.1.",
+    ]);
   });
 });

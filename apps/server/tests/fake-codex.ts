@@ -4,7 +4,9 @@
 // does. What a turn does is chosen by its message's text, the
 // same words the fake model uses for the real Codex (tests/fake-model.ts):
 // "hang" never ends, "partial" writes "ok:part" and then never ends, "slow"
-// answers after 300 ms, "fail" fails, "quiet" makes no tool call and runs no
+// answers after 300 ms, "sign-in ended" fails as Codex does when its
+// sign-in has ended and can't be renewed, "fail" fails (the word: an
+// agent's "failed" doesn't), "quiet" makes no tool call and runs no
 // command, "command"
 // starts a long command ("background command": and the turn ends while it
 // runs), "drip" streams its answer in five parts 100 ms
@@ -13,8 +15,9 @@
 // writes a progress note (fake-model.ts's NOTE) before it answers ("whole
 // commentary": only when it completes; "cut commentary": half of it, and
 // the turn never ends), "seeded" gives the first words of the note and the
-// answer as each starts, before their deltas, and anything else answers
-// "ok:<text>".
+// answer as each starts, before their deltas, "crash" ends the fake as the
+// turn starts, and anything else answers "ok:<text>". A scenario's `words`
+// count as part of every message.
 // Like Codex, it calls Rufi's tools on the MCP server a thread was given
 // (its config's mcp_servers.rufi), checking it answers when the thread starts
 // or resumes. Like Codex, a thread keeps the developer instructions it was
@@ -22,8 +25,12 @@
 // nothing, and a developer message thread/inject_items adds is the last
 // word (each turn logs the one it ran with, as `told`). Like Codex, it
 // answers a resume of a thread it has no record of with "no rollout found
-// for thread id <id>". The test passes a scenario in FAKE_CODEX and reads
-// what happened from the JSON lines written to FAKE_CODEX_LOG.
+// for thread id <id>". Like Codex, it is signed in when CODEX_HOME holds
+// its sign-in (auth.json), or the scenario doesn't say signed out: its own
+// sign-in (account/login/start) finishes at once, as if the person signed
+// in in the browser, and keeps a fictional sign-in there. The test passes a
+// scenario in FAKE_CODEX and reads what happened from the JSON lines
+// written to FAKE_CODEX_LOG.
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
@@ -40,13 +47,23 @@ import { NOTE, THINKING } from "./fake-model.ts";
 import { callTool, initialize, type McpServerConfig } from "./mcp-client.ts";
 
 export interface Scenario {
+  /** Signed out until a sign-in finishes (signed in when not said). */
+  signedIn?: false;
+  /** Codex's own sign-in fails, with Codex's words. */
+  loginFails?: true;
+  /** Words that choose what every turn does, as if its message had them. */
+  words?: string;
   /** Methods the fake never answers. */
   hang?: string[];
+  /** Methods the fake refuses with an error, doing nothing. */
+  refuse?: string[];
   /** Methods the fake takes and answers after `slowMs` (200 ms). */
   slow?: string[];
   slowMs?: number;
   /** Methods the fake takes at once but answers after `slowMs`. */
   answerLate?: string[];
+  /** Methods the fake holds, while the file `file` exists, before it answers. */
+  held?: { methods: string[]; file: string };
   /** How long after a turn starts Codex shows the user's message (at once). */
   userMessageMs?: number;
   /** Feature flags as Codex reports them, over what config.toml asked for. */
@@ -85,10 +102,10 @@ export interface Scenario {
   reasoningMs?: number;
   /**
    * The turn generates a picture before answering, as Codex's image
-   * generation does: started, then completed with its bytes and, unless
-   * null, the path it saved them at.
+   * generation does: started, then completed with its bytes (base64, these
+   * or a PNG's) and, unless null, the path it saved them at.
    */
-  picture?: { savedPath: string | null };
+  picture?: { savedPath: string | null; bytes?: string };
   /**
    * Codex compacts the thread's context during the turn, before answering;
    * the compaction ends `compactionMs` (0) after it starts.
@@ -111,9 +128,13 @@ export interface Scenario {
   /**
    * Calls of Rufi's tools the model makes during a turn, before answering;
    * `id` is Codex's call id (`call-<n>`; `exec-…` for a call made from exec).
-   * The text "$document" in a call's arguments becomes the document the
-   * turn's input names: in Rufi's note on what its reader copied
-   * ("(document <id>)"), or else the first document chip.
+   * The text "$document" in a call's arguments becomes the first document
+   * the turn's input names ("(document <id>)", as Rufi's note on files
+   * names one, or a document chip), and "$document2" the second;
+   * "$started" becomes the agent the turn's last start_agent started, as
+   * its answer gives it. A draft's reading "$reading" becomes the reading of
+   * its page's copy, which the fake reads with get_documents first, as the
+   * model would (not a step).
    */
   calls?: {
     id?: string;
@@ -129,10 +150,20 @@ export interface Scenario {
   bare?: boolean;
   /** Tool calls by turn, oldest first, for each thread. */
   callsByTurn?: NonNullable<Scenario["calls"]>[];
+  /**
+   * Tool calls of a turn whose message starts with these words, the first
+   * that matches, over `callsByTurn` and `calls`: a sub-agent's turn starts
+   * with its task, and a done message with the agent's title.
+   */
+  callsByText?: Record<string, NonNullable<Scenario["calls"]>>;
+  /** The plan's usage limits each turn reports as it starts, as Codex's responses do. */
+  limits?: Record<string, unknown>;
   /** A usage-limit snapshot sent before a failed turn. */
   resetsAt?: number;
   /** The message Codex gives a failed turn (a usage-limit message). */
   failMessage?: string;
+  /** What Codex says a failed turn failed of (`usageLimitExceeded`). */
+  failInfo?: string | null;
   /** Each thread's first turns fail, as on the usage limit. */
   failTurns?: number;
   /** Sparse account rate-limit updates following that snapshot. */
@@ -155,7 +186,6 @@ record({
   started: process.argv.slice(2),
   pid: process.pid,
   env: Object.keys(process.env).sort(),
-  token: process.env["ACCESS_TOKEN"],
   codexHome: process.env["CODEX_HOME"],
 });
 
@@ -246,6 +276,20 @@ let queuedCount = 0;
 let command: ReturnType<typeof spawn> | undefined;
 let commandRunning = false;
 
+/** Whether anything of process group `pgid` is left, also not yet reaped. */
+function groupLeft(pgid: number): boolean {
+  try {
+    process.kill(-pgid, 0);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    // EPERM is macOS's answer for a group not yet reaped.
+    if (code === "EPERM") return true;
+    if (code === "ESRCH") return false;
+    throw error;
+  }
+}
+
 const textOf = (entry: Queued) => entry.input.at(-1)?.text ?? "";
 const queued = (clientUserMessageId: string, text: string): Queued => ({
   id: `q-${String(++queuedCount)}`,
@@ -269,7 +313,11 @@ for (const [id, known] of Object.entries(scenario.threads ?? {})) {
 const USAGE_LIMIT =
   "You’ve hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again later.";
 
-const turnObject = (id: string, status: string) => ({
+const turnObject = (
+  id: string,
+  status: string,
+  failed?: { message: string; codexErrorInfo: string },
+) => ({
   id,
   items: [],
   itemsView: "notLoaded",
@@ -277,8 +325,12 @@ const turnObject = (id: string, status: string) => ({
   error:
     status === "failed"
       ? {
-          message: scenario.failMessage ?? USAGE_LIMIT,
-          codexErrorInfo: "usageLimitExceeded",
+          message: failed?.message ?? scenario.failMessage ?? USAGE_LIMIT,
+          codexErrorInfo:
+            failed?.codexErrorInfo ??
+            (scenario.failInfo === undefined
+              ? "usageLimitExceeded"
+              : scenario.failInfo),
           additionalDetails: null,
           misalignment: null,
         }
@@ -322,7 +374,22 @@ function dispatch(thread: Thread, next: Queued) {
   return turnObject(turnId, "inProgress");
 }
 
-function complete(thread: Thread, turnId: string, status: string) {
+/** Like Codex: a steer joins the running turn, and its record. */
+function steer(thread: Thread, entry: Queued) {
+  if (!thread.running) return;
+  thread.running.steers.push(entry);
+  thread.history
+    .find((turn) => turn.id === thread.running?.turnId)
+    ?.messages.push(entry);
+  persist();
+}
+
+function complete(
+  thread: Thread,
+  turnId: string,
+  status: string,
+  failed?: { message: string; codexErrorInfo: string },
+) {
   const turn = thread.history.find((t) => t.id === turnId);
   if (turn) turn.status = status;
   if (thread.running?.turnId !== turnId) {
@@ -333,13 +400,21 @@ function complete(thread: Thread, turnId: string, status: string) {
   persist();
   send({
     method: "turn/completed",
-    params: { threadId: thread.id, turn: turnObject(turnId, status) },
+    params: { threadId: thread.id, turn: turnObject(turnId, status, failed) },
   });
 }
 
+/** Where Codex keeps its sign-in. */
+const authFile = () => join(process.env["CODEX_HOME"] ?? "", "auth.json");
+
+const signedIn = () => scenario.signedIn !== false || existsSync(authFile());
+
 async function runTurn(thread: Thread, turnId: string, entry: Queued) {
   const threadId = thread.id;
-  const text = textOf(entry);
+  const text =
+    scenario.words === undefined
+      ? textOf(entry)
+      : `${textOf(entry)} ${scenario.words}`;
   const event = (method: string, params: object) => {
     send({ method, params: { threadId, turnId, ...params } });
   };
@@ -360,6 +435,12 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
     params: { status: "disabled" },
   });
   send({ method: "brand/new/notification", params: { threadId } });
+  if (scenario.limits) {
+    send({
+      method: "account/rateLimits/updated",
+      params: { rateLimits: scenario.limits },
+    });
+  }
   send({
     method: "turn/started",
     params: { threadId, turn: turnObject(turnId, "inProgress") },
@@ -373,26 +454,76 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
     persist();
   }
   event("item/started", { item: userItem(entry) });
+  if (text.includes("crash")) process.exit(1);
+  // Like Codex when its sign-in has ended and can't be renewed.
+  if (text.includes("sign-in ended")) {
+    complete(thread, turnId, "failed", {
+      message:
+        "Your access token could not be refreshed because your refresh token has expired. Please log out and sign in again.",
+      codexErrorInfo: "unauthorized",
+    });
+    return;
+  }
   const turnIndex = thread.history.findIndex((turn) => turn.id === turnId);
+  const byText = Object.entries(scenario.callsByText ?? {}).find(([words]) =>
+    text.startsWith(words),
+  )?.[1];
   const calls = text.includes("quiet")
     ? []
-    : (scenario.callsByTurn?.[turnIndex] ?? scenario.calls ?? []);
-  // Rufi's note on what its reader copied comes before the message; a
-  // message's own chips list their documents after its words.
+    : (byText ?? scenario.callsByTurn?.[turnIndex] ?? scenario.calls ?? []);
+  // Rufi's note on files comes before the message; a message's own chips
+  // list their documents after its words.
   const input = entry.input.map((part) => part.text).join("\n");
-  const named =
-    /\(document ([^)\s]+)\)/.exec(input)?.[1] ??
-    /^- document ([^,\s]+),/m.exec(input)?.[1];
+  const documents = [
+    ...new Set(
+      [
+        ...input.matchAll(/\(document ([^)\s]+)\)|^- document ([^,\s]+),/gm),
+      ].map((match) => match[1] ?? match[2] ?? ""),
+    ),
+  ];
+  const named = documents[0];
+  // An agent a message names, "(agent <id>)", as a test writes it.
+  const agent = /\(agent ([^)\s]+)\)/.exec(input)?.[1];
+  /** The agent this turn's last start_agent started, as its answer gives it. */
+  let started: string | undefined;
   for (const [i, { id, ...scripted }] of calls.entries()) {
-    const call =
-      named === undefined
-        ? scripted
-        : {
-            ...scripted,
-            arguments: JSON.parse(
-              JSON.stringify(scripted.arguments).replaceAll("$document", named),
-            ) as unknown,
-          };
+    const call = {
+      ...scripted,
+      arguments: JSON.parse(
+        JSON.stringify(scripted.arguments)
+          .replaceAll("$document2", documents[1] ?? "$document2")
+          .replaceAll("$document", named ?? "$document")
+          .replaceAll("$agent", agent ?? "$agent")
+          .replaceAll("$started", started ?? "$started"),
+      ) as unknown,
+    };
+    const drafts = (call.arguments as { drafts?: unknown } | null)?.drafts;
+    if (
+      thread.mcp &&
+      named !== undefined &&
+      Array.isArray(drafts) &&
+      JSON.stringify(drafts).includes('"$reading"')
+    ) {
+      const read = await callTool(thread.mcp, {
+        name: "get_documents",
+        arguments: { document: named, copies: true },
+        callId: `${id ?? `call-${String(i)}`}-copies`,
+        threadId,
+        turnId,
+      });
+      const [text] = (read.result?.["content"] ?? []) as { text: string }[];
+      const copies =
+        (
+          JSON.parse(text?.text ?? "{}") as {
+            result?: { copies?: { page: number; reading?: string }[] };
+          }
+        ).result?.copies ?? [];
+      for (const draft of drafts as { page: number; reading?: string }[]) {
+        if (draft.reading === "$reading") {
+          draft.reading = copies.find((c) => c.page === draft.page)?.reading;
+        }
+      }
+    }
     // Like Codex: the item starts, then the call goes to Rufi's MCP server.
     const item = {
       id: id ?? `call-${String(i)}`,
@@ -421,6 +552,12 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
     record({ answered: "tools/call", reply });
     if (thread.running?.turnId !== turnId) return;
     const failed = !reply.result || reply.result["isError"] === true;
+    if (call.tool === "start_agent" && !failed) {
+      const [answer] = (reply.result?.["content"] ?? []) as { text: string }[];
+      started =
+        (JSON.parse(answer?.text ?? "{}") as { result?: { agent?: string } })
+          .result?.agent ?? started;
+    }
     event("item/completed", {
       item: {
         ...item,
@@ -527,7 +664,12 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
       { detached: true, stdio: ["ignore", "pipe", "ignore"] },
     ));
     commandRunning = true;
-    shell.once("exit", () => (commandRunning = false));
+    // It lists the command until nothing of its process group is left, the
+    // program in the background too, reaped: a check of a pid then agrees.
+    shell.once("exit", function gone() {
+      if (shell.pid !== undefined && groupLeft(shell.pid)) setTimeout(gone, 10);
+      else commandRunning = false;
+    });
     shell.stdout.once("data", (chunk: Buffer) => {
       record({ command: shell.pid, child: Number(chunk.toString().trim()) });
       event("item/started", {
@@ -543,7 +685,7 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
     });
     return;
   }
-  if (text.includes("fail") || turnIndex < (scenario.failTurns ?? 0)) {
+  if (/\bfail\b/.test(text) || turnIndex < (scenario.failTurns ?? 0)) {
     if (scenario.resetsAt !== undefined) {
       send({
         method: "account/rateLimits/updated",
@@ -583,7 +725,7 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
         ...item,
         status: "completed",
         revisedPrompt: "A fictional watercolour of a sleeping cat",
-        result: "iVBORw0KGgo".repeat(1_000),
+        result: scenario.picture.bytes ?? "iVBORw0KGgo".repeat(1_000),
         ...(scenario.picture.savedPath !== null && {
           savedPath: scenario.picture.savedPath,
         }),
@@ -666,6 +808,16 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
   complete(thread, turnId, "completed");
 }
 
+/** A model as model/list gives it, with the efforts it takes. */
+const model = (id: string, displayName: string) => ({
+  id,
+  displayName,
+  supportedReasoningEfforts: ["low", "medium", "high"].map(
+    (reasoningEffort) => ({ reasoningEffort, description: reasoningEffort }),
+  ),
+  defaultReasoningEffort: "medium",
+});
+
 /** A usage breakdown as Codex reports it, of `totalTokens` tokens. */
 const usageOf = (totalTokens: number) => ({
   totalTokens,
@@ -719,6 +871,7 @@ function featureList() {
     daemon_auto_start: false,
     plugins: false,
     apps: false,
+    multi_agent_v2: false,
     ...scenario.features,
   };
   return Object.entries(reported).map(([name, enabled]) => ({
@@ -813,10 +966,40 @@ async function handle(
         ? { data: all.slice(half), nextCursor: null }
         : { data: all.slice(0, half), nextCursor: "page-2" };
     }
+    case "account/read":
+      return {
+        account: signedIn()
+          ? { type: "chatgpt", email: "asha@example.com", planType: "plus" }
+          : null,
+        requiresOpenaiAuth: true,
+      };
+    case "account/login/start": {
+      const loginId = randomUUID();
+      // The person signs in in the browser at once.
+      setTimeout(() => {
+        if (scenario.loginFails !== true) {
+          writeFileSync(authFile(), '{"fictional": true}');
+        }
+        send({
+          method: "account/login/completed",
+          params: {
+            loginId,
+            success: scenario.loginFails !== true,
+            error:
+              scenario.loginFails === true ? "Login was not completed." : null,
+            onboardingEntrypoint: null,
+          },
+        });
+      }, 50);
+      return {
+        type: "chatgpt",
+        loginId,
+        authUrl: "https://auth.openai.com/oauth/authorize?fictional=1",
+      };
+    }
     case "config/read":
       return {
         config: {
-          model_provider: "openai_chatgpt_plan",
           model_reasoning_effort: "medium",
           model_reasoning_summary: "detailed",
           personality: "none",
@@ -830,13 +1013,13 @@ async function handle(
       return params["cursor"]
         ? {
             data: [
-              { id: "gpt-6-astra", displayName: "GPT-6-Astra" },
-              { id: "gpt-5.5", displayName: "GPT-5.5" },
+              model("gpt-6-astra", "GPT-6-Astra"),
+              model("gpt-5.5", "GPT-5.5"),
             ],
             nextCursor: null,
           }
         : {
-            data: [{ id: "gpt-6.1-sol", displayName: "GPT-6.1-Sol" }],
+            data: [model("gpt-6.1-sol", "GPT-6.1-Sol")],
             nextCursor: "page-2",
           };
     case "thread/start": {
@@ -888,6 +1071,19 @@ async function handle(
     }
     case "thread/read":
       return threadResponse(threadOf(params));
+    case "thread/delete": {
+      // Like Codex 0.163.0: one it has no record of is refused.
+      const id = String(params["threadId"]);
+      if (!threads.delete(id)) {
+        throw new Error(`no rollout found for thread id ${id}`);
+      }
+      loaded.delete(id);
+      persist();
+      setImmediate(() => {
+        send({ method: "thread/deleted", params: { threadId: id } });
+      });
+      return {};
+    }
     case "thread/unsubscribe": {
       const thread = threadOf(params);
       if (!loaded.delete(thread.id)) return { status: "notLoaded" };
@@ -917,7 +1113,7 @@ async function handle(
       };
       // Like Codex: into a running turn it steers.
       if (thread.running) {
-        thread.running.steers.push(entry);
+        steer(thread, entry);
         return { turn: turnObject(thread.running.turnId, "inProgress") };
       }
       // Like Codex: the model and effort hold for this turn and the ones after.
@@ -948,12 +1144,13 @@ async function handle(
       ) {
         throw new Error("no active turn to steer");
       }
-      thread.running.steers.push({
+      const { turnId } = thread.running;
+      steer(thread, {
         id: "steer",
         input: params["input"] as Queued["input"],
         clientUserMessageId: String(params["clientUserMessageId"]),
       });
-      return { turnId: thread.running.turnId };
+      return { turnId };
     }
     case "turn/interrupt": {
       if (scenario.ignoreInterrupt) return undefined;
@@ -1036,6 +1233,13 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   if (message.id === undefined) return; // a notification, e.g. initialized
   if (scenario.hang?.includes(message.method)) return;
   const { id, method } = message;
+  if (scenario.refuse?.includes(method)) {
+    send({
+      id,
+      error: { code: -32600, message: `The fake refused ${method}.` },
+    });
+    return;
+  }
   const reply = () => {
     handle(method, message.params ?? {}).then(
       (result) => {
@@ -1052,7 +1256,14 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       },
     );
   };
-  if (scenario.slow?.includes(method)) {
+  if (scenario.held?.methods.includes(method)) {
+    const { file } = scenario.held;
+    const wait = setInterval(() => {
+      if (existsSync(file)) return;
+      clearInterval(wait);
+      reply();
+    }, 20);
+  } else if (scenario.slow?.includes(method)) {
     setTimeout(reply, scenario.slowMs ?? 200);
   } else if (scenario.answerLate?.includes(method)) {
     void handle(method, message.params ?? {}).then((result) => {

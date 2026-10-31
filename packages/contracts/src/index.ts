@@ -2,6 +2,7 @@
 // Requests are decoded with these schemas; responses are built to their types.
 import { Schema } from "effect";
 import { KeepValues } from "./devices.ts";
+import { BirthDate, ProfileValues, SexForRanges } from "./record.ts";
 
 /**
  * The longest message or draft Rufi takes, in characters. A draft must fit
@@ -13,6 +14,9 @@ export const MAX_MESSAGE_CHARS = 10_000;
 
 /** Why nothing goes to the AI without a sign-in; the box adds Sign in. */
 export const SIGNED_OUT = "You're signed out. Sign in with ChatGPT to chat.";
+/** The same, for a chat on one of Claude's models. */
+export const CLAUDE_SIGNED_OUT =
+  "You're signed out of Claude. Sign in to Claude to chat.";
 
 const Text = (max: number) => Schema.String.check(Schema.isMaxLength(max));
 const Line = (max: number) =>
@@ -118,8 +122,8 @@ export const ActivityKind = Schema.Literals([
   /** The AI's progress note, its words as they came: a step, not a reply. */
   "note",
   /**
-   * Rufi's reader copying one document, before the AI gets the message:
-   * `detail` says how far; its details name the document.
+   * An older Rufi's reader copying one document, before the AI got the
+   * message: `detail` says how far; its details name the document.
    */
   "reading",
   "other",
@@ -140,9 +144,27 @@ export const Face = Schema.Literals([
 export type Face = typeof Face.Type;
 
 /** One item of a chat's transcript, in order by `seq`. */
+/**
+ * Why an agent's message to the agent that started it came: its turn ended
+ * done, stopped or failed, it asked a question, or it wrote.
+ */
+export const AgentAbout = Schema.Literals([
+  "done",
+  "asked",
+  "wrote",
+  "stopped",
+  "failed",
+]);
+export type AgentAbout = typeof AgentAbout.Type;
+
 export const Entry = Schema.Struct({
   id: Schema.String,
-  seq: Schema.Int,
+  /**
+   * Its place: Rufi's own entries count up by one; a step of a reply, kept
+   * by the agent system, sits after what its reply started with and before
+   * the next of Rufi's entries.
+   */
+  seq: Schema.Number,
   /** The reply it belongs to. */
   turnId: Schema.NullOr(Schema.String),
   /**
@@ -150,7 +172,8 @@ export const Entry = Schema.Struct({
    * service gave it (status running while it thinks, then done, or stopped
    * when its turn ends before the summary is whole); event:
    * Rufi's own factual line about something that happened, never the
-   * person's words; brief: the line of a visit brief, whose id is the brief's.
+   * person's words; brief: the line of a visit brief, whose id is the brief's;
+   * agent: a message to Rufi AI from an agent it started, where Rufi AI took it.
    */
   kind: Schema.Literals([
     "message",
@@ -161,13 +184,14 @@ export const Entry = Schema.Struct({
     "receipt",
     "event",
     "brief",
+    "agent",
   ]),
   /**
-   * The message; the reply's answer (without its rufi-basis blocks, which
-   * the turn's How holds); an activity's text as the agent reported it (the
+   * The message; the reply as it came; an activity's text as the agent reported it (the
    * command, `server.tool`, the paths, a note's words; a line stored before
    * notes, its title); the reasoning's summary so far; a receipt's, an
-   * event's or a brief's line.
+   * event's or a brief's line; an agent's message in its own words (empty
+   * when it stopped).
    */
   text: Schema.String,
   activity: Schema.NullOr(ActivityKind),
@@ -191,6 +215,15 @@ export const Entry = Schema.Struct({
       action: Schema.Literals(["open", "retry"]),
     }),
   ),
+  /**
+   * The sub-agent this step started: its line shows it (SubAgent); for an
+   * agent's message, the agent that sent it.
+   */
+  agent: Schema.optionalKey(Schema.String),
+  /** An agent's message: the agent's name when it sent it, and why it came. */
+  from: Schema.optionalKey(
+    Schema.Struct({ title: Schema.String, about: AgentAbout }),
+  ),
 });
 export type Entry = typeof Entry.Type;
 
@@ -206,10 +239,23 @@ export const EndReason = Schema.Literals([
 ]);
 export type EndReason = typeof EndReason.Type;
 
+/** A reply's model and the effort it ran with; null: from before replies kept it. */
+const RanOn = Schema.Struct({
+  model: Schema.String,
+  effort: Schema.NullOr(Schema.String),
+});
+
 /** One reply the AI ran: how it went, and how it ended. */
 export const Turn = Schema.Struct({
   id: Schema.String,
   model: Schema.String,
+  /** The effort it ran with; null: from before replies kept it. */
+  effort: Schema.NullOr(Schema.String),
+  /**
+   * What the reply before it in the chat ran on, also when that one isn't
+   * on the page; null: it is the chat's first.
+   */
+  before: Schema.NullOr(RanOn),
   status: Schema.Literals(["running", "completed", "interrupted", "failed"]),
   endReason: Schema.NullOr(EndReason),
   /** Why it didn't complete, in plain words. */
@@ -223,20 +269,38 @@ export const Turn = Schema.Struct({
    * than the reply before it (a lost thread, a move, the person's choice).
    */
   newThread: Schema.Boolean,
-  /**
-   * How, from the reply's last rufi-basis block: where the answer comes
-   * from, in the AI's words. Only once the reply completed.
-   */
-  how: Schema.NullOr(Schema.String),
+  /** Its steps are gone: the agent database that kept them is new. */
+  stepsGone: Schema.optionalKey(Schema.Literal(true)),
 });
 export type Turn = typeof Turn.Type;
 
-/** How hard the AI thinks for a reply: low is faster, high thinks longer. */
-export const Effort = Schema.Literals(["low", "medium", "high"]);
+/**
+ * How hard the AI thinks for a reply: low is faster, xhigh thinks longest.
+ * The same four for every model, in order.
+ */
+export const EFFORTS = ["low", "medium", "high", "xhigh"] as const;
+export const Effort = Schema.Literals(EFFORTS);
 export type Effort = typeof Effort.Type;
 
 /** A chat's effort until one is chosen for it. */
 export const DEFAULT_EFFORT: Effort = "medium";
+
+/**
+ * The models Rufi's AI and its agents run on: these four, always, in the
+ * menu's order. Rufi never asks the providers for theirs. The first is a
+ * new chat's.
+ */
+export const MODELS = [
+  { id: "gpt-6-astra", name: "GPT-6-Astra", provider: "codex" },
+  { id: "gpt-6.1-sol", name: "GPT-6.1-Sol", provider: "codex" },
+  { id: "claude-fable-5-1", name: "Claude Fable 5.1", provider: "claude" },
+  { id: "claude-opus-5-5", name: "Claude Opus 5.5", provider: "claude" },
+] as const;
+export type ModelId = (typeof MODELS)[number]["id"];
+export const ModelId = Schema.Literals(MODELS.map((model) => model.id));
+
+/** One of the four by its id; another (stored before) is none of them. */
+export const modelOf = (id: string) => MODELS.find((model) => model.id === id);
 
 /** A person's one chat with Rufi's AI. */
 export const Chat = Schema.Struct({
@@ -275,51 +339,41 @@ export type Page = typeof Page.Type;
 /**
  * One row of the chat's queue: a message of the person's, or Rufi's note
  * for the AI about an event (its text is the event's line). waiting: it
- * goes in turn, unless held; handing_over: Rufi is giving it to the AI;
- * not_sure: Rufi stopped while handing it over, so nobody knows whether
- * the AI got it, and it is never sent again by itself.
+ * goes in turn, unless held; handing_over: Rufi is giving it to the AI.
  */
 export const QueueItem = Schema.Struct({
   id: Schema.String,
   origin: Schema.Literals(["person", "rufi"]),
   text: Schema.String,
-  state: Schema.Literals(["waiting", "handing_over", "not_sure"]),
+  state: Schema.Literals(["waiting", "handing_over"]),
   /**
-   * Why a waiting row doesn't go by itself: paused or signed_out (an event
-   * that rides with the person's next message), restored (from a backup),
-   * failed (the AI refused it; heldText says why), open_failed (the AI's
-   * thread didn't open; heldText says why, and the person chooses Try
-   * again or New thread), reply_ended (its reply ended while Rufi read its
-   * files; it is in the chat already, and its reply's Retry sends it
-   * again; heldText says why).
+   * Why a waiting row doesn't go by itself: signed_out (the AI found the
+   * sign-in missing; it goes once the sign-in is back; heldText says so),
+   * restored (from a backup), failed (the AI couldn't take it; heldText
+   * says why, as it came), stopped (a Stop came before it went),
+   * open_failed (the AI's thread didn't open; heldText says why, and the
+   * person chooses Send or New thread).
    */
   held: Schema.NullOr(
     Schema.Literals([
-      "paused",
       "signed_out",
       "restored",
       "failed",
+      "stopped",
       "open_failed",
-      "reply_ended",
     ]),
   ),
   heldText: Schema.NullOr(Schema.String),
-  /** Which open_failed or reply_ended hold it is: the person's choice names it. */
+  /** Which open_failed hold it is: the person's choice names it. */
   holdId: Schema.NullOr(Schema.String),
   /** A message's references, as its chips. */
   refs: Schema.Array(Chip),
-  /** A reply_ended message's reply, which shows its Retry. */
-  turnId: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 export type QueueItem = typeof QueueItem.Type;
 
-/**
- * What waits, in order, and why nothing goes until the person sends:
- * stopped (Stop) or restarted (Rufi started again with rows waiting).
- */
+/** What waits, in order. */
 export const Queue = Schema.Struct({
   items: Schema.Array(QueueItem),
-  paused: Schema.NullOr(Schema.Literals(["stopped", "restarted"])),
 });
 export type Queue = typeof Queue.Type;
 
@@ -342,6 +396,8 @@ export const StreamLine = Schema.Union([
   Schema.Struct({ type: Schema.Literal("queue") }),
   /** The person's documents or their readings changed; read them again. */
   Schema.Struct({ type: Schema.Literal("documents") }),
+  /** The chat's sub-agents did something; read what shows them again. */
+  Schema.Struct({ type: Schema.Literal("agents") }),
   /** Nothing happened for a while; the stream is still open. */
   Schema.Struct({ type: Schema.Literal("ping") }),
 ]);
@@ -356,12 +412,6 @@ export type Draft = typeof Draft.Type;
 
 /** A message the core took into the queue, and the box's draft after it. */
 export const Sent = Schema.Struct({ id: Schema.String, draft: Draft });
-
-export const Model = Schema.Struct({ id: Schema.String, name: Schema.String });
-export type Model = typeof Model.Type;
-
-/** The allowed models offered now. */
-export const Models = Schema.Struct({ models: Schema.Array(Model) });
 
 /** The page's tab proof, for the session's header. */
 export const SessionProof = Schema.Struct({ proof: Schema.String });
@@ -396,9 +446,15 @@ export type Appearance = typeof Appearance.Type;
 export const ActivityShown = Schema.Literals(["working", "shown", "hidden"]);
 export type ActivityShown = typeof ActivityShown.Type;
 
+/** What a message sent while a reply runs does: goes into it, or after it. */
+export const WhileReplying = Schema.Literals(["steer", "queue"]);
+export type WhileReplying = typeof WhileReplying.Type;
+
 export const Settings = Schema.Struct({
   appearance: Appearance,
   activity: ActivityShown,
+  /** What Enter does while a reply runs. */
+  whileReplying: WhileReplying,
   /** The chosen region; null when none is chosen. */
   emergencyRegion: Schema.NullOr(Schema.String),
   emergency: Schema.NullOr(
@@ -406,12 +462,8 @@ export const Settings = Schema.Struct({
   ),
   /** The regions Rufi knows, to choose from. */
   regions: Schema.Array(Region),
-  /** The document reader's model and effort, and the models it can run on. */
-  reader: Schema.Struct({
-    model: Schema.String,
-    effort: Effort,
-    models: Schema.Array(Model),
-  }),
+  /** How many restarts in a row Rufi carries on a reply that ran. */
+  continuesAfterRestart: Schema.Int,
   /** How long device values are kept (docs/adr/0023). */
   deviceKeepValues: KeepValues,
 });
@@ -425,20 +477,110 @@ export type Settings = typeof Settings.Type;
 export const EntryDetails = Schema.Struct({ details: Schema.Unknown });
 export type EntryDetails = typeof EntryDetails.Type;
 
-/** The ChatGPT sign-in, as the screens need it. */
+/** A sub-agent of the chat, as its line shows it. */
+export const SubAgent = Schema.Struct({
+  id: Schema.String,
+  /** The name the agent that started it gave it. */
+  title: Schema.String,
+  status: Schema.Literals([
+    "idle",
+    "running",
+    "continuing",
+    "done",
+    "stopped",
+    "failed",
+  ]),
+  /** Its latest result, its start: its last answer, or why it stopped or failed. */
+  result: Schema.NullOr(Schema.String),
+  /** The agent that started it: Rufi AI's own agents have none here. */
+  parent: Schema.NullOr(Schema.String),
+  /** When its turn now began, while it works and has begun one. */
+  since: Schema.NullOr(Schema.String),
+  /** What its next turn runs on. */
+  model: Schema.String,
+  effort: Schema.String,
+});
+export type SubAgent = typeof SubAgent.Type;
+
+export const SubAgents = Schema.Struct({ agents: Schema.Array(SubAgent) });
+
+/**
+ * One line of a sub-agent's Activity, as its agent reported it: a message
+ * it took (`from` whom), its answer (reply), a note or a step (activity),
+ * its thinking, a question it asked (`detail`: the options), how a turn
+ * that didn't finish ended, or that a turn ran on another model or effort
+ * than the one before (model).
+ */
+export const AgentLine = Schema.Struct({
+  id: Schema.String,
+  kind: Schema.Literals([
+    "message",
+    "reply",
+    "activity",
+    "reasoning",
+    "question",
+    "end",
+    "model",
+  ]),
+  /** A model line: the turn before ran on `from`, this one on `to`. */
+  changed: Schema.optionalKey(Schema.Struct({ from: RanOn, to: RanOn })),
+  text: Schema.String,
+  from: Schema.optionalKey(Schema.String),
+  activity: Schema.NullOr(ActivityKind),
+  detail: Schema.NullOr(Schema.String),
+  status: Schema.NullOr(
+    Schema.Literals(["running", "done", "failed", "stopped"]),
+  ),
+  updatedAt: Schema.String,
+  /** The sub-agent this step started. */
+  agent: Schema.optionalKey(Schema.String),
+});
+export type AgentLine = typeof AgentLine.Type;
+
+/** A sub-agent's latest lines, and whether it has earlier ones. */
+export const AgentLog = Schema.Struct({
+  lines: Schema.Array(AgentLine),
+  earlier: Schema.Boolean,
+});
+export type AgentLog = typeof AgentLog.Type;
+
+/** The providers the AI runs on, each signed in by itself. */
+export const Provider = Schema.Literals(["codex", "claude"]);
+export type Provider = typeof Provider.Type;
+
+/**
+ * A provider's sign-in, as the provider reports it: its account when it
+ * names one. Unavailable: Rufi can't ask it (not installed, say), with why.
+ */
+export const ProviderStatus = Schema.Struct({
+  state: Schema.Literals(["signed_in", "signed_out", "unavailable"]),
+  account: Schema.NullOr(Schema.String),
+  text: Schema.NullOr(Schema.String),
+});
+export type ProviderStatus = typeof ProviderStatus.Type;
+
+/** Each provider's sign-in, as the screens need it; the chat runs on Codex. */
 export const Status = Schema.Struct({
-  account: Schema.Literals(["signed_out", "signed_in", "no_plan_use"]),
-  email: Schema.NullOr(Schema.String),
+  codex: ProviderStatus,
+  claude: ProviderStatus,
 });
 export type Status = typeof Status.Type;
 
-/** How a sign-in from the screens goes: waiting has the link once it is known. */
+/**
+ * How a sign-in from the screens goes, one at a time: the provider's own
+ * sign-in in the browser; waiting has its link once it is known.
+ */
 export const SignInState = Schema.Struct({
+  provider: Schema.NullOr(Provider),
   state: Schema.Literals(["idle", "waiting", "done", "failed"]),
   link: Schema.NullOr(Schema.String),
   error: Schema.NullOr(Schema.String),
 });
 export type SignInState = typeof SignInState.Type;
+
+/** Starts a provider's sign-in. */
+export const StartSignIn = Schema.Struct({ provider: Provider });
+export type StartSignIn = typeof StartSignIn.Type;
 
 /** The last good backup, and the last failed try when it is newer. */
 export const Backups = Schema.Struct({
@@ -491,17 +633,34 @@ export type FirstRun = typeof FirstRun.Type;
 
 // --- What the screens send ---
 
-export const AddPerson = Schema.Struct({ displayName: Line(200) });
+/**
+ * The welcome's "About you": your name and your profile, its birth date and
+ * sex needed, its blood group and height when given. All saved together.
+ */
+export const AddPerson = Schema.Struct({
+  displayName: Line(200),
+  profile: Schema.Struct({
+    birth_date: BirthDate,
+    sex_for_ranges: SexForRanges,
+    blood_group: Schema.optionalKey(ProfileValues.fields.blood_group),
+    height: Schema.optionalKey(ProfileValues.fields.height),
+  }),
+});
 
 /** The settings to change; the others stay as they are. */
 export const SaveSettings = Schema.Struct({
   appearance: Schema.optionalKey(Appearance),
   activity: Schema.optionalKey(ActivityShown),
+  whileReplying: Schema.optionalKey(WhileReplying),
   /** A region code Rufi knows, such as "IN"; null clears it. */
   emergencyRegion: Schema.optionalKey(Schema.NullOr(Line(10))),
-  /** The document reader's model: one of the models it can run on. */
-  readerModel: Schema.optionalKey(Id),
-  readerEffort: Schema.optionalKey(Effort),
+  /** How many restarts in a row Rufi carries on a reply that ran: 0 to 10. */
+  continuesAfterRestart: Schema.optionalKey(
+    Schema.Int.check(
+      Schema.isGreaterThanOrEqualTo(0),
+      Schema.isLessThanOrEqualTo(10),
+    ),
+  ),
   /** A shorter time deletes at once: the screen confirms it first. */
   deviceKeepValues: Schema.optionalKey(KeepValues),
 });
@@ -516,8 +675,8 @@ const Message = Schema.String.check(
 export const MessageText = Schema.Struct({ text: Message });
 
 /**
- * A message from the box, sent into the queue or steered into the running
- * reply. `id` is the send's own: the same send again (a retry) finds the
+ * A message from the box, sent into the queue, from where it goes into the
+ * running reply or in its turn. `id` is the send's own: the same send again (a retry) finds the
  * message it made and never makes a second one. Its text may be empty when
  * something is added to it (files sent with no words).
  */
@@ -529,6 +688,8 @@ export const SendMessage = Schema.Struct({
   ),
   /** Its chips: what it points at. */
   refs: Schema.optionalKey(Pointers),
+  /** While a reply runs: into it (steer, the default), or after it (queue). */
+  kind: Schema.optionalKey(WhileReplying),
 });
 
 /** The box's text and chips, saved over the draft unless a send holds it. */
@@ -538,12 +699,6 @@ export const SaveDraft = Schema.Struct({
 });
 
 export const ReorderQueue = Schema.Struct({ ids: Schema.Array(Id) });
-
-/**
- * The person's Retry of a reply that ended while Rufi read its files,
- * naming the hold they saw.
- */
-export const RetryReply = Schema.Struct({ hold: Id });
 
 /**
  * The person's choice for a message whose AI thread didn't open, naming
@@ -562,6 +717,6 @@ export const FinishStep = Schema.Struct({
   step: Schema.Literals(["welcome", "sign_in", "region"]),
 });
 
-export const SelectModel = Schema.Struct({ model: Id });
+export const SelectModel = Schema.Struct({ model: ModelId });
 
 export const SelectEffort = Schema.Struct({ effort: Effort });

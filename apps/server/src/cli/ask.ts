@@ -10,8 +10,9 @@ import {
   type AgentRuntime,
   type TurnEnd,
 } from "../agent/runtime.ts";
+import { callOf } from "../agent/codex/events.ts";
 import type { forAgent } from "../core/tools/tools.ts";
-import { errorCode, type Log } from "../platform/logs.ts";
+import type { Log } from "../platform/logs.ts";
 import { SKILLS } from "../core/skills/skills.ts";
 import {
   mcpEndpoint,
@@ -67,39 +68,25 @@ export const ask = (
       ),
       (runtime) => Effect.promise(() => runtime.close()),
     );
-    let caller:
-      | { turnId: string; call: ReturnType<typeof tools.forTurn> }
-      | undefined;
     // The thread's key: its calls run only for its running reply.
     const key = keys.issue({
       tools: tools.specs,
       call: async (call) => {
+        // Codex's own: the ask runs on Codex directly.
+        const made = callOf(call.meta);
+        const turnId = made.turnId;
         if (
-          call.threadId === undefined ||
-          call.threadId !== threadId ||
-          call.turnId === undefined ||
-          agent.activeTurn(call.threadId) !== call.turnId
+          made.threadId === undefined ||
+          made.threadId !== threadId ||
+          turnId === undefined ||
+          agent.activeTurn(made.threadId) !== turnId
         ) {
           return {
             ok: false,
             text: JSON.stringify({ ok: false, error: "No reply is running." }),
           };
         }
-        if (caller?.turnId !== call.turnId) {
-          caller = { turnId: call.turnId, call: tools.forTurn() };
-        }
-        const answer = await caller.call(call.tool, call.input, call.callId);
-        if (answer.stopTurn !== undefined) {
-          agent
-            .stop(call.threadId, call.turnId, {
-              status: "failed",
-              text: answer.stopTurn,
-            })
-            .catch((error: unknown) => {
-              log("codex.interrupt_failed", { error: errorCode(error) });
-            });
-        }
-        return answer;
+        return tools.call(call.tool, call.input, made.callId);
       },
     });
     const op = new AbortController();

@@ -5,8 +5,7 @@
 import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Status } from "@rufi/contracts";
-import type { RunSubAgent } from "../../server/src/agent/runtime.ts";
+import type { Provider, ProviderStatus } from "@rufi/contracts";
 import {
   expect,
   test as base,
@@ -15,14 +14,18 @@ import {
 } from "@playwright/test";
 import { Effect, Exit, Scope } from "effect";
 import type { Scenario } from "../../server/tests/fake-codex.ts";
-import { fakeModel, type FakeModel } from "../../server/tests/fake-model.ts";
+import {
+  codexArgs,
+  fakeModel,
+  type FakeModel,
+} from "../../server/tests/fake-model.ts";
 import {
   FAMILY,
   familyFiles,
   FIRST_RUN_DONE,
 } from "../../server/tests/fixtures/golden.ts";
 import { codexBinary } from "../../server/src/agent/codex/binary.ts";
-import { codexRuntime } from "../../server/src/agent/codex/codex.ts";
+import { codexAdapter } from "../../server/src/agent/codex/adapter.ts";
 import {
   databasePath,
   openWritable,
@@ -33,17 +36,34 @@ import {
   startCore,
   type Core,
 } from "../../server/src/server/core.ts";
+import type { ProviderSignIn } from "../../server/src/server/signin.ts";
 
 const SERVER = join(import.meta.dirname, "../../server");
 const FAKE = join(SERVER, "tests/fake-codex.ts");
 const SCREENS = join(import.meta.dirname, "../dist");
 
+/** A provider's sign-in status: signed out. */
+export const SIGNED_OUT: ProviderStatus = {
+  state: "signed_out",
+  account: null,
+  text: null,
+};
+
+/** A provider's sign-in status: signed in, as `account` when it says. */
+export const signedIn = (account: string | null): ProviderStatus => ({
+  state: "signed_in",
+  account,
+  text: null,
+});
+
 export class Rufi {
-  /** What the sign-in status says; tests may change it. */
-  account: Status = { account: "signed_in", email: "asha@example.com" };
+  /** What Codex says of its sign-in; tests may change it. */
+  codex: ProviderStatus = signedIn("asha@example.com");
+  /** What Claude says of its sign-in; tests may change it. */
+  claude: ProviderStatus = SIGNED_OUT;
   /**
-   * The sign-ins started from the screens, waiting for ChatGPT's answer;
-   * one that succeeds signs Rufi in. No browser opens.
+   * The sign-ins started from the screens, waiting for the provider's
+   * answer; one that succeeds signs that provider in. No browser opens.
    */
   readonly signIns: PromiseWithResolvers<undefined>[] = [];
   /** The folders Show in Finder was asked to show; no Finder opens. */
@@ -86,8 +106,6 @@ export class Rufi {
       scenario?: Scenario;
       codex?: "real";
       now?: () => string;
-      /** The document reader (tests/fake-reader.ts); without it, readings wait. */
-      reader?: RunSubAgent;
       /** How the data folder was chosen; RUFI_HOME when not given. */
       source?: FolderSource;
     } = {},
@@ -96,21 +114,15 @@ export class Rufi {
     if (options.codex === "real") this.#model ??= await fakeModel();
     const command =
       options.codex === "real"
-        ? {
-            file: await codexBinary(),
-            args: [
-              "-c",
-              `model_providers.openai_chatgpt_plan.base_url="${this.#model?.url ?? ""}"`,
-            ],
-          }
+        ? { file: await codexBinary(), args: codexArgs(this.#model?.url) }
         : { file: process.execPath, args: [FAKE] };
     const scope = await Effect.runPromise(Scope.make());
     this.#scope = scope;
     this.#core = await Effect.runPromise(
       startCore({
         home: this.home,
-        agent: (host) =>
-          codexRuntime({
+        adapters: [
+          codexAdapter({
             home: this.home,
             ...agentSetup(this.home),
             command,
@@ -119,19 +131,13 @@ export class Rufi {
               FAKE_CODEX: JSON.stringify(options.scenario ?? {}),
               FAKE_CODEX_LOG: join(this.home, "fake-codex.jsonl"),
             },
-            token: () => Promise.resolve("token"),
             version: "0.0.0",
-            host,
           }),
+        ],
         log: () => undefined,
-        account: () => Promise.resolve(this.account),
-        signIn: async ({ showLink }) => {
-          showLink("https://auth.example.com/authorize?fictional=1");
-          const run = Promise.withResolvers<undefined>();
-          this.signIns.push(run);
-          await run.promise;
-          this.account = { account: "signed_in", email: "asha@example.com" };
-          return { email: "asha@example.com" };
+        signIns: {
+          codex: this.#signIn("codex"),
+          claude: this.#signIn("claude"),
         },
         screens: SCREENS,
         folder: {
@@ -141,7 +147,6 @@ export class Rufi {
             return Promise.resolve();
           },
         },
-        ...(options.reader !== undefined && { reader: options.reader }),
         ...(port !== undefined && { port }),
         ...(options.now !== undefined && { now: options.now }),
       }).pipe(Scope.provide(scope)),
@@ -149,9 +154,51 @@ export class Rufi {
     return this.#core;
   }
 
+  /** A provider's sign-in as the test says it stands. */
+  #signIn(provider: Provider): ProviderSignIn {
+    return {
+      status: () => Promise.resolve(this[provider]),
+      start: async ({ showLink }) => {
+        showLink(`https://auth.example.com/${provider}?fictional=1`);
+        const run = Promise.withResolvers<undefined>();
+        this.signIns.push(run);
+        await run.promise;
+        this[provider] = signedIn(
+          provider === "codex" ? "asha@example.com" : null,
+        );
+      },
+    };
+  }
+
   get core(): Core {
     if (!this.#core) throw new Error("Rufi isn't running.");
     return this.#core;
+  }
+
+  /**
+   * All Rufi AI got with its first turn on a message that starts with
+   * `words`, Rufi's notes first, as the scripted Codex logged it.
+   */
+  async given(words: string): Promise<string | undefined> {
+    return (await readFile(join(this.home, "fake-codex.jsonl"), "utf8"))
+      .trim()
+      .split("\n")
+      .map(
+        (line) =>
+          JSON.parse(line) as {
+            received?: {
+              method?: string;
+              params?: { input?: { text: string }[] };
+            };
+          },
+      )
+      .find(
+        ({ received }) =>
+          received?.method === "turn/start" &&
+          received.params?.input?.at(-1)?.text.startsWith(words) === true,
+      )
+      ?.received?.params?.input?.map((part) => part.text)
+      .join("\n");
   }
 
   /** A fresh single-use link, as `pnpm start` prints it. */
@@ -192,6 +239,14 @@ export const test = base.extend<{ rufi: Rufi }>({
 });
 
 /**
+ * How long a test waits for work on files: an add, or a reading and its
+ * sort. Each file is looked at, and each page drawn, in a worker thread of
+ * its own (core/documents/inspect.ts): about a second alone, over ten when
+ * the whole suite runs side by side.
+ */
+export const FILE_WORK_MS = 20_000;
+
+/**
  * Files into a reply as a person sends them from the Documents page: Add
  * puts them in the chat box as chips (nothing starts), then Send, with
  * `words` or none, sends them.
@@ -201,16 +256,27 @@ export async function sendFiles(
   files: Parameters<Locator["setInputFiles"]>[0],
   words?: string,
 ): Promise<void> {
+  const chat = page.getByRole("region", { name: "Chat" });
+  // Files chosen while the box still loads its draft (just after a page
+  // opens) are refused with "The chat box is still loading.", as a person's
+  // would be. The open panel's box shows when it takes input; the bar
+  // doesn't, so open the panel, as Add does.
+  const message = chat.getByRole("textbox", { name: "Message to Rufi" });
+  if (!(await message.isVisible())) {
+    await chat.getByRole("button", { name: /^Open the chat/ }).click();
+  }
+  await expect(message).toBeEditable();
   await page
     .getByLabel("Choose documents", { exact: true })
     .setInputFiles(files);
-  const chat = page.getByRole("region", { name: "Chat" });
+  // A chip shows in the box once the add ends (a sent message shows its own).
   await expect(
     chat
+      .locator("form")
       .getByRole("list", { name: "Added to this message" })
       .getByRole("listitem")
       .first(),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: FILE_WORK_MS });
   if (words !== undefined) {
     await chat.getByRole("textbox", { name: "Message to Rufi" }).fill(words);
   }

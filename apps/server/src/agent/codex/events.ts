@@ -218,9 +218,15 @@ function reasonOf(info: CodexErrorInfo | null): TurnEnd["reason"] {
   if (info === "unauthorized") return "sign_in";
   if (info === "usageLimitExceeded") return "usage_limit";
   if (info === "rateLimitExceeded") return "rate_limit";
-  // A connection that failed, with the HTTP status when there was one.
+  // A connection that failed, with the HTTP status when there was one. A
+  // 401 comes after Codex renewed its sign-in and was refused again: the
+  // sign-in isn't accepted.
   if (typeof info === "object" && info !== null) {
-    return "activeTurnNotSteerable" in info ? "provider_failed" : "connection";
+    if ("activeTurnNotSteerable" in info) return "provider_failed";
+    const status = Object.values(info).map(
+      (value) => (value as { httpStatusCode?: unknown } | null)?.httpStatusCode,
+    );
+    return status.includes(401) ? "sign_in" : "connection";
   }
   return "provider_failed";
 }
@@ -233,4 +239,28 @@ function resetOf(limits: RateLimitSnapshot | undefined): string | undefined {
     }
   }
   return undefined;
+}
+
+const record = (value: unknown): Record<string, unknown> =>
+  typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : {};
+const text = (value: unknown) =>
+  typeof value === "string" && value !== "" ? value : undefined;
+
+/**
+ * What Codex says about a call to Rufi's tools in its `_meta` (0.159.3): its
+ * id, its thread, and its turn in the turn metadata.
+ */
+export function callOf(meta: unknown): {
+  callId: string | undefined;
+  threadId: string | undefined;
+  turnId: string | undefined;
+} {
+  const fields = record(meta);
+  return {
+    callId: text(fields["callId"]),
+    threadId: text(fields["threadId"]),
+    turnId: text(record(fields["x-codex-turn-metadata"])["turn_id"]),
+  };
 }

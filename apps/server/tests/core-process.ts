@@ -4,32 +4,30 @@
 // through core.json, as `pnpm start` does.
 import { join } from "node:path";
 import { Effect, Scope } from "effect";
-import { codexRuntime } from "../src/agent/codex/codex.ts";
+import { codexAdapter } from "../src/agent/codex/adapter.ts";
 import { agentSetup, startCore } from "../src/server/core.ts";
+import { codexSignIn } from "../src/server/signin.ts";
 
 const home = process.argv[2] ?? "";
+const codex = codexAdapter({
+  home,
+  ...agentSetup(home),
+  command: {
+    file: process.execPath,
+    args: [join(import.meta.dirname, "fake-codex.ts")],
+  },
+  env: {
+    PATH: process.env["PATH"] ?? "",
+    FAKE_CODEX: process.env["FAKE_CODEX"] ?? "{}",
+  },
+  version: "0.0.0",
+});
 const scope = await Effect.runPromise(Scope.make());
 await Effect.runPromise(
   startCore({
     home,
-    agent: (host) =>
-      codexRuntime({
-        home,
-        ...agentSetup(home),
-        command: {
-          file: process.execPath,
-          args: [join(import.meta.dirname, "fake-codex.ts")],
-        },
-        env: {
-          PATH: process.env["PATH"] ?? "",
-          FAKE_CODEX: process.env["FAKE_CODEX"] ?? "{}",
-        },
-        token: () => Promise.resolve("token"),
-        version: "0.0.0",
-        host,
-      }),
+    adapters: [codex],
     log: () => undefined,
-    account: () =>
-      Promise.resolve({ account: "signed_in", email: "asha@example.com" }),
+    signIns: { codex: codexSignIn(codex, () => undefined) },
   }).pipe(Scope.provide(scope)),
 );

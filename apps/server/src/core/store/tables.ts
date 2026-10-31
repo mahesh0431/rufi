@@ -1,5 +1,25 @@
 // Generated from schema.sql by pnpm db:types; a test fails if it differs.
 export interface Tables {
+  agent_conversations: {
+    person_id: string;
+    chat_id: string;
+    agent_id: string;
+    conversation: number;
+    provider: string;
+    ref: string;
+    created_at: string;
+  };
+  agent_cursor: {
+    id: number;
+    number: number;
+  };
+  agent_owners: {
+    agent_id: string;
+    person_id: string;
+    chat_id: string;
+    root: number;
+    created_at: string;
+  };
   allergies: {
     id: string;
     person_id: string;
@@ -40,6 +60,7 @@ export interface Tables {
     person_id: string;
     chat_id: string;
     origin: string;
+    kind: string;
     text: string;
     refs: string;
     event_id: string | null;
@@ -68,6 +89,7 @@ export interface Tables {
     context_window: number | null;
     context_thread: string | null;
     created_at: string;
+    model_provider: string | null;
   };
   conditions: {
     id: string;
@@ -154,6 +176,7 @@ export interface Tables {
     deleted_at: string | null;
     from_document: string | null;
     sent_at: string | null;
+    reader_agent: string | null;
   };
   draft_items: {
     id: string;
@@ -223,7 +246,6 @@ export interface Tables {
     error: string | null;
     usage: string | null;
     reader: string | null;
-    sorted_at: string | null;
     created_at: string;
   };
   medicine_uses: {
@@ -253,9 +275,11 @@ export interface Tables {
     id: string;
     seq: number;
     person_id: string;
-    chat_id: string;
+    origin: string;
+    chat_id: string | null;
     call_id: string;
     request: string;
+    receipt: string | null;
     created_at: string;
   };
   page_copies: {
@@ -268,10 +292,22 @@ export interface Tables {
     copy: string;
     why: string | null;
     saved_at: string;
+    sorted_at: string | null;
   };
   people: {
     id: string;
     display_name: string;
+  };
+  profiles: {
+    id: string;
+    person_id: string;
+    birth_date: string | null;
+    birth_date_words: string | null;
+    sex_for_ranges: string | null;
+    blood_group: string | null;
+    height: number | null;
+    height_unit: string | null;
+    removed: number;
   };
   record_changes: {
     operation_id: string;
@@ -348,7 +384,9 @@ export interface Tables {
     id: string;
     person_id: string;
     chat_id: string;
-    turn_id: string;
+    turn_id: string | null;
+    agent_id: string | null;
+    agent_turn_id: string | null;
     call_id: string;
     tool: string;
     input: string;
@@ -374,6 +412,7 @@ export interface Tables {
     revision: number;
     created_at: string;
     updated_at: string;
+    questions: string | null;
   };
   turns: {
     id: string;
@@ -389,6 +428,7 @@ export interface Tables {
     resets_at: string | null;
     started_at: string;
     ended_at: string | null;
+    effort: string | null;
   };
   visits: {
     id: string;

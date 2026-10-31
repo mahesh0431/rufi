@@ -1,0 +1,13 @@
+{
+  "name": "@rufi/agents",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./provider": "./src/provider.ts",
+    "./contract": "./tests/contract.ts",
+    "./fake": "./tests/fake-provider.ts",
+    "./store": "./src/store.ts",
+    "./agents": "./src/agents.ts"
+  }
+}

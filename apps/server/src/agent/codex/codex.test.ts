@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -23,7 +23,7 @@ import {
 } from "../runtime.ts";
 import type { Deadlines } from "./appserver.ts";
 import { checkExecutable } from "./binary.ts";
-import { codexRuntime } from "./codex.ts";
+import { codexRuntime, type CodexRuntime } from "./codex.ts";
 import { activityOf, endOf } from "./events.ts";
 import { isRunning } from "./processes.ts";
 
@@ -32,24 +32,17 @@ const SETTINGS = { model: "gpt-6.1-sol", instructions: "Be careful." };
 
 let home: string;
 let log: string;
-let token: string;
-let asked: number[];
 let diagnostics: { event: string; method?: unknown }[];
 let events: AgentEvent[];
-let runtime: AgentRuntime | undefined;
-/** While set, token requests wait for it. */
-let tokenGate: Promise<void> | undefined;
+let runtime: CodexRuntime | undefined;
 /** A stand-in for Rufi's MCP server, when a test starts one. */
 let mcp: Server | undefined;
 
 beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), "rufi-codex-"));
   log = join(home, "fake.jsonl");
-  token = "token-1";
-  asked = [];
   diagnostics = [];
   events = [];
-  tokenGate = undefined;
 });
 afterEach(async () => {
   await runtime?.close();
@@ -91,8 +84,8 @@ async function mcpServer(status = 200) {
 
 /*
  * Timing: a busy CI machine can be slow by a second or more. So a deadline the
- * fake meets (requestMs, Stop's) is 1 s or more, and a test that waits a
- * deadline out sets it short (GIVE_UP, a turn's 300 ms). Starting the fake (a
+ * fake meets is long (requestMs 10 s) or 1 s or more (Stop's), and a test that
+ * waits a deadline out sets it short (NO_ANSWER, GIVE_UP, a turn's 300 ms). Starting the fake (a
  * new Node process) is the slowest step, so its own deadline (startMs) is
  * long, except where a test waits it out. `until` waits far
  * longer than both, and fails when it gives up. A test waits for what it
@@ -102,12 +95,14 @@ async function mcpServer(status = 200) {
 
 /** Stop's deadlines when the fake never answers, so Rufi gives up soon. */
 const GIVE_UP = { interruptAckMs: 300, interruptEndMs: 300 };
+/** A request's deadline when the fake doesn't answer in time. */
+const NO_ANSWER = { requestMs: 1_000 };
 
 function start(
   scenario: Scenario = {},
   deadlines?: Partial<Deadlines>,
   skills: readonly AgentSkill[] = [],
-): AgentRuntime {
+): CodexRuntime {
   runtime = codexRuntime({
     home,
     sandbox: { folder: join(home, "ai"), unreadable: [] },
@@ -118,16 +113,10 @@ function start(
       FAKE_CODEX: JSON.stringify(scenario),
       FAKE_CODEX_LOG: log,
     },
-    token: async (validForMs) => {
-      asked.push(validForMs);
-      await tokenGate;
-      return token;
-    },
     version: "9.9.9",
     deadlines: {
       startMs: 10_000,
-      requestMs: 1_000,
-      turnMs: 3_000,
+      requestMs: 10_000,
       interruptAckMs: 1_000,
       interruptEndMs: 1_000,
       answerMs: 500,
@@ -144,7 +133,6 @@ interface Entry {
   started?: string[];
   pid?: number;
   env?: string[];
-  token?: string;
   codexHome?: string;
   received?: { method?: string; params?: Record<string, unknown> };
   answered?: string;
@@ -203,27 +191,21 @@ async function ask(agent: AgentRuntime, text = "How are you?") {
 }
 
 describe("starting Codex", () => {
-  it("runs app-server as OpenAI documents, with only the environment Rufi gives it", async () => {
+  it("runs app-server as OpenAI documents, with only the environment Rufi gives it and no token", async () => {
     await start().startThread(SETTINGS);
     const [first] = await entries();
     expect(first?.started).toEqual(["app-server", "--listen", "stdio://"]);
-    expect(first?.token).toBe("token-1");
     expect(first?.codexHome).toBe(join(home, "codex"));
-    expect(first?.env).toEqual(
-      expect.arrayContaining(["ACCESS_TOKEN", "CODEX_HOME", "PATH"]),
-    );
+    expect(first?.env).toEqual(expect.arrayContaining(["CODEX_HOME", "PATH"]));
+    expect(first?.env).not.toContain("ACCESS_TOKEN");
     expect((await sent("initialize"))[0]).toEqual({
       clientInfo: { name: "Rufi", title: "Rufi", version: "9.9.9" },
       capabilities: { experimentalApi: true, requestAttestation: false },
     });
     const config = await readFile(join(home, "codex/config.toml"), "utf8");
+    // Codex's own provider, with its own sign-in in this home.
+    expect(config).not.toContain("model_provider");
     for (const line of [
-      'model_provider = "openai_chatgpt_plan"',
-      'base_url = "https://api.openai.com/v1"',
-      'env_key = "ACCESS_TOKEN"',
-      'wire_api = "responses"',
-      "requires_openai_auth = false",
-      "supports_websockets = false",
       'model_reasoning_effort = "medium"',
       'model_reasoning_summary = "detailed"',
       "daemon_auto_start = false",
@@ -281,11 +263,6 @@ describe("starting Codex", () => {
     );
   });
 
-  it("asks for a token that outlasts a whole turn", async () => {
-    await start().startThread(SETTINGS);
-    expect(asked).toEqual([3_000 + 5 * 60_000]);
-  });
-
   it("refuses Codex when it didn't take Rufi's settings, and stops it", async () => {
     await expect(
       start({ features: { daemon_auto_start: true } }).startThread(SETTINGS),
@@ -298,12 +275,6 @@ describe("starting Codex", () => {
         SETTINGS,
       ),
     ).rejects.toThrow("model_reasoning_effort is high");
-    // Without it, Codex's models send no reasoning summary to keep.
-    await expect(
-      start({ config: { model_reasoning_summary: null } }).startThread(
-        SETTINGS,
-      ),
-    ).rejects.toThrow("model_reasoning_summary is null");
   });
 
   it.each(["initialize", "config/read", "thread/start"])(
@@ -312,7 +283,7 @@ describe("starting Codex", () => {
       await expect(
         start(
           { hang: [method] },
-          method === "initialize" ? { startMs: 1_000 } : {},
+          method === "initialize" ? { startMs: 1_000 } : NO_ANSWER,
         ).startThread(SETTINGS),
       ).rejects.toThrow(`didn't answer ${method} within 1 s`);
       if (method !== "thread/start") {
@@ -335,6 +306,13 @@ describe("starting Codex", () => {
       { id: "gpt-6-astra", name: "GPT-6-Astra" },
       { id: "gpt-5.5", name: "GPT-5.5" },
     ]);
+  });
+
+  // The AI's permission profile names the skills folder; Linux's sandbox
+  // can't start a command when a folder it names is missing.
+  it("keeps the skills folder, even with no skills", async () => {
+    await start().startThread(SETTINGS);
+    expect((await stat(join(home, "codex/skills"))).isDirectory()).toBe(true);
   });
 });
 
@@ -631,18 +609,6 @@ describe("a turn", () => {
     });
   });
 
-  it("stops a turn that runs past its deadline", async () => {
-    const thread = await ask(start({}, { turnMs: 300 }), "hang");
-    expect(await ended(thread)).toEqual({
-      status: "failed",
-      reason: "timeout",
-      text: "The reply took too long, so Rufi stopped it.",
-    });
-    expect(await sent("turn/interrupt")).toEqual([
-      { threadId: thread, turnId: TURN_1 },
-    ]);
-  });
-
   it("declines approvals and refuses other requests, also a dynamic tool call", async () => {
     const thread = await ask(
       start({
@@ -696,7 +662,7 @@ describe("starting a reply", () => {
       refusing.send("no-such-thread", { id: "m-1", input: ["Hi"] }),
     ).rejects.toBeInstanceOf(NotSent);
     await runtime?.close();
-    const silent = start({ hang: ["turn/start"] });
+    const silent = start({ hang: ["turn/start"] }, NO_ANSWER);
     const { threadId } = await silent.startThread(SETTINGS);
     const sending = silent.send(threadId, { id: "m-2", input: ["Hi"] });
     await expect(sending).rejects.toThrow("didn't answer turn/start");
@@ -720,7 +686,7 @@ describe("starting a reply", () => {
 
   it("stops a reply Codex starts after its request timed out, when Stop came meanwhile", async () => {
     // Codex takes the request only after Rufi gave up waiting for it.
-    const agent = start({ slow: ["turn/start"], slowMs: 1_500 });
+    const agent = start({ slow: ["turn/start"], slowMs: 1_500 }, NO_ANSWER);
     const { threadId } = await agent.startThread(SETTINGS);
     const op = new AbortController();
     const sending = agent.send(
@@ -747,9 +713,6 @@ describe("starting a reply", () => {
       { id: "m-a", text: "hang" },
     ]);
     expect(seen(threadId).filter((e) => e.type === "text")).toEqual([]);
-    await expect(agent.startedMessages(threadId)).resolves.toEqual([
-      { id: "m-a", text: "hang" },
-    ]);
   });
 
   it("stops a reply only when it is the one asked for", async () => {
@@ -794,27 +757,6 @@ describe("starting a reply", () => {
       agent.steer(thread, { id: "s-1", text: "late" }),
     ).rejects.toBeInstanceOf(NotSent);
     await stopping;
-  });
-
-  it("lists the messages a thread ran, with Rufi's ids", async () => {
-    const agent = start();
-    const thread = await ask(agent, "first");
-    await ended(thread);
-    await agent.send(thread, { id: "m-2", input: ["second"] });
-    await ended(thread, 2);
-    await expect(agent.startedMessages(thread)).resolves.toEqual([
-      { id: "m-first", text: "first" },
-      { id: "m-2", text: "second" },
-    ]);
-  });
-
-  it("lists every message of a long thread, page after page", async () => {
-    const history = Array.from({ length: 120 }, (_, i) => `m-${String(i)}`);
-    const agent = start({ threads: { "old-1": { history } } });
-    await agent.resumeThread("old-1", SETTINGS);
-    const messages = await agent.startedMessages("old-1");
-    expect(messages.map((m) => m.id)).toEqual(history);
-    expect(await sent("thread/turns/list")).toHaveLength(3);
   });
 
   it("resumes a thread with the settings", async () => {
@@ -1042,6 +984,7 @@ describe("Stop", () => {
       status: "failed",
       reason: "provider_failed",
       text: "Codex stopped unexpectedly.",
+      died: true,
     });
     expect(programs.filter(isRunning)).toEqual([]);
   });
@@ -1069,24 +1012,6 @@ describe("Stop", () => {
     ]);
   });
 
-  it("sends nothing when Stop comes while Rufi waits for a token", async () => {
-    const agent = start();
-    const { threadId } = await agent.startThread(SETTINGS);
-    const gate = Promise.withResolvers<undefined>();
-    tokenGate = gate.promise;
-    const op = new AbortController();
-    const sending = agent.send(
-      threadId,
-      { id: "m-1", input: ["Hello"] },
-      op.signal,
-    );
-    await until(() => Promise.resolve(asked.length === 2));
-    op.abort();
-    gate.resolve(undefined);
-    await expect(sending).rejects.toThrow("Stopped.");
-    expect(await sent("turn/start")).toEqual([]);
-  });
-
   it("stops waiting for Codex to start at once, and closing ends it", async () => {
     const agent = start({ hang: ["initialize"] });
     const op = new AbortController();
@@ -1108,12 +1033,12 @@ describe("Stop", () => {
     expect((await pids()).filter(isRunning)).toEqual([]);
   });
 
-  it("waits for a sign-in renewal to be saved before it ends, but not for ever", async () => {
+  it("waits for a stopped call to end, but not for ever", async () => {
     vi.useFakeTimers();
     try {
       let saved = false;
-      // A renewal whose Keychain save takes 50 s, within its 60 s deadline.
-      const renewal = new Promise<string>((resolve) =>
+      // A call that takes 50 s to end after Stop.
+      const call = new Promise<string>((resolve) =>
         setTimeout(() => {
           saved = true;
           resolve("thread-1");
@@ -1121,7 +1046,7 @@ describe("Stop", () => {
       );
       const opening = Effect.runFork(
         agentCall(
-          () => renewal,
+          () => call,
           () => Promise.resolve(),
         ),
       );
@@ -1175,38 +1100,29 @@ describe("closing", () => {
   });
 });
 
-describe("token renewal", () => {
-  it("starts a new Codex with a new token, once no reply runs", async () => {
-    const agent = start();
-    const thread = await ask(agent, "first");
-    await ended(thread);
-    token = "token-2";
-    await agent.startThread(SETTINGS);
-    const starts = (await entries()).filter((entry) => entry.started);
-    expect(starts.map((entry) => entry.token)).toEqual(["token-1", "token-2"]);
-    expect((await pids()).slice(0, 1).filter(isRunning)).toEqual([]);
-    // The old app-server is gone, so the thread must be opened again.
-    expect(agent.loaded(thread)).toBe(false);
-  });
-
-  it("keeps Codex while a reply runs, even with a new token", async () => {
-    const agent = start();
-    const thread = await ask(agent, "hang");
-    await until(() => Promise.resolve(agent.running(thread)));
-    token = "token-2";
-    await agent.startThread(SETTINGS);
+describe("signing in", () => {
+  it("holds a message while Codex is signed out, and sends it once Codex's own sign-in is done", async () => {
+    const agent = start({ signedIn: false });
+    expect(await agent.account()).toEqual({ signedIn: false, email: null });
+    await expect(agent.startThread(SETTINGS)).rejects.toThrow(
+      "Codex isn't signed in to ChatGPT.",
+    );
+    const signIn = new AbortController();
+    const { link, done } = await agent.signIn(signIn.signal);
+    expect(link).toBe("https://auth.openai.com/oauth/authorize?fictional=1");
+    await done;
+    expect(await agent.account()).toEqual({
+      signedIn: true,
+      email: "asha@example.com",
+    });
+    const thread = await ask(agent, "hello");
+    expect(await ended(thread)).toEqual({ status: "completed" });
+    // The same Codex all along: its new sign-in needs no restart.
     expect(await pids()).toHaveLength(1);
   });
+});
 
-  it("keeps the same Codex while the token is the same", async () => {
-    const agent = start();
-    const thread = await ask(agent, "first");
-    await ended(thread);
-    await agent.send(thread, { id: "m-2", input: ["second"] });
-    await ended(thread, 2);
-    expect(await pids()).toHaveLength(1);
-  });
-
+describe("a resumed thread", () => {
   it("gives a resumed thread Rufi's MCP server again (Codex keeps none)", async () => {
     const tools = await mcpServer();
     const agent = start({ threads: { "old-1": {} } });
@@ -1275,6 +1191,10 @@ describe("Codex's items and endings for Rufi", () => {
     expect(failed("rateLimitExceeded")).toBe("rate_limit");
     expect(failed({ httpConnectionFailed: { httpStatusCode: null } })).toBe(
       "connection",
+    );
+    // OpenAI refused the token Codex had just renewed (0.163.0's error).
+    expect(failed({ httpConnectionFailed: { httpStatusCode: 401 } })).toBe(
+      "sign_in",
     );
     expect(failed("serverOverloaded")).toBe("provider_failed");
     expect(failed("contextWindowExceeded")).toBe("provider_failed");

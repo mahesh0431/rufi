@@ -1,15 +1,22 @@
 // Rufi AI's sort of an add, on a real database: a split into documents
 // with their drafts in one transaction, the refusals that write nothing,
 // pages a saved result cites, a fixed draft that moves with
-// its page, and a page read again placed on its own. One fictional PDF of
-// five pages: two reports and a prescription.
+// its page, a page read again placed on its own, and each draft naming
+// the reading it was drafted from. One fictional PDF of five pages: two
+// reports and a prescription.
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { databasePath, openWritable, type Store } from "../store/database.ts";
 import { documents as openDocuments } from "./documents.ts";
-import { sorting, type SortInput, type SortScope } from "./sorting.ts";
+import { draftItems } from "./items.ts";
+import {
+  sorting,
+  unsorted,
+  type SortInput,
+  type SortScope,
+} from "./sorting.ts";
 
 const T0 = "2026-10-18T09:00:00.000Z";
 let clock = T0;
@@ -85,6 +92,7 @@ const draft = (
   page,
   test_name,
   value_text,
+  reading: "job-1",
   quote: `${test_name} | ${value_text}`,
   ...more,
 });
@@ -179,6 +187,85 @@ describe("a draft's value", () => {
       drafts: [draft(2, "Vitamin B12", "104"), draft(2, "Ferritin", "125")],
     });
     expect(drafts().map((d) => d["value"])).toEqual(["104", "125"]);
+  });
+});
+
+describe("a draft's reading", () => {
+  /** Page 2 read again, by a reading not sorted yet: its current copy now. */
+  const readAgain = () => {
+    store.db.exec(`
+      INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, ended_at, created_at)
+        VALUES ('job-2', 'asha', 'document_read', 'pile', 'done', 1, '[2]', '${T0}', '${T0}');
+      INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at)
+        VALUES ('asha', 'f-pile', 2, 'job-2', 1, 'read', '| Ferritin | 1,25 | ng/mL |\n| Vitamin B12 | 104 | pg/mL |', '${T0}');
+    `);
+  };
+
+  it("is the one the draft names: a draft from an older copy of its page is out of date, and the answer counts it", async () => {
+    readAgain();
+    // Rufi AI drafted the ferritin from page 2's first copy, the B12 from its new one.
+    const answer = await sorts.sort(personal(), {
+      ...THREE,
+      drafts: [
+        draft(1, "Haemoglobin", "13.2"),
+        draft(2, "Ferritin", "1,25"),
+        draft(2, "Vitamin B12", "104", { reading: "job-2" }),
+      ],
+    });
+    expect(
+      rows(
+        "SELECT json_extract(fields, '$.test_name') AS test, job_id FROM draft_items ORDER BY page, seq",
+      ).map(Object.values),
+    ).toEqual([
+      ["Haemoglobin", "job-1"],
+      ["Ferritin", "job-1"],
+      ["Vitamin B12", "job-2"],
+    ]);
+    const view = await draftItems(store, () => undefined).view("asha", "pile");
+    expect(view?.items.map((i) => [i.fields.test_name, i.outOfDate])).toEqual([
+      ["Haemoglobin", false],
+      ["Ferritin", true],
+      ["Vitamin B12", false],
+    ]);
+    expect(answer.documents[0]).toMatchObject({ drafts: 3, out_of_date: 1 });
+  });
+
+  it("must have a copy of the draft's page, the person's own: else the sort is refused and nothing is written", async () => {
+    readAgain();
+    // Ravi's reading of the same file.
+    store.db.exec(`
+      INSERT INTO documents (id, person_id, added_at, added_from, version, sent_at) VALUES ('pile-ravi', 'ravi', '${T0}', 'documents_page', 1, '${T0}');
+      INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, ended_at, created_at)
+        VALUES ('job-ravi', 'ravi', 'document_read', 'pile-ravi', 'done', 1, '[1]', '${T0}', '${T0}');
+      INSERT INTO document_pages (person_id, document_id, position, file_id, page_in_file, file_name, state, entry_job_id, entry_attempt)
+        VALUES ('ravi', 'pile-ravi', 1, 'f-pile', 1, 'pile.pdf', 'read', 'job-ravi', 1);
+      INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at)
+        VALUES ('ravi', 'f-pile', 1, 'job-ravi', 1, 'read', '| Haemoglobin | 13.2 | g/dL |', '${T0}');
+    `);
+    const before = { documents: documents(), pages: pagesOfEach() };
+    await expect(
+      sorts.sort(personal(), {
+        ...THREE,
+        drafts: [
+          // job-2 copied page 2 only.
+          draft(1, "Haemoglobin", "13.2", { reading: "job-2" }),
+          draft(1, "Haemoglobin", "13.2", { reading: "job-ravi" }),
+          draft(1, "Haemoglobin", "13.2", { reading: "job-9" }),
+          draft(2, "Ferritin", "1,25", { reading: "job-2" }),
+        ],
+      }),
+    ).rejects.toMatchObject({
+      issues: [
+        expect.objectContaining({ path: "drafts.0.reading", got: '"job-2"' }),
+        expect.objectContaining({
+          path: "drafts.1.reading",
+          got: '"job-ravi"',
+        }),
+        expect.objectContaining({ path: "drafts.2.reading", got: '"job-9"' }),
+      ],
+    });
+    expect({ documents: documents(), pages: pagesOfEach() }).toEqual(before);
+    expect(drafts()).toEqual([]);
   });
 });
 
@@ -293,7 +380,9 @@ describe("a sort", () => {
       },
     ]);
     // Its reading is sorted.
-    expect(rows("SELECT sorted_at FROM jobs")).toEqual([{ sorted_at: T0 }]);
+    expect(rows("SELECT DISTINCT sorted_at FROM page_copies")).toEqual([
+      { sorted_at: T0 },
+    ]);
     expect(
       answer.documents.map((d) => [d.kind, d.pages, d.drafts, d.worth_a_look]),
     ).toEqual([
@@ -301,6 +390,51 @@ describe("a sort", () => {
       ["lab_report", "3–4", 3, 0],
       ["prescription", "5", 0, 0],
     ]);
+  });
+
+  it("sorts only the pages it is given: the rest of the add waits, not sorted yet, for a later sort", async () => {
+    const sorted = () =>
+      rows(
+        "SELECT page_in_file AS page, sorted_at FROM page_copies ORDER BY page_in_file",
+      );
+
+    // Rufi AI sorts the first report now.
+    await sorts.sort(personal(), {
+      document: "pile",
+      documents: THREE.documents.slice(0, 1),
+      drafts: THREE.drafts.filter((d) => d.page <= 2),
+    });
+    expect(sorted()).toEqual([
+      { page: 1, sorted_at: T0 },
+      { page: 2, sorted_at: T0 },
+      { page: 3, sorted_at: null },
+      { page: 4, sorted_at: null },
+      { page: 5, sorted_at: null },
+    ]);
+    expect([...(await unsorted(store.query, "asha"))]).toEqual(["pile"]);
+    expect(drafts().map((d) => d["page"])).toEqual([1, 1, 2, 2]);
+
+    // Later, the rest: the first report and its drafts stay as they are.
+    clock = "2026-10-18T10:00:00.000Z";
+    await sorts.sort(personal(), {
+      document: "pile",
+      documents: THREE.documents.slice(1),
+      drafts: THREE.drafts.filter((d) => d.page > 2),
+    });
+    expect(sorted().map((p) => p.sorted_at)).toEqual([
+      T0,
+      T0,
+      clock,
+      clock,
+      clock,
+    ]);
+    expect(await unsorted(store.query, "asha")).toEqual(new Set());
+    expect(documents().map((d) => d["kind"])).toEqual([
+      "lab_report",
+      "lab_report",
+      "prescription",
+    ]);
+    expect(drafts().map((d) => d["page"])).toEqual([1, 1, 2, 2, 3, 3, 4]);
   });
 
   it("refuses a call with every problem in it, and writes nothing", async () => {
@@ -321,16 +455,14 @@ describe("a sort", () => {
           path: "documents.1.pages",
           fix: "documents.0 already holds page 2: every page goes in one document.",
         }),
-        expect.objectContaining({
-          path: "documents",
-          fix: "Pages 4–5 aren't sorted yet: put each of them in one of the documents too.",
-        }),
         expect.objectContaining({ path: "drafts.0.page" }),
       ],
     });
     expect({ documents: documents(), pages: pagesOfEach() }).toEqual(before);
     expect(drafts()).toEqual([]);
-    expect(rows("SELECT sorted_at FROM jobs")).toEqual([{ sorted_at: null }]);
+    expect(rows("SELECT DISTINCT sorted_at FROM page_copies")).toEqual([
+      { sorted_at: null },
+    ]);
   });
 
   it("refuses a document id not of this add or named twice, a new document without its kind, and the add's own document left out", async () => {
@@ -433,13 +565,14 @@ describe("a sort", () => {
       { document_id: own, position: 4 },
       { document_id: String(after[2]?.["id"]), position: 5 },
     ]);
+    // The fixed draft keeps the reading it was drafted from.
     expect(
-      drafts()
-        .filter((d) => Number(d["page"]) >= 3)
-        .map((d) => [d["document_id"], d["page"], d["version"], d["value"]]),
+      rows(
+        "SELECT document_id, page, version, json_extract(fields, '$.value_text') AS value, job_id FROM draft_items WHERE page >= 3 ORDER BY page, seq",
+      ).map(Object.values),
     ).toEqual([
-      [id, 3, 1, "104"],
-      [own, 4, 3, "42"],
+      [id, 3, 1, "104", "job-1"],
+      [own, 4, 3, "42", "job-1"],
     ]);
   });
 

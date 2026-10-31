@@ -1,10 +1,11 @@
-// One Codex app-server child process, started as OpenAI documents for ChatGPT
-// plan use, and checked before Rufi uses it.
+// One Codex app-server child process, signed in by Codex itself from its
+// CODEX_HOME, and checked before Rufi uses it.
 import { spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { errorCode } from "../../platform/logs.ts";
 import { killTree, trackGroups } from "./processes.ts";
 import type { InitializeParams } from "./protocol/InitializeParams.ts";
+import type { GetAccountResponse } from "./protocol/v2/GetAccountResponse.ts";
 import { connect, type Rpc, type RpcHandlers } from "./rpc.ts";
 import { checkSettings } from "./settings.ts";
 
@@ -19,8 +20,6 @@ export interface Deadlines {
   startMs: number;
   /** Thread start/resume, the turn/start acknowledgement, checks. */
   requestMs: number;
-  /** A whole turn. */
-  turnMs: number;
   /** Stop: for Codex to acknowledge the interrupt, then for the turn to end. */
   interruptAckMs: number;
   interruptEndMs: number;
@@ -33,17 +32,24 @@ export interface Deadlines {
 export const DEADLINES: Deadlines = {
   startMs: 30_000,
   requestMs: 30_000,
-  turnMs: 5 * 60_000,
   interruptAckMs: 5_000,
   interruptEndMs: 10_000,
   answerMs: 30_000,
   toolMs: 20_000,
 };
 
+/** What Rufi says when Codex isn't signed in: how to sign in. */
+export const SIGNED_OUT =
+  "Codex isn't signed in to ChatGPT. Sign in from Settings, then try again.";
+
+/** Codex's answer to `account/read`: it needs a sign-in and has none. */
+export const signedOut = ({
+  account,
+  requiresOpenaiAuth,
+}: GetAccountResponse) => account === null && requiresOpenaiAuth;
+
 export interface AppServer {
   rpc: Rpc;
-  /** The access token this process was started with. */
-  token: string;
   running: () => boolean;
   /**
    * Remembers the process groups started under app-server, so they can be
@@ -56,10 +62,9 @@ export interface AppServer {
 
 export interface StartOptions {
   command: CodexCommand;
-  /** The child's whole environment, apart from CODEX_HOME and ACCESS_TOKEN. */
+  /** The child's whole environment, apart from CODEX_HOME. */
   env: Readonly<Record<string, string>>;
   codexHome: string;
-  token: string;
   version: string;
   deadlines: Deadlines;
   handlers: RpcHandlers;
@@ -77,11 +82,7 @@ export async function startAppServer(
     options.command.file,
     [...options.command.args, "app-server", "--listen", "stdio://"],
     {
-      env: {
-        ...options.env,
-        CODEX_HOME: options.codexHome,
-        ACCESS_TOKEN: options.token,
-      },
+      env: { ...options.env, CODEX_HOME: options.codexHome },
       stdio: ["pipe", "pipe", "pipe"],
       // Its own process group, so Stop can end it with everything it started.
       detached: true,
@@ -166,7 +167,6 @@ export async function startAppServer(
   }
   return {
     rpc,
-    token: options.token,
     running: () => running,
     track,
     stop,

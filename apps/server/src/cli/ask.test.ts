@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect } from "effect";
 import { expect, it } from "vitest";
-import { fakeModel, type Step } from "../../tests/fake-model.ts";
+import { codexArgs, fakeModel } from "../../tests/fake-model.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
 import { codexRuntime } from "../agent/codex/codex.ts";
 import { coreInstructions } from "../core/chat/instructions.ts";
@@ -13,58 +13,8 @@ import { forAgent } from "../core/tools/tools.ts";
 import { agentSetup } from "../server/core.ts";
 import { ask } from "./ask.ts";
 
-it("fails a terminal ask when its tool refusal allowance is used, with the caller's reason", async () => {
+it("answers a terminal ask once", async () => {
   const home = await mkdtemp(join(tmpdir(), "rufi-ask-"));
-  const log = () => undefined;
-  const tools = forAgent(
-    () => ({ store: undefined, personId: undefined }),
-    log,
-  );
-  const bad: Step = {
-    exec: 'text(await tools.mcp__rufi__get_records({ kind: "not-a-kind" }));',
-  };
-  const model = await fakeModel({ script: [bad, bad, bad, { text: "Done." }] });
-  try {
-    const file = await codexBinary();
-    const end = await Effect.runPromise(
-      Effect.scoped(
-        ask("Read the record.", {
-          model: "gpt-6.1-sol",
-          instructions: coreInstructions(undefined),
-          tools,
-          agent: (host) =>
-            codexRuntime({
-              home,
-              ...agentSetup(home),
-              command: {
-                file,
-                args: [
-                  "-c",
-                  `model_providers.openai_chatgpt_plan.base_url="${model.url}"`,
-                ],
-              },
-              env: { PATH: process.env["PATH"] ?? "" },
-              token: () => Promise.resolve("not-a-real-token"),
-              version: "0.0.0",
-              host,
-              log,
-            }),
-          onEvent: () => undefined,
-          log,
-        }),
-      ),
-    );
-    expect(end).toEqual({
-      status: "failed",
-      text: "The AI kept making requests Rufi couldn't accept.",
-    });
-  } finally {
-    await model.close();
-  }
-}, 60_000);
-
-it("answers a terminal ask once when the sign-in renews before its first turn", async () => {
-  const home = await mkdtemp(join(tmpdir(), "rufi-ask-renewal-"));
   const log = () => undefined;
   const tools = forAgent(
     () => ({ store: undefined, personId: undefined }),
@@ -74,7 +24,6 @@ it("answers a terminal ask once when the sign-in renews before its first turn", 
   let text = "";
   let started = 0;
   let messages = 0;
-  let tokenCalls = 0;
   try {
     const file = await codexBinary();
     const end = await Effect.runPromise(
@@ -87,16 +36,8 @@ it("answers a terminal ask once when the sign-in renews before its first turn", 
             codexRuntime({
               home,
               ...agentSetup(home),
-              command: {
-                file,
-                args: [
-                  "-c",
-                  `model_providers.openai_chatgpt_plan.base_url="${model.url}"`,
-                ],
-              },
+              command: { file, args: codexArgs(model.url) },
               env: { PATH: process.env["PATH"] ?? "" },
-              token: () =>
-                Promise.resolve(++tokenCalls === 1 ? "token" : "renewed-token"),
               version: "0.0.0",
               host,
               log,

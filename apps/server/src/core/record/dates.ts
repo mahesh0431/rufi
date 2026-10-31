@@ -31,6 +31,26 @@ export function dateProblem(text: string): string | undefined {
   return undefined;
 }
 
+/**
+ * Someone's age in whole years on `day` ('YYYY-MM-DD'), from their birth
+ * date at its precision: the youngest and oldest it can be, the same when
+ * the date settles it. A year alone leaves two ages; so does a month on
+ * its own in that month.
+ */
+export function ageOn(birth: string, day: string): [number, number] {
+  const [, year = "", month, date] = SHAPE.exec(birth) ?? [];
+  const [, thisYear = "", thisMonth = "", today = ""] = SHAPE.exec(day) ?? [];
+  const years = Number(thisYear) - Number(year);
+  const exact = (had: boolean): [number, number] =>
+    had ? [years, years] : [years - 1, years - 1];
+  if (month === undefined) return [years - 1, years];
+  if (Number(thisMonth) !== Number(month)) {
+    return exact(Number(thisMonth) > Number(month));
+  }
+  if (date === undefined) return [years - 1, years];
+  return exact(Number(today) >= Number(date));
+}
+
 /** An ISO time as the Mac's local 'YYYY-MM-DDTHH:MM'. */
 export function localTime(iso: string): string {
   const at = new Date(iso);

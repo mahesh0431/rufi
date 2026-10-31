@@ -1,5 +1,7 @@
-// Settings: the ChatGPT plan the AI uses, how Rufi looks, when a reply's
-// Activity opens by itself, the region whose
+// Settings: how Codex and Claude are signed in, your profile, how Rufi looks, when a reply's
+// Activity opens by itself, what a message sent while a reply runs does,
+// how often Rufi carries on
+// after a restart, the region whose
 // emergency number the AI gives, the model and effort documents are read
 // with, device data, backups, the export of your data, and where Rufi keeps it.
 import { Backups, DataFolder } from "@rufi/contracts";
@@ -9,14 +11,15 @@ import { DatabaseBackup, Download, FolderOpen } from "lucide-react";
 import { download, read } from "./api.ts";
 import { AppearanceChoice } from "./appearance.tsx";
 import { DeviceDataSection } from "./devices.tsx";
+import { ProfileSection } from "./profile.tsx";
 import { SettingChoice } from "./choice.tsx";
 import { printedTime } from "./dates.ts";
-import { EFFORTS } from "./model-menu.tsx";
 import {
   queries,
   saveSettings,
   useBackups,
   useDataFolder,
+  usePeople,
   useSettings,
   useStatus,
 } from "./reads.ts";
@@ -24,6 +27,7 @@ import { Button, Problem } from "./ui.tsx";
 
 export function SettingsPage() {
   const settings = useSettings();
+  const person = usePeople().data?.[0];
   const save = useMutation({
     mutationFn: (emergencyRegion: string | null) =>
       saveSettings({ emergencyRegion }),
@@ -32,6 +36,7 @@ export function SettingsPage() {
   return (
     <div className="mx-auto max-w-[620px] px-6 py-8">
       <PlanSection />
+      {person && <ProfileSection person={person} />}
       <h2 id="appearance" className="mt-8 mb-2 px-0.5 font-semibold">
         Appearance
       </h2>
@@ -63,6 +68,26 @@ export function SettingsPage() {
           open it under any reply.
         </p>
       </div>
+      <h2 id="while-replying" className="mt-8 mb-2 px-0.5 font-semibold">
+        Sending while Rufi replies
+      </h2>
+      <div className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-4">
+        <SettingChoice
+          setting="whileReplying"
+          label="Sending while Rufi replies"
+          labelledBy="while-replying"
+          choices={[
+            { value: "steer", label: "Steer" },
+            { value: "queue", label: "Queue" },
+          ]}
+        />
+        <p className="text-muted">
+          What Enter does while a reply runs. Steer puts your message into that
+          reply. Queue keeps it until the reply ends, then it goes in its own.
+          Either way, ⌘Enter does the other.
+        </p>
+      </div>
+      <RestartSection />
       <h2 className="mt-8 mb-2 px-0.5 font-semibold">Emergency</h2>
       <div className="rounded-xl border border-line bg-surface p-4">
         {settings.data === undefined && settings.error ? (
@@ -105,7 +130,6 @@ export function SettingsPage() {
           )
         )}
       </div>
-      <DocumentsSection />
       <DeviceDataSection />
       <BackupsSection />
       <ExportSection />
@@ -114,42 +138,63 @@ export function SettingsPage() {
   );
 }
 
-/** The ChatGPT plan Rufi's AI runs on, or the way to sign in. */
+/** How Codex and Claude are signed in, each as it says, or the way to sign in. */
 function PlanSection() {
   const status = useStatus();
-  const account = status.data?.account;
+  const codex = status.data?.codex;
+  const claude = status.data?.claude;
   return (
     <>
-      <h2 className="mb-2 px-0.5 font-semibold">ChatGPT plan</h2>
-      <div className="rounded-xl border border-line bg-surface p-4">
+      <h2 className="mb-2 px-0.5 font-semibold">Sign-in</h2>
+      <div className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-4">
         {status.data === undefined && status.error ? (
           <Problem error={status.error} retry={() => void status.refetch()} />
-        ) : account === "signed_in" ? (
-          <p>
-            Rufi's AI uses your ChatGPT plan
-            {status.data?.email ? ` (${status.data.email})` : ""}.{" "}
-            <a
-              href="https://chatgpt.com/codex/settings/usage"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline"
-            >
-              Manage usage
-            </a>
-          </p>
         ) : (
-          account && (
-            <p>
-              {account === "signed_out"
-                ? "Not signed in. Rufi's AI needs your ChatGPT plan to answer."
-                : "You are signed in, but ChatGPT plan use isn't allowed for Rufi."}{" "}
-              <Link to="/sign-in" className="underline">
-                {account === "signed_out" ? "Sign in" : "Sign in again"}
-              </Link>
-            </p>
-          )
+          <>
+            {codex?.state === "signed_in" ? (
+              <p>
+                Codex is signed in with ChatGPT
+                {codex.account === null ? "" : ` (${codex.account})`}. Rufi's AI
+                uses your ChatGPT plan.{" "}
+                <a
+                  href="https://chatgpt.com/codex/settings/usage"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                >
+                  Manage usage
+                </a>
+              </p>
+            ) : (
+              codex && (
+                <p>
+                  {codex.state === "signed_out"
+                    ? "Codex isn't signed in. Rufi's AI needs it to answer."
+                    : codex.text}{" "}
+                  <Link to="/sign-in" className="underline">
+                    Sign in
+                  </Link>
+                </p>
+              )
+            )}
+            {claude &&
+              (claude.state === "signed_in" ? (
+                <p>Claude is signed in.</p>
+              ) : (
+                <p>
+                  {claude.state === "signed_out"
+                    ? "Claude isn't signed in."
+                    : claude.text}{" "}
+                  {claude.state === "signed_out" && (
+                    <Link to="/sign-in" className="underline">
+                      Sign in
+                    </Link>
+                  )}
+                </p>
+              ))}
+          </>
         )}
-        <p className="mt-2 text-muted">
+        <p className="text-muted">
           The AI can use the internet from its own folder, such as to look
           something up or to install what a program needs. It reaches your
           health record only through Rufi.
@@ -159,73 +204,46 @@ function PlanSection() {
   );
 }
 
-/** The model and effort Rufi's reader reads documents with. */
-function DocumentsSection() {
+/** How many restarts in a row Rufi carries on a reply that ran. */
+function RestartSection() {
   const settings = useSettings();
   const save = useMutation({ mutationFn: saveSettings });
-  const reader = settings.data?.reader;
+  const continues = settings.data?.continuesAfterRestart;
   return (
     <>
-      <h2 className="mt-8 mb-2 px-0.5 font-semibold">Documents</h2>
-      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4">
-        {reader && (
-          <>
-            <div className="flex flex-col gap-2">
-              <label htmlFor="reader-model" className="font-medium">
-                Reader model
-              </label>
-              <select
-                id="reader-model"
-                value={reader.model}
-                disabled={save.isPending}
-                onChange={(event) => {
-                  save.mutate({ readerModel: event.target.value });
-                }}
-                className="w-64 rounded-lg border border-line bg-surface px-2 py-1.5"
-              >
-                {reader.models.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex items-center gap-3">
-              <span id="reader-effort" className="font-medium">
-                Effort
-              </span>
-              <div
-                role="radiogroup"
-                aria-labelledby="reader-effort"
-                className="inline-flex rounded-lg border border-line bg-side p-0.5"
-              >
-                {EFFORTS.map((effort) => (
-                  <label
-                    key={effort.id}
-                    className="relative rounded-md px-3 py-0.5 text-muted has-checked:bg-surface has-checked:text-ink has-checked:shadow-sm has-focus-visible:outline-2 has-focus-visible:outline-accent"
-                  >
-                    <input
-                      type="radio"
-                      name="reader-effort"
-                      value={effort.id}
-                      checked={reader.effort === effort.id}
-                      disabled={save.isPending}
-                      onChange={() => {
-                        save.mutate({ readerEffort: effort.id });
-                      }}
-                      className="absolute inset-0 m-0 cursor-pointer opacity-0"
-                    />
-                    {effort.name}
-                  </label>
-                ))}
-              </div>
-            </div>
-            <p className="text-muted">
-              Rufi reads documents with this model, when you send them. A
-              reading that runs keeps the model and effort it started with.
-            </p>
-          </>
+      <h2 className="mt-8 mb-2 px-0.5 font-semibold">After a restart</h2>
+      <div className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-4">
+        {continues !== undefined && (
+          <div className="flex items-center gap-2">
+            <label htmlFor="continues" className="font-medium">
+              Carry on up to
+            </label>
+            <select
+              id="continues"
+              value={continues}
+              disabled={save.isPending}
+              onChange={(event) => {
+                save.mutate({
+                  continuesAfterRestart: Number(event.target.value),
+                });
+              }}
+              className="rounded-lg border border-line bg-surface px-2 py-1.5"
+            >
+              {Array.from({ length: 11 }, (_, count) => (
+                <option key={count} value={count}>
+                  {count}
+                </option>
+              ))}
+            </select>
+            <span>times in a row</span>
+          </div>
         )}
+        <p className="text-muted">
+          When Rufi stops suddenly while the AI or its agents work, they carry
+          on when Rufi starts again. After this many restarts in a row, they
+          stop instead, and your waiting messages wait for you to send them. 0:
+          they never carry on by themselves.
+        </p>
         {save.error && (
           <p role="alert" className="text-muted">
             {save.error.message}

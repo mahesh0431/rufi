@@ -2,6 +2,8 @@
 // behind it (Codex now) can change without the rest of Rufi changing. The
 // agent keeps its own threads; Rufi keeps the chat and what waits to go to
 // the AI (core/chat), and starts one turn at a time.
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { Effect } from "effect";
 
 /** What one line of activity is about. */
@@ -40,6 +42,8 @@ export interface TurnEnd {
   text?: string;
   /** When a usage limit resets (ISO 8601), when the provider says. */
   resetsAt?: string;
+  /** The agent's process ended under the turn: it crashed, or Rufi ended it. */
+  died?: true;
 }
 
 /** What the agent does, as it happens. Every event names its thread and turn. */
@@ -115,6 +119,20 @@ export type AgentEvent = { threadId: string } & (
    * (null when the agent doesn't know it). It may come outside a reply.
    */
   | { type: "usage"; turnId: string; tokens: number; window: number | null }
+  /**
+   * What the reply used, across all its requests, as the agent counted it,
+   * once it ends: the input tokens (all of them, and of those, how many came
+   * from the cache) and the tokens written. `payload` is the agent's own
+   * count, as it came.
+   */
+  | {
+      type: "turnUsage";
+      turnId: string;
+      input: number;
+      cached: number;
+      output: number;
+      payload: unknown;
+    }
 );
 
 /** A Stop that came while Rufi was getting ready to send. */
@@ -155,6 +173,9 @@ export class NotReloaded extends NotOpened {
  */
 export class NotSent extends Error {}
 
+/** The provider says it isn't signed in: only signing in again ends it. */
+export class SignedOut extends Error {}
+
 export interface Model {
   id: string;
   name: string;
@@ -175,6 +196,28 @@ export interface AgentSandbox {
   folder: string;
   unreadable: readonly string[];
 }
+
+/**
+ * The sandbox with the person's own keychains denied too, under the HOME
+ * the AI's commands get (else this account's): Claude keeps its sign-in in
+ * one, and a command reading a keychain opens its file itself (ADR 0016).
+ * On macOS only, where the Keychain is: on Linux there is no such folder,
+ * and Codex's sandbox there (bubblewrap) can't deny a path whose folder
+ * isn't there, so no conversation would open.
+ */
+export const withKeychains = (
+  sandbox: AgentSandbox,
+  userHome: string | undefined,
+): AgentSandbox =>
+  process.platform === "darwin"
+    ? {
+        ...sandbox,
+        unreadable: [
+          ...sandbox.unreadable,
+          join(userHome ?? homedir(), "Library", "Keychains"),
+        ],
+      }
+    : sandbox;
 
 /**
  * One of Rufi's skills, as the agent reads it: its SKILL.md, by name, and
@@ -202,6 +245,8 @@ export interface ThreadSettings {
   instructions: string;
   /** Where the thread gets Rufi's tools, given again each time it is resumed. */
   tools?: McpServer;
+  /** Its working folder, in the AI's folder; without it, the AI's folder. */
+  cwd?: string;
 }
 
 export interface AgentRuntime {
@@ -264,7 +309,8 @@ export interface AgentRuntime {
   ) => Promise<void>;
   /**
    * Passes a message into the running reply; returns that reply's turn id.
-   * Throws NotSent when no reply runs or the agent refused it.
+   * Throws NotSent when it surely didn't reach the agent: no reply runs,
+   * the agent refused it, or Rufi couldn't get to the agent (signed out).
    */
   steer: (
     threadId: string,
@@ -275,13 +321,6 @@ export interface AgentRuntime {
    * started; `end` says why, when Rufi decided it.
    */
   stop: (threadId: string, turnId?: string, end?: TurnEnd) => Promise<void>;
-  /**
-   * The messages the thread has run, oldest first, with the ids Rufi gave
-   * them: to fill what a crash kept Rufi from saving.
-   */
-  startedMessages: (
-    threadId: string,
-  ) => Promise<{ id: string; text: string }[]>;
   /** Ends the agent process and everything it started. */
   close: () => Promise<void>;
 }
@@ -292,10 +331,8 @@ export interface AgentHost {
 }
 
 /**
- * How long Rufi waits for a stopped call to end. It covers the slowest path
- * with its own deadlines: renewing the sign-in (Keychain reads and writes up
- * to 60 s each, OpenAI up to three tries of 20 s), whose new token must be
- * saved before Rufi exits. Reaching it means a bug; the agent is then closed
+ * How long Rufi waits for a stopped call to end. Each agent's own Stop has
+ * deadlines well within it; reaching it means a bug. The agent is then closed
  * with the scope that holds it.
  */
 const STOP_LIMIT_MS = 5 * 60_000;
@@ -330,50 +367,3 @@ export const agentCall = <A>(
       ]);
     });
   });
-
-/**
- * A Rufi sub-agent's one task: a locked-down AI thread that Rufi starts for
- * background work (a document's reader). It sees only the agent's own
- * prompt, its instructions, its input and exactly the tools it is given; it
- * has no chat history, no folder and no network, and saves nothing of its
- * own.
- */
-export interface SubAgentTask {
-  model: string;
-  effort: string;
-  /** Its instructions, after the agent's own prompt. */
-  instructions: string;
-  /** Its one message: what to do. */
-  input: string;
-  /**
-   * Its tools: an MCP server whose key the task's owner bound to their data,
-   * and the names of the only tools it may use there.
-   */
-  tools: McpServer & { names: readonly string[] };
-  /** The agent summarised the thread: what the sub-agent saw before is gone. */
-  onCompaction: () => void;
-  /** How long the whole turn may take. */
-  deadlineMs: number;
-}
-
-/** How a sub-agent's turn ended, as Rufi saw it. */
-export interface SubAgentOutcome {
-  /** Only `completed` means the turn ended normally. */
-  end: TurnEnd;
-  /** How often the agent summarised the thread during the turn. */
-  compactions: number;
-  /** The turn's tokens, as the agent reported them last. */
-  usage?: {
-    inputTokens: number;
-    cachedInputTokens: number;
-    outputTokens: number;
-    reasoningOutputTokens: number;
-    totalTokens: number;
-  };
-}
-
-/** Runs one sub-agent task to its end; a Stop (signal) interrupts it. */
-export type RunSubAgent = (
-  task: SubAgentTask,
-  signal?: AbortSignal,
-) => Promise<SubAgentOutcome>;

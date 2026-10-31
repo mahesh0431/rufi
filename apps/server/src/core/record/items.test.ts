@@ -2,11 +2,11 @@
 // real tool caller, the real transcripts, a real database with the
 // fictional family, and drafts made by a real sort of the reader's page
 // copies. Messages are sent at 10:00 on Sunday 11 Oct 2026 in India.
-import { mkdtemp, readFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Chip } from "@rufi/contracts";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   transcripts as openTranscripts,
   type ChatRow,
@@ -21,7 +21,8 @@ import {
   openWritable,
   type Store,
 } from "../store/database.ts";
-import { chatCaller } from "../tools/tools.ts";
+import { rufiCaller } from "../tools/tools.ts";
+import { turnScope } from "../../../tests/scope.ts";
 
 const TZ = process.env["TZ"];
 process.env["TZ"] = "Asia/Kolkata";
@@ -43,10 +44,25 @@ let chat: ChatRow;
 let said = 0;
 let calls = 0;
 
+/**
+ * The record with the fictional family, made once: each of its writes is
+ * synced to disk, which is slow on a busy Linux runner. Each test gets its
+ * own copy.
+ */
+let template: string;
+
+beforeAll(async () => {
+  template = await mkdtemp(join(tmpdir(), "rufi-items-template-"));
+  const made = openWritable(databasePath(template));
+  made.db.exec(family);
+  made.close();
+});
+
 beforeEach(async () => {
-  const path = databasePath(await mkdtemp(join(tmpdir(), "rufi-items-")));
+  const folder = await mkdtemp(join(tmpdir(), "rufi-items-"));
+  await cp(template, folder, { recursive: true });
+  const path = databasePath(folder);
   store = openWritable(path);
-  store.db.exec(family);
   reader = openReadOnly(path) as Store;
   transcripts = openTranscripts(store, () => SUNDAY_10AM);
   chat = (await transcripts.chat("asha")) as ChatRow;
@@ -182,6 +198,7 @@ function copied(pages: Record<number, Entry>, documentId: string) {
             const when = date ?? (column === "earlier" ? undefined : dated);
             return {
               page: Number(position),
+              reading: jobId,
               ...item,
               ...(when !== undefined && { date: when }),
               quote: `${item.test_name} ${item.value_text}`,
@@ -236,20 +253,19 @@ async function say(text: string, refs?: Chip[]): Promise<string> {
   return id;
 }
 
-/** The AI calls a tool in the chat's turn, started by `origin`. */
+/** The AI calls a tool in the chat's turn. */
 async function call(
   tool: string,
   input: unknown,
-  origin: "person" | "rufi" = "person",
   callId = `call-${String(++calls)}`,
 ) {
-  const answer = await chatCaller(
+  const answer = await rufiCaller(
     reader,
     transcripts,
     () => undefined,
     undefined,
     { run: sorting(store, () => SUNDAY_10AM).sort, done: () => undefined },
-  )(chat, "t-1", origin)(tool, input, callId);
+  )(turnScope(chat, "t-1"))(tool, input, callId);
   return {
     ...(JSON.parse(answer.text) as object),
     kept: answer.kept,
@@ -380,7 +396,7 @@ describe("saving draft items", () => {
       items: [{ item: HbA1c, version: 1, as: "new", category: "lab" }],
     });
     expect(refused.issues[0]?.fix).toBe(
-      "This draft is out of date: its page was read again since it was drafted. Read the document again with get_documents and save its new drafts.",
+      "This draft is out of date: its page was read again after the reading it was drafted from. Read the document again with get_documents and save its new drafts.",
     );
     expect(written()).toEqual(before);
   });
@@ -1151,6 +1167,7 @@ describe("a sort again", () => {
       drafts: [
         {
           page: 2,
+          reading: "job-doc-asha-aug",
           test_name: "LDL cholesterol",
           value_text: "142",
           unit: "mg/dL",
@@ -1186,21 +1203,22 @@ describe("a sort's trace", () => {
     store.db.exec(
       "CREATE TRIGGER no_trace BEFORE INSERT ON tool_calls BEGIN SELECT RAISE(ABORT, 'disk full'); END",
     );
-    const failed = await call("sort_documents", input, "person", "call-sort");
+    const failed = await call("sort_documents", input, "call-sort");
     expect(failed.ok).toBe(false);
     expect(rows("SELECT * FROM documents WHERE id = 'doc-asha-aug'")).toEqual(
       before,
     );
     expect(drafts()).toEqual({});
     expect(
-      rows("SELECT sorted_at FROM jobs WHERE id = 'job-doc-asha-aug'"),
+      rows(
+        "SELECT DISTINCT sorted_at FROM page_copies WHERE job_id = 'job-doc-asha-aug'",
+      ),
     ).toEqual([{ sorted_at: null }]);
 
     store.db.exec("DROP TRIGGER no_trace");
     const { kept: given, ...sorted } = await call(
       "sort_documents",
       input,
-      "person",
       "call-sort",
     );
     expect(sorted.ok).toBe(true);
@@ -1224,7 +1242,6 @@ describe("a sort's trace", () => {
     const { kept: _, ...again } = await call(
       "sort_documents",
       input,
-      "person",
       "call-sort",
     );
     expect(again).toEqual(sorted);
@@ -1283,37 +1300,5 @@ describe("dismissing draft items", () => {
       items: [{ item: HbA1c, version: 1, as: "new", category: "lab" }],
     });
     expect(saved.ok).toBe(true);
-  });
-});
-
-describe("a turn a Rufi event started", () => {
-  it("can't save, dismiss or sort draft items", async () => {
-    await read();
-    const { HbA1c = "" } = drafts();
-    const before = written();
-    const sorted = drafts();
-    for (const [tool, input] of [
-      [
-        "save_changes",
-        { items: [{ item: HbA1c, version: 1, as: "new", category: "lab" }] },
-      ],
-      ["dismiss_items", { items: [{ item: HbA1c, version: 1 }] }],
-      [
-        "sort_documents",
-        {
-          document: "doc-asha-aug",
-          documents: [{ id: "doc-asha-aug", pages: [1], kind: "letter" }],
-          drafts: [],
-        },
-      ],
-    ] as const) {
-      const answer = await call(tool, input, "rufi");
-      expect(answer.ok).toBe(false);
-      expect(answer.error).toBe(
-        "This turn was started by a Rufi event, not by the user, so nothing can be saved, sorted or made in it. Explain or ask; the user asks in a message of their own.",
-      );
-    }
-    expect(written()).toEqual(before);
-    expect(drafts()).toEqual(sorted);
   });
 });

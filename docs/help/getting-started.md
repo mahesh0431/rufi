@@ -25,7 +25,7 @@ If a tab says "This session has ended", the link was already used, or Rufi was s
 2. Keep the terminal open while you use Rufi.
 
 - **⌘W** closes the window, and Rufi keeps running. To open the window again, click Rufi in the Dock.
-- **⌘Q** quits the app and stops Rufi. If a reply is running, Rufi stops it first, as Stop does. Ctrl-C in the terminal does the same. If Rufi doesn't stop within 10 seconds, the app ends it at once, with anything the AI started.
+- **⌘Q** quits the app and stops Rufi. If a reply is running, it ends, and the AI carries on when Rufi starts again (see [When Rufi closes during a reply](chat.md#while-the-ai-replies)). To end it for good, click Stop first. Ctrl-C in the terminal does the same. If Rufi doesn't stop within 10 seconds, the app ends it at once, with anything the AI started.
 - If you run `pnpm desktop` again while the app runs, the app comes to the front.
 - If Rufi already runs from `pnpm start`, the app opens on that Rufi and doesn't start a second one. Then ⌘Q closes only the app: that Rufi keeps running until you press Ctrl-C in its terminal.
 - A web link opens in your browser, as it does when you use Rufi in a browser tab.
@@ -46,7 +46,7 @@ Each time you run it, the demo folder starts again with the same test data:
 - The first run is done, and the emergency region is India.
 - A few days of Asha's chat with Rufi, with one change saved to her health record and its receipt.
 
-Each time, everything that was in the demo folder is removed first: the record, its backups, the AI's earlier chats, and any file you put there yourself. Only the sign-in stays, so you sign in with ChatGPT once (see [Signing in with ChatGPT](signing-in.md#sign-in-in-rufi)), and the next demo is signed in.
+Each time, everything that was in the demo folder is removed first: the record, its backups, the AI's earlier chats, and any file you put there yourself. Only Codex's and Claude's sign-ins stay, so you sign in once (see [Signing in](signing-in.md#sign-in-in-rufi)), and the next demo is signed in.
 
 `pnpm demo` doesn't start, and changes nothing, when:
 
@@ -60,8 +60,8 @@ Each time, everything that was in the demo folder is removed first: the record, 
 In a new data folder, Rufi takes you through four short steps:
 
 1. **Welcome.** Rufi says what goes to the AI: what you ask, the documents you send and the parts of your health record the AI reads go to the AI provider you sign in with. Your health record is kept on your Mac. Tick "I understand Rufi is not a doctor", then click **Continue**. Here you can also choose how Rufi looks: **System**, **Light** or **Dark** (see [How Rufi looks](#how-rufi-looks)).
-2. **Your name.** Type it and click **Save and continue**. Rufi adds you to the record.
-3. **Sign in with ChatGPT.** See [Signing in with ChatGPT](signing-in.md#sign-in-in-rufi). To do it later, click **Skip for now**: your health record works without the AI.
+2. **About you.** Rufi uses your age and sex to choose the right lab ranges. Give your name, your birth date (the year at least; the day and month if you like) and your sex for lab ranges, Female or Male. Your blood group and height can stay empty. **Continue** works once the name, the year and the sex are filled in, and a height, if you give one, is a number. Rufi adds you, your chat and your profile together, or nothing: if it can't save, your answers stay in the form, with a line on what to do. You can change all of it later in your profile (see [Your profile](record.md#your-profile)).
+3. **Sign in with ChatGPT.** See [Signing in](signing-in.md#sign-in-in-rufi). To do it later, click **Skip for now**: your health record works without the AI.
 4. **Your emergency region,** for the number the AI gives in an emergency. Choose it and click **Save and continue**, or click **Skip for now**. You can change it in Settings.
 
 The steps fill the window. Each step shows Rufi at the top, and small dots for where you are: a screen reader reads them as "Step 1 of 4" and so on. While your browser has ChatGPT's sign-in open, Rufi thinks. The welcome step also shows what goes where in two boxes: **Your Mac** keeps your health record; **The AI provider** gets what you ask, the documents you send and the parts the AI reads. The sidebar, Help, Settings and your chat show when the first run is done.
@@ -70,10 +70,10 @@ Rufi keeps each step you finished. If you reload the page, close it or open Rufi
 
 ## What you see
 
-- **The sidebar:** Rufi and your name, **Chat with Rufi**, **Overview**, **Health record** with each of its pages and its count (**Lab results**, **Measurements**, **Medicines** and the others), **Documents**, and at the bottom **Help** and **Settings**. When the AI can't be used, a line under them says why.
+- **The sidebar:** Rufi and your name (click it to open your profile, see [Your profile](record.md#your-profile)), **Chat with Rufi**, **Overview**, **Health record** with each of its pages and its count (**Lab results**, **Measurements**, **Medicines** and the others), **Documents**, and at the bottom **Help** and **Settings**. When the AI can't be used, a line under them says why.
 - **The chat bar:** the box at the bottom right of every page where you read your health (Overview, your health record's pages, Follow-ups and Documents), where you talk to Rufi. **Ask Rufi** on those pages puts things in it, and you stay on the page. It is your one chat with Rufi, the same as Chat with Rufi in the sidebar. See [Talking to Rufi](chat.md).
 - **Overview:** what needs you (documents waiting to be saved or read again), your health record as one tile for each of its pages that has something in it (the empty pages on one **Nothing yet** line), and your recent changes. Each kind of record has its own page, and results have two: Lab results and Measurements. See [Your health record](record.md).
-- **Settings:** the ChatGPT plan Rufi's AI uses (see [Signing in with ChatGPT](signing-in.md#your-plan-in-settings)), how Rufi looks, how a reply's Activity opens (see [Activity](chat.md#activity)), and your emergency region. When a message may describe an emergency, the AI gives this region's number; with no region, it says to call your local emergency number. See [What Rufi's AI will and won't do](safety.md#in-an-emergency-it-tells-you-to-call-for-help-first). Settings also holds the model and effort Rufi reads your documents with (see [Documents](documents.md#the-readers-model-and-effort)), shows your backups and exports your data (see [Backups and export](backups-and-export.md)), and shows where your data folder is (see [Your data and the AI](your-data-and-the-ai.md#where-your-data-lives)).
+- **Settings:** how Codex and Claude are signed in (see [Signing in](signing-in.md#your-sign-in-in-settings)), your profile (see [Your profile](record.md#your-profile)), how Rufi looks, how a reply's Activity opens (see [Activity](chat.md#activity)), and your emergency region. When a message may describe an emergency, the AI gives this region's number; with no region, it says to call your local emergency number. See [What Rufi's AI will and won't do](safety.md#in-an-emergency-it-tells-you-to-call-for-help-first). Settings also shows your backups and exports your data (see [Backups and export](backups-and-export.md)), and shows where your data folder is (see [Your data and the AI](your-data-and-the-ai.md#where-your-data-lives)).
 - **Help:** these pages.
 
 The other pages come in later steps.
@@ -86,7 +86,7 @@ Rufi, at the top of the sidebar, shows what it is doing. When more than one thin
 
 | When                                                                                                     | Rufi              |
 | -------------------------------------------------------------------------------------------------------- | ----------------- |
-| Rufi can't be reached, or the AI can't be used (you aren't signed in, or your plan can't be used)        | Asleep (z z)      |
+| Rufi can't be reached, or the AI can't be used (Codex isn't signed in, or Rufi can't ask it)             | Asleep (z z)      |
 | Your last answer from the AI failed or broke off (not when you stopped it), until the next answer starts | Sorry             |
 | The AI chose a face in its last answer, until the next answer starts                                     | The AI's choice   |
 | A document is being read in your reply                                                                   | Reads             |
@@ -110,4 +110,4 @@ Your choice shows at once in the Rufi windows or tabs that are open in the same 
 
 ## If you're not signed in
 
-The sidebar says "Not signed in" or "ChatGPT plan can't be used". Overview, your chat, Settings and Help still work; only the AI needs the sign-in to answer. Click that line, or **Sign in** in **Settings** › **ChatGPT plan**, to sign in (see [Signing in with ChatGPT](signing-in.md#sign-in-in-rufi)).
+The sidebar says "Not signed in" or "Codex can't start". Overview, your chat, Settings and Help still work; only the AI needs the sign-in to answer. Click that line, or **Sign in** in **Settings** › **Sign-in**, to sign in (see [Signing in](signing-in.md#sign-in-in-rufi)).

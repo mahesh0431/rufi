@@ -1,10 +1,10 @@
 // Rufi's MCP server: Rufi's tools over the Model Context Protocol (Streamable
 // HTTP, with the official SDK), on Rufi's own loopback listener and outside
 // the screens' checks. Each endpoint has its own keys: Rufi makes a key for
-// one scope (a chat's thread for one run of Rufi, or one reading attempt),
-// hands it to the agent, and keeps only its hash. The scope decides which
-// tools there are and what a call may do; nothing in a request names a
-// person, a chat or a document. docs/adr/0016.
+// one scope (an agent for one run of Rufi, server/door.ts, or one reading
+// attempt), hands it to the agent, and keeps only its hash. The scope
+// decides which tools there are and what a call may do; nothing in a
+// request names a person, a chat or a document. docs/adr/0016.
 import { createHash, randomBytes } from "node:crypto";
 import { serve } from "@hono/node-server";
 import {
@@ -16,15 +16,17 @@ import { DEADLINES } from "../agent/codex/appserver.ts";
 import type { ToolAnswer, ToolSpec } from "../core/tools/registry.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 
-/** One call as the agent made it, with what its `_meta` says about it. */
+/** One call as the agent made it. */
 export interface McpCall {
   tool: string;
   input: unknown;
-  /** The agent's id for the call; the same call again has it too. */
-  callId: string | undefined;
-  /** The agent's thread and turn the call belongs to. */
-  threadId: string | undefined;
-  turnId: string | undefined;
+  /** Its `_meta`, as it came: the agent's adapter reads it. */
+  meta: unknown;
+  /**
+   * Aborts when the agent is told the call took too long. The call goes on:
+   * a write still lands, and its repeat gets the same answer.
+   */
+  signal: AbortSignal;
 }
 
 /**
@@ -120,6 +122,11 @@ export function mcpEndpoint(options: {
   toolMs?: number;
   /** What it offers to read; nothing when not given. */
   resources?: readonly McpResource[];
+  /**
+   * The work Rufi finishes before it stops: each call goes in until it
+   * ends, as its answer streams after the response has begun.
+   */
+  working?: Set<Promise<unknown>>;
 }): (request: Request) => Promise<Response> {
   const { keys, log } = options;
   const toolMs = options.toolMs ?? DEADLINES.toolMs;
@@ -128,7 +135,7 @@ export function mcpEndpoint(options: {
     (context) => {
       const scope = context.authInfo?.extra?.["scope"] as McpScope | undefined;
       if (!scope) throw new Error("An MCP request came without its scope.");
-      return serverFor(scope, toolMs, resources);
+      return serverFor(scope, toolMs, resources, options.working);
     },
     {
       onerror: (error) => {
@@ -192,6 +199,7 @@ function serverFor(
   scope: McpScope,
   toolMs: number,
   resources: readonly McpResource[],
+  working: Set<Promise<unknown>> | undefined,
   // oxlint-disable-next-line typescript/no-deprecated -- see above
 ): Server {
   // oxlint-disable-next-line typescript/no-deprecated -- see above
@@ -243,11 +251,25 @@ function serverFor(
       ok: false,
       text: JSON.stringify({ ok: false, error: `${name} took too long.` }),
     };
+    const deadline = new AbortController();
+    const call = scope.call({
+      tool: name,
+      input: input ?? {},
+      meta: _meta,
+      signal: deadline.signal,
+    });
+    // Also once the agent no longer waits for it: until it ends.
+    working?.add(call);
+    const ended = () => working?.delete(call);
+    call.then(ended, ended);
     let timer: NodeJS.Timeout | undefined;
     const answer = await Promise.race([
-      scope.call({ tool: name, input: input ?? {}, ...about(_meta) }),
+      call,
       new Promise<ToolAnswer>((resolve) => {
-        timer = setTimeout(resolve, toolMs, tooLong);
+        timer = setTimeout(() => {
+          deadline.abort();
+          resolve(tooLong);
+        }, toolMs);
       }),
     ]).finally(() => {
       clearTimeout(timer);
@@ -306,26 +328,6 @@ function resultOf(answer: ToolAnswer): CallToolResult {
       })),
     ],
     ...(!answer.ok && { isError: true }),
-  };
-}
-
-const record = (value: unknown): Record<string, unknown> =>
-  typeof value === "object" && value !== null
-    ? (value as Record<string, unknown>)
-    : {};
-const text = (value: unknown) =>
-  typeof value === "string" && value !== "" ? value : undefined;
-
-/**
- * What Codex says about a call in its `_meta` (0.159.3): its id, its thread,
- * and its turn in the turn metadata.
- */
-function about(meta: unknown): Omit<McpCall, "tool" | "input"> {
-  const fields = record(meta);
-  return {
-    callId: text(fields["callId"]),
-    threadId: text(fields["threadId"]),
-    turnId: text(record(fields["x-codex-turn-metadata"])["turn_id"]),
   };
 }
 

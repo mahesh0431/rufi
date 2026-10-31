@@ -11,7 +11,8 @@
 // writes a progress note (NOTE) before it answers ("whole commentary": in one
 // piece, never streamed; "cut commentary": half of it, and never answers),
 // "seeded" gives the first words of the note and the answer as each is
-// added, before their deltas, and anything else answers "ok:<text>". No sign-in and no AI.
+// added, before their deltas, and anything else answers "ok:<text>". No sign-in and no AI:
+// Codex reaches it through a provider of the test's own (codexArgs).
 // With a `script`, it answers each request with the script's next step
 // instead (a call of a direct tool, or text), reporting the step's tokens as
 // the usage, so a test can drive a whole sub-agent turn and force a
@@ -62,11 +63,26 @@ export const THINKING = ["**Thinking it over**", "The user asked me to think."];
 /** The progress note "commentary" writes before its answer. */
 export const NOTE = "Checking your record first.";
 
+/**
+ * Codex's arguments to run on a provider of the test's own at `url`, which
+ * needs no sign-in. Rufi itself runs Codex on its default provider.
+ */
+export const codexArgs = (url = "http://127.0.0.1:9/v1") => [
+  "-c",
+  'model_provider="rufi_test"',
+  "-c",
+  `model_providers.rufi_test={ name = "Rufi test", base_url = "${url}", wire_api = "responses" }`,
+];
+
 /** The prompt Codex sends to have the thread summarised (0.159.3). */
 const COMPACTION = "You are performing a CONTEXT CHECKPOINT COMPACTION";
 
 export async function fakeModel(
-  options: { script?: readonly Step[] } = {},
+  options: {
+    script?: readonly Step[];
+    /** Headers every answer carries, such as the plan's usage limits. */
+    headers?: Record<string, string>;
+  } = {},
 ): Promise<FakeModel> {
   const script = [...(options.script ?? [])];
   const requests: FakeModel["requests"] = [];
@@ -90,7 +106,10 @@ export async function fakeModel(
       const last = texts.at(-1) ?? "";
       // The tool's result came back: now the answer.
       const answered = body.input.at(-1)?.type === "custom_tool_call_output";
-      response.writeHead(200, { "content-type": "text/event-stream" });
+      response.writeHead(200, {
+        "content-type": "text/event-stream",
+        ...options.headers,
+      });
       const event = (data: { type: string }) => {
         response.write(
           `event: ${data.type}\ndata: ${JSON.stringify(data)}\n\n`,

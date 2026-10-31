@@ -18,20 +18,15 @@ import { RESULTS_SHOWN } from "./overview.ts";
 import {
   defineTool,
   NoInput,
-  REJECTIONS_PER_TURN,
   Refusal,
+  specOf,
   toolCaller,
   type ToolContext,
 } from "./registry.ts";
 import { LIMITS } from "./records.ts";
-import {
-  chatCaller,
-  forAgent,
-  REJECTIONS_SETTING,
-  TOOLS,
-  toolsJson,
-} from "./tools.ts";
+import { rufiCaller, forAgent, TOOLS, toolsJson } from "./tools.ts";
 import type { Log } from "../../platform/logs.ts";
+import { turnScope } from "../../../tests/scope.ts";
 
 const read = (path: string) => readFile(new URL(path, import.meta.url), "utf8");
 const schema = await read("../store/schema.sql");
@@ -66,7 +61,7 @@ async function call(
   name = "get_overview",
   input: unknown = {},
 ) {
-  const answer = await forAgent(() => context, record).forTurn()(name, input);
+  const answer = await forAgent(() => context, record).call(name, input);
   return {
     ...answer,
     body: JSON.parse(answer.text) as Record<string, unknown>,
@@ -85,6 +80,15 @@ describe("get_overview", () => {
       ok: true,
       result: {
         person: "Asha Fictional",
+        // Her age today depends on the day the test runs.
+        profile: {
+          id: "asha",
+          name: "Asha Fictional",
+          birth_date: { date: "1990-03", words: "March 1990" },
+          age_today: expect.anything() as unknown,
+          sex_for_ranges: "female",
+          not_set: ["blood_group", "height"],
+        },
         documents: 2,
         reports: 2,
         results: 10,
@@ -663,9 +667,6 @@ describe("get_records", () => {
   });
 });
 
-const left = (text: string) =>
-  (JSON.parse(text) as { rejections_left: number }).rejections_left;
-
 describe("read_chat", () => {
   /** Asha's chat and Ravi's, 30 entries each. */
   const chats =
@@ -685,10 +686,17 @@ describe("read_chat", () => {
       )
       .join("");
 
-  it("pages back through the chat, newest first", async () => {
-    const store = makeDatabase(family, chats);
+  it("pages back through the chat, newest first, a reply with the questions it asked", async () => {
+    const store = makeDatabase(
+      family,
+      `${chats}
+      UPDATE transcript_entries SET questions = '[{"title":"Which report?","options":["March","May"]}]'
+        WHERE id IN ('c-asha-30', 'c-asha-26');
+      UPDATE transcript_entries SET text = '' WHERE id = 'c-asha-26';`,
+    );
     const context = { store, personId: "asha", chatId: "c-asha" };
-    const first = await call(context, "read_chat", { limit: 4 });
+    const first = await call(context, "read_chat", { limit: 5 });
+    const asked = "**Which report?**\n- March\n- May";
     expect(first.body).toEqual({
       ok: true,
       result: {
@@ -696,7 +704,7 @@ describe("read_chat", () => {
           {
             position: 30,
             kind: "reply",
-            text: "c-asha entry 30",
+            text: `c-asha entry 30\n\n${asked}`,
             at: "2026-10-01T10:00:00Z",
           },
           {
@@ -718,8 +726,14 @@ describe("read_chat", () => {
             detail: "ls",
             at: "2026-10-01T10:00:00Z",
           },
+          {
+            position: 26,
+            kind: "reply",
+            text: asked,
+            at: "2026-10-01T10:00:00Z",
+          },
         ],
-        next_before: 27,
+        next_before: 26,
       },
     });
     const last = await call(context, "read_chat", { before: 3 });
@@ -777,7 +791,6 @@ describe("the error envelope", () => {
         },
       ],
       example: {},
-      rejections_left: REJECTIONS_PER_TURN - 1,
     });
   });
 
@@ -798,74 +811,9 @@ describe("the error envelope", () => {
       "rm_rf",
     );
     expect(body["error"]).toBe(
-      "There is no tool called rm_rf. Rufi's tools: get_overview, get_records, get_documents, read_chat, save_changes, dismiss_items, sort_documents, create_brief, show_face.",
+      "There is no tool called rm_rf. Rufi's tools: get_overview, get_records, get_documents, read_chat, save_changes, dismiss_items, sort_documents, save_reading, set_reader, create_brief, show_face, start_agent, agent_status, send_agent, read_agent, stop_agent, waiting_messages, set_agent_model, usage.",
     );
   });
-
-  it("stops the turn when the model keeps getting it wrong", async () => {
-    const caller = forAgent(
-      () => ({ store: undefined, personId: undefined }),
-      () => undefined,
-    ).forTurn();
-    const answers = [];
-    for (let i = 0; i < REJECTIONS_PER_TURN; i++) {
-      answers.push(await caller("nope", {}));
-    }
-    expect(answers.map((a) => left(a.text))).toEqual([2, 1, 0]);
-    expect(answers.map((a) => a.stopTurn)).toEqual([
-      undefined,
-      undefined,
-      "The AI kept making requests Rufi couldn't accept.",
-    ]);
-  });
-
-  it("gives each turn its own count", async () => {
-    const tools = forAgent(
-      () => ({ store: undefined, personId: undefined }),
-      () => undefined,
-    );
-    await tools.forTurn()("nope", {});
-    const next = await tools.forTurn()("nope", {});
-    expect(left(next.text)).toBe(REJECTIONS_PER_TURN - 1);
-  });
-
-  it.each([
-    { value: undefined, lefts: [2, 1, 0], parallel: false },
-    { value: "5", lefts: [4, 3, 2, 1, 0], parallel: false },
-    ...["0", "2.5", "lots"].map((value) => ({
-      value,
-      lefts: [2, 1, 0],
-      parallel: false,
-    })),
-    { value: undefined, lefts: [2, 1, 0], parallel: true },
-    { value: "2", lefts: [1, 0], parallel: true },
-    { value: "lots", lefts: [2, 1, 0], parallel: true },
-  ])(
-    "ends a reply after its refused calls (setting $value, parallel $parallel)",
-    async ({ value, lefts, parallel }) => {
-      makeDatabase(family).close();
-      const store = openWritable(path);
-      try {
-        const chats = transcripts(store, () => "2026-10-14T10:00:00Z");
-        const chat = (await chats.chat("asha")) as ChatRow;
-        if (value !== undefined)
-          await chats.saveSetting(REJECTIONS_SETTING, value);
-        const caller = chatCaller(store, chats, record)(chat, "t-1", "person");
-        const refuse = () => caller("get_documents", { page: 1 });
-        const answers = [];
-        if (parallel) answers.push(...(await Promise.all(lefts.map(refuse))));
-        else {
-          for (const _ of lefts) answers.push(await refuse());
-        }
-        expect(answers.map((answer) => left(answer.text))).toEqual(lefts);
-        expect(answers.map((answer) => answer.stopTurn !== undefined)).toEqual(
-          lefts.map((remaining) => remaining === 0),
-        );
-      } finally {
-        store.close();
-      }
-    },
-  );
 
   it("tells the model only that a tool failed, and logs only its name and error code", async () => {
     const broken = defineTool({
@@ -895,7 +843,7 @@ describe("the error envelope", () => {
     ]);
   });
 
-  it("treats a refusal as a rejection with its own words", async () => {
+  it("answers a refusal in its own words", async () => {
     const refusing = defineTool({
       name: "refusing",
       description: "Refuses.",
@@ -916,7 +864,6 @@ describe("the error envelope", () => {
     expect(JSON.parse(answer.text)).toMatchObject({
       ok: false,
       error: "Not today.",
-      rejections_left: REJECTIONS_PER_TURN - 1,
     });
   });
 
@@ -947,11 +894,11 @@ describe("show_face", () => {
     try {
       const chats = transcripts(store, () => "2026-10-14T10:00:00Z");
       const chat = (await chats.chat("asha")) as ChatRow;
-      const caller = chatCaller(store, chats, record)(chat, "t-1", "person");
+      const caller = rufiCaller(store, chats, record)(turnScope(chat, "t-1"));
       const changes = () =>
         store.db.prepare("SELECT total_changes() AS n").get()?.["n"];
       const before = changes();
-      const answer = await caller("show_face", { face: "found" });
+      const answer = await caller("show_face", { face: "found" }, "c-1");
       expect(JSON.parse(answer.text)).toEqual({ ok: true });
       expect(changes()).toBe(before);
     } finally {
@@ -980,6 +927,16 @@ describe("tables.ts", () => {
 describe("tools.json", () => {
   it("matches the registry (run pnpm tools:json)", async () => {
     expect(await readFile(TOOLS_JSON, "utf8")).toBe(toolsJson());
+  });
+
+  // MCP takes a tool only with an object schema for its input; a client
+  // that checks it can refuse the whole list.
+  it("gives every tool's input as an object schema", () => {
+    expect(
+      TOOLS.filter((tool) => specOf(tool).inputSchema["type"] !== "object").map(
+        (tool) => tool.name,
+      ),
+    ).toEqual([]);
   });
 
   it("has examples that every tool accepts", () => {

@@ -10,13 +10,14 @@ import {
   MAX_MESSAGE_CHARS,
   PAGE_ESCAPE,
   RecoverMessage,
-  RetryReply,
   ReorderQueue,
   SaveDraft,
   SaveSettings,
   SelectEffort,
   SelectModel,
   SendMessage,
+  StartSignIn,
+  WhileReplying,
   type Backups,
   type DataFolder,
   type FirstRun,
@@ -27,7 +28,12 @@ import {
 import { APPEARANCE_HEADER } from "@rufi/contracts/app";
 import type { Brief } from "@rufi/contracts/briefs";
 import { KeepValues, type DeviceData } from "@rufi/contracts/devices";
-import type { Overview } from "@rufi/contracts/record";
+import {
+  SaveProfile,
+  type Overview,
+  type Profile,
+} from "@rufi/contracts/record";
+import type { AgentLogs } from "./agent-logs.ts";
 import { createReadStream } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { Readable } from "node:stream";
@@ -40,6 +46,10 @@ import { getCookie, setCookie } from "hono/cookie";
 import { stream } from "hono/streaming";
 import { Stopped } from "../agent/runtime.ts";
 import type { Drafts } from "../core/chat/drafts.ts";
+import {
+  CONTINUES_SETTING,
+  continuesAfterRestart,
+} from "../core/chat/continues.ts";
 import { RefRefusal } from "../core/chat/refs.ts";
 import { emergencyFor, emergencyRegions } from "../core/chat/safety.ts";
 import {
@@ -57,6 +67,7 @@ import {
   type RecordViews,
 } from "../core/record/views.ts";
 import { Refusal } from "../core/tools/registry.ts";
+import { SaveRefused, type FormOrigin } from "../core/record/save.ts";
 import { DeleteDocument, FixItem } from "@rufi/contracts/documents";
 import { OriginalMissing } from "../core/documents/originals.ts";
 import type { BackupJob } from "../core/store/backup.ts";
@@ -64,9 +75,7 @@ import type { MadeExport } from "../core/store/export.ts";
 import type { Devices } from "../core/devices/devices.ts";
 import type { Change, Transcripts } from "../core/chat/transcript.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
-import { SUB_AGENT_MODELS } from "../agent/codex/subagent.ts";
 import { ChatRefusal, type Chat } from "./chat.ts";
-import { READER_SETTING, readerChoice } from "./reader.ts";
 import type { AiFiles } from "./files.ts";
 import { screen } from "./screens.ts";
 import { sameSecret, type Sessions } from "./session.ts";
@@ -83,6 +92,16 @@ export interface ApiDeps {
   overview: (personId: string) => Promise<Overview>;
   /** The record's pages, rows and series, read only. */
   record: Pick<RecordViews, "page" | "detail" | "series" | "followUps">;
+  /** A person's profile with its history; what they enter in its form. */
+  profile: {
+    read: (personId: string) => Promise<Profile | undefined>;
+    save: (
+      personId: string,
+      form: FormOrigin,
+      sending: string,
+      changes: SaveProfile["changes"],
+    ) => Promise<void>;
+  };
   /** A visit brief of the person's, with its Sources; undefined: none. */
   brief: (personId: string, briefId: string) => Promise<Brief | undefined>;
   /** The ChatGPT sign-in, read when asked. */
@@ -110,6 +129,8 @@ export interface ApiDeps {
   deletions: Deletions;
   /** Their readings: what waits and runs, and each one's work. */
   readings: Readings;
+  /** What the chat's sub-agents did. */
+  agents: Pick<AgentLogs, "list" | "log" | "step" | "stop" | "subscribe">;
   /** A document's draft items, and the person's fixes. */
   items: DraftItems;
   /** A document's pages as the reader saw them. */
@@ -438,13 +459,14 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       activity: Schema.decodeUnknownOption(ActivityShown)(
         await transcripts.setting("activity"),
       ).pipe(Option.getOrElse(() => "working" as const)),
+      // Into the running reply, until another is chosen.
+      whileReplying: Schema.decodeUnknownOption(WhileReplying)(
+        await transcripts.setting("while_replying"),
+      ).pipe(Option.getOrElse(() => "steer" as const)),
+      continuesAfterRestart: await continuesAfterRestart(transcripts.setting),
       emergencyRegion: known?.region ?? null,
       emergency: known ? { name: known.name, number: known.number } : null,
       regions: emergencyRegions(),
-      reader: {
-        ...(await readerChoice(transcripts.setting)),
-        models: SUB_AGENT_MODELS.map(({ id, name }) => ({ id, name })),
-      },
       deviceKeepValues: await deps.devices.keep(),
     };
   };
@@ -454,8 +476,16 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   );
   // First run makes the first person; more people come with family.
   app.post("/api/people", async (c) => {
-    const { displayName } = await body(c, AddPerson);
-    const person = await transcripts.addFirstPerson(displayName);
+    const { displayName, profile } = await body(c, AddPerson);
+    // Nothing is kept when a value can't be: the welcome keeps it all.
+    const person = await transcripts
+      .addFirstPerson(displayName, profile)
+      .catch((error: unknown) => {
+        if (error instanceof SaveRefused) {
+          throw new HttpError(400, error.message);
+        }
+        throw error;
+      });
     if (!person) {
       throw new HttpError(409, "Someone is already in this record.");
     }
@@ -477,7 +507,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     }
     if ((await transcripts.people()).length === 0) return { step: "name" };
     if (
-      (await deps.account()).account === "signed_out" &&
+      (await deps.account()).codex.state !== "signed_in" &&
       !(await transcripts.setting(FIRST_RUN.sign_in))
     ) {
       return { step: "sign_in" };
@@ -510,17 +540,13 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     if (changed.activity !== undefined) {
       await transcripts.saveSetting("activity", changed.activity);
     }
-    const model = changed.readerModel;
-    if (model !== undefined && !SUB_AGENT_MODELS.some((m) => m.id === model)) {
-      throw new HttpError(400, "Rufi's reader can't run on that model.");
+    if (changed.whileReplying !== undefined) {
+      await transcripts.saveSetting("while_replying", changed.whileReplying);
     }
-    if (model !== undefined) {
-      await transcripts.saveSetting(READER_SETTING.model, model);
-    }
-    if (changed.readerEffort !== undefined) {
+    if (changed.continuesAfterRestart !== undefined) {
       await transcripts.saveSetting(
-        READER_SETTING.effort,
-        changed.readerEffort,
+        CONTINUES_SETTING,
+        String(changed.continuesAfterRestart),
       );
     }
     if (changed.deviceKeepValues !== undefined) {
@@ -535,7 +561,10 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   app.get("/api/status", async (c) => c.json(await deps.account()));
 
   app.get("/api/signin", (c) => c.json(deps.signIn.state()));
-  app.post("/api/signin", (c) => c.json(deps.signIn.start()));
+  app.post("/api/signin", async (c) => {
+    const { provider } = await body(c, StartSignIn);
+    return c.json(deps.signIn.start(provider));
+  });
 
   const backups = (): Backups => {
     const { last, failed, running } = deps.backups.status();
@@ -651,10 +680,6 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     });
   });
 
-  app.get("/api/models", async (c) => {
-    return c.json({ models: await acting(() => chat.models()) });
-  });
-
   app.get("/api/people/:personId/overview", async (c) =>
     c.json({ overview: await deps.overview((await person(c)).id) }),
   );
@@ -680,6 +705,28 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     );
     if (!found) throw new HttpError(404, "Not found.");
     return c.json(found);
+  });
+  // The profile, and what the person enters on its page or in Settings:
+  // one save each, with the form as its source.
+  app.get("/api/people/:personId/profile", async (c) => {
+    const found = await deps.profile.read((await person(c)).id);
+    if (!found) throw new HttpError(404, "Not found.");
+    return c.json(found);
+  });
+  app.put("/api/people/:personId/profile", async (c) => {
+    const { id } = await person(c);
+    const { sending, in: form, changes } = await body(c, SaveProfile);
+    try {
+      await deps.profile.save(id, form, sending, changes);
+    } catch (error) {
+      if (error instanceof SaveRefused) {
+        throw new HttpError(400, error.message);
+      }
+      throw error;
+    }
+    const saved = await deps.profile.read(id);
+    if (!saved) throw new HttpError(404, "Not found.");
+    return c.json(saved);
   });
   app.get("/api/people/:personId/series", async (c) => {
     const { id } = await person(c);
@@ -890,6 +937,45 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       ),
     );
   });
+  // The chat's sub-agents, each as its line shows it.
+  app.get(`${one}/agents`, async (c) => {
+    const found = await chatOf(c);
+    return c.json({ agents: await deps.agents.list(found.id) });
+  });
+  // A sub-agent's last lines (`last`, at most 10,000), when its line opens.
+  app.get(`${one}/agents/log`, async (c) => {
+    const found = await chatOf(c);
+    const last = c.req.query("last") ?? "50";
+    if (!/^[1-9]\d{0,3}$/.test(last)) {
+      throw new HttpError(400, "That request isn't valid.");
+    }
+    const log = await deps.agents.log(
+      found.id,
+      c.req.query("agent") ?? "",
+      Number(last),
+    );
+    if (!log) throw new HttpError(404, "Not found.");
+    return c.json(log);
+  });
+  // Stops a sub-agent, and the agents it started, from its pop-up.
+  app.post(`${one}/agents/stop`, async (c) => {
+    const found = await chatOf(c);
+    if (!(await deps.agents.stop(found.id, c.req.query("agent") ?? ""))) {
+      throw new HttpError(404, "Not found.");
+    }
+    return c.json({ ok: true });
+  });
+  // Everything a sub-agent gave about one of its steps, when it opens.
+  app.get(`${one}/agents/step`, async (c) => {
+    const found = await chatOf(c);
+    const step = await deps.agents.step(
+      found.id,
+      c.req.query("agent") ?? "",
+      c.req.query("step") ?? "",
+    );
+    if (!step) throw new HttpError(404, "Not found.");
+    return c.json(step);
+  });
   // Everything the agent gave about one step of Activity, when it opens:
   // never sent with the chat, so a long chat stays light.
   app.get(`${one}/entries/:entryId`, async (c) => {
@@ -900,19 +986,18 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     if (!found) throw new HttpError(404, "Not found.");
     return c.json(found);
   });
-  // Send: into the running reply, or into the queue, and the box emptied.
-  // The same id again (a retry) finds the message it made.
+  // Send: into the queue, and the box emptied, in one step; from there it
+  // goes into the running reply (steer) or after it (queue), as the person
+  // chose. The same id again (a retry)
+  // finds the message it made.
   app.post(`${one}/messages`, async (c) => {
     const found = await chatOf(c);
-    const { id, text, refs } = await body(c, SendMessage, SEND_REFUSAL);
+    const { id, text, refs, kind } = await body(c, SendMessage, SEND_REFUSAL);
     if (text === "" && (refs?.length ?? 0) === 0) {
       throw new HttpError(400, SEND_REFUSAL);
     }
-    const { steered } = await acting(() => chat.send(found, id, text, refs));
-    const draft = steered
-      ? await drafts.save(found, "")
-      : await drafts.read(found);
-    return c.json({ id, draft }, 202);
+    await acting(() => chat.send(found, id, text, refs, kind));
+    return c.json({ id, draft: await drafts.read(found) }, 202);
   });
   app.post(`${one}/stop`, async (c) => {
     const found = await chatOf(c);
@@ -953,15 +1038,14 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     await acting(() => chat.queue.remove(found, c.req.param("itemId")));
     return c.json(await chat.queue.list(found));
   });
-  app.post(`${one}/queue/:itemId/send`, async (c) => {
+  app.post(`${one}/queue/:itemId/steer`, async (c) => {
     const found = await chatOf(c);
-    await acting(() => chat.queue.sendNow(found, c.req.param("itemId")));
+    await acting(() => chat.queue.steer(found, c.req.param("itemId")));
     return c.json(await chat.queue.list(found));
   });
-  app.post(`${one}/queue/:itemId/retry`, async (c) => {
+  app.post(`${one}/queue/:itemId/send`, async (c) => {
     const found = await chatOf(c);
-    const { hold } = await body(c, RetryReply);
-    await acting(() => chat.queue.retry(found, c.req.param("itemId"), hold));
+    await acting(() => chat.queue.send(found, c.req.param("itemId")));
     return c.json(await chat.queue.list(found));
   });
   app.post(`${one}/queue/:itemId/recover`, async (c) => {
@@ -1024,6 +1108,9 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       const unread = deps.readings.subscribe(found.personId, () => {
         push({ type: "documents" });
       });
+      const unagents = deps.agents.subscribe(found.id, () => {
+        push({ type: "agents" });
+      });
       out.onAbort(() => {
         state.open = false;
         wake?.();
@@ -1058,6 +1145,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
         unsubscribe();
         unwatch();
         unread();
+        unagents();
       }
     });
   });

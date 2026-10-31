@@ -4,6 +4,7 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import {
+  cp,
   mkdir,
   mkdtemp,
   readdir,
@@ -14,14 +15,15 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { familyFiles } from "../../../tests/fixtures/golden.ts";
 import { holdRufiLock } from "../../platform/files.ts";
 import { readBrief } from "../briefs/briefs.ts";
 import { transcripts, type ChatRow } from "../chat/transcript.ts";
 import { claimNotices } from "../record/notices.ts";
-import { recentSaves } from "../record/read.ts";
-import { chatCaller } from "../tools/tools.ts";
+import { profileOf, recentSaves } from "../record/read.ts";
+import { saveChanges, type SaveRequest } from "../record/save.ts";
+import { rufiCaller } from "../tools/tools.ts";
 import { backupsPath, makeBackup, upgradeBackupsPath } from "./backup.ts";
 import {
   databasePath,
@@ -32,6 +34,7 @@ import {
 import { markerPath, openRecord } from "./install.ts";
 import { MIGRATIONS, inspect, migrate } from "./migrations.ts";
 import { restore } from "./restore.ts";
+import { turnScope } from "../../../tests/scope.ts";
 
 const VERSION_1 = [
   await readFile(
@@ -126,10 +129,25 @@ const sha = async (path: string) =>
     .update(await readFile(path))
     .digest("hex");
 
+/**
+ * The version 1 data folder, made once: its 135 inserts are each a commit
+ * synced to disk, which is slow on a busy Linux runner. Each test gets its
+ * own copy.
+ */
+let template: string;
+
+beforeAll(async () => {
+  template = join(
+    await mkdtemp(join(tmpdir(), "rufi-upgrade-template-")),
+    "home",
+  );
+  await version1(template);
+});
+
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "rufi-upgrade-"));
   home = join(root, "home");
-  await version1(home);
+  await cp(template, home, { recursive: true });
 });
 
 /** Ravi says something and the AI saves it, at `at`. */
@@ -149,11 +167,11 @@ async function ravisSave(store: Store, at: string): Promise<void> {
   });
   const reader = openReadOnly(databasePath(home)) as Store;
   try {
-    const answer = await chatCaller(reader, chats, () => undefined)(
-      chat,
-      "t-after",
-      "person",
-    )(
+    const answer = await rufiCaller(
+      reader,
+      chats,
+      () => undefined,
+    )(turnScope(chat, "t-after"))(
       "save_changes",
       {
         changes: [
@@ -430,7 +448,7 @@ it("keeps the backup made before the category upgrade at version 3, and a restor
 
 /**
  * Rows as a Rufi before sorting (version 11) had them: the columns
- * migrations 12 and 15 add are left out, to compare an older test's rows.
+ * migrations 12, 15 and 20 add are left out, to compare an older test's rows.
  */
 const beforeSorting = (rows: readonly object[]) =>
   rows.map((row) =>
@@ -444,10 +462,26 @@ const beforeSorting = (rows: readonly object[]) =>
             "sorted_at",
             "quote",
             "sent_at",
+            "reader_agent",
           ].includes(key),
       ),
     ),
   );
+
+/**
+ * An older reading as migration 20 leaves it: one that hadn't finished
+ * failed, as Rufi's start failed them, since the older reader is gone.
+ */
+const closed = (job: Record<string, unknown>) =>
+  job["state"] === "queued" || job["state"] === "running"
+    ? {
+        ...job,
+        state: "failed",
+        error: "Rufi closed while reading",
+        ended_at: expect.any(String) as unknown,
+        retry_at: null,
+      }
+    : job;
 
 /** The documents and their pages as stored. */
 function documentsIn(path: string) {
@@ -499,7 +533,8 @@ it("upgrades a record of version 5 so a generated picture can be a line of the c
 
   (await openRecord(home)).close();
 
-  expect(lines()).toEqual(before);
+  // Kept as they were; no reply has questions of its own yet (0019).
+  expect(lines()).toEqual(before.map((line) => ({ ...line, questions: null })));
   const db = new DatabaseSync(path);
   try {
     const turn = db
@@ -547,7 +582,8 @@ it("upgrades a record of version 6 so the AI's notes can be steps of its Activit
 
   (await openRecord(home)).close();
 
-  expect(lines()).toEqual(before);
+  // Kept as they were; no reply has questions of its own yet (0019).
+  expect(lines()).toEqual(before.map((line) => ({ ...line, questions: null })));
   const db = new DatabaseSync(path);
   try {
     const turn = db
@@ -605,11 +641,12 @@ it("upgrades a record of version 8 so a reading no longer waits for the account:
     const after = stored();
     expect(beforeSorting(after.jobs)).toEqual(
       before.jobs.map(
-        ({ waiting: _waiting, wait_until: _until, retried, ...job }) => ({
-          ...job,
-          retries: retried,
-          retry_at: null,
-        }),
+        ({ waiting: _waiting, wait_until: _until, retried, ...job }) =>
+          closed({
+            ...job,
+            retries: retried,
+            retry_at: null,
+          }),
       ),
     );
     expect(after.pages).toEqual(before.pages);
@@ -631,7 +668,7 @@ it("upgrades a record of version 9 so a chat keeps the context its thread used a
   const old = new DatabaseSync(path);
   try {
     old.exec(`
-      UPDATE chats SET thread_id = 'thread-asha', thread_provider = 'codex', thread_model = 'gpt-6.1-sol', thread_tools = 'rules-1'
+      UPDATE chats SET model = 'gpt-6.1-sol', thread_id = 'thread-asha', thread_provider = 'codex', thread_model = 'gpt-6.1-sol', thread_tools = 'rules-1'
         WHERE person_id = 'asha';
       INSERT INTO chat_queue (id, person_id, chat_id, origin, text, position, state, held, held_text, created_at, updated_at)
         SELECT 'held-1', person_id, id, 'person', 'Is my HbA1c better?', 1, 'waiting', 'failed', 'Codex stopped.', '2026-10-17T09:00:00Z', '2026-10-17T09:00:00Z'
@@ -662,10 +699,19 @@ it("upgrades a record of version 9 so a chat keeps the context its thread used a
         context_tokens: null,
         context_window: null,
         context_thread: null,
+        // A model chosen then is Codex's, the one provider Rufi had.
+        model_provider: chat["model"] === null ? null : "codex",
       })),
     );
+    expect(after.chats.map((chat) => chat["model_provider"])).toContain(
+      "codex",
+    );
     expect(after.queue).toEqual(
-      before.queue.map((row) => ({ ...row, hold_id: null })),
+      before.queue.map((row) => ({
+        ...row,
+        hold_id: null,
+        kind: "queue",
+      })),
     );
     // No meter until the thread reports again.
     expect((await transcripts(store).chat("asha"))?.context).toBeNull();
@@ -748,7 +794,7 @@ it("upgrades a record of version 10 so the reader can keep page copies: every pa
   }
 });
 
-it("upgrades a record of version 11 so Rufi AI sorts: every document, reading and draft kept, and an ended reading counted sorted", async () => {
+it("upgrades a record of version 11 so Rufi AI sorts: every document, reading and draft kept", async () => {
   const path = databasePath(home);
   migrate(path, MIGRATIONS.slice(0, 11));
   // Readings as Rufi of version 11 left them: a done one with entries and
@@ -810,8 +856,18 @@ it("upgrades a record of version 11 so Rufi AI sorts: every document, reading an
 
   const after = stored();
   expect(beforeSorting(after.documents)).toEqual(before.documents);
-  expect(beforeSorting(after.jobs)).toEqual(before.jobs);
-  expect(after.pages).toEqual(before.pages);
+  expect(beforeSorting(after.jobs)).toEqual(before.jobs.map(closed));
+  // A page an unfinished reading was copying is free for the next one.
+  const unfinished = before.jobs
+    .filter((job) => closed(job) !== job)
+    .map((job) => job["id"]);
+  expect(after.pages).toEqual(
+    before.pages.map((page) =>
+      unfinished.includes(page["entry_job_id"])
+        ? { ...page, entry_attempt: 0 }
+        : page,
+    ),
+  );
   expect(beforeSorting(after.drafts)).toEqual(before.drafts);
   expect(
     after.documents.map((d) => [
@@ -821,14 +877,6 @@ it("upgrades a record of version 11 so Rufi AI sorts: every document, reading an
       d["from_document"],
     ]),
   ).toEqual(before.documents.map((d) => [d["id"], null, null, null]));
-  expect(
-    after.jobs
-      .filter((j) => String(j["id"]).startsWith("job-v11"))
-      .map((j) => [j["id"], j["sorted_at"]]),
-  ).toEqual([
-    ["job-v11-aug", "2026-10-16T08:02:00Z"],
-    ["job-v11-sep", null],
-  ]);
   expect(
     after.drafts
       .filter((d) => String(d["id"]).startsWith("d-v11"))
@@ -1015,11 +1063,11 @@ it("upgrades a record of version 14 to Visits: the saves, follow-ups and briefs 
     });
     const reader = openReadOnly(databasePath(home)) as Store;
     try {
-      const answer = await chatCaller(reader, chats, () => undefined)(
-        chat,
-        "t-undo",
-        "person",
-      )(
+      const answer = await rufiCaller(
+        reader,
+        chats,
+        () => undefined,
+      )(turnScope(chat, "t-undo"))(
         "save_changes",
         {
           changes: (latest?.changes ?? []).map((change) => ({
@@ -1100,14 +1148,25 @@ it("upgrades a record of version 15 so files start on Send: every document sent 
 
   const after = stored();
   expect(after.documents).toEqual(
-    before.documents.map((row) => ({ ...row, sent_at: row["added_at"] })),
+    before.documents.map((row) => ({
+      ...row,
+      sent_at: row["added_at"],
+      reader_agent: null,
+    })),
   );
-  expect(after.turns).toEqual(before.turns);
-  expect(after.entries).toEqual(before.entries);
+  // A reply from before keeps no effort (0026).
+  expect(after.turns).toEqual(
+    before.turns.map((turn) => ({ ...turn, effort: null })),
+  );
+  expect(after.entries).toEqual(
+    before.entries.map((line) => ({ ...line, questions: null })),
+  );
   expect(after.queue).toEqual(
-    before.queue.map((row) =>
-      row["id"] === "queue-sort" ? { ...row, state: "removed" } : row,
-    ),
+    before.queue.map((row) => ({
+      ...row,
+      ...(row["id"] === "queue-sort" && { state: "removed" }),
+      kind: "queue",
+    })),
   );
   const db = new DatabaseSync(path, { readOnly: true });
   try {
@@ -1189,4 +1248,257 @@ it("opens a record the migrations made as this Rufi's own (schema.sql is what th
   db.close();
 
   expect(() => openReadOnly(path)?.close()).not.toThrow();
+});
+
+it("upgrades a record of version 19 so Rufi AI can sort part of an add: each page copy keeps its reading's sorted mark", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 19));
+  // Two readings of Asha's August report, one sorted, as Rufi of version
+  // 19 kept them: page 1 copied by the sorted one, page 2 by the other.
+  const old = new DatabaseSync(path);
+  try {
+    old.exec(`
+      INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, sorted_at, created_at) VALUES
+        ('job-sorted', 'asha', 'document_read', 'doc-asha-aug', 'done', 1, '[1]', '2026-10-20T09:00:00Z', '2026-10-20T08:00:00Z'),
+        ('job-waiting', 'asha', 'document_read', 'doc-asha-aug', 'done', 1, '[2]', NULL, '2026-10-20T08:30:00Z');
+      INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at)
+        SELECT 'asha', file_id, page_in_file, CASE position WHEN 1 THEN 'job-sorted' ELSE 'job-waiting' END, 1, 'read', 'A copy', '2026-10-20T08:00:00Z'
+        FROM document_pages WHERE document_id = 'doc-asha-aug';
+    `);
+  } finally {
+    old.close();
+  }
+
+  const store = await openRecord(home);
+  try {
+    expect(
+      store.db
+        .prepare("SELECT job_id, sorted_at FROM page_copies ORDER BY job_id")
+        .all()
+        .map((row) => ({ ...row })),
+    ).toEqual([
+      { job_id: "job-sorted", sorted_at: "2026-10-20T09:00:00Z" },
+      { job_id: "job-waiting", sorted_at: null },
+    ]);
+  } finally {
+    store.close();
+  }
+});
+
+it("upgrades a record of version 20 so every agent's calls can be kept: each call kept before stays as it was, with no agent", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 20));
+  // Two calls of a reply in Asha's chat, as Rufi of version 20 kept them.
+  const old = new DatabaseSync(path);
+  try {
+    old.exec(`
+      INSERT INTO turns (id, person_id, chat_id, agent_turn_id, thread_id, model, status, started_at)
+        SELECT 't-calls', person_id, id, 'codex-turn', 'codex-thread', 'gpt-6.1-sol', 'completed', '2026-10-29T09:00:00Z'
+        FROM chats WHERE person_id = 'asha';
+      INSERT INTO tool_calls (id, person_id, chat_id, turn_id, call_id, tool, input, answer, ok, started_at, ended_at)
+        SELECT k.id, c.person_id, c.id, 't-calls', k.call_id, k.tool, k.input, k.answer, k.ok, '2026-10-29T09:00:01Z', '2026-10-29T09:00:02Z'
+        FROM chats c, (
+          SELECT 'call-1' AS id, 'call_overview' AS call_id, 'get_overview' AS tool, '{}' AS input, '{"ok":true,"result":{}}' AS answer, 1 AS ok
+          UNION ALL SELECT 'call-2', 'call_save', 'save_changes', '{"changes":[]}', '{"ok":false,"error":"Nothing to save."}', 0
+        ) k
+        WHERE c.person_id = 'asha';
+    `);
+  } finally {
+    old.close();
+  }
+  const calls = () => {
+    const db = new DatabaseSync(path, { readOnly: true });
+    try {
+      return db
+        .prepare("SELECT * FROM tool_calls ORDER BY id")
+        .all()
+        .map((row) => ({ ...row }));
+    } finally {
+      db.close();
+    }
+  };
+  const before = calls();
+
+  const store = await openRecord(home);
+  store.close();
+  expect(calls()).toEqual(
+    before.map((row) => ({ ...row, agent_id: null, agent_turn_id: null })),
+  );
+});
+
+it("upgrades a record of version 24 to Rufi's four models: a chat on another model moves to GPT-6-Astra, one of the four keeps it, every chat keeps the rest, and XHigh can be chosen", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 24));
+  const old = new DatabaseSync(path);
+  try {
+    old.exec(`
+      UPDATE chats SET model = 'gpt-retired', model_provider = 'codex', effort = 'high', thread_id = 'thread-asha', revision = 7
+        WHERE person_id = 'asha';
+      UPDATE chats SET model = 'claude-opus-5-5', model_provider = 'claude', effort = 'low'
+        WHERE person_id = 'ravi';
+      INSERT INTO settings (key, value) VALUES ('models', '["gpt-retired"]');
+    `);
+  } finally {
+    old.close();
+  }
+  const chats = () => {
+    const db = new DatabaseSync(path, { readOnly: true });
+    try {
+      return db
+        .prepare("SELECT * FROM chats ORDER BY person_id")
+        .all()
+        .map((row) => ({ ...row }));
+    } finally {
+      db.close();
+    }
+  };
+  const [asha, ...others] = chats();
+
+  const store = await openRecord(home);
+  try {
+    expect(chats()).toEqual([
+      { ...asha, model: "gpt-6-astra", model_provider: "codex" },
+      ...others,
+    ]);
+    expect(others).toContainEqual(
+      expect.objectContaining({ model: "claude-opus-5-5", effort: "low" }),
+    );
+    expect(
+      store.db.prepare("SELECT * FROM settings WHERE key = 'models'").all(),
+    ).toEqual([]);
+    store.db.exec("UPDATE chats SET effort = 'xhigh' WHERE person_id = 'asha'");
+  } finally {
+    store.close();
+  }
+});
+
+it("upgrades a record of version 25 so each reply keeps its effort: every reply kept as it was, its effort unknown", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 25));
+  const old = new DatabaseSync(path);
+  try {
+    old.exec(`
+      INSERT INTO turns (id, person_id, chat_id, agent_turn_id, thread_id, model, status, started_at)
+        SELECT 't-before', person_id, id, 'codex-turn', 'codex-thread', 'gpt-6.1-sol', 'completed', '2026-10-30T09:00:00Z'
+        FROM chats WHERE person_id = 'asha';
+    `);
+  } finally {
+    old.close();
+  }
+  const turns = () => {
+    const db = new DatabaseSync(path, { readOnly: true });
+    try {
+      return db
+        .prepare("SELECT * FROM turns ORDER BY id")
+        .all()
+        .map((row) => ({ ...row }));
+    } finally {
+      db.close();
+    }
+  };
+  const before = turns();
+
+  const store = await openRecord(home);
+  store.close();
+  expect(turns()).toEqual(before.map((row) => ({ ...row, effort: null })));
+});
+
+/** The saves, sources and profiles in a record, as stored. */
+function savesIn(path: string) {
+  const db = new DatabaseSync(path, { readOnly: true });
+  try {
+    const all = (sql: string) =>
+      db
+        .prepare(sql)
+        .all()
+        .map((row) => ({ ...row }));
+    return {
+      operations: all("SELECT * FROM operations ORDER BY seq"),
+      changes: all("SELECT * FROM record_changes ORDER BY operation_id, seq"),
+      sources: all("SELECT rowid, * FROM record_sources ORDER BY rowid"),
+      profiles: all("SELECT * FROM profiles ORDER BY id"),
+    };
+  } finally {
+    db.close();
+  }
+}
+
+it("upgrades a record of version 26 to profiles: everyone's is empty, every save and source stays as it was, and a profile's saves come back exact from a backup", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 26));
+  const db = new DatabaseSync(path, { readOnly: true });
+  const before = {
+    operations: db
+      .prepare("SELECT * FROM operations ORDER BY seq")
+      .all()
+      .map((row) => ({ ...row })),
+    sources: db
+      .prepare("SELECT rowid, * FROM record_sources ORDER BY rowid")
+      .all()
+      .map((row) => ({ ...row })),
+  };
+  db.close();
+
+  const store = await openRecord(home);
+  try {
+    const upgraded = savesIn(path);
+    expect(upgraded.operations).toEqual(
+      before.operations.map((row) => ({
+        ...row,
+        origin: "chat",
+        receipt: null,
+      })),
+    );
+    expect(upgraded.sources).toEqual(before.sources);
+    expect(await profileOf(store.query, "asha", "2026-10-31")).toEqual({
+      id: "asha",
+      name: "Asha Fictional",
+      not_set: ["birth_date", "sex_for_ranges", "blood_group", "height"],
+    });
+
+    // Asha enters her profile in Settings, then corrects it on its page.
+    const enter = (
+      callId: string,
+      form: "settings" | "profile",
+      fields: object,
+    ) =>
+      store.query.transaction().execute((trx) =>
+        saveChanges(
+          trx,
+          { personId: "asha", form, callId, now: "2026-10-31T10:00:00.000Z" },
+          {
+            changes: [
+              { kind: "profile", action: "change", id: "asha", fields },
+            ],
+          } as SaveRequest,
+        ),
+      );
+    await enter("sending-1", "settings", {
+      birth_date: { date: "1990-03", words: "March 1990" },
+      sex_for_ranges: "female",
+      height: { value: 162, unit: "cm" },
+    });
+    await enter("sending-2", "profile", {
+      birth_date: { date: "1991", words: "1991" },
+    });
+  } finally {
+    store.close();
+  }
+  const made = await makeBackup(home, new Date("2026-10-31T11:00:00Z"));
+  const target = join(root, "restored");
+  await restore(join(backupsPath(home), made.name), target);
+
+  const kept = savesIn(path);
+  expect(kept.profiles).toContainEqual({
+    id: "asha",
+    person_id: "asha",
+    birth_date: "1991",
+    birth_date_words: "1991",
+    sex_for_ranges: "female",
+    blood_group: null,
+    height: 162,
+    height_unit: "cm",
+    removed: 0,
+  });
+  expect(savesIn(databasePath(target))).toEqual(kept);
 });

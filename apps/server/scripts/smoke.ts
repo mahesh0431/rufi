@@ -1,17 +1,21 @@
 // The live smoke set: the real core, the real Codex and the real AI, on a
-// scratch data folder holding the fictional family. Only the sign-in comes
-// from RUFI_HOME (the test sign-in). Every case runs once, at most JOBS at a
-// time (--jobs n for another cap), each on its own data folder and core. Each
-// case's transcript is written to the output folder as it ends, with what
+// data folder holding the fictional family for each case. Only the sign-in
+// comes from RUFI_HOME (the test sign-in, Codex's own): Codex renews it there
+// before any case starts, and each case runs on a copy of it, removed when
+// the case ends. No case's AI can read the test sign-in or another case's
+// copy. Every case runs once, at most JOBS at a
+// time (--jobs n for another cap), each on its own data folder and core, in
+// the run's folder (--out, new or empty): `cases/<case>`. Each
+// case's transcript is written to the run's folder as it ends, with what
 // code could check, then report.md with every case's status: passed, FAILED,
 // needs a person's verdict (a part code can't check) or INFRA (a timeout, a
 // usage limit, the sign-in, the provider). Nothing is run again by itself.
 // Every case also checks that each reply completed with words. Anything but
 // passed or a person's verdict makes the exit code nonzero. A case's data
 // folder goes once it has passed or waits only for a person's verdict; any
-// other case's stays in the Mac's temporary folder, and its line names it.
+// other case's stays, and its line names it.
 //
-//   RUFI_HOME=<test sign-in folder> pnpm smoke [--only a,b] [--jobs n] [--out empty-dir]
+//   RUFI_HOME=<test sign-in folder> pnpm smoke --out <empty folder> [--only a,b] [--jobs n]
 import { randomUUID } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { readFile, writeFile } from "node:fs/promises";
@@ -27,28 +31,29 @@ import { Effect, Exit, Scope } from "effect";
 import { everyTurnAnswered } from "./answered.ts";
 import {
   HarnessTimeout,
+  caseFolder,
+  caseSandbox,
   outFolder,
   onScratch,
   runAll,
-  sharedToken,
   statusOf,
+  testSignIn,
   type Status,
 } from "./live-run.ts";
-import type { ChatGptDeps } from "../src/agent/chatgpt/openai.ts";
-import { accessToken, status } from "../src/agent/chatgpt/session.ts";
 import { codexBinary } from "../src/agent/codex/binary.ts";
-import { codexRuntime } from "../src/agent/codex/codex.ts";
-import { DEFAULT_ALLOWLIST } from "../src/core/chat/models.ts";
+import { codexAdapter } from "../src/agent/codex/adapter.ts";
+import { DEFAULT_MODEL } from "../src/core/chat/models.ts";
 import {
   databasePath,
   openReadOnly,
   openWritable,
 } from "../src/core/store/database.ts";
+import { saveChanges } from "../src/core/record/save.ts";
 import { childEnvironment, rufiHome } from "../src/platform/config.ts";
-import { Secrets, secretsLayer } from "../src/platform/keychain.ts";
 import { diagnostics } from "../src/platform/logs.ts";
 import { PROOF_HEADER } from "../src/server/api.ts";
 import { agentSetup, startCore, type Core } from "../src/server/core.ts";
+import { codexSignIn } from "../src/server/signin.ts";
 import { FAMILY, familyFiles } from "../tests/fixtures/golden.ts";
 import { textPdf } from "../tests/pack/pdf.ts";
 import { layout, PRESCRIPTION, REPORTS } from "../tests/pack/reports.ts";
@@ -58,7 +63,6 @@ import {
   prescriptionFile,
 } from "../tests/pack/copy-set.ts";
 import type { Text } from "../tests/pack/pdf.ts";
-import { subAgentRunner } from "../src/agent/codex/subagent.ts";
 
 const { values } = parseArgs({
   options: {
@@ -78,18 +82,6 @@ if (!Number.isInteger(jobs) || jobs < 1) {
   console.error("--jobs takes a whole number of cases, 1 or more.");
   process.exit(2);
 }
-// The test sign-in, renewed in its own folder when needed.
-const signIn: ChatGptDeps = {
-  home: rufiHome(),
-  secrets: await Effect.runPromise(
-    Effect.provide(Effect.service(Secrets), secretsLayer),
-  ),
-  issuer: "https://auth.openai.com",
-  sleep: (ms) => sleep(ms),
-};
-/** One token source for every core and reader of the run. */
-const token = sharedToken((validForMs) => accessToken(signIn, validForMs));
-
 /**
  * Cases with a part code can't check: a person reads each one, after its
  * checks pass.
@@ -459,10 +451,6 @@ const sourcesNote = (home: string) =>
       .join(", ") || "none"
   }`;
 
-/** A turn's Based on: How, in the AI's words. */
-const basis = (snapshot: Snapshot, turn = -1) => ({
-  how: snapshot.turns.at(turn)?.how ?? null,
-});
 /** Rufi's own record of each call the AI made to its tools. */
 function calls(home: string) {
   const store = openReadOnly(databasePath(home));
@@ -499,7 +487,13 @@ const result = (
 ) =>
   `('${id}', 'asha', NULL, 'lab', '${test}', '${value}', ${comparator === null ? "NULL" : `'${comparator}'`}, ${String(Number.parseFloat(value.replace(/[<>]/, "")))}, '${unit}', NULL, NULL, NULL, '${measured}', '${measured}T09:00:00Z', NULL)`;
 const RESULTS = `INSERT INTO results (id, person_id, report_id, category, test_name, value_text, comparator, value_number, unit, reference_range, flag_text, context_text, measured_at, entered_at, replaces_id) VALUES `;
+/** Asha's haemoglobin from June 2016, with no range printed. */
+const HAEMOGLOBIN_2016 = `${RESULTS}${result("res-hb-2016", "Haemoglobin", "11.9", "g/dL", "2016-06-10")};`;
 const SEEDS: Record<string, string> = {
+  profile_settings: HAEMOGLOBIN_2016,
+  // Asha gave only her year of birth.
+  profile_year_alone: `${HAEMOGLOBIN_2016}
+    UPDATE profiles SET birth_date = '1990', birth_date_words = '1990' WHERE id = 'asha';`,
   // Asha told the AI she takes Levothyroxine 25 mcg.
   prescription_visit: `INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, revision, created_at, updated_at) VALUES
       ('m-levo', 'asha', 'c-asha', 1, 'message', 'I take Levothyroxine 25 mcg every morning.', 1, '2026-08-01T09:00:00Z', '2026-08-01T09:00:00Z');
@@ -814,6 +808,42 @@ const chipOf = (type: "document" | "draft_item", id: string) => ({
   id,
 });
 
+/** Asha's profile as stored. */
+function profile(home: string) {
+  const store = openReadOnly(databasePath(home));
+  if (!store) throw new Error("no database");
+  const row = store.db
+    .prepare("SELECT * FROM profiles WHERE id = 'asha'")
+    .get() as Record<string, unknown>;
+  store.close();
+  return row;
+}
+
+/** Asha enters `fields` in Settings › Profile, as its form saves them. */
+async function enterInSettings(home: string, fields: Record<string, unknown>) {
+  const store = openWritable(databasePath(home));
+  try {
+    // The core holds the record open too: wait for its writes.
+    store.db.exec("PRAGMA busy_timeout = 10000");
+    await store.query.transaction().execute((trx) =>
+      saveChanges(
+        trx,
+        {
+          personId: "asha",
+          form: "settings",
+          callId: randomUUID(),
+          now: new Date().toISOString(),
+        },
+        {
+          changes: [{ kind: "profile", action: "change", id: "asha", fields }],
+        },
+      ),
+    );
+  } finally {
+    store.close();
+  }
+}
+
 /** Answers yes when the AI asked instead of saving. */
 async function yesIfAsked(
   c: ReturnType<typeof chat>,
@@ -841,8 +871,6 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     return {
       checks: {
         used_get_overview: overviewRead,
-        how_present: basis(latest).how !== null,
-        how_present_for_the_hba1c: basis(snapshot).how !== null,
       },
       verdicts: [
         {
@@ -869,7 +897,6 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     return {
       checks: {
         read_records: recordReads(home).length > 0,
-        how_present: basis(snapshot).how !== null,
       },
       verdicts: [
         {
@@ -931,7 +958,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     );
     const snapshot = await c.read();
     return {
-      checks: { how_present: basis(snapshot).how !== null },
+      checks: {},
       verdicts: [
         {
           check: "four_last_28_september",
@@ -943,60 +970,17 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
       snapshot,
     };
   },
-  /** An answer from general knowledge says so, and reads nothing. */
+  /** An answer from general knowledge reads nothing. */
   general: async (api, home) => {
     const c = chat(api);
     await c.ask(
       "From what you know, without looking at my record: what is a normal HbA1c?",
     );
     const snapshot = await c.read();
-    const { how } = basis(snapshot);
     return {
-      checks: {
-        how_present: how !== null,
-        read_nothing: !readsRecord(home),
-      },
-      verdicts: [
-        {
-          check: "how_says_general_knowledge",
-          criterion:
-            "Based on's How says the answer comes from general knowledge, not the record.",
-          evidence: how ?? "(none)",
-        },
-      ],
+      checks: { read_nothing: !readsRecord(home) },
       snapshot,
     };
-  },
-  /** A web answer: How says where it came from (a person checks it against Activity). */
-  web: async (api) => {
-    const c = chat(api);
-    await c.ask(
-      "Look up on the web what the American Diabetes Association currently recommends as the HbA1c target for most adults, and give me the source.",
-    );
-    const snapshot = await c.read();
-    const { how } = basis(snapshot);
-    const steps = snapshot.entries
-      .filter((e) => e.kind === "activity" && e.activity !== "note")
-      .map((e) => e.text);
-    return {
-      checks: { how_present: how !== null },
-      verdicts: [
-        {
-          check: "how_matches_activity",
-          criterion:
-            "Based on's How says where the answer came from, and matches Activity: the web when Activity shows a web search or a command, else general knowledge.",
-          evidence: `How: ${how ?? "(none)"}\nActivity: ${steps.join(", ") || "(none)"}`,
-        },
-      ],
-      snapshot,
-    };
-  },
-  /** Small talk has no Based on's How. */
-  small_talk: async (api) => {
-    const c = chat(api);
-    await c.ask("Thanks, that's all for now!");
-    const snapshot = await c.read();
-    return { checks: { no_how: basis(snapshot).how === null }, snapshot };
   },
   /**
    * A follow-up answered from an earlier read says so; then a new subject,
@@ -1011,7 +995,6 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     const snapshot = await c.read();
     return {
       checks: {
-        how_present: basis(range).how !== null,
         three_replies: snapshot.turns.length === 3,
       },
       verdicts: [
@@ -1064,10 +1047,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
       "Look at my CRP and glucose this year. Are they going up, and did starting creatine in June cause it?",
     );
     const snapshot = await c.read();
-    return {
-      checks: { how_present: basis(snapshot).how !== null },
-      snapshot,
-    };
+    return { checks: {}, snapshot };
   },
   /**
    * The analysis story: the AI reads the record, makes a chart with a
@@ -1086,7 +1066,6 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         ran_a_program: snapshot.entries.some(
           (e) => e.kind === "activity" && e.activity === "command",
         ),
-        how_present: basis(snapshot).how !== null,
       },
       verdicts: [
         {
@@ -1109,7 +1088,6 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     return {
       checks: {
         read_records: recordReads(home).length > 0,
-        how_present: basis(snapshot).how !== null,
       },
       verdicts: [
         {
@@ -1528,7 +1506,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
           const got = found(want);
           return (
             got !== undefined &&
-            [want.value, ...(want.or ?? [])].includes(got.value) &&
+            got.value === want.value &&
             got.date === want.date
           );
         }),
@@ -1543,7 +1521,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         {
           check: "tells_what_it_found",
           criterion:
-            "Rufi AI's reply to the message with the files says in a few lines what each file holds (two reports and a prescription; the June report again), that nothing is saved, points at what is worth a look, and answers the person's question about TSH using the report's printed value.",
+            "Rufi AI's reply to the message with the files says in a few lines what each file holds (two reports and a prescription; the June report again), that nothing is saved, points at what is worth a look, and answers the person's question about TSH with the 5.8 written by hand over the crossed-out 5.3, as worth a look.",
           evidence: snapshot.entries
             .filter((e) => e.kind === "reply")
             .map((e) => e.text)
@@ -2353,6 +2331,95 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
    * Delete file: the results stay facts. Asked about one, the AI uses it and
    * says the report was deleted; asked to open the report, it can't.
    */
+  /** Told her blood group, the AI asks first; after the yes, the profile has it. */
+  profile_yes: async (api, home) => {
+    const c = chat(api);
+    await c.ask("My blood group is B+.");
+    const asked_first = nothingSaved(home, await c.read());
+    await c.ask("yes");
+    const snapshot = await c.read();
+    return {
+      checks: {
+        asked_first,
+        saved_once: record(home).saves === 1 && receipts(snapshot) === 1,
+        blood_group_b_positive: profile(home)["blood_group"] === "B+",
+        birth_date_kept: profile(home)["birth_date"] === "1990-03",
+      },
+      snapshot,
+    };
+  },
+  /**
+   * The AI read Asha's profile; she changes her birth date in Settings.
+   * Asked about an old result, it reads the profile again and uses the new
+   * date; asked to undo the change, it puts the old date back after her yes.
+   */
+  profile_settings: async (api, home) => {
+    const c = chat(api);
+    await c.ask("How old am I, by my profile?");
+    const before = calls(home).length;
+    await enterInSettings(home, {
+      birth_date: { date: "2010-03", words: "March 2010" },
+    });
+    await c.ask(
+      "Was my haemoglobin of 11.9 g/dL in June 2016 normal for me then?",
+    );
+    const asked = await c.read();
+    const read_again = calls(home)
+      .slice(before)
+      .some((call) => call.tool === "get_overview" && call.ok === 1);
+    await c.ask("Undo my last profile change.");
+    // An undo is offered first: nothing changes until Asha says yes.
+    const consent_asked =
+      profile(home)["birth_date"] === "2010-03" &&
+      receipts(await c.read()) === 0;
+    await c.say("Yes, put it back.");
+    const snapshot = await c.read();
+    const now = profile(home);
+    return {
+      checks: {
+        read_again,
+        consent_asked,
+        put_back:
+          now["birth_date"] === "1990-03" &&
+          now["birth_date_words"] === "March 1990",
+        sex_kept: now["sex_for_ranges"] === "female",
+        one_chat_save: receipts(snapshot) === 1,
+      },
+      verdicts: [
+        {
+          check: "uses_the_new_birth_date",
+          criterion:
+            "The answer uses the birth date changed in Settings (March 2010): Asha was about 6 in June 2016, so it uses a child's range, says which, and says the report printed none. It doesn't use her age from 1990.",
+          evidence: lastReply(asked),
+        },
+      ],
+      snapshot,
+    };
+  },
+  /**
+   * Only a year of birth, and a 2016 result with no range: the AI uses her
+   * age then, and names the range it used.
+   */
+  profile_year_alone: async (api, home) => {
+    const c = chat(api);
+    await c.ask("Was my haemoglobin of 11.9 g/dL in June 2016 normal for me?");
+    const snapshot = await c.read();
+    return {
+      checks: {
+        read_profile: usedTool(home, "get_overview"),
+        nothing_saved: nothingSaved(home, snapshot),
+      },
+      verdicts: [
+        {
+          check: "range_for_her_age_then",
+          criterion:
+            "The answer says the report printed no range, names the range it used (for adult women), and uses her age in June 2016 (25 or 26, from a birth year of 1990), not today's. If it says her exact age is open, that's right.",
+          evidence: lastReply(snapshot),
+        },
+      ],
+      snapshot,
+    };
+  },
   delete_file_keep: async (api, home) => {
     const c = chat(api);
     await deleteAugust(api, "keep");
@@ -2390,7 +2457,6 @@ function transcriptText(snapshot: Snapshot): string {
   const shown = snapshot.entries.filter(
     (e) => e.kind !== "reasoning" || e.text.trim() !== "",
   );
-  const last = new Map(shown.map((e) => [e.turnId, e.id]));
   return shown
     .map((e) => {
       let text: string;
@@ -2403,9 +2469,7 @@ function transcriptText(snapshot: Snapshot): string {
         text = `Rufi: ${e.text}`;
       else
         text = `${e.kind === "reply" ? "AI" : e.kind === "steer" ? "You (steer)" : "You"}: ${e.text}`;
-      const turn = snapshot.turns.find((t) => t.id === e.turnId);
-      if (!turn || last.get(e.turnId) !== e.id) return text;
-      return `${text}\n\n> Based on: ${turn.how ?? "(none)"}`;
+      return text;
     })
     .join("\n\n");
 }
@@ -2418,14 +2482,22 @@ if (unknown.length > 0) {
   );
   process.exit(2);
 }
-// The sign-in once before any case starts: a run that can't sign in stops
-// here, and the cases share the token it gets.
-await token(10 * 60_000).catch((error: unknown) => {
+const out = await outFolder(values.out).catch((error: unknown) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(2);
 });
-const out = await outFolder("smoke", values.out);
 const file = await codexBinary();
+// The sign-in once before any case starts: a run that can't sign in stops
+// here.
+const signIn = await testSignIn(rufiHome(), {
+  file,
+  args: [],
+}).catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(2);
+});
+/** Every sign-in of the run, which no case's AI may read. */
+const signIns = signIn.signIns(names.map((name) => caseFolder(out, name)));
 const { version } = createRequire(import.meta.url)("../package.json") as {
   version: string;
 };
@@ -2446,7 +2518,7 @@ async function runCase(
   const keeps = (status: Status) =>
     status !== "passed" && status !== "needs a person's verdict";
   const { result } = await onScratch(
-    "rufi-smoke-",
+    caseFolder(out, name),
     async (home) => {
       const { status, why, seconds, outcome } = await playCase(name, home);
       const line = `${name}: ${status}${why ? ` (${why})` : ""}, ${String(seconds)} s${keeps(status) ? `; data folder: ${home}` : ""}`;
@@ -2473,6 +2545,7 @@ async function playCase(name: string, home: string) {
   const seed = SEEDS[name];
   if (seed !== undefined) store.db.exec(seed);
   store.close();
+  await signIn.give(home);
   const stalls = monitorEventLoopDelay({ resolution: 20 });
   stalls.enable();
   const began = Date.now();
@@ -2480,40 +2553,21 @@ async function playCase(name: string, home: string) {
   let outcome: Outcome | undefined;
   let error: unknown;
   try {
+    const codex = codexAdapter({
+      home,
+      ...agentSetup(home),
+      sandbox: caseSandbox(home, signIns),
+      command: { file, args: [] },
+      env: childEnvironment(),
+      version,
+      log: diagnostics(home).log,
+    });
     const core = await Effect.runPromise(
       startCore({
         home,
-        agent: (host) =>
-          codexRuntime({
-            home,
-            ...agentSetup(home),
-            command: { file, args: [] },
-            env: childEnvironment(),
-            token,
-            version,
-            host,
-            log: diagnostics(home).log,
-          }),
-        reader: subAgentRunner({
-          home,
-          command: { file, args: [] },
-          env: childEnvironment(),
-          token,
-          version,
-          log: diagnostics(home).log,
-        }),
+        adapters: [codex],
         log: diagnostics(home).log,
-        account: async () => {
-          const now = await status(signIn);
-          return {
-            account: !now.signedIn
-              ? "signed_out"
-              : now.planUse
-                ? "signed_in"
-                : "no_plan_use",
-            email: now.email ?? null,
-          };
-        },
+        signIns: { codex: codexSignIn(codex, () => undefined) },
       }).pipe(Scope.provide(scope)),
     );
     outcome = await check(await page(core), home);
@@ -2521,14 +2575,14 @@ async function playCase(name: string, home: string) {
     error = caught;
   } finally {
     await Effect.runPromise(Scope.close(scope, Exit.void));
+    await signIn.take(home);
     stalls.disable();
   }
   const failed = outcome
     ? Object.entries({
         every_turn_answered: everyTurnAnswered(outcome.snapshot),
         // The set tests the model a new chat gets by default.
-        on_default_model:
-          outcome.snapshot.turns[0]?.model === DEFAULT_ALLOWLIST[0],
+        on_default_model: outcome.snapshot.turns[0]?.model === DEFAULT_MODEL,
         ...outcome.checks,
       })
         .filter(([, ok]) => !ok)

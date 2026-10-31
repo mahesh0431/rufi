@@ -2,7 +2,7 @@
   "tools": [
     {
       "name": "rufi.get_overview",
-      "description": "The active person's health record in Rufi at a glance: their name, how many documents and reports they have, their current results exactly as printed (id, test, value, category: lab or measurement, unit, reference range, flag, method or context, measured date at the precision known), their other records by kind (medicine uses, visits, symptoms, conditions, allergies, care events: procedures and immunisations, \"none known\" statements, follow-ups; each with its id and fields as save_changes takes them; a visit without its as_written words, which get_records gives), their latest saves with what each changed (and from: the document pages and visits it added to a record, or took off one), and record_version: a number every save raises, which create_brief takes. At most 20 results, newest measured first, undated last; at most 50 records of a kind, newest first; the latest 5 saves, newest first. An amended result replaces the one it corrects and says \"amended\": true. Removed records aren't shown. Takes no input: Rufi chooses the person, not you.",
+      "description": "The active person's health record in Rufi at a glance: their name, their profile (its id; name, never empty; birth date at the precision given, with its words, and age_today from it: one number, or two when the date leaves it open; sex_for_ranges, only for choosing lab ranges; blood group; height; not_set lists the fields with no value; save_changes changes it as kind profile), how many documents and reports they have, their current results exactly as printed (id, test, value, category: lab or measurement, unit, reference range, flag, method or context, measured date at the precision known), their other records by kind (medicine uses, visits, symptoms, conditions, allergies, care events: procedures and immunisations, \"none known\" statements, follow-ups; each with its id and fields as save_changes takes them; a visit without its as_written words, which get_records gives), their latest saves with what each changed (made_in: chat, or welcome, profile (its page) or settings, where the person entered it themselves; and from: the document pages and visits it added to a record, or took off one), and record_version: a number every save raises, which create_brief takes. At most 20 results, newest measured first, undated last; at most 50 records of a kind, newest first; the latest 5 saves, newest first. An amended result replaces the one it corrects and says \"amended\": true. Removed records aren't shown. Takes no input: Rufi chooses the person, not you.",
       "callers": "both",
       "readOnly": true,
       "destructive": false,
@@ -17,7 +17,7 @@
     },
     {
       "name": "rufi.get_records",
-      "description": "The active person's records of one kind (medicine_use, symptom, condition, allergy, result, visit, care_event, none_known, follow_up), as stored: each with its id, its version (the save that last changed it; null when none did), its fields as save_changes takes them and its sources (the user's message, a document's page, or a visit: its id, setting, date and doctor), also the records removed from the record (\"removed\": true) and results replaced by an amended one (\"replaced_by\": the amended result's id). Newest first, undated last. For results, category reads only lab results or only measurements; without it, both. With from or to, only records dated in that period: medicine_use by started, symptom by onset, condition by recognised, allergy by reacted, result by measured, visit by date, care_event by date, none_known by asserted, follow_up by due. A record dated at a lower precision is read when its year or month overlaps the period (\"2026\" is in from 2026-03); a record with no date is read only without from and to. With ids, exactly those records. With report (kind result), only the results of that report: the id of a report the user added to their message. At most 200 records and 32 KB of records (as UTF-8 JSON) come back at once (a single larger record comes back on its own); when there are more, the answer says \"complete\": false and gives \"next\": pass it as after, with the same kind, category, from, to and report, to read on until \"complete\" is true. Read only: nothing changes. Count, compare and find trends in the records yourself. Rufi chooses the person, not you.",
+      "description": "The active person's records of one kind (medicine_use, symptom, condition, allergy, result, visit, care_event, none_known, profile, follow_up), as stored: each with its id, its version (the save that last changed it; null when none did), its fields as save_changes takes them and its sources (the user's message, a document's page, a visit: its id, setting, date and doctor, or entered_in: where the user entered it themselves, welcome, profile (its page) or settings, with at: when), also the records removed from the record (\"removed\": true) and results replaced by an amended one (\"replaced_by\": the amended result's id). Newest first, undated last. For results, category reads only lab results or only measurements; without it, both. With from or to, only records dated in that period: medicine_use by started, symptom by onset, condition by recognised, allergy by reacted, result by measured, visit by date, care_event by date, none_known by asserted, profile by birth_date, follow_up by due. A record dated at a lower precision is read when its year or month overlaps the period (\"2026\" is in from 2026-03); a record with no date is read only without from and to. With ids, exactly those records. With report (kind result), only the results of that report: the id of a report the user added to their message. At most 200 records and 32 KB of records (as UTF-8 JSON) come back at once (a single larger record comes back on its own); when there are more, the answer says \"complete\": false and gives \"next\": pass it as after, with the same kind, category, from, to and report, to read on until \"complete\" is true. Read only: nothing changes. Count, compare and find trends in the records yourself. Rufi chooses the person, not you.",
       "callers": "model",
       "readOnly": true,
       "destructive": false,
@@ -35,6 +35,7 @@
               "visit",
               "care_event",
               "none_known",
+              "profile",
               "follow_up"
             ],
             "description": "The kind of record, as save_changes names it."
@@ -111,7 +112,7 @@
     },
     {
       "name": "rufi.get_documents",
-      "description": "The active person's documents (lab reports, prescriptions, letters they added), read only. Without document: the list, newest first, each with its id, when it was added, its kind and date (as sorted), its files and pages, its reading's status: \"not_read\" (never read; the user's Retry reads it), \"reading\" (Rufi's reader is copying its pages now), \"done\" or \"failed\", and \"not sorted yet\" when its pages wait for you to sort them. One add (what the user added at once: a PDF, or photos together) can be several documents once sorted: such a document names its pages in the add (\"pages 3–4 of 5\"). With document: its version (it rises when a sort, a reading or a fix changes its draft items or pages), kind, date, lab and report number, its add (every document of it, with their pages, and the pages not sorted yet), its pages (each with its number in the add, its state and whether it is sorted; an older reading's facts and issues) and its draft items: what you or an older reader drafted, each with its id, version, page, status (not saved, saved with how and into which record, or dismissed), fields exactly as printed or as the user fixed them on the document's page (a fixed item has fixed_by_user, and drafted: what was drafted in each field the user changed, null where none), the words it came from (quote), why it is worth a look, and out_of_date when its page was read again since. Draft items are not saved: they are not the record and count in no answer until the user saves them. With document and page: that page as an image, with the page's own text when the PDF has some and the reader's copy (use them for exact characters); a photo or a scan is the image and the copy. With document and copies: the reader's copy of every page of its add, as Markdown, exactly as printed, with the reader's marks where something is unclear (2[3?]6, [unclear: ...], ~~crossed out~~, [handwritten: ...]). At most 50 documents, 100 pages, 100 draft items or 20 copies come back; when there are more, the answer has \"next\": pass it as after to read on. Rufi chooses the person, not you.",
+      "description": "The active person's documents (lab reports, prescriptions, letters they added), read only. Without document: the list, newest first, each with its id, when it was added, its kind and date (as sorted), its files and pages, its agent (the reader you set on it with set_reader), its status: \"not_read\" (no reading saved yet), \"reading\" (its agent is at work and hasn't saved its reading, or an older reader was copying its pages), \"done\" or \"failed\", and \"not sorted yet\" when its pages wait for you to sort them. One add (what the user added at once: a PDF, or photos together) can be several documents once sorted: such a document names its pages in the add (\"pages 3–4 of 5\"). With document: its version (it rises when a sort, a reading or a fix changes its draft items or pages), kind, date, lab and report number, its agent and status as in the list, its add (every document of it, with their pages, and the pages not sorted yet), its pages (each with its number in the add, its state and whether it is sorted; an older reading's facts and issues) and its draft items: what you or an older reader drafted, each with its id, version, page, status (not saved, saved with how and into which record, or dismissed), fields exactly as printed or as the user fixed them on the document's page (a fixed item has fixed_by_user, and drafted: what was drafted in each field the user changed, null where none), the words it came from (quote), why it is worth a look, and out_of_date when its page was read again after the reading it was drafted from. Draft items are not saved: they are not the record and count in no answer until the user saves them. With document and page: that page as an image, with the page's own text when the PDF has some and the reader's copy (use them for exact characters); a photo or a scan is the image and the copy. With document and copies: the reader's copy of every page of its add, as Markdown, exactly as printed, with the reader's marks where something is unclear (2[3?]6, [unclear: ...], ~~crossed out~~, [handwritten: ...]). Each copy names its reading: a draft made from it names the same. At most 50 documents, 100 pages, 100 draft items or 20 copies come back; when there are more, the answer has \"next\": pass it as after to read on. Rufi chooses the person, not you.",
       "callers": "model",
       "readOnly": true,
       "destructive": false,
@@ -156,7 +157,7 @@
     },
     {
       "name": "rufi.read_chat",
-      "description": "Earlier parts of this chat, newest first. Each entry's kind is \"message\" (the user's), \"steer\" (the user's, sent while you were replying), \"reply\" (yours), \"activity\" (one thing you did: a title and one short detail, never its output), \"receipt\" (Rufi's line for a save to the record: what was saved), \"event\" (Rufi's own line about something that happened, never the user's words) or \"brief\" (Rufi's line for a visit brief made with create_brief). \"at\" is when it was written. At most 50 entries a page; pass the page's next_before to read further back. Rufi chooses the chat, not you.",
+      "description": "Earlier parts of this chat, newest first. Each entry's kind is \"message\" (the user's), \"steer\" (the user's, sent while you were replying), \"reply\" (yours), \"activity\" (one thing you did: a title and one short detail, never its output), \"receipt\" (Rufi's line for a save to the record: what was saved), \"event\" (Rufi's own line about something that happened, never the user's words), \"brief\" (Rufi's line for a visit brief made with create_brief) or \"agent\" (a message to you from an agent you started, in its own words, with its agent's id, its name then and why it came: done, asked, wrote, stopped or failed; never the user's words). \"at\" is when it was written. At most 50 entries a page; pass the page's next_before to read further back. Rufi chooses the chat, not you.",
       "callers": "model",
       "readOnly": true,
       "destructive": false,
@@ -188,7 +189,7 @@
     },
     {
       "name": "rufi.save_changes",
-      "description": "Saves to the active person's record, all or nothing, after the user clearly said yes to exactly this in this chat. Two parts, either or both:\n- changes: typed changes from the user's own words or their documents. Each is one record: add one, change the fields given (the rest stay as they are), remove one (it stays in history), restore a removed one, link (add sources to a record whose values stay as they are) or remove_source (take sources off a record, as get_records lists them, to undo a link or \"another source\"); ids come from get_overview or get_records. from names the user's document pages ({document, page}) and visits ({visit: id}) a change rests on; a record saved from a visit cites the visit, and the visit cites its page. ref names a record an add makes (\"v1\"), so a later change in the same save can cite it as {visit: {ref: \"v1\"}}: add the visit first, then the records from it. Give only what the user said: a field they didn't give stays out, and a date comes with the words it came from. A result's category (lab or measurement) is the one field you choose, with the user: every added result needs one, except an amended result, which keeps the category of the one it replaces unless you give one. A result read from a document changes in place only its category, in a change of its own; what it prints and its date change only by amendment. source is the user's message with the facts the change rests on, so the record shows why it is there: when the facts came in an earlier message than the yes, give that message's position as read_chat shows it; when they are in this turn's message, leave source out. A change with from rests only on it unless you give source too: the user's yes alone is never a source.\n- items: draft items of the user's documents (get_documents), each with the version you read and how it goes in: new, another_source (the same result is already saved: its values stay, and the document page becomes another source) or correction (it corrects a saved result: a new result replaces it); record names the saved result, with its version from get_records. category: lab or measurement, for new; a correction keeps the corrected result's unless you give one; never for another_source. Rufi takes each item's values and date from the stored item, never from you, except the number of a value the user fixed on the document's page: give it in value_number (and comparator) as you read their value, and ask them when it is unclear; fix holds only a value the user corrected in the chat, or the date they gave for an item with none (a rough one is fine, at their precision), with the words it came from; its source is as a change's. An item saved at that version, and still in the record so (its page a source of that result, the result not removed), returns its earlier save and saves nothing; after an undo took its page off or removed its result, it can be saved again. A dismissed item, or one whose version changed, is refused, and nothing is saved.\nNo count limit. Rufi refuses a save with any problem and says each one; nothing is saved then. On success Rufi adds its own receipt to the chat and returns it; the same call again returns the same receipt. Never say something was saved without this tool's answer.\nFields by kind, in changes[].fields (a date is {\"date\": \"2026-09-28\", \"words\": \"last Monday\"}: YYYY, YYYY-MM, YYYY-MM-DD or YYYY-MM-DDTHH:MM in local time, at the precision the user gave, with the words it came from):\n- medicine_use: name, strength, amount, schedule, route, purpose, status (current|paused|stopped|completed|unknown), started (date), ended (date)\n- symptom: name, status (ongoing|resolved|unknown), onset (date), ended (date), severity, location, intermittent (true|false), details\n- condition: name, certainty (suspected|diagnosed|unknown), status (ongoing|resolved|unknown), recognised (date), resolved (date), details\n- allergy: substance, reaction, status (active|inactive|unknown), certainty (confirmed|suspected|unknown), reacted (date)\n- result: test, value, category (lab|measurement), comparator (<|<=|>|>=), number, second_number, unit, range, flag, context, measured (date), replaces\n- visit: setting, date (date), ended (date), doctor, place, reason, as_written\n- care_event: type (procedure|immunisation), name, status (planned|done|not_done|unknown), date (date), provider, details\n- none_known: category (allergies)\n- follow_up: title, due (date or \"next_visit\"), status (open|done|dropped), outcome, about ({kind: medicine_use|visit|symptom|condition|allergy|result|care_event, id} of another record)\nA draft item's fix.fields: test, value, comparator (<|<=|>|>=), number, unit, range, flag, context, measured (date).",
+      "description": "Saves to the active person's record, all or nothing, after the user clearly said yes to exactly this in this chat. Two parts, either or both:\n- changes: typed changes from the user's own words or their documents. Each is one record: add one, change the fields given (the rest stay as they are), remove one (it stays in history), restore a removed one, link (add sources to a record whose values stay as they are) or remove_source (take sources off a record, as get_records lists them, to undo a link or \"another source\"); ids come from get_overview or get_records. from names the user's document pages ({document, page}) and visits ({visit: id}) a change rests on; a record saved from a visit cites the visit, and the visit cites its page. ref names a record an add makes (\"v1\"), so a later change in the same save can cite it as {visit: {ref: \"v1\"}}: add the visit first, then the records from it. Give only what the user said: a field they didn't give stays out, and a date comes with the words it came from. A result's category (lab or measurement) is the one field you choose, with the user: every added result needs one, except an amended result, which keeps the category of the one it replaces unless you give one. A result read from a document changes in place only its category, in a change of its own; what it prints and its date change only by amendment. source is the user's message with the facts the change rests on, so the record shows why it is there: when the facts came in an earlier message than the yes, give that message's position as read_chat shows it; when they are in this turn's message, leave source out. A change with from rests only on it unless you give source too: the user's yes alone is never a source.\n- items: draft items of the user's documents (get_documents), each with the version you read and how it goes in: new, another_source (the same result is already saved: its values stay, and the document page becomes another source) or correction (it corrects a saved result: a new result replaces it); record names the saved result, with its version from get_records. category: lab or measurement, for new; a correction keeps the corrected result's unless you give one; never for another_source. Rufi takes each item's values and date from the stored item, never from you, except the number of a value the user fixed on the document's page: give it in value_number (and comparator) as you read their value, and ask them when it is unclear; fix holds only a value the user corrected in the chat, or the date they gave for an item with none (a rough one is fine, at their precision), with the words it came from; its source is as a change's. An item saved at that version, and still in the record so (its page a source of that result, the result not removed), returns its earlier save and saves nothing; after an undo took its page off or removed its result, it can be saved again. A dismissed item, or one whose version changed, is refused, and nothing is saved.\nNo count limit. Rufi refuses a save with any problem and says each one; nothing is saved then. On success Rufi adds its own receipt to the chat and returns it; the same call again returns the same receipt. Never say something was saved without this tool's answer.\nFields by kind, in changes[].fields (a date is {\"date\": \"2026-09-28\", \"words\": \"last Monday\"}: YYYY, YYYY-MM, YYYY-MM-DD or YYYY-MM-DDTHH:MM in local time, at the precision the user gave, with the words it came from):\n- medicine_use: name, strength, amount, schedule, route, purpose, status (current|paused|stopped|completed|unknown), started (date), ended (date)\n- symptom: name, status (ongoing|resolved|unknown), onset (date), ended (date), severity, location, intermittent (true|false), details\n- condition: name, certainty (suspected|diagnosed|unknown), status (ongoing|resolved|unknown), recognised (date), resolved (date), details\n- allergy: substance, reaction, status (active|inactive|unknown), certainty (confirmed|suspected|unknown), reacted (date)\n- result: test, value, category (lab|measurement), comparator (<|<=|>|>=), number, second_number, unit, range, flag, context, measured (date), replaces\n- visit: setting, date (date), ended (date), doctor, place, reason, as_written\n- care_event: type (procedure|immunisation), name, status (planned|done|not_done|unknown), date (date), provider, details\n- none_known: category (allergies)\n- profile: name, birth_date (date), sex_for_ranges (female|male), blood_group (A+|A-|B+|B-|AB+|AB-|O+|O-), height ({\"value\": 162, \"unit\": \"cm\"|\"in\"})\n- follow_up: title, due (date or \"next_visit\"), status (open|done|dropped), outcome, about ({kind: medicine_use|visit|symptom|condition|allergy|result|care_event, id} of another record)\nA draft item's fix.fields: test, value, comparator (<|<=|>|>=), number, unit, range, flag, context, measured (date).",
       "callers": "model",
       "readOnly": false,
       "destructive": false,
@@ -1171,6 +1172,126 @@
                     "kind": {
                       "type": "string",
                       "enum": [
+                        "profile"
+                      ]
+                    },
+                    "action": {
+                      "type": "string",
+                      "enum": [
+                        "add",
+                        "change",
+                        "remove",
+                        "restore",
+                        "link",
+                        "remove_source"
+                      ]
+                    },
+                    "id": {
+                      "type": "string",
+                      "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                      "minLength": 1,
+                      "maxLength": 100,
+                      "description": "The profile's id, from get_overview; not when adding."
+                    },
+                    "ref": {
+                      "type": "string",
+                      "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                      "minLength": 1,
+                      "maxLength": 100,
+                      "description": "Adding only: a name for the new record within this save (\"v1\"), so a later change can cite it with from: [{visit: {ref: \"v1\"}}]."
+                    },
+                    "source": {
+                      "type": "integer",
+                      "maximum": 9007199254740991,
+                      "exclusiveMinimum": 0,
+                      "description": "The user's message with the facts this rests on, as its position in read_chat. Leave it out when the facts are in their message in this turn, where they said yes."
+                    },
+                    "from": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/From"
+                      },
+                      "minItems": 1,
+                      "description": "The user's document pages or visits the record rests on: with add or change, what its values came from; with link, sources to add while its values stay; with remove_source, sources to take off, as get_records lists them. A fact only from these needs no source message."
+                    },
+                    "fields": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "$ref": "#/$defs/Name"
+                        },
+                        "birth_date": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/DateSaid"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "sex_for_ranges": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "female",
+                                "male"
+                              ],
+                              "description": "Only for choosing lab ranges, as the user gave it; not a question about gender."
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "blood_group": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "A+",
+                                "A-",
+                                "B+",
+                                "B-",
+                                "AB+",
+                                "AB-",
+                                "O+",
+                                "O-"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "height": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Height"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "additionalProperties": false,
+                      "description": "Only the fields the user gave. Adding sets them; changing sets them and keeps the rest; null forgets one (a status or certainty takes \"unknown\" instead)."
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "action"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
                         "follow_up"
                       ]
                     },
@@ -1600,6 +1721,34 @@
             "minLength": 1,
             "maxLength": 200,
             "description": "The kind of visit, as short free text in the user's words, shown as written. For a stay, date is the admission and ended the discharge."
+          },
+          "Name": {
+            "type": "string",
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "The name Rufi calls the user by; never empty."
+          },
+          "Height": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "unit": {
+                "type": "string",
+                "enum": [
+                  "cm",
+                  "in"
+                ]
+              }
+            },
+            "required": [
+              "value",
+              "unit"
+            ],
+            "additionalProperties": false
           }
         }
       },
@@ -1760,7 +1909,7 @@
     },
     {
       "name": "rufi.dismiss_items",
-      "description": "Dismisses draft items of the user's documents that the user doesn't want saved (a test that isn't theirs, a row read by mistake), after you said which items you would set aside and the user clearly said yes to that in this chat ('it isn't mine' alone is not a yes): each is never saved later, and Rufi adds a receipt line to the chat. Give each item's version as you read it with get_documents; one that changed since is refused, and nothing is dismissed. An item already dismissed stays so; a saved item can't be dismissed (remove its record with save_changes instead). Only in a message from the user, never in a turn a Rufi event started.",
+      "description": "Dismisses draft items of the user's documents that the user doesn't want saved (a test that isn't theirs, a row read by mistake), after you said which items you would set aside and the user clearly said yes to that in this chat ('it isn't mine' alone is not a yes): each is never saved later, and Rufi adds a receipt line to the chat. Give each item's version as you read it with get_documents; one that changed since is refused, and nothing is dismissed. An item already dismissed stays so; a saved item can't be dismissed (remove its record with save_changes instead).",
       "callers": "model",
       "readOnly": false,
       "destructive": false,
@@ -1813,7 +1962,7 @@
     },
     {
       "name": "rufi.sort_documents",
-      "description": "Sorts what the user added into documents and writes its drafts, from the reader's page copies (get_documents with copies), as the sorting-documents skill says. One call for the whole add: documents (each one of the add's documents by its id, or a new one with no id; its pages by their number in the add; its kind, its date, and a report's lab and number, which for a named document stay as they are when left out) and drafts (each a current lab result or a measurement as printed, with its page, its date, the words it comes from and, when it is worth the user's look, why). Every page not sorted yet goes in one document; pages you don't name stay where they are. The add's own id names its first document: the first sort names it for one of the documents. A draft's value_text is the value as its page prints it; where the reader marked a digit unclear (\"1[0?]4\"), give your reading (\"104\") and say why in worth_a_look. The drafts replace the drafts of the named pages that the user hasn't fixed or set aside. A page that a saved result cites stays in its document. Nothing is saved to the record: drafts wait for the user. You sort in the user's reply, never in a reply Rufi started; you can also change how pages were sorted (\"pages 3 and 4 are one letter\"). All or nothing; the same call again gets the same answer.",
+      "description": "Sorts what the user added into documents and writes its drafts, from the reader's page copies (get_documents with copies), as the sorting-documents skill says. One call for what you sort of an add now: documents (each one of the add's documents by its id, or a new one with no id; its pages by their number in the add; its kind, its date, and a report's lab and number, which for a named document stay as they are when left out) and drafts (each a current lab result or a measurement as printed, with its page, the reading of the copy it is drafted from, its date, the words it comes from and, when it is worth the user's look, why). Each page you name goes in one document; pages you don't name stay where they are, and those not sorted yet wait for a later call. The add's own id names its first document: the first sort names it for one of the documents. A draft's value_text is the value as its page prints it; where the reader marked a digit unclear (\"1[0?]4\"), give your reading (\"104\") and say why in worth_a_look. The drafts replace the drafts of the named pages that the user hasn't fixed or set aside. A page that a saved result cites stays in its document. Nothing is saved to the record: drafts wait for the user. You can also change how pages were sorted (\"pages 3 and 4 are one letter\"). All or nothing; the same call again gets the same answer.",
       "callers": "model",
       "readOnly": false,
       "destructive": false,
@@ -1884,7 +2033,7 @@
             },
             "minItems": 1,
             "maxItems": 500,
-            "description": "The documents the add holds, each with its pages. Every page not sorted yet must be in one of them."
+            "description": "The documents of the pages you sort now, each with its pages. Pages you leave out that aren't sorted yet wait for a later call."
           },
           "drafts": {
             "type": "array",
@@ -1896,6 +2045,13 @@
                   "maximum": 9007199254740991,
                   "exclusiveMinimum": 0,
                   "description": "The page it is printed on."
+                },
+                "reading": {
+                  "type": "string",
+                  "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                  "minLength": 1,
+                  "maxLength": 100,
+                  "description": "The reading of the page's copy you drafted it from: that copy's reading in get_documents."
                 },
                 "test_name": {
                   "type": "string",
@@ -1989,6 +2145,7 @@
               },
               "required": [
                 "page",
+                "reading",
                 "test_name",
                 "value_text",
                 "quote"
@@ -2032,6 +2189,7 @@
           "drafts": [
             {
               "page": 1,
+              "reading": "01a12345-0000-7000-8000-000000000009",
               "test_name": "Sodium",
               "value_text": "139",
               "value_number": 139,
@@ -2046,6 +2204,7 @@
             },
             {
               "page": 1,
+              "reading": "01a12345-0000-7000-8000-000000000009",
               "test_name": "Potassium",
               "value_text": "4.2",
               "value_number": 4.2,
@@ -2059,6 +2218,136 @@
               "worth_a_look": "a digit is unclear"
             }
           ]
+        }
+      ]
+    },
+    {
+      "name": "rufi.save_reading",
+      "description": "Saves your reading of a document, once, when you have copied every page you were asked to read (the reading-documents skill): your copy of each page, as Markdown exactly as printed with your marks where something is unclear, the part of your notes for that page. Each page is its number as get_documents gives it, once; outcome read, nothing_here (a blank page) or unreadable (with why, and what you could copy). Rufi keeps the copies as a reading of the document: its pages then wait for Rufi AI to sort them. Nothing is saved to the record. A document the user deleted refuses it. All or nothing; the same call again gets the same answer.",
+      "callers": "model",
+      "readOnly": false,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "document": {
+            "type": "string",
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "The document you read, by its id."
+          },
+          "pages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer",
+                  "maximum": 9007199254740991,
+                  "exclusiveMinimum": 0,
+                  "description": "The page's number, as get_documents gives it for this document."
+                },
+                "outcome": {
+                  "type": "string",
+                  "enum": [
+                    "read",
+                    "nothing_here",
+                    "unreadable"
+                  ],
+                  "description": "read: you copied the page; nothing_here: a blank page; unreadable: you couldn't read it (say why, and copy what you could)."
+                },
+                "copy": {
+                  "type": "string",
+                  "maxLength": 100000,
+                  "description": "The page as Markdown, exactly as printed, with your marks where something is unclear. HTML tables are allowed where cells are merged."
+                },
+                "why": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300,
+                  "description": "Why the page is unreadable."
+                }
+              },
+              "required": [
+                "page",
+                "outcome",
+                "copy"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1,
+            "maxItems": 1000,
+            "description": "Your copy of each page you read, each page once: the part of your notes for that page."
+          }
+        },
+        "required": [
+          "document",
+          "pages"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "document": "01a12345-0000-7000-8000-000000000000",
+          "pages": [
+            {
+              "page": 1,
+              "outcome": "read",
+              "copy": "# Example Clinic Lab\n\n| Test | Result | Unit |\n| --- | --- | --- |\n| Sodium | 139 | mmol/L |"
+            },
+            {
+              "page": 2,
+              "outcome": "unreadable",
+              "copy": "| Potassium | 4.[2?] | mmol/L |",
+              "why": "The lower half is out of focus."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "rufi.set_reader",
+      "description": "Sets the agent that reads these documents: after you start a reader with start_agent (its id is in the answer), or send a reader at work another document with send_agent. A document has one reader: setting another replaces the one before; one agent can read several documents. The agent is one in your chat. get_documents then gives each document its agent, and its status is \"reading\" while that agent is at work and hasn't saved its reading. A document the user deleted refuses it. All or nothing.",
+      "callers": "model",
+      "readOnly": false,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "documents": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "A document, by its id."
+            },
+            "minItems": 1,
+            "maxItems": 100,
+            "description": "The documents it reads."
+          },
+          "agent": {
+            "type": "string",
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "The agent that reads them, by its id: from start_agent's answer, or agent_status."
+          }
+        },
+        "required": [
+          "documents",
+          "agent"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "documents": [
+            "01a12345-0000-7000-8000-000000000000"
+          ],
+          "agent": "01a12345-0000-7000-8000-000000000020"
         }
       ]
     },
@@ -2098,6 +2387,7 @@
                     "visit",
                     "care_event",
                     "none_known",
+                    "profile",
                     "follow_up"
                   ],
                   "description": "The record's kind, as get_records names it."
@@ -2174,6 +2464,299 @@
         {
           "face": "question"
         }
+      ]
+    },
+    {
+      "name": "rufi.start_agent",
+      "description": "Starts an agent of your own for a task that can run on its own: it runs at once, on your model and effort unless you give others (a model whose provider isn't signed in is refused, yours too), and goes on after your turn ends. Give it a title and its whole task, its first message. It has all of your tools. Its saves and briefs show in the chat with Rufi's receipt. Answers its id; agent_status says how it is, and read_agent reads its conversation.",
+      "callers": "model",
+      "readOnly": false,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "What the agent is for, in a few words, as the user would see it: \"Reading report.pdf\".",
+            "minLength": 1
+          },
+          "task": {
+            "type": "string",
+            "description": "Its whole task, its first message: it sees nothing of your conversation but this.",
+            "minLength": 1
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "gpt-6-astra",
+              "gpt-6.1-sol",
+              "claude-fable-5-1",
+              "claude-opus-5-5"
+            ],
+            "description": "One of Rufi's models: gpt-6-astra (GPT-6-Astra), gpt-6.1-sol (GPT-6.1-Sol), claude-fable-5-1 (Claude Fable 5.1), claude-opus-5-5 (Claude Opus 5.5). Leave it out for yours."
+          },
+          "effort": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "xhigh"
+            ],
+            "description": "How hard it thinks: low is fastest, xhigh thinks longest. Leave it out for yours."
+          }
+        },
+        "required": [
+          "title",
+          "task"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "title": "Checking the thyroid results",
+          "task": "Read the user's thyroid results with get_records and say which are outside the lab's range."
+        }
+      ]
+    },
+    {
+      "name": "rufi.agent_status",
+      "description": "How the agents below you are: the ones you started and theirs, each with its title, the agent that started it (self: you), its model and effort, its status (idle before its first turn, running, done, stopped or failed) and its latest result. An id that isn't below you is not found. It doesn't wait.",
+      "callers": "model",
+      "readOnly": true,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The agents, by id. Leave it out for every agent below you."
+          }
+        },
+        "additionalProperties": false
+      },
+      "examples": [
+        {}
+      ]
+    },
+    {
+      "name": "rufi.send_agent",
+      "description": "Writes to an agent below you, or to the agent that started you (\"parent\"): a question, feedback, more to do, anything. It gets your words with your title, and an idle one starts a turn for it. Answers steered, queued or will start the next turn; it is never refused for being busy. An agent you started sends you its answer by itself when its turn ends; one further below sends its answer to the agent that started it. To answer an agent you started, write to it by its id: your own answer at the end of your turn doesn't go to it.",
+      "callers": "model",
+      "readOnly": false,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "string",
+            "description": "An agent below you, by id, or \"parent\": the agent that started you.",
+            "minLength": 1
+          },
+          "text": {
+            "type": "string",
+            "description": "What you tell or ask it, whole: it sees only this.",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "steer",
+              "queue"
+            ],
+            "description": "steer (the default): into its turn as soon as it can take it, or it starts one; queue: after its turn ends."
+          }
+        },
+        "required": [
+          "to",
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "to": "parent",
+          "text": "Page 3 is cut off. Shall I read the rest?"
+        }
+      ]
+    },
+    {
+      "name": "rufi.read_agent",
+      "description": "Reads the conversation of an agent in your chat, yours (\"self\") or another's: its turns, the latest page first, each with what it was sent and by whom, its steps, the questions it asked (with their options), its result and what it used, once it ended (the tokens it read, how many of those from the cache, and the tokens it wrote, as its provider counted them). Give before: the page's earlier for the page before it; earlier is null on the first page. An agent outside your chat is not found.",
+      "callers": "model",
+      "readOnly": true,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "description": "An agent in your chat, by id, or \"self\".",
+            "minLength": 1
+          },
+          "before": {
+            "type": "string",
+            "description": "The `earlier` of the page you read, for the turns before it."
+          }
+        },
+        "required": [
+          "agent"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "agent": "self"
+        }
+      ]
+    },
+    {
+      "name": "rufi.stop_agent",
+      "description": "Stops an agent below you, or yourself (\"self\"): its turn ends now, and what it was given to do next goes on after. With with_children, every agent below it stops too, what waits for any of them is dropped (the user's messages show \"Not sent\" with Send), and none of their results wakes another; the stopped agent's own result goes to the agent that started it. Answers the agents that stop; agent_status says when they have.",
+      "callers": "model",
+      "readOnly": false,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "description": "An agent below you, by id, or \"self\".",
+            "minLength": 1
+          },
+          "with_children": {
+            "type": "boolean",
+            "description": "true: every agent below it stops too, and what waits for any of them is dropped. Leave it out to stop just this agent."
+          }
+        },
+        "required": [
+          "agent"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "agent": "self",
+          "with_children": true
+        }
+      ]
+    },
+    {
+      "name": "rufi.waiting_messages",
+      "description": "Manages the messages waiting for you and for the agents below you: the user's, Rufi's notes and agents' messages. list gives each with its id, whose queue it is in (self: yours), who sent it, steer or queue, its text, and why it is held, if it is (one held goes only when it is steered). edit gives one new text; remove means it never goes; reorder puts the messages given, of one queue, in that order, in the places they had; steer sends one now, into its agent's running turn or first in line, and lifts its hold. Every action answers the list as it is then. The user's messages change as if the user changed them: one already on its way can't be changed.",
+      "callers": "model",
+      "readOnly": false,
+      "destructive": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "list",
+              "edit",
+              "remove",
+              "reorder",
+              "steer"
+            ],
+            "description": "list: what waits for you and for the agents below you, in the order it goes. edit: new text for one (id, text). remove: one never goes (id). reorder: one agent's messages in this order (ids). steer: one goes now, into its agent's running turn or first in line, also one held (id)."
+          },
+          "id": {
+            "type": "string",
+            "description": "The message, as list gives it: for edit, remove and steer."
+          },
+          "text": {
+            "type": "string",
+            "description": "Its new text, whole: for edit.",
+            "minLength": 1
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Messages of one agent, in the order they go: for reorder. The others keep their places."
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "action": "list"
+        },
+        {
+          "action": "steer",
+          "id": "<id from list>"
+        }
+      ]
+    },
+    {
+      "name": "rufi.set_agent_model",
+      "description": "Changes the model of an agent below you, and its effort if you give one, from its next turn on: never your own. Only while the agent isn't running: wait for its turn to end. On another provider's model, its next turn starts a new conversation there, which hears its last 10 turns. Answers the agent with its model and effort.",
+      "callers": "model",
+      "readOnly": false,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "description": "An agent below you, by id.",
+            "minLength": 1
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "gpt-6-astra",
+              "gpt-6.1-sol",
+              "claude-fable-5-1",
+              "claude-opus-5-5"
+            ],
+            "description": "One of Rufi's models: gpt-6-astra (GPT-6-Astra), gpt-6.1-sol (GPT-6.1-Sol), claude-fable-5-1 (Claude Fable 5.1), claude-opus-5-5 (Claude Opus 5.5)."
+          },
+          "effort": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "xhigh"
+            ],
+            "description": "How hard it thinks: low is fastest, xhigh thinks longest. Leave it out to keep the agent's."
+          }
+        },
+        "required": [
+          "agent",
+          "model"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "agent": "<id from agent_status>",
+          "model": "claude-opus-5-5"
+        }
+      ]
+    },
+    {
+      "name": "rufi.usage",
+      "description": "How much of the user's plan is used now, for each provider (yours names the one your model runs on), as the provider last reported it: each usage window with its length in minutes, the percent used and when it resets. A provider reports it as its replies run, so a provider with no reply yet since Rufi started has no windows.",
+      "callers": "model",
+      "readOnly": true,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "examples": [
+        {}
       ]
     }
   ]

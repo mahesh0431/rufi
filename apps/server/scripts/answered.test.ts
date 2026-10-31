@@ -5,6 +5,8 @@ import { everyTurnAnswered } from "./answered.ts";
 const turn = (id: string, status: Turn["status"]): Turn => ({
   id,
   model: "gpt-6.1-sol",
+  effort: "medium",
+  before: null,
   status,
   endReason: status === "failed" ? "usage_limit" : null,
   endText: null,
@@ -12,7 +14,6 @@ const turn = (id: string, status: Turn["status"]): Turn => ({
   startedAt: "2026-10-05T00:00:00Z",
   endedAt: status === "running" ? null : "2026-10-05T00:00:05Z",
   newThread: false,
-  how: null,
 });
 const entry = (kind: Entry["kind"], turnId: string, text: string): Entry => ({
   id: `${kind}-${turnId}`,

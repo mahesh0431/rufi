@@ -9,11 +9,7 @@ import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import type { Scenario } from "../../server/tests/fake-codex.ts";
-import {
-  readPage,
-  scriptedReader,
-  type Script,
-} from "../../server/tests/fake-reader.ts";
+import { readOf, readThen } from "../../server/tests/readers.ts";
 import { expect, sendFiles, test, type Rufi } from "./rufi.ts";
 
 // Wide enough for the Documents page beside the chat panel.
@@ -62,12 +58,7 @@ const fixture = async (file: string, name = file, mimeType = "") => ({
 });
 
 /** Rufi with the family; `empty`: Asha has no documents yet. */
-async function documentsPage(
-  page: Page,
-  rufi: Rufi,
-  empty = false,
-  reader?: ReturnType<typeof scriptedReader>,
-) {
+async function documentsPage(page: Page, rufi: Rufi, empty = false) {
   await rufi.family(
     ...(empty
       ? [
@@ -76,7 +67,7 @@ async function documentsPage(
         ]
       : []),
   );
-  await rufi.start(reader && { reader: reader.run });
+  await rufi.start();
   await page.goto(rufi.link());
   await page.getByRole("link", { name: "Documents" }).click();
   await expect(
@@ -94,22 +85,11 @@ const chips = (page: Page) =>
 const rows = (page: Page) =>
   page.getByRole("row").filter({ hasNot: page.getByRole("columnheader") });
 
-/** The scripted reader's copy of a document's `count` pages. */
-const copies =
-  (count: number): Script =>
-  async (turn) => {
-    for (let number = 1; number <= count; number += 1) {
-      await turn.look(number);
-      await turn.save(number, readPage());
-    }
-    return undefined;
-  };
-
 test("Add opens the chat and the picker; photos become one document in the order chosen, and a PDF its own; they are listed once sent", async ({
   page,
   rufi,
 }) => {
-  await documentsPage(page, rufi, true, scriptedReader([copies(2), copies(1)]));
+  await documentsPage(page, rufi, true);
   await expect(page.getByText("No documents yet")).toBeVisible();
   await accessible(page);
 
@@ -225,6 +205,7 @@ const SPLIT = {
     drafts: [
       {
         page: 1,
+        reading: "$reading",
         test_name: "Haemoglobin",
         value_text: "13.2",
         unit: "g/dL",
@@ -234,14 +215,31 @@ const SPLIT = {
   },
 };
 
-/** Sends the August report from the Documents page; its reader copies both pages. */
-async function sendReport(page: Page, rufi: Rufi, scenario: Scenario) {
-  const reader = scriptedReader([copies(2)]);
+type Calls = NonNullable<Scenario["calls"]>;
+
+/**
+ * Sends the August report from the Documents page, with "Sort this file":
+ * Rufi AI has a reader copy both pages, whose result wakes it to make
+ * `then`. `more`: its calls on other messages.
+ */
+async function sendReport(
+  page: Page,
+  rufi: Rufi,
+  then: Calls,
+  more: Record<string, Calls> = {},
+) {
   await rufi.family(
     `DELETE FROM record_sources; DELETE FROM results; DELETE FROM reports;
      DELETE FROM document_pages; DELETE FROM documents;`,
   );
-  await rufi.start({ reader: reader.run, scenario });
+  await rufi.start({
+    scenario: {
+      callsByText: {
+        ...readThen("Sort this file", [readOf(1), readOf(2)], then),
+        ...more,
+      },
+    },
+  });
   await page.goto(rufi.link());
   await page.getByRole("link", { name: "Documents" }).click();
   await sendFiles(
@@ -253,16 +251,13 @@ async function sendReport(page: Page, rufi: Rufi, scenario: Scenario) {
     },
     "Sort this file",
   );
-  return reader;
 }
 
 test("shows each document Rufi AI split from a file with its place in the file, kind, lab and date", async ({
   page,
   rufi,
 }) => {
-  await sendReport(page, rufi, {
-    callsByTurn: [[{ id: "sort-split", ...SPLIT }]],
-  });
+  await sendReport(page, rufi, [{ id: "sort-split", ...SPLIT }]);
   const rows = page
     .getByRole("row")
     .filter({ hasText: "sunrise-labs-august.pdf" });
@@ -293,19 +288,23 @@ test("shows each document Rufi AI split from a file with its place in the file, 
   ).toBeVisible();
 });
 
-test("says a file Rufi AI hasn't sorted yet, with Ask Rufi and no Retry; asking in the chat sorts it without reading again", async ({
+test("says a file Rufi AI hasn't sorted yet, with Ask Rufi and no Retry; asking in the chat sorts it, and Rufi doesn't ask for it to be read again", async ({
   page,
   rufi,
 }) => {
-  // Rufi AI's first reply answers without sorting; the next one sorts.
-  const reader = await sendReport(page, rufi, {
-    callsByTurn: [[], [{ id: "sort-again", ...SPLIT }]],
+  // Woken by the reading, Rufi AI answers without sorting; asked, it sorts.
+  await sendReport(page, rufi, [], {
+    "Please sort it": [{ id: "sort-again", ...SPLIT }],
   });
   const row = page
     .getByRole("row")
     .filter({ hasText: "sunrise-labs-august.pdf" });
   await expect(row.getByText("Not sorted yet")).toBeVisible();
   await expect(row.getByRole("button", { name: "Retry" })).toHaveCount(0);
+  // Both replies ended: the next message starts a reply of its own.
+  await expect(
+    chat(page).getByRole("log", { name: "Messages" }).locator(".reply"),
+  ).toHaveCount(2);
   await accessible(page);
 
   // The chat steps back to its bar, off the row.
@@ -323,5 +322,5 @@ test("says a file Rufi AI hasn't sorted yet, with Ask Rufi and no Retry; asking 
   await expect(
     page.getByRole("row").filter({ hasText: "page 2 of 2" }),
   ).toContainText("Prescription");
-  expect(reader.runs).toHaveLength(1);
+  expect(await rufi.given("Please sort it")).not.toContain("aren't read yet");
 });

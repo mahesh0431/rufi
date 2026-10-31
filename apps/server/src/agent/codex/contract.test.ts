@@ -1,7 +1,8 @@
 // Contract tests against the pinned Codex binary itself, offline: the things
-// generated types can't promise. No sign-in and no AI request is made. What
-// Codex does when Rufi goes away also runs on the scripted fake, which must do
-// the same.
+// generated types can't promise. No sign-in and no AI request is made: Codex
+// runs on a provider of the test's own, with no sign-in, pointed at a local
+// stand-in for the model. What Codex does when Rufi goes away also runs on the
+// scripted fake, which must do the same.
 import { execFile, spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -14,9 +15,9 @@ import {
   listFiles,
   PROTOCOL_DIR,
 } from "../../../scripts/codex-types.ts";
-import { fakeModel } from "../../../tests/fake-model.ts";
-import { DEFAULT_ALLOWLIST } from "../../core/chat/models.ts";
-import type { AgentEvent, AgentRuntime } from "../runtime.ts";
+import { codexArgs, fakeModel } from "../../../tests/fake-model.ts";
+import { MODELS } from "@rufi/contracts";
+import type { AgentRuntime } from "../runtime.ts";
 import { DEADLINES } from "./appserver.ts";
 import { codexBinary } from "./binary.ts";
 import { codexRuntime } from "./codex.ts";
@@ -51,42 +52,32 @@ const sandboxOf = (home: string) => ({
   unreadable: [join(home, "rufi.sqlite")],
 });
 
-/** Rufi's Codex runtime on the real binary, with a fake token. */
-async function real(
-  options: {
-    args?: string[];
-    onEvent?: (event: AgentEvent) => void;
-  } = {},
-): Promise<AgentRuntime> {
+/** Rufi's Codex runtime on the real binary, on the test's provider. */
+async function real(): Promise<AgentRuntime> {
   runtime = codexRuntime({
     home: join(root, "rufi"),
     sandbox: sandboxOf(join(root, "rufi")),
     skills: [],
-    command: { file: await codexBinary(), args: options.args ?? [] },
+    command: { file: await codexBinary(), args: codexArgs() },
     env: env(),
-    token: () => Promise.resolve("not-a-real-token"),
     version: "0.0.0",
-    host: { onEvent: options.onEvent ?? (() => undefined) },
+    host: { onEvent: () => undefined },
   });
   return runtime;
 }
 
 /** A bare app-server connection set up exactly as Rufi sets it up. */
 async function bare(): Promise<Rpc> {
-  const { codexHome, processHome } = await prepareCodexHome(
-    join(root, "bare"),
-    { userHome: fakeHome, sandbox: sandboxOf(join(root, "bare")) },
-  );
+  const home = join(root, "bare");
+  const { codexHome, processHome } = await prepareCodexHome(home, {
+    userHome: fakeHome,
+    sandbox: sandboxOf(home),
+  });
   const child = spawn(
     await codexBinary(),
     ["app-server", "--listen", "stdio://"],
     {
-      env: {
-        ...env(),
-        HOME: processHome,
-        CODEX_HOME: codexHome,
-        ACCESS_TOKEN: "not-a-real-token",
-      },
+      env: { ...env(), HOME: processHome, CODEX_HOME: codexHome },
       stdio: ["pipe", "pipe", "ignore"],
     },
   );
@@ -100,7 +91,12 @@ async function bare(): Promise<Rpc> {
     },
     DEADLINES.answerMs,
   );
-  raw = { rpc, stop: () => child.kill() };
+  raw = {
+    rpc,
+    stop: () => {
+      child.kill();
+    },
+  };
   await rpc.request(
     "initialize",
     {
@@ -130,9 +126,15 @@ describe("the pinned Codex", () => {
     }
   }, 60_000);
 
-  it("offers every model Rufi allows by default", async () => {
+  it("offers Rufi's Codex models", async () => {
     const ids = (await (await real()).models()).map((model) => model.id);
-    expect(ids).toEqual(expect.arrayContaining(DEFAULT_ALLOWLIST));
+    expect(ids).toEqual(
+      expect.arrayContaining(
+        MODELS.filter((model) => model.provider === "codex").map(
+          (model) => model.id,
+        ),
+      ),
+    );
   }, 60_000);
 
   it("keeps the user's personal skills out, but runs commands with the real HOME", async () => {
@@ -226,31 +228,22 @@ describe.each(["fake", "real"] as const)(
       "ends the command it runs $when, with what it left in the background, and itself",
       async ({ message, ended }) => {
         const model = await fakeModel();
-        const { codexHome, processHome } = await prepareCodexHome(
-          join(root, "gone"),
-          { userHome: fakeHome, sandbox: sandboxOf(join(root, "gone")) },
-        );
+        const home = join(root, "gone");
+        const { codexHome, processHome } = await prepareCodexHome(home, {
+          userHome: fakeHome,
+          sandbox: sandboxOf(home),
+        });
         // Started as Rufi starts it (appserver.ts): its own process group, pipes.
         const codex = spawn(
           name === "real" ? await codexBinary() : process.execPath,
           [
-            ...(name === "real"
-              ? [
-                  "-c",
-                  `model_providers.openai_chatgpt_plan.base_url="${model.url}"`,
-                ]
-              : [FAKE]),
+            ...(name === "real" ? codexArgs(model.url) : [FAKE]),
             "app-server",
             "--listen",
             "stdio://",
           ],
           {
-            env: {
-              ...env(),
-              HOME: processHome,
-              CODEX_HOME: codexHome,
-              ACCESS_TOKEN: "not-a-real-token",
-            },
+            env: { ...env(), HOME: processHome, CODEX_HOME: codexHome },
             stdio: ["pipe", "pipe", "ignore"],
             detached: true,
           },

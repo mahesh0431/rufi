@@ -8,7 +8,7 @@ The chat bar is the box at the bottom right of the pages where you read your hea
 
 The bar is always the same size: one line. When you add something to your message with **Ask Rufi** (see [Adding to a message](#adding-to-a-message)), the bar shows the first one's name and how many more, such as "CRP <5 mg/L · 12 Aug 2026 +2", and lights up for a moment. After that, it shows the start of what you typed. When Rufi has something to tell you, such as why it couldn't add something, the bar shows that for the moment, in grey. Click the bar to see it all in the panel, and to write your message.
 
-Under the box, in the panel and on the chat page, "AI can make mistakes. Check important health decisions with your doctor." reminds you to check what the AI says. To see the ChatGPT plan the AI uses, and its usage, open **Settings** › **ChatGPT plan** (see [Signing in with ChatGPT](signing-in.md#your-plan-in-settings)).
+Under the box, in the panel and on the chat page, "AI can make mistakes. Check important health decisions with your doctor." reminds you to check what the AI says. To see how the AI is signed in, and your ChatGPT plan's usage, open **Settings** › **Sign-in** (see [Signing in](signing-in.md#your-sign-in-in-settings)).
 
 ## The chat panel
 
@@ -38,13 +38,13 @@ A line between days says which day the messages under it are from: "Today", "Yes
 
 Type in the box and press Enter, or click the send button. Shift-Enter starts a new line. You can send files with no words: the send button works with at least one chip too.
 
-When you send, the box says "Sending…" for a moment, and you can't change it; then it empties. Rufi sends the text in this box, also when another tab saved other text just before. Then the message goes to the AI: at once when nothing else runs, or in its turn (see [Waiting messages](#waiting-messages)). It shows in the chat when the AI starts on it, or, when it brings new files, when Rufi starts to read them (see [Documents](documents.md#while-a-document-is-read)).
+When you send, you can't change the box for a moment; then it empties. The chat shows at once that the AI is working (see [Activity](#activity)). Rufi sends the text in this box, also when another tab saved other text just before. Then the message goes to the AI: at once when nothing runs, or, while a reply runs, into that reply or after it, as you choose (see [While the AI replies](#while-the-ai-replies)). It shows in the chat at once: after the chat's last message, marked waiting, until the AI takes it, and then in its place in the chat. A message with new files takes its place when Rufi starts to read them (see [Documents](documents.md#while-a-document-is-read)).
 
-If you aren't signed in when you send, nothing goes to the AI and nothing waits: your text stays in the box, which says "You're signed out. Sign in with ChatGPT to chat." Click **Sign in** (see [Signing in with ChatGPT](signing-in.md)), then send again. A message that already waited when the sign-in went away keeps waiting. Signing in alone doesn't send it: it goes the next time Rufi gives the AI something, with your next message or with one of Rufi's notes (see [Rufi's lines](#rufis-lines)).
+If you aren't signed in when you send, nothing goes to the AI and nothing waits: your text stays in the box, which says "You're signed out. Sign in with ChatGPT to chat." On one of Claude's models, it's Claude's sign-in that counts, and the box says "You're signed out of Claude. Sign in to Claude to chat." Rufi knows how each one is signed in from when it last asked (see [Signing in](signing-in.md#staying-signed-in)): if a sign-in ended since, your message goes, and the reply ends with the error as the service reported it. Click **Sign in** (see [Signing in](signing-in.md)), then send again. A message that already waited when the sign-in went away keeps waiting, and so does one you send while the AI replies if the sign-in goes away just as it is handed over. Signing in alone doesn't send it: it goes the next time Rufi gives the AI something, with your next message or with one of Rufi's notes (see [Rufi's lines](#rufis-lines)). A reply has no time limit. If your sign-in ends while the AI replies, the reply ends there, with the error as the service reported it.
 
 If Rufi can't be reached when you send, your text stays in the box with the reason, also when you leave the chat or reload the page in this tab. Press Enter again: if Rufi did take the first one, it knows this is the same message and doesn't take it twice.
 
-Rufi never sends a message again by itself. If something goes wrong after Rufi took your message, the message shows above the box with the reason, and you choose: **Send** it (again) or **Remove** it.
+A message counts as sent when Rufi hands it to the AI. Rufi never sends a message again by itself. If Rufi couldn't hand it over, the message stays among the waiting messages, marked **Failed** with the error as it came, and you choose: **Send** it again, **Edit** it or **Remove** it (see [Waiting messages](#waiting-messages)).
 
 A message can have up to 10,000 characters. When the box has more, it says so, and Rufi doesn't keep or send the text until you make it shorter.
 
@@ -63,7 +63,7 @@ You can add your records and documents to a message, so the AI knows exactly wha
 
 **Ask Rufi** never takes you away from the page, and doesn't open the panel: collect what you want to ask about while you read, then click the bar to write and send. When the panel is open, **Ask Rufi** adds to its box, and the panel stays open. If Rufi can't add it at that moment, the bar says why and what to do: the box is still loading, a message is being sent, or your last message may not have reached Rufi (send it again or change it first).
 
-A chip shows only a name and what it is; it has no reading state. A chip marked **· read again** is a document whose unreadable pages Rufi reads again when you send (see [Retry](documents.md#retry)). While a file you added is on its way, the box says "Adding" and its name until its chip comes.
+A chip shows only a name and what it is; it has no reading state. A chip marked **· read again** is a document whose unreadable pages Rufi AI has read again when you send (see [Retry](documents.md#retry)). While a file you added is on its way, the box says "Adding" and its name until its chip comes.
 
 To take a chip out, click its **×**. This changes nothing in your health record. A file that was never sent is removed from Rufi, with its pages; a document you already sent only leaves the box. The chips are kept with what you typed, also when you reload or Rufi starts again, and they go with the message: your message in the chat shows them too.
 
@@ -76,24 +76,27 @@ When you delete a document (see [Documents](documents.md#delete-a-document)), it
 - **Your messages**, on the right, with the chips you added to them.
 - **The AI's replies**, which appear as the AI writes them. Replies can have lists and tables, and the pictures, pages and diagrams the AI makes (see [Pictures, pages and diagrams](#pictures-pages-and-diagrams)). Links to web pages open in your browser, outside Rufi. A reply never shows a picture from the internet.
 - **Activity**, under an answer: what the AI did for that reply, folded into one line, such as "Activity · 12 steps · 1 failed · 1m 36s". Click it to open it. While the AI works, it is open, and you can read along. See [Activity](#activity).
-- **Based on**, beside Activity once the reply has ended. It opens where the answer comes from, in the AI's own words. See [Where an answer comes from](#where-an-answer-comes-from).
 - **Receipts**, with a tick, each time the AI saved something to your health record: "Saved", then one line for each change. A save from a document starts with a summary, such as "Saved 42 results from Sunrise Labs August.pdf · 40 new · 1 more source · 1 correction"; when the list is long, click **Show what was saved** to see it. Rufi writes them. See [Changing your health record](#changing-your-health-record).
 - **A visit brief's line**, with a page sign and **Open**, when the AI made a brief for you. Rufi writes it. See [Visit brief](visit-brief.md).
 - **Rufi's lines**, with a bell and "Rufi" above them, when something happened outside the chat. Rufi writes them, never the AI, and they are never your words. See [Rufi's lines](#rufis-lines).
 - **How a reply ended**, when it didn't finish: for example "Stopped.". When the AI service stopped the reply with an error, the line shows the error as the service reported it, such as "exceeded retry limit, last status: 429 Too Many Requests". Rufi doesn't put it in other words. When the service gave no words, the line says "This reply didn't finish.", and for your ChatGPT plan's usage limit, the time it resets.
-- **Quiet lines** about the AI's memory of the chat: "Compacting chat history…" while the AI compacts it, "Chat history compacted" once it has, and "New thread started" where the AI started with a new memory of the chat. See [The AI's memory of the chat](#the-ais-memory-of-the-chat).
+- **Quiet lines**: "Model changed", with the models and efforts before and after, such as "Model changed: GPT-6-Astra XHigh → Claude Opus 5.5 High", where a reply runs on another model or effort than the one before (see [The model and effort](#the-model-and-effort)); and about the AI's memory of the chat, "Compacting chat history…" while the AI compacts it and "Chat history compacted" once it has (see [The AI's memory of the chat](#the-ais-memory-of-the-chat)).
 
 ## Activity
 
 Activity shows what the AI did for a reply, as the AI's agent reported it. Rufi doesn't put it in other words.
 
 - **The AI's notes**, in full, such as "I'll check your fasting glucose and HbA1c first." The AI writes these while it works. They are part of Activity, not answers.
-- **The AI's thinking**, as the headings the AI service sends, such as "Comparing the reports", in their place among the steps. When a heading has more under it, click it to read the AI's summary. When the AI service sends nothing, there is no line.
+- **The AI's thinking**, as the headings the AI service sends, such as "Comparing the reports", in their place among the steps. When a heading has more under it, click it to read the AI's summary. On Codex and on Claude, the summary shows as the AI writes it, and once it's whole it shows as the AI finished it. If you stop the reply while the AI thinks, what showed stays. When the AI service sends nothing, there is no line.
 - **The steps**, each as it was reported: a command the AI ran, with its exit code; one of Rufi's tools, such as `rufi.get_records`, with what the AI asked for; the files the AI changed; a web search. A long step is cut in the middle, so the start and the file name show. A tick means it was done. Other signs mean it is running, it failed, or it stopped.
 
 Click a step to open everything the agent reported about it: for a command, the whole command, its folder, its exit code, how long it took and what it printed; for a tool, what the AI sent and what came back. Long output shows 12 lines, then **Show all**. A step from before Rufi kept these says "Rufi kept no details for this step."
 
-While the AI works, Activity is open, starts with Rufi thinking, says "Activity · working" and how many steps, and grows as the AI goes. When the answer comes, it folds into one line under the answer: how many steps, how many failed or stopped, and how long the reply took. Click the line to fold or open it at any time, also while the AI works. When you fold it while the AI works, its line says "Working", how many steps, and the newest step.
+**Sub-agents.** Where the AI started a sub-agent, its Activity shows one line: the name the AI gave it, its status (such as running, done, stopped or failed) and the start of its result. Click the line, or press Enter on it, to open the sub-agent's pop-up (see [When the AI starts agents of its own](#when-the-ai-starts-agents-of-its-own)).
+
+From the moment you send until the reply ends, one line under your message shows that the AI is working, with a timer. Until the AI's first step it says "Thinking · 0:03", with Rufi thinking: the AI may take a few seconds to start, more at a higher effort or in a long chat. This line shows whatever the Activity setting says. Then it becomes the reply's Activity.
+
+While the AI works, Activity is open, says "Activity · working", how many steps and the timer, such as "Activity · working · 3 steps · 0:12", and grows as the AI goes. When the answer comes, it folds into one line under the answer: how many steps, how many failed or stopped, and how long the reply took. Click the line to fold or open it at any time, also while the AI works. When you fold it while the AI works, its line says "Working", how many steps, the timer and the newest step.
 
 Choose how Activity opens in **Settings** › **Activity**:
 
@@ -103,7 +106,7 @@ Choose how Activity opens in **Settings** › **Activity**:
 
 In each one, you can still fold or open a reply's Activity yourself. That holds on this page until the reply ends; after a reload, Activity follows the setting again. Another tab or window shows the same steps and folds by itself.
 
-A reply that has no steps, such as an answer to "thanks", has no Activity line. In replies from before this version of Rufi, the AI's notes show as replies, and each step keeps the words Rufi gave it then.
+A reply that has no steps, such as an answer to "thanks", has no Activity line once it ends. In replies from before this version of Rufi, the AI's notes show as replies, and each step keeps the words Rufi gave it then. If the AI's working state is lost, a reply from before says **Activity is gone with the AI's working state.**, and its sub-agents' Activity is gone too (see [Your data and the AI](your-data-and-the-ai.md#your-chat)).
 
 ## Pictures, pages and diagrams
 
@@ -127,6 +130,8 @@ A reply shows the file as it is now, not as it was when the AI wrote the reply. 
 
 Ask the AI about your health record in your own words, for example "What was my last HbA1c?", "How many times did I have a headache this year?" or "How has my HbA1c changed since I started creatine?". The AI reads your Overview. For anything more, such as earlier results, counts or dates, it reads one kind of record, such as your lab results, your measurements or your symptoms, all of them or between two dates. The AI does the counting and the comparing itself.
 
+To say where a result stands, the AI goes by the lab's own range and flag first. When a report prints no range, it can use a range for your age and sex from [your profile](record.md#your-profile), and says which range it used. For an older result, it uses your age on that result's date. When your profile doesn't have what it needs, or a year of birth leaves it unsure, it says so or asks you. It reads your profile again before it relies on it, so a change you made a moment ago counts.
+
 What the AI's reads can do:
 
 - **Only this person's record.** A read gets only the records of the person whose chat it is. It can't read another person's record, the chat or Rufi's settings. Rufi chooses the person, not the AI.
@@ -140,15 +145,11 @@ If your health record changes while the AI answers, for example because the AI s
 
 ## Where an answer comes from
 
-Under an answer, once the reply has ended, **Based on** sits beside Activity, with an info sign. Click it to open the AI's own words on where the answer comes from: your health record, read in this reply or earlier in the chat, the web, or general knowledge. They also say how the AI got the answer, for example which results it compared. Click outside, press Esc or click **✕** to close it.
+When it matters, the answer says where something comes from: your health record, read in this reply or earlier in the chat; a document you sent that isn't saved to your record yet; the web, with a link; or general knowledge.
 
-To see what the AI read, open [Activity](#activity): each read of your health record is a step there, such as `rufi.get_records`, with what the AI asked for and what came back. If Based on and Activity don't agree, ask the AI.
+To see what the AI read, open [Activity](#activity): each read of your health record is a step there, such as `rufi.get_records`, with what the AI asked for and what came back. If the answer and Activity don't agree, ask the AI.
 
-Anything that changes what an answer means, such as only two readings or a missing month, is in the answer itself, not only under Based on.
-
-Small talk, such as "thanks", has no Based on. While a reply runs, Based on isn't there yet. If you stop a reply, or Rufi closes during it, what the AI wrote so far stays, without Based on.
-
-The AI writes these words at the end of its reply, and Rufi shows them under Based on, not in the answer. If the AI forgets them, the answer has no Based on.
+Anything that changes what an answer means, such as only two readings or a missing month, is in the answer itself.
 
 ## Changing your health record
 
@@ -166,7 +167,7 @@ You change your health record by telling the AI in the chat. Nothing changes unt
 
    When a detail is long, its line shows the part around the change. Rufi writes the receipt itself, from what it saved, not from the AI's words. If the receipt is different from what the AI told you, trust the receipt and tell the AI.
 
-The AI can save medicines you take, visits to a doctor (with what the doctor wrote or said), symptoms, conditions, allergies, lab results, measurements such as your weight or blood pressure, procedures and immunisations, "no known allergies", and follow-ups.
+The AI can save medicines you take, visits to a doctor (with what the doctor wrote or said), symptoms, conditions, allergies, lab results, measurements such as your weight or blood pressure, procedures and immunisations, "no known allergies", follow-ups, and your profile: your name, your birth date, sex for lab ranges, blood group and height (see [Your profile](record.md#your-profile)). When you mention one of these about yourself, the AI may offer to save it.
 
 What Rufi does when it saves:
 
@@ -188,73 +189,105 @@ To save the results Rufi read from a document, add the document to a message and
 
 ### Undo
 
-Say "undo that". The AI reads the save and your health record as it is now. It tells you what it will change back, and anything that changed after that save, and asks you. Say yes, and the AI saves the reverse, with its own receipt: a removed record is put back ("Put back result …"). The first save stays in the history. When the save added a document page or a visit as one more source of a record, the undo takes only that source off: the record stays. Undoing a visit removes the visit and what was added from it, and sets back a medicine it changed; when a medicine needs both, set back and its source taken off, you see two receipts.
+Say "undo that". The AI reads the save and your health record as it is now. A change you made to your profile on its page or in Settings is among your saves too: say "undo my last profile change". It tells you what it will change back, and anything that changed after that save, and asks you. Say yes, and the AI saves the reverse, with its own receipt: a removed record is put back ("Put back result …"). The first save stays in the history. When the save added a document page or a visit as one more source of a record, the undo takes only that source off: the record stays. Undoing a visit removes the visit and what was added from it, and sets back a medicine it changed; when a medicine needs both, set back and its source taken off, you see two receipts.
 
 ### When a save and a stop meet
 
 If you stop the reply while the AI saves, the save can still finish. Then its receipt shows in the chat, and the AI sees it the next time you write. Say "undo that" if you don't want it.
 
+### When the AI starts agents of its own
+
+For a task that can run on its own, the AI can start an agent of its own, a sub-agent. It gets only the task the AI gives it, never your chat, and works with all of the AI's tools, on the AI's model or another of Rufi's four, at any of the four efforts. A model whose provider isn't signed in can't start one. Between a sub-agent's turns, the AI can move it to another of the four, never while it works. On another provider's model, the sub-agent starts a new conversation there, which has its last 10 turns. It can go on after the reply ends: what it saves shows in the chat with Rufi's receipt, also after the reply, with its title after **Saved**. It saves only what you said yes to. A reader that copies your files' pages saves its copies with no receipt: they aren't part of your health record (see [Documents](documents.md#when-the-reading-ends)). In the Activity of the reply that started it, it is one line, which opens its pop-up (see [Activity](#activity)).
+
+**At work.** While the AI's sub-agents work, each is a chip in a row above the message box, below your waiting messages: a spinner, the name the AI gave it, and how long its turn has run, such as **Reading report.pdf 0:42**. When its turn ends (done, with a question, stopped or failed), its chip goes; when the AI gives it more to do, it comes back while it works. With no sub-agent at work, there is no row.
+
+**Its pop-up.** Click a chip, the sub-agent's line in Activity, or its name on its message in the chat, to open its pop-up over the chat. At the top: its name; its status, how long its turn has run, and its model and effort. Below, its own Activity, in the order things happened, and as it happens: the task it got from the AI and the messages that came later, each with who sent it, its notes, thinking and steps, as it reported them, and its answers and questions. While it works on a message, before its first step, "Thinking" shows under it, as in the chat. A sub-agent it started shows there as a line of its own, which opens below it. A long Activity shows its latest 50 lines, and **Show earlier** shows 50 more each time. While it works, **Stop** stops it and every sub-agent it started; its stopped message goes to the AI. Esc, the close button or a click outside closes the pop-up; the sub-agent goes on.
+
+**Its messages.** When a sub-agent writes to the AI, its message shows in the chat where the AI got it, on the right like yours, under the sub-agent's name: its result when its turn ends, its question, or what it wrote along the way. A stopped or failed one says so after the name. A long message shows a few lines, and **Show all** shows the rest. Messages between the sub-agent and the agents it started don't show in the chat; they are in its pop-up. A sub-agent's message is never your words or your yes.
+
+When a sub-agent finishes, the AI hears it by itself. If the AI isn't replying then, it replies by itself, after the sub-agent's message. If it is replying, the message goes into that reply. The AI tells you what it found, or asks you what it asks. While a sub-agent works, the AI may end its reply and say so: the sub-agent's result wakes it. The AI can also write to a sub-agent, for example to answer its question.
+
+You can stop a sub-agent in its pop-up, or ask the AI to stop one: just that one, or with every sub-agent it started. Its result goes to the AI, which says it stopped. When you ask the AI to stop everything, it stops every sub-agent and its own reply too. Then none of the stopped sub-agents' results wakes the AI, and your waiting messages don't go, also one with files: each shows **Not sent · Stopped.**, for you to **Send**, edit or remove. What waited for the stopped sub-agents is held the same way: the AI can send it again when you ask.
+
 ## While the AI replies
 
-While the AI replies, the stop button (the square) is where the send button was. The chat bar also shows a turning circle before its text, because Activity doesn't show there.
+From the moment you send until the reply ends, the round button is **Stop** (the square) while the box is empty, and the send button once you type. Enter, or a click on it, does what **Settings** › **Sending while Rufi replies** says: **Steer** (the start) or **Queue**. ⌘Enter, or ⌘-click, does the other, and a light line under the box says so: "⌘↵ to queue", or "⌘↵ to steer" when Queue is your choice. The chat bar also shows a turning circle before its text then, because Activity doesn't show there.
 
 **What the AI does.** Activity shows the AI's notes, its thinking and its steps as they happen (see [Activity](#activity)). After a reload, or in another tab, it shows the same.
 
 If you click Stop, what the AI did so far stays in Activity, and the folded line says how many steps stopped. If Rufi closed before the reply finished, its Activity shows no time, because Rufi doesn't know when the reply ended.
 
-**Stop.** The stop button (the square, where the send button was) ends the reply now, in every size of the chat. What the AI wrote so far stays.
+**Stop.** The stop button (the square) ends the reply now, in every size of the chat. What the AI wrote so far stays. Stop ends only the reply: your waiting messages go next, in order, and the sub-agents keep working (to stop one, use **Stop** in its pop-up, or ask the AI; see [When the AI starts agents of its own](#when-the-ai-starts-agents-of-its-own)). A message whose reply was still starting when you clicked Stop doesn't go: it waits as **Not sent · Stopped.**, for you to **Send**, edit or remove.
 
-**Stop.** After a Stop, nothing more goes to the AI until you send a message. Rufi keeps this also when you reload or Rufi starts again.
+**When Rufi closes during a reply.** If you quit Rufi, or it stops suddenly, while the AI replies, the reply ends **Rufi closed before the reply finished.** When Rufi starts again, the AI carries on by itself in a new reply, before your waiting messages. Its sub-agents that were working carry on too. Rufi tells the AI and each sub-agent only that it stopped suddenly and that they can carry on. To end a reply for good, click Stop before you quit.
 
-**Rufi's reader.** When your message brings files, your reply starts with Rufi's part: Rufi's reader copies the pages before the AI starts. Each file is a step in Activity, **Rufi's reader · thyrocare-aug.pdf**, with how far it is. Stop ends the reading too. The AI starts when all files are copied, and answers your message in the same reply (see [Documents](documents.md#while-a-document-is-read)). If the reading doesn't finish, the reply ends before the AI, with the reason and **Retry** (see [Documents](documents.md#when-a-reading-stops)).
+If Rufi closes again and again while they work, they stop carrying on: after 5 restarts in a row, the AI and its sub-agents stay stopped, and your waiting messages show **Not sent · Stopped after 5 restarts in a row.** They go when you click **Send**, or with the next message you send. Choose how many times in **Settings** › **After a restart**. With 0, the AI never carries on by itself: the reply stays stopped, and your waiting messages go as usual. The count starts again when a reply finishes, or when you send a message.
 
-You can send while Rufi is replying. A message without new files goes into the reply, and the AI carries on with it in mind. A message with new files, or one you send while Rufi's reader is copying, waits for a reply of its own. Stop ends the reply.
+**Files.** When your message brings files that aren't read yet, Rufi tells the AI which ones. The AI has them read by readers, sub-agents it starts: each reader is a line in the reply's Activity, and a chip above the box while it works. A reader's result shows in the chat under its name, and wakes the AI, which sorts the file and tells you what it found (see [Documents](documents.md#while-a-document-is-read)). Stop ends the reply, not the readers.
+
+**Sending while the AI replies.** You choose where a message goes:
+
+- **Steer** puts it into the reply. The AI carries on with it in mind: it adds your message to what it is doing, and drops its work only if it has to. The message shows as waiting until the AI takes it, then in the reply. While the reply is still starting, it goes in once the AI runs.
+- **Queue** keeps it until the reply ends. Then it goes in a reply of its own, in order with your other waiting messages.
+
+Enter, or a click on the send button, does what you chose in **Settings** › **Sending while Rufi replies**: **Steer** (the start) or **Queue**. ⌘Enter, or ⌘-click, does the other. A message with files goes the same way.
+
+If the reply ends before your steer reaches it, your message goes in a following reply.
 
 ## Waiting messages
 
-What waits shows above the box, also after a reload, a restart of Rufi, or a change of model. For each of your waiting messages you can:
+What waits shows in the chat, after its last message, in the order it goes: your messages as dashed bubbles, and Rufi's notes. It shows there also after a reload, a restart of Rufi, or a change of model. For each of your waiting messages you can:
 
+- **Steer** it (two arrows that meet), while a reply runs: it goes into that reply now.
 - **Edit** it (the pencil), then **Save**.
 - **Move** it, to change the order: drag it up or down by its handle (the dots on its left). With the keyboard, go to the handle with Tab, press Space to pick the message up, the up and down arrows to move it, and Space to put it down. Esc puts it back where it was.
 - **Remove** it (the X). It never goes to the AI.
 
+You can also ask the AI to do these for you, for example "remove my question about the scan" or "send the held ones now". It sees what waits for it and for its sub-agents, and changes your messages when you ask. When it steers a held message, the message goes, as when you click **Send**.
+
 The line above them says what happens next:
 
 - **Waiting · these go in order after the reply**: they go by themselves.
-- **Stopped · these go when you send a message**: you stopped a reply. Send a message, or click **Send now**, to go on. They go first, in order, then your new message.
-- **Rufi restarted · these go when you send a message**: Rufi started again while messages waited. Nothing goes by itself after a restart: send a message, or click **Send now**.
+- **Waiting**: no reply runs yet; they go in order after the message Rufi is giving to the AI now. That message shows in the chat as sent, with "Thinking" under it.
 - **Not sent · Rufi sends these only when you say**: some messages are held, as below.
+- **Waiting until you sign in**: you're signed out; they go the next time Rufi gives the AI something after you sign in again (see [Rufi's lines](#rufis-lines)).
 
-A message with new files waits like any other, and gets a reply of its own, which reads its files first. Removing a waiting message doesn't remove its files: they stay sent, and the Documents page shows **Not read yet** with **Retry**. A message whose reply ended while Rufi read its files isn't listed here: it is in the chat already, and its reply's last line has **Retry** (see [Documents](documents.md#when-a-reading-stops)).
+A message with files waits like any other. Removing it doesn't remove its files: they stay sent, and the Documents page shows **Not read yet** with **Retry**.
 
-A held message says why under it, and goes only when you click its button: **Send**, **Send again**, or **Try again** or **New thread**:
+A held message says why under it, and goes only when you click **Send** (the paper plane); you can also edit or remove it:
 
-- **"Not sure this reached the AI."** Rufi stopped, or the AI didn't answer, while Rufi gave it the message. The AI may have it. Check the chat before you send it again. After this, nothing more goes to the AI until you send a message.
-- **"From a backup: it waited when the backup was made."** After a restore, nothing from the past goes to the AI by itself.
-- **The AI's reason**, when the AI couldn't take it, for example when none of your allowed models is offered.
-- **The error, with Try again and New thread**, when Rufi couldn't open the AI's memory of the chat (its thread). The message shows the error as it came. **Try again** opens the same thread again, and the AI keeps its memory of the chat. **New thread** starts the AI with a new memory, and your chat and your health record stay as they are (see [The AI's memory of the chat](#the-ais-memory-of-the-chat)). While a reply runs, only **Try again** shows (the message then goes after the reply); **New thread** shows again once the reply has ended. If Try again meets an error again, the message waits again with both buttons. The message keeps waiting like this when you reload or Rufi starts again. When you click in two tabs, the first click counts, and the other tab shows what happened.
+- **Failed ·** and the error as it came, when Rufi couldn't hand the message to the AI, or the AI couldn't take it, for example when Codex couldn't open the AI's thread.
+- **Not sent · Stopped.** You clicked Stop while its reply was still starting, so it didn't go.
+- **Not sent · Stopped after 5 restarts in a row.** Rufi closed again and again while the AI worked, so the AI stopped carrying on by itself (see [While the AI replies](#while-the-ai-replies)). A new message from you sends it too, before your new one.
+- **Not sent · From a backup: it waited when the backup was made.** After a restore, nothing from the past goes to the AI by itself.
+
+When Rufi couldn't open the AI's memory of the chat (its thread), or start a new one, the failed message also has **New thread**. **Send** opens the same thread again, and the AI keeps its memory of the chat. **New thread** starts the AI with a new memory, and your chat and your health record stay as they are (see [The AI's memory of the chat](#the-ais-memory-of-the-chat)). While a reply runs, only **Send** shows (the message then goes after the reply); **New thread** shows again once the reply has ended. If Send meets an error again, the message waits again with both buttons. The message keeps waiting like this when you reload or Rufi starts again. When you click in two tabs, the first click counts, and the other tab shows what happened.
 
 ## Rufi's lines
 
-Some things happen outside your chat. Rufi tells you with its own line in the chat. For example, after you delete a document, a line says **Deleted Sunrise Labs August.pdf**. When you chose **Delete file and results**, the chat opens, and the AI asks you about the document's results (see [Documents](documents.md#when-results-from-it-are-in-your-health-record)). Rufi writes these lines, not the AI, and they are never your words. Reading a file is not one of them: it is a step in your reply (see [While the AI replies](#while-the-ai-replies)). Lines from an earlier version, such as "Reading thyrocare-aug.pdf · 5 pages", stay in the chat as they were.
+Some things happen outside your chat. Rufi tells you with its own line in the chat. For example, after you delete a document, a line says **Deleted Sunrise Labs August.pdf**. When you chose **Delete file and results**, the chat opens, and the AI asks you about the document's results (see [Documents](documents.md#when-results-from-it-are-in-your-health-record)). Rufi writes these lines, not the AI, and they are never your words. Reading a file is not one of them: a reader is a line in your reply's Activity (see [Documents](documents.md#while-a-document-is-read)). Lines from an earlier version, such as "Reading thyrocare-aug.pdf · 5 pages", stay in the chat as they were.
 
 When the AI should know too, Rufi gives it a note:
 
-- **When nothing runs**, the AI gets the note at once, in a short reply of its own. In that reply the AI can only read your health record: it can explain or ask, but it can't save anything or sort a file. Only your own messages can save.
-- **When a reply runs**, the note waits until the reply has ended. Notes that wait together go to the AI together, in one reply.
-- **After a Stop, or when you're signed out**, the note waits above the box as "Rufi's note", marked **Rufi**, with "Goes to the AI with your next message." It goes once, with your next message, never as a reply of its own later. **Remove** it if the AI doesn't need it.
+- **When nothing runs**, the AI gets the note at once, in a short reply of its own. In that reply the AI explains or asks. It carries on with work you already asked for, and asks you first before any new change: every save rests on a message of yours.
+- **When a reply runs**, the note waits in the chat among the waiting messages, as "Rufi's note", and goes in its turn after the reply, in a short reply of its own. Each note gets its own reply. **Remove** it if the AI doesn't need it.
+- **When you're signed out**, it waits with the line on how to sign in, such as "You're signed out. Sign in with ChatGPT to chat.", and goes the next time Rufi gives the AI something after you sign in again.
 
 ## The model and effort
 
-The model and effort that answer show in the box, next to the send button, in every size of the chat: for example "GPT-6-Astra Medium". Click them to open one menu with both. When you aren't signed in, the menu can't list the models: click **Sign in with ChatGPT** in it to sign in.
+The model and effort that answer show in the box, next to the send button, in every size of the chat: for example "GPT-6-Astra Medium". Click them to open one menu with both. It stays open while you choose, so you can set both in one go; a click outside it, a click on the model and effort again, or Esc closes it.
 
-**The model.** Your chat has one model at a time. To change it, choose another in the menu: a tick shows the one that answers now. The menu shows Rufi's models that your ChatGPT plan offers now: GPT-6-Astra and GPT-6.1-Sol. Before your first message, the chat shows the first of them, GPT-6-Astra when your plan offers it. Choose another before your first message if you like.
+**The model.** Your chat has one model at a time. To change it, choose another in the menu: a tick shows the one that answers now. Rufi has four models, and the menu always shows all four: GPT-6-Astra and GPT-6.1-Sol with your ChatGPT plan, and Claude Fable 5.1 and Claude Opus 5.5 with Claude. When Codex or Claude isn't signed in, its two models show greyed, with **Sign in with ChatGPT** or **Sign in to Claude** under them (see [Signing in](signing-in.md)). A new chat starts on GPT-6-Astra. Choose another before your first message if you like.
 
-**The effort** is how hard the AI thinks before it answers: Low is faster, Medium gives careful answers at a good speed, and High thinks longer. Your chat starts at Medium. A new effort applies from the next reply, and the AI keeps its memory of the chat.
+**The effort** is how hard the AI thinks before it answers: Low is faster, Medium gives careful answers at a good speed, and High and XHigh think longer. Every model has the same four. Your chat starts at Medium. A new effort applies from the next reply, and the AI keeps its memory of the chat.
 
-Rufi keeps the model and effort for your chat. You can't change them while a reply runs. Rufi says so: stop the reply, then change them. A new model answers from your next message, and it has the whole chat: the AI keeps its memory of the chat. Messages that wait go to the new model.
+**When the model changes.** A reply that runs on another model or effort than the reply before it shows a quiet line above your message, with both: "Model changed: GPT-6.1-Sol XHigh → Claude Opus 5.5 High". Each reply keeps the model and effort it ran with, so the line stays after a reload. Replies from before this version of Rufi kept no effort: after one, the line shows only when the model changed, and names no effort for it. A sub-agent's pop-up shows the same line when the AI moves it to another model or effort.
+
+Rufi keeps the model and effort for your chat. You can't change them while a reply runs. Rufi says so: stop the reply, then change them. A new model answers from your next message, and it has the whole chat: the AI keeps its memory of the chat. A model of another provider starts a new thread there, with the chat's last messages. Messages that wait go to the new model.
 
 **Context used.** In the chat's panel and page, a small grey ring with a percentage, such as "38%", shows beside the model and effort: how much of the AI's memory of the chat is in use, as the AI last reported it. Point at it, or move to it with Tab, to see what it means. It shows after the AI's first reply, and keeps its value when you reload. It changes after each step of a reply, not with each word. After a compaction or another model, it keeps the old value until the next reply. After a new thread, it shows nothing until the AI's first reply there. When the AI doesn't say how big its memory is, there is no ring. A full memory is normal: near full, Codex compacts the chat history.
+
+**Your plan's usage.** The AI can see how much of your plan is used now, for Codex (your ChatGPT plan) and for Claude, and when each limit resets, as each last reported it with a reply. Before a big job, such as several sub-agents or a long document, it may look. When little is left, it may do less at once, choose a lighter model or effort for its sub-agents, or tell you when the limit resets and let you choose. Until a reply has run on one since Rufi started, it sees no usage of it. To see your ChatGPT plan's usage yourself, open **Settings** › **Sign-in** › **Manage usage**.
 
 ## The AI's memory of the chat
 
@@ -262,9 +295,9 @@ Your chat is always kept whole in Rufi, and the AI can read all of it. The AI al
 
 **Compacted.** When that memory gets near full, Codex, the AI's agent, compacts the chat history: it replaces the older part of the AI's memory with a summary, in the same thread. The chat shows "Compacting chat history…" while it runs, and "Chat history compacted" once it is done. A message you send meanwhile waits, as during any reply. If you stop the reply, or Rufi closes, while it compacts, the line goes away. Another model or effort keeps the same thread; if the new model has a smaller memory, the AI can compact, and the chat says so.
 
-**New thread.** The AI starts a new thread only when its own copy of the chat is gone (for example after a restore, a move of Rufi's data, or when its files were deleted), or when you click **New thread** on a waiting message. The chat shows "New thread started" there. The new thread has the chat's last 10 messages, and the AI reads further back when it needs to. When Rufi can't open the AI's thread for another reason, it doesn't start a new one by itself: your message waits with the error, **Try again** and **New thread** (see [Waiting messages](#waiting-messages)).
+**New thread.** The AI starts a new thread only when its own copy of the chat is gone (for example after a restore, a move of Rufi's data, when its files were deleted, or when the AI's working state, `agents.sqlite`, is missing), or when you click **New thread** on a waiting message. The new thread has the chat's last 10 messages that reached the AI, never one still waiting, and the AI reads further back when it needs to. When Rufi can't open the AI's thread for another reason, it doesn't start a new one by itself: your message waits as **Failed** with the error, **Send** and **New thread** (see [Waiting messages](#waiting-messages)).
 
-**New rules.** When Rufi's rules for the AI change, after a Rufi update or when you choose another emergency region, the AI gets the new rules with your next message, and the chat shows no line. If the AI can't take them, your message waits with "The AI couldn't take Rufi's new instructions, so it can't reply now. Try again.", **Try again** and **New thread**.
+**New rules.** When Rufi's rules for the AI change, after a Rufi update or when you choose another emergency region, the AI gets the new rules with your next message, and the chat shows no line. If the AI can't take them, your message waits as **Failed · The AI couldn't take Rufi's new instructions, so it can't reply now. Try again.**, with **Send** and **New thread**.
 
 ## What you typed but didn't send
 

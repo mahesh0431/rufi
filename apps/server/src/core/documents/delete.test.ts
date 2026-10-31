@@ -1,8 +1,8 @@
 // Deleting a document on a real database and real files, with the
 // fictional family: what blocks it, what goes and what stays, the chat's
 // chips and the brief's sources after it, a shared file, adding the same
-// file again, a stale preview, and the bytes a delete leaves when Rufi stops
-// between its commit and its removal.
+// file again, a stale preview, the bytes a delete leaves when Rufi stops
+// between its commit and its removal, and the AI's notes on it.
 import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -25,7 +25,7 @@ import {
   openWritable,
   type Store,
 } from "../store/database.ts";
-import { chatCaller } from "../tools/tools.ts";
+import { rufiCaller } from "../tools/tools.ts";
 import { deletions, NoChoice, StalePreview, sweepFiles } from "./delete.ts";
 import { documents, type Documents } from "./documents.ts";
 import { fileGate, type FileGate } from "./gate.ts";
@@ -33,7 +33,9 @@ import { displayPath, originalPath, pagePath } from "./originals.ts";
 import { pages, publisher } from "./pages.ts";
 import { readings } from "./reading.ts";
 import { sorting } from "./sorting.ts";
+import { workPath } from "../store/work.ts";
 import { addSent } from "../../../tests/sent.ts";
+import { turnScope } from "../../../tests/scope.ts";
 
 const family = await readFile(
   new URL("../../../tests/fixtures/fictional-family.sql", import.meta.url),
@@ -59,7 +61,6 @@ let transcripts: Transcripts;
 let chat: ChatRow;
 let gate: FileGate;
 let docs: Documents;
-let stopped: string[];
 let logged: string[];
 
 beforeEach(async () => {
@@ -71,14 +72,7 @@ beforeEach(async () => {
   transcripts = openTranscripts(store, () => NOW);
   chat = (await transcripts.chat("asha")) as ChatRow;
   gate = fileGate();
-  docs = documents(
-    store,
-    home,
-    () => NOW,
-    readings(store, () => NOW),
-    gate,
-  );
-  stopped = [];
+  docs = documents(store, home, () => NOW, readings(store), gate);
   logged = [];
   return () => {
     reader.close();
@@ -96,9 +90,6 @@ const deleting = (over: { gate?: FileGate } = {}) =>
       const to = await transcripts.chat(personId);
       if (!to) throw new Error("No chat.");
       await transcripts.addEvent(to, event, write);
-    },
-    stopReading: (id) => {
-      stopped.push(id);
     },
     changed: () => undefined,
     log: (event) => {
@@ -128,11 +119,11 @@ async function save(said: string, changes: unknown[]) {
     text: said,
     agentTurnId: "t-1",
   });
-  const answer = await chatCaller(reader, transcripts, () => undefined)(
-    chat,
-    "t-1",
-    "person",
-  )("save_changes", { changes }, `call-${id}`);
+  const answer = await rufiCaller(
+    reader,
+    transcripts,
+    () => undefined,
+  )(turnScope(chat, "t-1"))("save_changes", { changes }, `call-${id}`);
   expect(answer.text).not.toContain('"issues"');
   expect(answer.ok).toBe(true);
 }
@@ -356,11 +347,11 @@ describe("a document with saved results", () => {
     expect(typed?.removed).toBe(false);
     expect(typed?.sources).toEqual([]);
     // The AI's fresh reads can't get it; the chat says it went.
-    const call = chatCaller(reader, transcripts, () => undefined)(
-      chat,
-      "t-1",
-      "person",
-    );
+    const call = rufiCaller(
+      reader,
+      transcripts,
+      () => undefined,
+    )(turnScope(chat, "t-1"));
     const list = await call("get_documents", {}, "call-list");
     expect(list.text).not.toContain(AUG);
     const overview = JSON.parse(
@@ -552,7 +543,6 @@ describe("a delete", () => {
     expect(brief?.sources[0]?.from).toBe(
       "Sunrise Labs report, collected 12 Aug 2026 · Document deleted (Sunrise Labs August.pdf, page 1)",
     );
-    expect(stopped).toEqual([id, AUG]);
   });
 });
 
@@ -778,11 +768,18 @@ describe("a document Rufi AI split from an add", () => {
         drafts: [
           {
             page: 1,
+            reading: "job-pile",
             test_name: "HbA1c",
             value_text: "6.9",
             quote: "HbA1c | 6.9",
           },
-          { page: 2, test_name: "TSH", value_text: "2.3", quote: "TSH | 2.3" },
+          {
+            page: 2,
+            reading: "job-pile",
+            test_name: "TSH",
+            value_text: "2.3",
+            quote: "TSH | 2.3",
+          },
         ],
       },
     );
@@ -855,4 +852,31 @@ describe("a document Rufi AI split from an add", () => {
       ).toEqual([]);
     },
   );
+
+  it("takes the AI's notes on it and on its add, from every day; another document's stay", async () => {
+    const { child } = await split();
+    const notes = [
+      `2026-10-10/pile.md`,
+      `2026-10-11/pile.md`,
+      `2026-10-11/${child}.md`,
+      "2026-10-11/doc-asha-sep.md",
+    ];
+    for (const path of notes) {
+      await mkdir(join(workPath(home), path, ".."), { recursive: true });
+      await writeFile(join(workPath(home), path), "## Page 1");
+    }
+    const remover = deleting();
+
+    await remover.remove(
+      "asha",
+      child,
+      (await remover.preview("asha", child))?.version ?? "",
+    );
+
+    for (const path of notes) {
+      expect(await there(join(workPath(home), path))).toBe(
+        path.endsWith("doc-asha-sep.md"),
+      );
+    }
+  });
 });

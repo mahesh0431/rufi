@@ -162,6 +162,18 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-darwin-arm64': '-'
+  '@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-darwin-x64': '-'
+  '@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-linux-arm64': '-'
+  '@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-linux-arm64-musl': '-'
+  '@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-linux-x64': '-'
+  '@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-linux-x64-musl': '-'
+  '@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-win32-arm64': '-'
+  '@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-win32-x64': '-'
+
+packageExtensionsChecksum: sha256-vk1+1la8Q8gWbR3vT94+f4ybZ87ugZUM3iwCRau6vkc=
+
 importers:
 
   .:
@@ -215,6 +227,9 @@ importers:
 
   apps/server:
     dependencies:
+      '@anthropic-ai/claude-agent-sdk':
+        specifier: 0.3.312
+        version: 0.3.312(zod@4.6.7)
       '@effect/platform-node':
         specifier: 4.0.5
         version: 4.0.5(effect@4.0.5)(redis@6.3.0)
@@ -227,12 +242,12 @@ importers:
       '@napi-rs/canvas':
         specifier: 1.0.12
         version: 1.0.12
-      '@napi-rs/keyring':
-        specifier: 2.1.2
-        version: 2.1.2
       '@openai/codex':
         specifier: 0.163.0
         version: 0.163.0
+      '@rufi/agents':
+        specifier: workspace:*
+        version: link:../../packages/agents
       '@rufi/brand':
         specifier: workspace:*
         version: link:../../packages/brand
@@ -254,21 +269,9 @@ importers:
       hono:
         specifier: 4.13.13
         version: 4.13.13
-      jose:
-        specifier: 6.2.13
-        version: 6.2.13
       kysely:
         specifier: 0.29.7
         version: 0.29.7
-      mdast-util-from-markdown:
-        specifier: 2.1.0
-        version: 2.1.0
-      mdast-util-gfm:
-        specifier: 3.1.0
-        version: 3.1.0
-      micromark-extension-gfm:
-        specifier: 3.0.0
-        version: 3.0.0
       pdfjs-dist:
         specifier: 6.4.299
         version: 6.4.299
@@ -282,6 +285,9 @@ importers:
       '@types/proper-lockfile':
         specifier: 4.1.4
         version: 4.1.4
+      smol-toml:
+        specifier: 1.9.0
+        version: 1.9.0
 
   apps/web:
     dependencies:
@@ -383,6 +389,8 @@ importers:
         specifier: 8.3.4
         version: 8.3.4(@types/node@24.19.2)(jiti@2.7.0)(yaml@2.9.1)
 
+  packages/agents: {}
+
   packages/brand:
     devDependencies:
       '@playwright/test':
@@ -399,6 +407,21 @@ packages:
 
   '@antfu/install-pkg@2.1.0':
     resolution: {integrity: sha512-sdg9NxU3zR4Mnawfbc/x6GB5Wf17WYud5qOuEuxXjaKpYpMkISSJEjItGebXJ2bQ4DIcly4NYH23mtkGJjvKUw==}
+
+  '@anthropic-ai/claude-agent-sdk@0.3.312':
+    resolution: {integrity: sha512-Ilj5Agx3ak/Z0UPZNLS7+CTnYMa+Ijf8+FKelh9MKGRwHVYyfvmJgL0fsmooI78SdkZwqjI5a4CwOAsJurdjJA==}
+    engines: {node: '>=18.14.0'}
+    peerDependencies:
+      '@anthropic-ai/sdk': '>=0.93.0'
+      '@modelcontextprotocol/sdk': ^1.29.0
+      zod: ^4.0.0
+    peerDependenciesMeta:
+      '@anthropic-ai/sdk':
+        optional: true
+      '@modelcontextprotocol/sdk':
+        optional: true
+      zod:
+        optional: true
 
   '@axe-core/playwright@4.14.0':
     resolution: {integrity: sha512-SGUhG5PIHd2eMdpgBF2PyQLOhX+qyDR2PT4cmoS4Qk2ak+jX/rrSvst9l0PGv5WTHolKpUMvVmoHpr4cZgf1RQ==}
@@ -715,87 +738,6 @@ packages:
 
   '@napi-rs/canvas@1.0.12':
     resolution: {integrity: sha512-PSwhRdvizfuiSDlhE4Ld2jl/JqkrbSFFyZO0ycamE6mBpf1H0uUF3Tm8yQaVDeAwCNNDzxjRfrN22KmWLTDwcw==}
-    engines: {node: '>= 10'}
-
-  '@napi-rs/keyring-darwin-arm64@2.1.2':
-    resolution: {integrity: sha512-vsInUWUzWS6/WzR/TFNwmdtmwKWjnnR8TOpvZ/pjjxDAkJB/waz37PWzp2b8AFcw1aCcq2aQ7k2vvbLQy8pTrw==}
-    engines: {node: '>= 10'}
-    cpu: [arm64]
-    os: [darwin]
-
-  '@napi-rs/keyring-darwin-x64@2.1.2':
-    resolution: {integrity: sha512-wQihYroaQ3r++R6u5c9Gj0TCw1l1F53LCb5aLOXfVvT4DsnDnpe7p7VGYo4/33bLe0iqVevtAj+ET3yKCtOlJQ==}
-    engines: {node: '>= 10'}
-    cpu: [x64]
-    os: [darwin]
-
-  '@napi-rs/keyring-freebsd-x64@2.1.2':
-    resolution: {integrity: sha512-Ve5ha7MbJsq+4TYyXYiTy4IeZOnYxkBB05uH2+nIrEKBkHmyfHttF814EfWAfoJa63KqBhYRXdYJo0o1WVL2sg==}
-    engines: {node: '>= 10'}
-    cpu: [x64]
-    os: [freebsd]
-
-  '@napi-rs/keyring-linux-arm-gnueabihf@2.1.2':
-    resolution: {integrity: sha512-zxijTnVnTApEyJMjgnLdVQL1g1DAudku/5brrWNDRWj4J0q0nFhUZEtzUA+nY2FvgDjl4s+2YCZYXSTH4TFMUg==}
-    engines: {node: '>= 10'}
-    cpu: [arm]
-    os: [linux]
-
-  '@napi-rs/keyring-linux-arm64-gnu@2.1.2':
-    resolution: {integrity: sha512-PM+SAcl/yGzgGbeeCsKrnlG4T5DBIDjmDqtKm5an1bJz0o0gwSzR3BMiXf04JenkcqascZpdcIReoEvLj0cvCw==}
-    engines: {node: '>= 10'}
-    cpu: [arm64]
-    os: [linux]
-    libc: [glibc]
-
-  '@napi-rs/keyring-linux-arm64-musl@2.1.2':
-    resolution: {integrity: sha512-+ERS9oyInPCALN957cViBDbYJc724/Q+rZ8ZAz4rOHj4B4v0VR4OAWThdYZgZqD54sZVV0MdyX24qva97hYoAQ==}
-    engines: {node: '>= 10'}
-    cpu: [arm64]
-    os: [linux]
-    libc: [musl]
-
-  '@napi-rs/keyring-linux-riscv64-gnu@2.1.2':
-    resolution: {integrity: sha512-pGADtqeT3U1SaFZGjkVsmZVjeNOQx0fr77S+NWszXjZboyaUOLlGKgqG6ssAWzcwxv8uPhKc9Ij17ujNZhSqLw==}
-    engines: {node: '>= 10'}
-    cpu: [riscv64]
-    os: [linux]
-    libc: [glibc]
-
-  '@napi-rs/keyring-linux-x64-gnu@2.1.2':
-    resolution: {integrity: sha512-Fj5TmTnl2oriuCT5DDEYlhgxYes20uGfgOg10LK9PyPVsI8/PQ1m8I4rq/4A5hkrMtY7wvFb70YmX/yPHDYWvQ==}
-    engines: {node: '>= 10'}
-    cpu: [x64]
-    os: [linux]
-    libc: [glibc]
-
-  '@napi-rs/keyring-linux-x64-musl@2.1.2':
-    resolution: {integrity: sha512-C+KhAeU6x2A43FV3dOmMvUraJb8zsC9VZfsunjZ1cgtuAb208TALaUuAY0jThOphXqhyhBJOs2xTCQhOrRkJIw==}
-    engines: {node: '>= 10'}
-    cpu: [x64]
-    os: [linux]
-    libc: [musl]
-
-  '@napi-rs/keyring-win32-arm64-msvc@2.1.2':
-    resolution: {integrity: sha512-kBq80ZZfjXoa5wHG9kgAVhYYjaPOLgHh5ngt7r1ftwFXPXDPXKH7oM2r2j2Q64cs0pVtmodVtn5Q9e6xCwzQUQ==}
-    engines: {node: '>= 10'}
-    cpu: [arm64]
-    os: [win32]
-
-  '@napi-rs/keyring-win32-ia32-msvc@2.1.2':
-    resolution: {integrity: sha512-bhgKvVbWlZ6iR/tmvb2ht6/o0OzarUX9W7hjg+G+eVdGjR1prwtQ9lYo5ZESdn/+zyF1MIFvHkOCGja9YqDcww==}
-    engines: {node: '>= 10'}
-    cpu: [ia32]
-    os: [win32]
-
-  '@napi-rs/keyring-win32-x64-msvc@2.1.2':
-    resolution: {integrity: sha512-yQtFdfuwqM0ezKlYO6r2n44in2LGzd4MC679Ddhvojip3t1hn+q/4I+gJU+cIJQVd5FAZSKNrK4tGfew3UTpAQ==}
-    engines: {node: '>= 10'}
-    cpu: [x64]
-    os: [win32]
-
-  '@napi-rs/keyring@2.1.2':
-    resolution: {integrity: sha512-9i1SR6tYeQ3o1beLeVMxhN6Fq513m9TZlTs+46+4JgvSNkaFoW9S4WrpV5MjzE+0CzVoC+dZ4RfZDIgW6+afnQ==}
     engines: {node: '>= 10'}
 
   '@napi-rs/wasm-runtime@1.2.4':
@@ -2387,9 +2329,6 @@ packages:
     resolution: {integrity: sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==}
     hasBin: true
 
-  jose@6.2.13:
-    resolution: {integrity: sha512-7TIg10ZE1x82YediN+lcrPNvGMKge9yFHQD+Qho/b8y2adfugU3AsvvHfxV0fzyFllT6l9xCjf4RWY9g/Z9PJQ==}
-
   js-tokens@10.0.0:
     resolution: {integrity: sha512-lM/UBzQmfJRo9ABXbPWemivdCW8V2G8FHaHdypQaIy523snUjog0W71ayWXTjiR+ixeMyVHN2XcpnTd/liPg/Q==}
 
@@ -2921,15 +2860,15 @@ packages:
     engines: {node: '>=10'}
     hasBin: true
 
-  seroval-plugins@1.6.8:
-    resolution: {integrity: sha512-N7mWAMydj89EnYTHtRpS3LBrAz3J9O6oVrqpuXuvlAHfAUG8WEKqtbAd7SBiJNY5NfCAFhSdyAh7wI4Shjqy4g==}
-    engines: {node: '>=10'}
+  seroval-plugins@1.7.3:
+    resolution: {integrity: sha512-gKP1jak0eor3KVHRGAyCAFJ9xKXkf97eWruYK5lcDHimsjr23RJGDuO0B8iOU6rvgYvACHpW+krmn3j2+2vxpQ==}
+    engines: {node: '>=20'}
     peerDependencies:
       seroval: ^1.0
 
-  seroval@1.6.8:
-    resolution: {integrity: sha512-HlSgSAkTk4EqHcje1ptJjfZi1YDv5KbhVJ/d3P7T/nAXua2VmDu+AKDX5VTdFfZf48nDkWB2TKYt0DrCSa+3wg==}
-    engines: {node: '>=10'}
+  seroval@1.7.3:
+    resolution: {integrity: sha512-fYkZS/GrMJhj1CW+IDoPlILRmYl5/S9L/OYju/sA2K/HQ3G5JBWDZHxaUWVZV/0hfAC2n1+9ysBRDtqMbMXvzA==}
+    engines: {node: '>=20'}
 
   signal-exit@3.0.7:
     resolution: {integrity: sha512-wnD2ZE+l+SPC/uoS0vXeE9L1+0wuaMqKlfz9AMUo38JsyLSBWSFcHR1Rri62LZc12vLr1gb3jl7iwQhgwpAbGQ==}
@@ -3222,6 +3161,10 @@ snapshots:
     dependencies:
       package-manager-detector: 1.8.0
       tinyexec: 1.3.1
+
+  '@anthropic-ai/claude-agent-sdk@0.3.312(zod@4.6.7)':
+    optionalDependencies:
+      zod: 4.6.7
 
   '@axe-core/playwright@4.14.0(playwright-core@1.64.1)':
     dependencies:
@@ -3553,57 +3496,6 @@ snapshots:
       '@napi-rs/canvas-linux-x64-musl': 1.0.12
       '@napi-rs/canvas-win32-arm64-msvc': 1.0.12
       '@napi-rs/canvas-win32-x64-msvc': 1.0.12
-
-  '@napi-rs/keyring-darwin-arm64@2.1.2':
-    optional: true
-
-  '@napi-rs/keyring-darwin-x64@2.1.2':
-    optional: true
-
-  '@napi-rs/keyring-freebsd-x64@2.1.2':
-    optional: true
-
-  '@napi-rs/keyring-linux-arm-gnueabihf@2.1.2':
-    optional: true
-
-  '@napi-rs/keyring-linux-arm64-gnu@2.1.2':
-    optional: true
-
-  '@napi-rs/keyring-linux-arm64-musl@2.1.2':
-    optional: true
-
-  '@napi-rs/keyring-linux-riscv64-gnu@2.1.2':
-    optional: true
-
-  '@napi-rs/keyring-linux-x64-gnu@2.1.2':
-    optional: true
-
-  '@napi-rs/keyring-linux-x64-musl@2.1.2':
-    optional: true
-
-  '@napi-rs/keyring-win32-arm64-msvc@2.1.2':
-    optional: true
-
-  '@napi-rs/keyring-win32-ia32-msvc@2.1.2':
-    optional: true
-
-  '@napi-rs/keyring-win32-x64-msvc@2.1.2':
-    optional: true
-
-  '@napi-rs/keyring@2.1.2':
-    optionalDependencies:
-      '@napi-rs/keyring-darwin-arm64': 2.1.2
-      '@napi-rs/keyring-darwin-x64': 2.1.2
-      '@napi-rs/keyring-freebsd-x64': 2.1.2
-      '@napi-rs/keyring-linux-arm-gnueabihf': 2.1.2
-      '@napi-rs/keyring-linux-arm64-gnu': 2.1.2
-      '@napi-rs/keyring-linux-arm64-musl': 2.1.2
-      '@napi-rs/keyring-linux-riscv64-gnu': 2.1.2
-      '@napi-rs/keyring-linux-x64-gnu': 2.1.2
-      '@napi-rs/keyring-linux-x64-musl': 2.1.2
-      '@napi-rs/keyring-win32-arm64-msvc': 2.1.2
-      '@napi-rs/keyring-win32-ia32-msvc': 2.1.2
-      '@napi-rs/keyring-win32-x64-msvc': 2.1.2
 
   '@napi-rs/wasm-runtime@1.2.4(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)':
     dependencies:
@@ -4068,8 +3960,8 @@ snapshots:
     dependencies:
       '@tanstack/history': 1.162.5
       cookie-es: 3.1.1
-      seroval: 1.6.8
-      seroval-plugins: 1.6.8(seroval@1.6.8)
+      seroval: 1.7.3
+      seroval-plugins: 1.7.3(seroval@1.7.3)
 
   '@tanstack/store@0.11.2': {}
 
@@ -4772,8 +4664,6 @@ snapshots:
   isbot@5.2.2: {}
 
   jiti@2.7.0: {}
-
-  jose@6.2.13: {}
 
   js-tokens@10.0.0: {}
 
@@ -5602,11 +5492,11 @@ snapshots:
 
   semver@7.8.5: {}
 
-  seroval-plugins@1.6.8(seroval@1.6.8):
+  seroval-plugins@1.7.3(seroval@1.7.3):
     dependencies:
-      seroval: 1.6.8
+      seroval: 1.7.3
 
-  seroval@1.6.8: {}
+  seroval@1.7.3: {}
 
   signal-exit@3.0.7: {}
 

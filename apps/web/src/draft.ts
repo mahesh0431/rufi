@@ -17,6 +17,7 @@ import {
   MAX_REFS,
   Pointer,
   Sent,
+  type WhileReplying,
 } from "@rufi/contracts";
 import type { QueryClient } from "@tanstack/react-query";
 import { Schema } from "effect";
@@ -98,6 +99,8 @@ export interface BoxState {
   loaded: boolean;
   /** A send is on its way: the box can't change meanwhile. */
   sending: boolean;
+  /** A send the core took, by id, until the chat shows it. */
+  accepted: string | null;
   /** A send has no answer yet: appending must wait for it to be resolved. */
   unresolved: boolean;
   /** The last save failed: the text is only in this tab. */
@@ -146,6 +149,7 @@ export function draftBox(api: DraftApi) {
     draft: { text: "", refs: [] },
     loaded: false,
     sending: false,
+    accepted: null,
     unresolved: false,
     failed: false,
     notice: null,
@@ -308,11 +312,11 @@ export function draftBox(api: DraftApi) {
     },
 
     /**
-     * Sends the text: into the running reply, or into the queue.
-     * The box empties when the core took it; a refusal leaves the text with
-     * the reason.
+     * Sends the text; while a reply runs, into it (steer) or after it
+     * (queue). The box empties when the core took it; a refusal leaves the
+     * text with the reason.
      */
-    async submit(): Promise<void> {
+    async submit(kind?: WhileReplying): Promise<void> {
       const state = store.getState();
       const text = state.text.trim();
       if (
@@ -335,11 +339,13 @@ export function draftBox(api: DraftApi) {
               id,
               text,
               refs: pointers(state.refs),
+              ...(kind && { kind }),
             }),
           );
           forget();
           store.setState({
             sending: false,
+            accepted: id,
             draft: sent.draft,
             text: sent.draft.text,
             refs: shown(sent.draft.refs),

@@ -16,8 +16,9 @@ import {
   openWritable,
   type Store,
 } from "../store/database.ts";
-import { chatCaller } from "../tools/tools.ts";
+import { rufiCaller } from "../tools/tools.ts";
 import { readBrief } from "./briefs.ts";
+import { turnScope } from "../../../tests/scope.ts";
 
 const TZ = process.env["TZ"];
 process.env["TZ"] = "Asia/Kolkata";
@@ -51,17 +52,12 @@ beforeEach(async () => {
 });
 
 /** The AI calls one of Rufi's tools in the chat's turn. */
-async function use(
-  tool: string,
-  input: unknown,
-  callId: string,
-  origin: "person" | "rufi" = "person",
-) {
-  const answer = await chatCaller(reader, transcripts, () => undefined)(
-    chat,
-    "t-1",
-    origin,
-  )(tool, input, callId);
+async function use(tool: string, input: unknown, callId: string) {
+  const answer = await rufiCaller(
+    reader,
+    transcripts,
+    () => undefined,
+  )(turnScope(chat, "t-1"))(tool, input, callId);
   return {
     ok: answer.ok,
     body: JSON.parse(answer.text) as Record<string, unknown> & {
@@ -521,19 +517,6 @@ describe("create_brief", () => {
         },
       ],
     );
-    expect(written()).toEqual(before);
-  });
-
-  it("is refused in a turn a Rufi event started", async () => {
-    const before = written();
-    const refused = await use(
-      "create_brief",
-      { markdown: MARKDOWN, record_version: 0, cited: CITED },
-      "brief-1",
-      "rufi",
-    );
-    expect(refused.ok).toBe(false);
-    expect(refused.body["error"]).toContain("started by a Rufi event");
     expect(written()).toEqual(before);
   });
 });

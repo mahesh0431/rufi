@@ -287,7 +287,7 @@ export async function planItems(
       problem(
         `${at}.item`,
         save.item,
-        "This draft is out of date: its page was read again since it was drafted. Read the document again with get_documents and save its new drafts.",
+        "This draft is out of date: its page was read again after the reading it was drafted from. Read the document again with get_documents and save its new drafts.",
       );
       continue;
     }

@@ -5,23 +5,31 @@
 // pass it. It checks what the model is given (Codex's prompt, Rufi's core and
 // skills, the sandbox) and that one thread keeps it across a model change, a
 // Rufi update and a compaction.
+import { execFile } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { openAgentStore } from "@rufi/agents/store";
+import { promisify } from "node:util";
 import { v7 as uuid } from "uuid";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  codexArgs,
   fakeModel,
   type FakeModel,
   type ModelRequest,
   type Step,
 } from "../../tests/fake-model.ts";
+import { keepingLog, noReply } from "../../tests/codex-log.ts";
+import { rufiAiFor } from "../../tests/rufi-ai.ts";
+import { claudeFolder } from "../agent/claude/executable.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
-import { codexRuntime } from "../agent/codex/codex.ts";
+import { codexAdapter, instructionsNote } from "../agent/codex/adapter.ts";
+import { chatAgents } from "../core/chat/agents.ts";
 import { chatQueue } from "../core/chat/queue.ts";
-import { DEFAULT_ALLOWLIST } from "../core/chat/models.ts";
+import { MODELS } from "@rufi/contracts";
 import {
   transcripts as openTranscripts,
   type Transcripts,
@@ -32,29 +40,32 @@ import {
   openWritable,
   type Store,
 } from "../core/store/database.ts";
-import {
-  coreInstructions,
-  rulesNote,
-  rulesVersion,
-} from "../core/chat/instructions.ts";
+import { coreInstructions, rulesVersion } from "../core/chat/instructions.ts";
 import { SKILLS } from "../core/skills/skills.ts";
 import type { ToolSpec } from "../core/tools/registry.ts";
-import { chatCaller, forAgent } from "../core/tools/tools.ts";
+import { rufiCaller, forAgent } from "../core/tools/tools.ts";
+import { agentsPath } from "./agents.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
-import { agentSetup, aiSandbox } from "./core.ts";
+import { subAgents } from "./sub-agents.ts";
+import { tempPath, tempPattern } from "../platform/files.ts";
+import { agentSetup, aiSandbox, coreFile } from "./core.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "./mcp.ts";
 
 let home: string;
+/** The HOME the AI's commands get: a fictional one, never the real. */
+let userHome: string;
 let store: Store;
 let transcripts: Transcripts;
 let model: FakeModel | undefined;
 let chat: Chat | undefined;
+let ai: Awaited<ReturnType<typeof rufiAiFor>> | undefined;
 let served: { port: number; close: () => Promise<void> } | undefined;
 /** What reached Rufi's MCP server over HTTP. */
 let seen: { auth: string | null; origin: string | null; method: string }[];
 
 async function makeRecord(root: string) {
   home = await mkdtemp(join(root, "rufi-capture-"));
+  userHome = await mkdtemp(join(root, "rufi-user-home-"));
   store = openWritable(databasePath(home));
   store.db.exec(`
     INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional');
@@ -71,6 +82,8 @@ beforeEach(async () => {
 afterEach(async () => {
   await chat?.close();
   chat = undefined;
+  await ai?.close();
+  ai = undefined;
   await served?.close();
   served = undefined;
   await model?.close();
@@ -83,16 +96,25 @@ afterEach(async () => {
  * The chat on the real Codex, as the core runs it (again, as after a
  * restart, when it ran); `refuse` breaks its MCP, `update` changes what an
  * update of Rufi would: a tool's description. `model` is the only one
- * allowed; without it, two are.
+ * allowed; without it, two are. `headers` go with every answer of the model.
  */
 async function start(
   script: Step[],
-  options: { refuse?: boolean; update?: string; model?: string } = {},
+  options: {
+    refuse?: boolean;
+    update?: string;
+    model?: string;
+    headers?: Record<string, string>;
+  } = {},
 ) {
   await chat?.close();
+  await ai?.close();
   await served?.close();
   await model?.close();
-  model = await fakeModel({ script });
+  model = await fakeModel({
+    script,
+    ...(options.headers && { headers: options.headers }),
+  });
   const reader = openReadOnly(databasePath(home));
   const log = () => undefined;
   const agentTools = forAgent(
@@ -123,27 +145,33 @@ async function start(
       : endpoint(request);
   });
   port = served.port;
-  const command = {
-    file: await codexBinary(),
-    args: ["-c", `model_providers.openai_chatgpt_plan.base_url="${model.url}"`],
-  };
+  const command = keepingLog(
+    { file: await codexBinary(), args: codexArgs(model.url) },
+    codexLog(),
+  );
+  ai = await rufiAiFor({
+    home,
+    record: store,
+    transcripts,
+    adapter: codexAdapter({
+      home,
+      ...agentSetup(home),
+      command,
+      env: { PATH: process.env["PATH"] ?? "", HOME: userHome },
+      version: "0.0.0",
+      deadlines: { requestMs: 20_000 },
+      log,
+    }),
+    tools: tools.specs.map((spec) => spec.name),
+  });
+  const queue = chatQueue(store);
+  const running = ai;
   chat = openChat({
     transcripts,
-    queue: chatQueue(store),
-    signedIn: () => Promise.resolve(true),
-    agent: (host) =>
-      codexRuntime({
-        home,
-        ...agentSetup(home),
-        command,
-        env: { PATH: process.env["PATH"] ?? "" },
-        token: () => Promise.resolve("not-a-real-token"),
-        version: "0.0.0",
-        deadlines: { requestMs: 20_000, turnMs: 60_000 },
-        host,
-        log,
-      }),
-    allowlist: options.model ? [options.model] : DEFAULT_ALLOWLIST,
+    queue,
+    signIn: () =>
+      Promise.resolve({ state: "signed_in", account: null, text: null }),
+    agent: ai.agent,
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp`, keys },
     rules: (region) => ({
       instructions: coreInstructions(region),
@@ -151,10 +179,35 @@ async function start(
     }),
     tools: {
       specs: tools.specs,
-      caller: chatCaller(reader, transcripts, log),
+      caller: rufiCaller(
+        reader,
+        transcripts,
+        log,
+        undefined,
+        undefined,
+        subAgents({
+          agents: running.agents,
+          kept: chatAgents(store),
+          queue,
+          log,
+          messages: () => {
+            if (!chat) throw new Error("no chat");
+            return chat.queue;
+          },
+          signIn: () =>
+            Promise.resolve({ state: "signed_in", account: null, text: null }),
+          usage: running.usage,
+        }),
+      ),
     },
     log,
   });
+  const row = await transcripts.chat("asha");
+  if (options.model !== undefined && row) {
+    await transcripts.setModel(row, options.model, "codex");
+  }
+  await chat.carryAll();
+  await ai.dispatch();
   return { tools, chat };
 }
 
@@ -190,26 +243,43 @@ const printed = (request: number) =>
     .at(-1) ?? "";
 
 const RUFI_TOOLS = [
+  "mcp__rufi__agent_status",
   "mcp__rufi__create_brief",
   "mcp__rufi__dismiss_items",
   "mcp__rufi__get_documents",
   "mcp__rufi__get_overview",
   "mcp__rufi__get_records",
+  "mcp__rufi__read_agent",
   "mcp__rufi__read_chat",
   "mcp__rufi__save_changes",
+  "mcp__rufi__save_reading",
+  "mcp__rufi__send_agent",
+  "mcp__rufi__set_agent_model",
+  "mcp__rufi__set_reader",
   "mcp__rufi__show_face",
   "mcp__rufi__sort_documents",
+  "mcp__rufi__start_agent",
+  "mcp__rufi__stop_agent",
+  "mcp__rufi__usage",
+  "mcp__rufi__waiting_messages",
 ];
 
+/** Rufi's models that run on Codex. */
+const CODEX_MODELS = MODELS.filter((model) => model.provider === "codex").map(
+  (model) => model.id,
+);
+
 describe("Rufi's tools on the pinned Codex, over MCP", () => {
-  it.each(DEFAULT_ALLOWLIST)(
+  it.each(CODEX_MODELS)(
     "on %s registers over HTTP with the thread's key and no Origin, and the code runner gets every tool with its input typed",
     { timeout: 120_000 },
     async (modelId) => {
       await start(
         [
+          // Codex cuts a long output in the middle: every tool's name, and
+          // only the save's description, whole.
           {
-            exec: `text(JSON.stringify(ALL_TOOLS.filter((t) => t.name.startsWith("mcp__rufi__"))))`,
+            exec: `text(JSON.stringify(ALL_TOOLS.filter((t) => t.name.startsWith("mcp__rufi__")).map((t) => ({ name: t.name, description: t.name === "mcp__rufi__save_changes" ? t.description : "" }))))`,
           },
           { text: "Done." },
         ],
@@ -232,6 +302,15 @@ describe("Rufi's tools on the pinned Codex, over MCP", () => {
         description: string;
       }[];
       expect(offered.map((tool) => tool.name).sort()).toEqual(RUFI_TOOLS);
+      // Rufi's start_agent is the one way to start an agent: none of Codex's.
+      expect(
+        JSON.stringify(
+          model?.requests.map((r) => [
+            r.tools,
+            r.input.filter((item) => item.type === "additional_tools"),
+          ]),
+        ),
+      ).not.toContain("spawn_agent");
       // What the model writes a save from: the declaration, not the schema.
       const save =
         offered
@@ -256,7 +335,7 @@ describe("Rufi's tools on the pinned Codex, over MCP", () => {
   );
 
   it(
-    "binds each call to its reply by the call's own id, shows it in the activity and Based on, and saves with a receipt",
+    "binds each call to its reply by the call's own id, shows it in the activity, and saves with a receipt",
     { timeout: 120_000 },
     async () => {
       await start([
@@ -275,11 +354,19 @@ describe("Rufi's tools on the pinned Codex, over MCP", () => {
       await until(() => turns().some((t) => t["status"] !== "running"));
       expect(printed(1)).toBe("[false,false]");
 
-      const lines = store.db
-        .prepare(
-          "SELECT agent_item_id, text, status FROM transcript_entries WHERE kind = 'activity' ORDER BY seq",
-        )
-        .all() as { agent_item_id: string; text: string; status: string }[];
+      const row = await transcripts.chat("asha");
+      if (!row) throw new Error("no chat");
+      const page = await transcripts.page(row);
+      const lines = await Promise.all(
+        page.entries
+          .filter((entry) => entry.kind === "activity")
+          .map(async (entry) => ({
+            ...entry,
+            details: (await transcripts.details(row, entry.id))?.details as
+              | { id?: string }
+              | undefined,
+          })),
+      );
       const calls = store.db
         .prepare(
           "SELECT call_id, tool, ok, turn_id FROM tool_calls ORDER BY started_at",
@@ -297,19 +384,18 @@ describe("Rufi's tools on the pinned Codex, over MCP", () => {
         ["get_overview", 1, turn?.id],
         ["save_changes", 1, turn?.id],
       ]);
-      // Codex's call id is its item's id: the line and the call are one.
+      // Rufi's id for a call is <agent>/<conversation>/<Codex's call id>,
+      // and Codex's call id is its item's id: the line and the call are one.
+      const item = (callId = "") => callId.split("/").slice(2).join("/");
       for (const call of calls) {
         expect(
-          lines.find((line) => line.agent_item_id === call.call_id),
+          lines.find((line) => line.details?.id === item(call.call_id)),
         ).toMatchObject({ status: "done" });
       }
       expect(
-        lines.find((line) => line.agent_item_id === calls[0]?.call_id)?.text,
+        lines.find((line) => line.details?.id === item(calls[0]?.call_id))
+          ?.text,
       ).toBe("rufi.get_overview");
-
-      const row = await transcripts.chat("asha");
-      if (!row) throw new Error("no chat");
-      const page = await transcripts.page(row);
       expect(
         page.entries
           .filter((entry) => entry.kind === "receipt")
@@ -328,12 +414,12 @@ describe("Rufi's tools on the pinned Codex, over MCP", () => {
       if (!row) throw new Error("no chat");
       const queue = chatQueue(store);
       await until(
-        async () => (await queue.list(row)).items[0]?.held === "failed",
+        async () => (await queue.list(row)).items[0]?.held === "open_failed",
       );
       expect((await queue.list(row)).items).toMatchObject([
         {
           text: "Hello",
-          held: "failed",
+          held: "open_failed",
           heldText:
             "Rufi's tools didn't start for the AI, so it can't reply now. Try again; if it keeps happening, restart Rufi.",
         },
@@ -378,10 +464,20 @@ const threadsUsed = () =>
       .get() as { n: number }
   ).n;
 
+/** Codex's stderr, kept by the test (tests/codex-log.ts). */
+const codexLog = () => join(home, "codex.log");
+
 const replies = async (n: number) => {
   await until(
     () => turns().filter((turn) => turn["status"] !== "running").length >= n,
-  );
+  ).catch(async (error: unknown) => {
+    const row = await transcripts.chat("asha");
+    const waiting = row ? (await chatQueue(store).list(row)).items : [];
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}: ${await noReply(waiting, codexLog())}`,
+      { cause: error },
+    );
+  });
   expect(turns().map((turn) => turn["status"])).toEqual(
     Array<string>(n).fill("completed"),
   );
@@ -412,15 +508,20 @@ describe("What the AI is given, on the pinned Codex", () => {
 
       // The sandbox as Codex tells the model, and its working folder.
       const sandbox = aiSandbox(home);
+      // Each path is in the data folder; some aren't made yet.
       const real = (path: string) =>
-        join(realpathSync(dirname(path)), basename(path));
+        join(realpathSync(home), relative(home, path));
       const permissions =
         given.find((text) => text.startsWith("<permissions instructions>")) ??
         "";
       expect(permissions).toContain("Network access is enabled.");
       expect(permissions).toContain(real(sandbox.folder));
       for (const path of sandbox.unreadable) {
-        expect(permissions).toContain(`- path \`${real(path)}\``);
+        expect(permissions).toContain(
+          path.includes("*")
+            ? `- glob \`${path}\``
+            : `- path \`${real(path)}\``,
+        );
       }
       const environment = (model?.requests[0]?.input ?? [])
         .flatMap((item) => item.content ?? [])
@@ -468,7 +569,9 @@ describe("What the AI is given, on the pinned Codex", () => {
 
 /** The developer messages that say Rufi's rules changed, whole. */
 const notes = (request: ModelRequest | undefined) =>
-  developer(request).filter((text) => text.startsWith("Rufi's rules changed."));
+  developer(request).filter((text) =>
+    text.startsWith("Your instructions, given again"),
+  );
 
 describe("The context a chat's thread used, on the pinned Codex", () => {
   it(
@@ -485,6 +588,89 @@ describe("The context a chat's thread used, on the pinned Codex", () => {
       const context = (await transcripts.chat("asha"))?.context;
       expect(context?.tokens).toBe(1_234);
       expect(context?.window).toBeGreaterThan(1_234);
+    },
+  );
+});
+
+describe("The plan's usage, on the pinned Codex", () => {
+  it(
+    "is each window Codex read from the model's answers, and each turn's tokens, as Codex counted them",
+    { timeout: 120_000 },
+    async () => {
+      await start(
+        [
+          { text: "One.", tokens: 1_234 },
+          { text: "Two.", tokens: 2_345 },
+          {
+            exec: [
+              "const usage = await tools.mcp__rufi__usage({});",
+              'const read = await tools.mcp__rufi__read_agent({ agent: "self" });',
+              "text(JSON.stringify([usage.isError ?? false, read.isError ?? false]));",
+            ].join("\n"),
+          },
+          { text: "Plenty." },
+        ],
+        {
+          // As OpenAI's answers carry the plan's limits, for Codex to read.
+          headers: {
+            "x-codex-primary-used-percent": "42",
+            "x-codex-primary-window-minutes": "300",
+            "x-codex-primary-reset-at": "1793448000",
+            "x-codex-secondary-used-percent": "18",
+            "x-codex-secondary-window-minutes": "10080",
+            "x-codex-secondary-reset-at": "1793923200",
+          },
+        },
+      );
+      await say("first");
+      await replies(1);
+      await say("second");
+      await replies(2);
+      await say("How much of my plan is left?");
+      await replies(3);
+      expect(printed(3)).toBe("[false,false]");
+
+      const answer = (tool: string) =>
+        JSON.parse(
+          (
+            store.db
+              .prepare("SELECT answer FROM tool_calls WHERE tool = ?")
+              .get(tool) as { answer: string }
+          ).answer,
+        ) as unknown;
+      expect(answer("usage")).toEqual({
+        ok: true,
+        result: {
+          yours: "codex",
+          providers: [
+            {
+              provider: "codex",
+              windows: [
+                {
+                  minutes: 300,
+                  used_percent: 42,
+                  resets_at: "2026-10-31T12:00:00.000Z",
+                },
+                {
+                  minutes: 10_080,
+                  used_percent: 18,
+                  resets_at: "2026-11-06T00:00:00.000Z",
+                },
+              ],
+            },
+          ],
+        },
+      });
+      // Each turn alone, not the thread's total so far; the running one has
+      // none yet.
+      const read = answer("read_agent") as {
+        result: { turns: { used?: unknown }[] };
+      };
+      expect(read.result.turns.map((turn) => turn.used)).toEqual([
+        { input: 1_233, cached: 0, output: 1 },
+        { input: 2_344, cached: 0, output: 1 },
+        undefined,
+      ]);
     },
   );
 });
@@ -548,7 +734,7 @@ describe("How a change of Rufi's rules reaches the AI, on the pinned Codex", () 
       // The thread is open: Rufi lets it go, picks it up with the new rules
       // and adds the note; the next request has it, whole.
       await make();
-      const note = rulesNote(coreInstructions(region));
+      const note = instructionsNote(coreInstructions(region));
       model?.script.push({ text: "Two." });
       await say("second");
       await replies(2);
@@ -556,12 +742,13 @@ describe("How a change of Rufi's rules reaches the AI, on the pinned Codex", () 
       expect(notes(answering().at(-1))).toEqual([note]);
       expect(userWords(answering().at(-1))).toEqual(["first", "second"]);
 
-      // Rufi starts again: the thread is picked up cold and keeps the note.
+      // Rufi starts again: the thread is picked up cold, keeps the note and
+      // is given its rules again.
       await start([{ text: "Three.", tokens: OVER_LIMIT }]);
       await say("third");
       await replies(3);
       expect(model?.requests.length).toBe(answering().length);
-      expect(notes(answering().at(-1))).toEqual([note]);
+      expect(notes(answering().at(-1))).toEqual([note, note]);
 
       // The answer was over the limit: Codex compacts, and the request after
       // it starts from the new rules.
@@ -605,7 +792,7 @@ describe("How a change of Rufi's rules reaches the AI, on the pinned Codex", () 
       await opened.chat.queue.recover(row, held.id, held.holdId, "retry");
       await replies(2);
       expect(notes(answering().at(-1))).toEqual([
-        rulesNote(coreInstructions("IN")),
+        instructionsNote(coreInstructions("IN")),
       ]);
       expect(threadsUsed()).toBe(1);
     },
@@ -620,6 +807,25 @@ interface Ran {
 }
 
 /** An exec step that runs each command in the AI's folder and prints all. */
+/**
+ * Reads each process's arguments and environment, as any of the user's
+ * programs can (sysctl KERN_PROCARGS2), and prints, for each, which of the
+ * named values it holds; nothing else of them leaves the command.
+ */
+const PROCARGS = `import ctypes, json, sys
+libc = ctypes.CDLL(None)
+values = json.load(open(sys.argv[1]))
+for pid in map(int, sys.argv[2:]):
+    mib = (ctypes.c_int * 3)(1, 49, pid)
+    size = ctypes.c_size_t(1 << 20)
+    buf = ctypes.create_string_buffer(size.value)
+    if libc.sysctl(mib, 3, buf, ctypes.byref(size), None, 0) != 0:
+        print(pid, "unreadable")
+        continue
+    raw = buf.raw[: size.value]
+    print(pid, "read", *sorted(n for n, v in values.items() if v.encode() in raw))
+`;
+
 const commands = (cmds: readonly string[]): Step => ({
   exec: [
     `const cmds = ${JSON.stringify(cmds)};`,
@@ -653,25 +859,25 @@ describe("What a person sees of the AI's steps, on the pinned Codex", () => {
       ]);
       await say("Hi.");
       await replies(1);
-      const lines = store.db
-        .prepare(
-          "SELECT activity, text, detail, status, details FROM transcript_entries WHERE kind = 'activity' ORDER BY seq",
-        )
-        .all() as {
-        activity: string;
-        text: string;
-        detail: string | null;
-        status: string;
-        details: string | null;
-      }[];
+      const row = await transcripts.chat("asha");
+      if (!row) throw new Error("No fictional chat.");
+      const page = await transcripts.page(row);
+      // As the screens get them; everything else when a line opens.
+      const lines = await Promise.all(
+        page.entries
+          .filter((entry) => entry.kind === "activity")
+          .map(async (entry) => ({
+            ...entry,
+            details: (await transcripts.details(row, entry.id))?.details as
+              | { command: string; exitCode: number }
+              | undefined,
+          })),
+      );
       const commandLines = lines.filter((line) => line.activity === "command");
       expect(commandLines).toHaveLength(3);
       for (const line of commandLines) {
         // The command and exit code as Codex gave them, nothing cut.
-        const item = JSON.parse(line.details ?? "{}") as {
-          command: string;
-          exitCode: number;
-        };
+        const item = line.details ?? { command: "", exitCode: -1 };
         expect(line.text).toBe(item.command);
         expect(line.detail).toBe(`exit ${String(item.exitCode)}`);
       }
@@ -690,9 +896,6 @@ describe("What a person sees of the AI's steps, on the pinned Codex", () => {
         ["note", "I'll read the results skill first.", null, "done"],
         ["tool", "rufi.get_records", '{"kind":"result"}', "done"],
       ]);
-      const row = await transcripts.chat("asha");
-      if (!row) throw new Error("No fictional chat.");
-      const page = await transcripts.page(row);
       expect(
         page.entries
           .filter((entry) => entry.kind === "reply")
@@ -717,27 +920,89 @@ describe.runIf(process.platform === "darwin")(
           await rm(home, { recursive: true, force: true });
           await makeRecord(root);
         }
+        // The agent database, open as the core keeps it.
+        const agentStore = openAgentStore(agentsPath(home));
         // Outside both the AI's folder and all temp roots. Prove that a
         // refusal isn't just the Mac's ordinary file permissions.
         const outsideRoot = await mkdtemp("/Users/Shared/rufi-canary-");
+        // What a command reads of Rufi's processes, and how.
+        const probe = await mkdtemp(join(tmpdir(), "rufi-canary-procargs-"));
         const outside = join(outsideRoot, "outside.txt");
         try {
           await writeFile(outside, "the test process can write here");
           await rm(outside);
           const { folder, unreadable } = aiSandbox(home);
-          // Each way in, there to be read (the database is in WAL mode).
+          // Each way in, there to be read (the databases are in WAL mode).
           await mkdir(join(home, "backups"), { recursive: true });
           await writeFile(join(home, "backups", "copy.sqlite"), "a copy");
           await writeFile(join(home, "core.json"), '{"launcher":"secret"}');
+          // Its temp copy, as it is written.
+          const copy = tempPath(coreFile(home));
+          await writeFile(copy, '{"launcher":"secret"}');
+          // Codex's sign-in, and a file in Claude's folder.
+          const signInKey = `fictional-${uuid()}`;
+          const claudeFile = join(claudeFolder(home), ".claude.json");
+          await mkdir(join(home, "codex"), { recursive: true });
+          await writeFile(
+            join(home, "codex", "auth.json"),
+            JSON.stringify({ OPENAI_API_KEY: signInKey }),
+          );
+          await mkdir(dirname(claudeFile), { recursive: true });
+          await writeFile(claudeFile, JSON.stringify({ fictional: true }));
+          // A fictional keychain in the commands' fictional HOME.
+          const keychain = join(
+            userHome,
+            "Library",
+            "Keychains",
+            "login.keychain-db",
+          );
+          await mkdir(dirname(keychain), { recursive: true });
+          await writeFile(keychain, "a fictional keychain");
           expect(existsSync(`${databasePath(home)}-wal`)).toBe(true);
+          expect(existsSync(`${agentsPath(home)}-wal`)).toBe(true);
           const skill = join(home, "codex", "skills", "analysis", "SKILL.md");
           const q = (path: string) => JSON.stringify(path);
-          // Each one that is there now; a journal isn't, in WAL mode.
+          // Each one that is there now, with the backup's copy, core.json's
+          // temp copy and the file in Claude's folder; neither database has
+          // a journal, in WAL mode.
           const journal = `${databasePath(home)}-journal`;
-          const denied = [...unreadable, join(home, "backups", "copy.sqlite")]
+          const denied = [
+            ...unreadable.map((path) =>
+              path === tempPattern(coreFile(home)) ? copy : path,
+            ),
+            join(home, "backups", "copy.sqlite"),
+            claudeFile,
+            keychain,
+          ]
             .filter((path) => existsSync(path))
             .map((path) => `cat ${q(path)}`);
-          expect(denied).toHaveLength(unreadable.length);
+          // No journals (two), and the backup's copy, Claude's file and the
+          // keychain.
+          expect(denied).toHaveLength(unreadable.length - 2 + 3);
+          // What a command reads of Rufi's processes: Rufi's own and the
+          // Codex it runs now, each with a value it surely holds.
+          await writeFile(join(probe, "procargs.py"), PROCARGS);
+          let codexChecked = 0;
+          const processes = async () => {
+            const { stdout } = await promisify(execFile)("ps", [
+              "-A",
+              "-o",
+              "pid=,ppid=,command=",
+            ]);
+            const codex = stdout
+              .split("\n")
+              .map((line) => /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line))
+              .filter(
+                (match) =>
+                  match?.[2] === String(process.pid) &&
+                  match[3]?.includes("app-server"),
+              )
+              .map((match) => ({
+                pid: Number(match?.[1]),
+                holds: join(home, "codex"),
+              }));
+            return [{ pid: process.pid, holds: process.execPath }, ...codex];
+          };
           const others = (url: string) => ({
             outside: `echo no > ${q(outside)}`,
             journal: `echo no > ${q(journal)}`,
@@ -756,9 +1021,30 @@ describe.runIf(process.platform === "darwin")(
           const run = async (n: number, text: string) => {
             const url = model?.url ?? "";
             const named = others(url);
-            model?.script.push(commands([...denied, ...Object.values(named)]), {
-              text: "Ran.",
-            });
+            // Every secret so far: Codex's sign-in and Rufi's MCP keys.
+            const watched = await processes();
+            const secrets = [
+              signInKey,
+              ...seen.flatMap((r) => r.auth?.replace("Bearer ", "") ?? []),
+            ];
+            await writeFile(
+              join(probe, "values.json"),
+              JSON.stringify({
+                ...Object.fromEntries(
+                  secrets.map((value, i) => [`secret-${String(i)}`, value]),
+                ),
+                ...Object.fromEntries(
+                  watched.map((p) => [`holds-${String(p.pid)}`, p.holds]),
+                ),
+              }),
+            );
+            const readOthers = `/usr/bin/python3 -I ${q(join(probe, "procargs.py"))} ${q(join(probe, "values.json"))} ${watched.map((p) => String(p.pid)).join(" ")}`;
+            model?.script.push(
+              commands([...denied, ...Object.values(named), readOthers]),
+              {
+                text: "Ran.",
+              },
+            );
             await say(text);
             await replies(n);
             const output = answering()
@@ -787,12 +1073,28 @@ describe.runIf(process.platform === "darwin")(
             const key = (seen.at(-1)?.auth ?? "").replace("Bearer ", "");
             expect(key).not.toBe("");
             expect(env).toContain("PATH=");
-            expect(env).not.toMatch(/TOKEN|not-a-real-token/);
+            expect(env).not.toMatch(/TOKEN|OPENAI_API_KEY/);
+            expect(env).not.toContain(signInKey);
             expect(env).not.toContain(key);
             expect(by(named.cache)?.output).toBe(
               `yes\nyes\n${join(folder, ".cache")}\n`,
             );
             expect(by(named.network)?.output).toBe("404");
+            // The Mac lets a command read another process's arguments and
+            // environment: each one it read holds its own value, and none
+            // of Rufi's secrets.
+            // Only its answer lines: the Mac's python3 may warn first.
+            expect(
+              (by(readOthers)?.output ?? "")
+                .split("\n")
+                .filter((line) => /^\d+ /.test(line))
+                .sort(),
+            ).toEqual(
+              watched
+                .map((p) => `${String(p.pid)} read holds-${String(p.pid)}`)
+                .sort(),
+            );
+            codexChecked += watched.length - 1;
           };
 
           const opened = await start([]);
@@ -810,8 +1112,12 @@ describe.runIf(process.platform === "darwin")(
           await transcripts.saveSetting("emergency_region", "IN");
           await run(4, "After reloading the rules.");
           expect(threadsUsed()).toBe(1);
+          // Codex was running for some of the runs.
+          expect(codexChecked).toBeGreaterThan(0);
         } finally {
+          agentStore.close();
           await rm(outsideRoot, { recursive: true, force: true });
+          await rm(probe, { recursive: true, force: true });
         }
       },
     );

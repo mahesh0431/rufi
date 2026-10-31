@@ -55,11 +55,12 @@ jobs:
       - run: pnpm exec playwright install chromium --with-deps
       # The Rufi app's tests: Electron's binary (it has no install script),
       # Chromium's sandbox (Ubuntu allows it only with user namespaces) and a
-      # virtual display.
+      # virtual display that never resets. By default it resets when its last
+      # app closes, and an app that opens just then can't reach it.
       - run: pnpm --filter @rufi/desktop exec install-electron
       - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: pnpm --filter @rufi/web build
-      - run: xvfb-run --auto-servernum pnpm exec playwright test --shard=${{ matrix.shard }}/3
+      - run: xvfb-run --auto-servernum --server-args="-screen 0 1280x1024x24 -noreset" pnpm exec playwright test --shard=${{ matrix.shard }}/3
 
   # The tests that run only on a Mac and skip on Ubuntu: the AI's sandbox
   # canary on the pinned Codex, and the app icon.

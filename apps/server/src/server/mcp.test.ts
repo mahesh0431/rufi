@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   callTool,
+  codexMeta,
   initialize,
   listResources,
   listTools,
@@ -40,15 +41,15 @@ let calls: McpCall[];
 let answer: (call: McpCall) => Promise<ToolAnswer>;
 let refused: string[];
 let chatKeys: ReturnType<typeof mcpKeys>;
-let readerKeys: ReturnType<typeof mcpKeys>;
 let served: { port: number; close: () => Promise<void> };
+let working: Set<Promise<unknown>>;
 
 beforeEach(async () => {
   calls = [];
   refused = [];
   answer = () => Promise.resolve({ ok: true, text: '{"ok":true}' });
   chatKeys = mcpKeys();
-  readerKeys = mcpKeys();
+  working = new Set();
   let port = 0;
   const log = (event: string, fields?: { reason?: unknown }) => {
     if (event === "mcp.refused") refused.push(String(fields?.reason));
@@ -58,13 +59,9 @@ beforeEach(async () => {
     port: () => port,
     log,
     toolMs: 300,
+    working,
   });
-  const reader = mcpEndpoint({ keys: readerKeys, port: () => port, log });
-  served = await serveMcp((request) =>
-    new URL(request.url).pathname === "/mcp/reader"
-      ? reader(request)
-      : chat(request),
-  );
+  served = await serveMcp(chat);
   port = served.port;
 });
 afterEach(async () => {
@@ -94,7 +91,7 @@ const call = (server: McpServerConfig, name = "get_overview") =>
   });
 
 describe("Rufi's MCP endpoints", () => {
-  it("serves a key's tools to a client with no Origin, and passes on the call's id, thread and turn", async () => {
+  it("serves a key's tools to a client with no Origin, and passes on the call's _meta as it came", async () => {
     const server = at(chatKeys.issue(scope()));
     const started = await initialize(server);
     expect(started.result).toMatchObject({
@@ -131,26 +128,26 @@ describe("Rufi's MCP endpoints", () => {
       {
         tool: "get_overview",
         input: {},
-        callId: "call-1",
-        threadId: "thread-1",
-        turnId: "turn-1",
+        meta: codexMeta({
+          callId: "call-1",
+          threadId: "thread-1",
+          turnId: "turn-1",
+        }),
+        signal: expect.any(AbortSignal) as AbortSignal,
       },
     ]);
   });
 
-  it("refuses a request without a key, with a wrong or revoked one, and with another endpoint's", async () => {
+  it("refuses a request without a key, and with a wrong or revoked one", async () => {
     const key = chatKeys.issue(scope());
-    const readerKey = readerKeys.issue(scope());
     const url = `http://127.0.0.1:${String(served.port)}/mcp`;
     expect((await initialize({ url })).status).toBe(401);
     expect((await initialize(at("not-a-key"))).status).toBe(401);
-    expect((await initialize(at(readerKey))).status).toBe(401);
-    expect((await initialize(at(key, "/mcp/reader"))).status).toBe(401);
-    expect((await initialize(at(readerKey, "/mcp/reader"))).status).toBe(200);
+    expect((await initialize(at(key))).status).toBe(200);
     chatKeys.revoke(key);
     expect((await call(at(key))).status).toBe(401);
     expect(calls).toEqual([]);
-    expect(refused).toEqual(["key", "key", "key", "key", "key"]);
+    expect(refused).toEqual(["key", "key", "key"]);
   });
 
   it("refuses a request from a web page or another address, even with the key", async () => {
@@ -191,12 +188,10 @@ describe("Rufi's MCP endpoints", () => {
     });
   });
 
-  it("tells the agent a call took too long, within the deadline", async () => {
+  it("tells the agent a call took too long, within the deadline, and keeps the call in the work Rufi finishes before it stops until it ends", async () => {
     const server = at(chatKeys.issue(scope()));
-    answer = () =>
-      new Promise((resolve) =>
-        setTimeout(resolve, 2_000, { ok: true, text: "late" }),
-      );
+    const late = Promise.withResolvers<ToolAnswer>();
+    answer = () => late.promise;
     expect((await call(server)).result).toEqual({
       content: [
         {
@@ -206,6 +201,11 @@ describe("Rufi's MCP endpoints", () => {
       ],
       isError: true,
     });
+    // Its answer is long given; the call itself still runs.
+    expect(working.size).toBe(1);
+    late.resolve({ ok: true, text: "late" });
+    await Promise.allSettled(working);
+    expect(working.size).toBe(0);
   });
   it("offers each skill and the files beside it to read, the paper as CSS byte for byte", async () => {
     let port = 0;

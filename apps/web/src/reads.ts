@@ -5,7 +5,6 @@ import {
   Backups,
   DataFolder,
   FirstRun,
-  Models,
   People,
   Settings,
   Status,
@@ -17,6 +16,8 @@ import {
   FollowUps,
   type PageKind,
   Overview,
+  Profile,
+  type SaveProfile,
   RecordDetail,
   RecordPage,
   type ResultCategory,
@@ -189,6 +190,49 @@ export const useRecordPages = (personId: string, kind: PageKind) =>
   });
 
 /** One record opened: its sources, its history and its versions. */
+/** The person's profile, with its history; a save in the chat refreshes it. */
+export const useProfile = (personId: string) =>
+  useQuery({
+    queryKey: ["record", personId, "profile"],
+    queryFn: () =>
+      read(
+        Profile,
+        "GET",
+        `/api/people/${encodeURIComponent(personId)}/profile`,
+      ),
+  });
+
+/** The other open pages of this browser or app, told when a profile changes. */
+const profileChanged = new BroadcastChannel("rufi.profile");
+profileChanged.addEventListener("message", (event: MessageEvent<string>) => {
+  void queries.invalidateQueries({ queryKey: ["record", event.data] });
+  void queries.invalidateQueries({ queryKey: ["overview", event.data] });
+  // The name is the sidebar's too.
+  void queries.invalidateQueries({ queryKey: ["people"] });
+});
+
+/**
+ * Saves what the person entered in the profile's form: this page and every
+ * other open one show it, and Overview's latest saves too.
+ */
+export async function saveProfile(
+  personId: string,
+  input: typeof SaveProfile.Type,
+): Promise<Profile> {
+  const saved = await read(
+    Profile,
+    "PUT",
+    `/api/people/${encodeURIComponent(personId)}/profile`,
+    input,
+  );
+  await queries.cancelQueries({ queryKey: ["record", personId, "profile"] });
+  queries.setQueryData(["record", personId, "profile"], saved);
+  void queries.invalidateQueries({ queryKey: ["overview", personId] });
+  void queries.invalidateQueries({ queryKey: ["people"] });
+  profileChanged.postMessage(personId);
+  return saved;
+}
+
 export const useRecordDetail = (personId: string, kind: string, id: string) =>
   useQuery({
     queryKey: ["record", personId, kind, id],
@@ -218,13 +262,6 @@ export const useSeries = (
         "GET",
         `${personPath(personId)}/series?${new URLSearchParams({ test, ...(unit !== undefined && { unit }), category }).toString()}`,
       ),
-  });
-
-/** The models a chat can use; asks the AI, so it can fail. */
-export const useModels = () =>
-  useQuery({
-    queryKey: ["models"],
-    queryFn: () => read(Models, "GET", "/api/models"),
   });
 
 /** A person's documents, newest first; looked at again while one is read. */

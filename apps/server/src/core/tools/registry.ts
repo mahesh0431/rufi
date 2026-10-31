@@ -4,10 +4,24 @@ import { Result, Schema, SchemaIssue } from "effect";
 import { errorCode, type Log } from "../../platform/logs.ts";
 import type { BriefInput, Made } from "../briefs/briefs.ts";
 import type { Pages } from "../documents/pages.ts";
+import type { SetReaderInput } from "../documents/readers.ts";
+import type {
+  SaveReadingAnswer,
+  SaveReadingInput,
+} from "../documents/save-reading.ts";
 import type { SortAnswer, SortInput } from "../documents/sorting.ts";
 import type { DismissInput, Dismissed } from "../record/items.ts";
 import type { SaveRequest, Saved } from "../record/save.ts";
 import type { Store } from "../store/database.ts";
+import type {
+  AgentStatusInput,
+  ReadAgentInput,
+  SendAgentInput,
+  SetAgentModelInput,
+  StartAgentInput,
+  StopAgentInput,
+  WaitingMessagesInput,
+} from "./agents.ts";
 
 /** What a tool gets from Rufi, never from the model. */
 export interface ToolContext {
@@ -44,6 +58,40 @@ export interface ToolContext {
     | undefined;
   /** Makes a visit brief with its line: only in Rufi's own chat. */
   brief?: ((input: BriefInput, callId: string) => Promise<Made>) | undefined;
+  /** Saves a whole reading (save_reading): only in Rufi's own chat. */
+  saveReading?:
+    | ((input: SaveReadingInput, callId: string) => Promise<SaveReadingAnswer>)
+    | undefined;
+  /** Sets the agent that reads documents (set_reader): only in Rufi's own chat. */
+  setReader?:
+    | ((input: SetReaderInput, callId: string) => Promise<unknown>)
+    | undefined;
+  /** What the calling agent does with agents: only in Rufi's own chat. */
+  agents?: AgentTools | undefined;
+}
+
+/** The calling agent's agents (core/tools/agents.ts). */
+export interface AgentTools {
+  /** A child of the caller, started by this call: its id is the call's. */
+  start: (input: StartAgentInput, callId: string) => Promise<unknown>;
+  /** The agents below the caller, as they are now. */
+  status: (input: AgentStatusInput) => unknown;
+  /** A message from the caller to an agent below it, or to its parent. */
+  send: (input: SendAgentInput, callId: string) => unknown;
+  /** A page of the conversation of an agent in the caller's chat. */
+  read: (input: ReadAgentInput) => Promise<unknown>;
+  /** Stops an agent below the caller, or itself; with children, all below it too. */
+  stop: (input: StopAgentInput) => unknown;
+  /** Whether an agent is in the caller's chat. */
+  inChat: (agent: string) => boolean;
+  /** Whether an agent is at work: not yet run, running or going on. */
+  runs: (agent: string) => boolean;
+  /** What waits for the caller and the agents below it: listed or changed. */
+  waiting: (input: WaitingMessagesInput) => Promise<unknown>;
+  /** An idle agent below the caller, on another model from its next turn. */
+  setModel: (input: SetAgentModelInput) => Promise<unknown>;
+  /** Each provider's usage now and when its limits reset, as it reported them. */
+  usage: () => Promise<unknown>;
 }
 
 /** A tool's input: decoded without services, like JSON. */
@@ -102,16 +150,17 @@ export class WithImage {
   }
 }
 
-/** One answer for the agent; `stopTurn` says Rufi should end the turn. */
+/** One answer for the agent. */
 export interface ToolAnswer {
   ok: boolean;
   /** JSON, for the model. */
   text: string;
   /** Images the model sees after the text, in base64. Never stored. */
   images?: readonly { mimeType: string; data: string }[];
-  stopTurn?: string;
   /** Kept already, with what the call changed: the chat keeps it no more. */
   kept?: true;
+  /** What the chat keeps of the call, when not the call as it came. */
+  keep?: { input: unknown; answer: { ok: boolean; text: string } };
 }
 
 /** A tool as an agent is told about it. */
@@ -131,49 +180,36 @@ export const specOf = (tool: Tool): ToolSpec => ({
   destructive: tool.destructive,
 });
 
-/** Rejections a turn may have before Rufi stops it, so the model can't loop. */
-export const REJECTIONS_PER_TURN = 3;
+/** A tool's result as the answer the AI gets. */
+export const answerOf = (result: unknown): ToolAnswer => ({
+  ok: true,
+  text: JSON.stringify({ ok: true, result }),
+});
 
 /**
- * A caller for one turn. Bad input, an unknown tool and a refusal each come
- * back as the error envelope and use up one of the turn's `rejections`: a
- * number, or a setting read at the turn's first refusal.
+ * The caller of some tools. Bad input, an unknown tool and a refusal each
+ * come back as the error envelope; what the AI does next is its call.
  */
 export function toolCaller(
   tools: readonly Tool[],
   context: () => ToolContext,
   log: Log,
-  rejections: number | (() => Promise<number>) = REJECTIONS_PER_TURN,
-): (name: string, input: unknown, callId?: string) => Promise<ToolAnswer> {
-  // Counted as each refusal comes, before any wait: refusals made at the
-  // same time each use one. The limit is read once, at the first.
-  let refused = 0;
-  let limit: Promise<number> | undefined;
-  const reject = async (
+): (
+  name: string,
+  input: unknown,
+  callId?: string,
+  /** What this call alone runs with, over the turn's context. */
+  own?: Partial<ToolContext>,
+) => Promise<ToolAnswer> {
+  const reject = (
     error: string,
     issues: Issue[] = [],
     example?: unknown,
-  ): Promise<ToolAnswer> => {
-    const count = ++refused;
-    limit ??= Promise.resolve(
-      typeof rejections === "number" ? rejections : rejections(),
-    );
-    const left = Math.max(0, (await limit) - count);
-    return {
-      ok: false,
-      text: JSON.stringify({
-        ok: false,
-        error,
-        issues,
-        example,
-        rejections_left: left,
-      }),
-      ...(left === 0 && {
-        stopTurn: "The AI kept making requests Rufi couldn't accept.",
-      }),
-    };
-  };
-  return async (name, input, callId) => {
+  ): ToolAnswer => ({
+    ok: false,
+    text: JSON.stringify({ ok: false, error, issues, example }),
+  });
+  return async (name, input, callId, own) => {
     const tool = tools.find(
       (candidate) => candidate.name === name && candidate.callers !== "ui",
     );
@@ -194,6 +230,7 @@ export function toolCaller(
     try {
       const result: unknown = await tool.run(parsed.success, {
         ...context(),
+        ...own,
         callId,
       });
       if (result instanceof WithImage) {
@@ -209,7 +246,7 @@ export function toolCaller(
           ],
         };
       }
-      return { ok: true, text: JSON.stringify({ ok: true, result }) };
+      return answerOf(result);
     } catch (error) {
       if (error instanceof Refusal) return reject(error.message, error.issues);
       // The model only learns it failed; the log gets the tool and the error's code.

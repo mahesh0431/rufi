@@ -2,7 +2,8 @@
 // Its original, its pages' images and text, the reader's work, its readings
 // and its draft items go; its row and its pages' names and positions stay as
 // a tombstone, so the history, the sources and the chat that point at it
-// still read and say "document deleted". The record never changes here
+// still read and say "document deleted", and the AI's notes on it go from
+// its working folder (store/work.ts). The record never changes here
 // (ADR 0005): records saved from it stay, or, when the person chose so, the
 // AI goes through them with the person in the chat to remove them. The
 // database part is one transaction with its Rufi event, whose note tells
@@ -16,6 +17,7 @@ import { kindNamed, type Row } from "../record/kinds.ts";
 import { errorCode, type Log } from "../../platform/logs.ts";
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
+import { removeNotes } from "../store/work.ts";
 import { Refusal } from "../tools/registry.ts";
 import type { FileGate } from "./gate.ts";
 import { removeBytes, sweepBytes } from "./originals.ts";
@@ -311,8 +313,6 @@ export function deletions(deps: {
   gate: FileGate;
   /** Writes the delete's Rufi event, with the delete, in one transaction. */
   event: WriteEvent;
-  /** Stops the reader's run when it reads this document. */
-  stopReading: (documentId: string) => void;
   /** Tells the person's screens their documents changed. */
   changed: (personId: string) => void;
   log: Log;
@@ -423,6 +423,8 @@ export function deletions(deps: {
       const choice = before.saved.length > 0 ? saved : undefined;
       if (before.saved.length > 0 && choice === undefined) throw new NoChoice();
       let files: string[] = [];
+      // Its notes, and its add's: a split document was read with its add.
+      let notes = [documentId];
       await deps.event(
         personId,
         {
@@ -506,6 +508,7 @@ export function deletions(deps: {
           // the add): it stays while they do, and goes with the last of
           // them.
           const root = await addOf(trx, personId, documentId);
+          if (root && root.id !== documentId) notes = [documentId, root.id];
           const gone = trx
             .selectFrom("jobs as j")
             .select("j.id")
@@ -551,10 +554,13 @@ export function deletions(deps: {
           return changed;
         },
       );
-      deps.stopReading(documentId);
       deps.changed(personId);
-      // The document is deleted; bytes left behind go at the next start.
+      // The document is deleted; bytes and notes left behind go at the
+      // next start.
       await removeUnused(files).catch((error: unknown) => {
+        deps.log("documents.cleanup_failed", { error: errorCode(error) });
+      });
+      await removeNotes(deps.home, notes).catch((error: unknown) => {
         deps.log("documents.cleanup_failed", { error: errorCode(error) });
       });
     },

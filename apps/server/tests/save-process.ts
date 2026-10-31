@@ -4,7 +4,8 @@
 // The chat's person must have said "I have a headache" in its turn t-1.
 import { transcripts as openTranscripts } from "../src/core/chat/transcript.ts";
 import { openReadOnly, openWritable } from "../src/core/store/database.ts";
-import { chatCaller } from "../src/core/tools/tools.ts";
+import { rufiCaller } from "../src/core/tools/tools.ts";
+import { turnScope } from "./scope.ts";
 
 const [path = "", chatId = "", when = ""] = process.argv.slice(2);
 const store = openWritable(path);
@@ -31,11 +32,11 @@ const row = await store.query
   .executeTakeFirstOrThrow();
 const chat = await transcripts.chat(row.person_id);
 if (!chat) throw new Error("no chat");
-await chatCaller(openReadOnly(path), transcripts, () => undefined)(
-  chat,
-  "t-1",
-  "person",
-)(
+await rufiCaller(
+  openReadOnly(path),
+  transcripts,
+  () => undefined,
+)(turnScope(chat, "t-1"))(
   "save_changes",
   {
     changes: [

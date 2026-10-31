@@ -1,6 +1,8 @@
 // Rufi's Codex settings, in one place. Everything not listed here is Codex's
-// standard behaviour. Codex sees none of the user's own setup: CODEX_HOME is
-// Rufi's (so no ~/.codex), and the app-server process gets its own HOME (so no
+// standard behaviour, its sign-in too: Codex's own ChatGPT login, kept and
+// renewed by Codex in CODEX_HOME. Codex sees none of the user's own setup:
+// CODEX_HOME is Rufi's (so no ~/.codex), and the app-server process gets its
+// own HOME (so no
 // personal skills from ~/.agents/skills), while the agent's commands still get
 // the real HOME. The skills are Rufi's own, written into CODEX_HOME at each
 // start; Codex's bundled ones are off. MCP servers arrive one by one, chosen
@@ -9,22 +11,15 @@
 // permission profile (aiProfile, docs/adr/0016).
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { AgentSandbox, AgentSkill, McpServer } from "../runtime.ts";
+import {
+  withKeychains,
+  type AgentSandbox,
+  type AgentSkill,
+  type McpServer,
+} from "../runtime.ts";
 import type { ConfigReadResponse } from "./protocol/v2/ConfigReadResponse.ts";
 import type { ExperimentalFeatureListResponse } from "./protocol/v2/ExperimentalFeatureListResponse.ts";
 import type { Rpc } from "./rpc.ts";
-
-/**
- * OpenAI's documented settings for ChatGPT plan use through app-server
- * (developers.openai.com/siwc/token-sharing-open-source/codex-app-server).
- */
-const PROVIDER = `[model_providers.openai_chatgpt_plan]
-name = "ChatGPT plan"
-base_url = "https://api.openai.com/v1"
-env_key = "ACCESS_TOKEN"
-wire_api = "responses"
-requires_openai_auth = false
-supports_websockets = false`;
 
 /** Rufi's choices on top of Codex's defaults, each with its reason. */
 const SETTINGS = {
@@ -34,27 +29,32 @@ const SETTINGS = {
   personality: "none",
   /**
    * Rufi keeps the AI's reasoning summaries with the reply (docs/adr/0004);
-   * Codex's models send none unless asked.
+   * Codex asks the model for none unless set (0.163.0).
    */
   model_reasoning_summary: "detailed",
   features: {
     /** Rufi starts and ends app-server itself; nothing keeps running after it. */
     daemon_auto_start: false,
     /**
-     * No plugin catalogs or connectors: they'd only be downloaded, and
-     * connectors don't work with ChatGPT plan sign-in. Chosen ones come later.
+     * No plugin catalogs or connectors: they'd only be downloaded. Chosen
+     * ones come later.
      */
     plugins: false,
     apps: false,
+    /**
+     * No Codex sub-agents: Rufi's own start_agent is the one kind
+     * (docs/adr/0026). On, it would bring their tools back regardless.
+     */
+    multi_agent_v2: false,
   },
 } as const;
 
 /**
  * The permission profile the chat's AI runs under: Codex's workspace profile
  * (it writes in its working folder, the AI's folder, and the temp folders;
- * it reads the rest), with the network on and Rufi's unreadable paths
- * denied. Threads select it by name; the legacy sandbox setting has no
- * denied reads.
+ * it reads the rest), with the network on and Rufi's unreadable paths and
+ * the person's keychains denied. Threads select it by name; the legacy
+ * sandbox setting has no denied reads.
  */
 export const AI_PROFILE = "rufi-ai";
 
@@ -109,7 +109,6 @@ function configToml(options: CodexHomeOptions, skills: string): string {
     .join("\n");
   // Top-level keys first: in TOML, a key after [features] belongs to it.
   return `# Written by Rufi on every start from src/agent/codex/settings.ts.
-model_provider = "openai_chatgpt_plan"
 model_reasoning_effort = "${SETTINGS.model_reasoning_effort}"
 model_reasoning_summary = "${SETTINGS.model_reasoning_summary}"
 personality = "${SETTINGS.personality}"
@@ -123,13 +122,15 @@ ${features}
 [skills.bundled]
 enabled = false
 
+# No Codex sub-agents (spawn_agent and its tools): Rufi starts its own.
+[agents]
+enabled = false
+
 # The agent's commands get no variable named like a secret (*KEY*, *SECRET*,
-# *TOKEN*), such as the access token Codex itself runs with.
+# *TOKEN*); Codex itself runs with none.
 [shell_environment_policy]
 ignore_default_excludes = false
-${commandsEnvironment(options)}${options.sandbox ? aiProfile(options.sandbox, skills) : ""}
-${PROVIDER}
-`;
+${commandsEnvironment(options)}${options.sandbox ? aiProfile(withKeychains(options.sandbox, options.userHome), skills) : ""}`;
 }
 
 export interface CodexHomeOptions {
@@ -162,7 +163,7 @@ export const generatedImages = (home: string) =>
  */
 export async function prepareCodexHome(
   home: string,
-  options: CodexHomeOptions = {},
+  options: CodexHomeOptions,
 ): Promise<CodexPaths> {
   const paths = {
     codexHome: join(home, "codex"),
@@ -176,6 +177,8 @@ export async function prepareCodexHome(
   }
   const skills = join(paths.codexHome, "skills");
   await rm(skills, { recursive: true, force: true });
+  // Made even with no skills: the AI's permission profile names it.
+  await mkdir(skills, { recursive: true, mode: 0o700 });
   for (const skill of options.skills ?? []) {
     await mkdir(join(skills, skill.name), { recursive: true, mode: 0o700 });
     for (const [name, text] of [
@@ -196,8 +199,10 @@ export async function prepareCodexHome(
 }
 
 /**
- * Checks Codex applied Rufi's settings, so a renamed key in a new pin fails
- * loudly instead of being ignored.
+ * Checks Codex applied the settings Rufi can't do without (the effort, what
+ * runs), so a renamed key in a new pin fails loudly instead of
+ * being ignored. The style settings (personality, reasoning summaries) aren't
+ * checked: without them the chat still works.
  */
 export async function checkSettings(
   rpc: Rpc,
@@ -209,21 +214,10 @@ export async function checkSettings(
     timeoutMs,
   );
   const problems: string[] = [];
-  if (config.model_provider !== "openai_chatgpt_plan") {
-    problems.push(`model_provider is ${String(config.model_provider)}`);
-  }
   if (config.model_reasoning_effort !== SETTINGS.model_reasoning_effort) {
     problems.push(
       `model_reasoning_effort is ${String(config.model_reasoning_effort)}`,
     );
-  }
-  if (config.model_reasoning_summary !== SETTINGS.model_reasoning_summary) {
-    problems.push(
-      `model_reasoning_summary is ${String(config.model_reasoning_summary)}`,
-    );
-  }
-  if (config["personality"] !== SETTINGS.personality) {
-    problems.push(`personality is ${JSON.stringify(config["personality"])}`);
   }
   const enabled = new Map<string, boolean>();
   let cursor: string | null = null;
@@ -251,8 +245,8 @@ export async function checkSettings(
   }
 }
 
-/** The name Codex knows Rufi's MCP server by, in the chat and the reader. */
-export const RUFI_SERVER = "rufi";
+/** The name Codex knows Rufi's MCP server by. */
+const RUFI_SERVER = "rufi";
 
 /**
  * Codex cuts a tool's input schema over this to `unknown` before the model

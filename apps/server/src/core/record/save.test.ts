@@ -17,7 +17,10 @@ import {
   openWritable,
   type Store,
 } from "../store/database.ts";
-import { chatCaller, forAgent } from "../tools/tools.ts";
+import { rufiCaller, forAgent } from "../tools/tools.ts";
+import { turnScope } from "../../../tests/scope.ts";
+import { profileOf } from "./read.ts";
+import { saveChanges, type FormOrigin } from "./save.ts";
 
 const TZ = process.env["TZ"];
 process.env["TZ"] = "Asia/Kolkata";
@@ -68,11 +71,11 @@ async function say(text: string, to = chat): Promise<string> {
 
 /** The AI calls save_changes in the chat's turn. */
 async function save(changes: unknown[], callId = "call-1", to = chat) {
-  const answer = await chatCaller(reader, transcripts, () => undefined)(
-    to,
-    "t-1",
-    "person",
-  )("save_changes", { changes }, callId);
+  const answer = await rufiCaller(
+    reader,
+    transcripts,
+    () => undefined,
+  )(turnScope(to, "t-1"))("save_changes", { changes }, callId);
   return {
     ok: answer.ok,
     body: JSON.parse(answer.text) as Record<string, unknown> & {
@@ -893,7 +896,7 @@ describe("a save", () => {
     const answer = await forAgent(
       () => ({ store: reader, personId: "asha", callId: "call-1" }),
       () => undefined,
-    ).forTurn()(
+    ).call(
       "save_changes",
       {
         changes: [
@@ -1054,7 +1057,7 @@ describe("the health rules", () => {
         await forAgent(
           () => ({ store: reader, personId: "asha" }),
           () => undefined,
-        ).forTurn()("get_overview", {})
+        ).call("get_overview", {})
       ).text,
     ) as {
       result: {
@@ -1087,7 +1090,7 @@ describe("the health rules", () => {
             await forAgent(
               () => ({ store: reader, personId: "asha" }),
               () => undefined,
-            ).forTurn()("get_overview", {})
+            ).call("get_overview", {})
           ).text,
         ) as {
           result: {
@@ -1502,7 +1505,7 @@ describe("the AI's view of the record", () => {
         await forAgent(
           () => ({ store: reader, personId: "asha" }),
           () => undefined,
-        ).forTurn()("get_overview", {})
+        ).call("get_overview", {})
       ).text,
     ) as { result: Record<string, unknown> };
     expect(answer.result["record"]).toMatchObject({
@@ -1511,6 +1514,7 @@ describe("the AI's view of the record", () => {
     expect(answer.result["latest_saves"]).toEqual([
       {
         at: SUNDAY_10AM,
+        made_in: "chat",
         receipt:
           "**Saved**\n\n- Changed medicine use **Creatine 5 g**: status *current* → *stopped*",
         changes: [
@@ -1527,6 +1531,224 @@ describe("the AI's view of the record", () => {
   });
 });
 
+/** The person enters `fields` of their profile in a form, sent as `sending`. */
+async function enter(
+  fields: Record<string, unknown>,
+  {
+    form = "settings",
+    sending = "sending-1",
+    person = "asha",
+    id = "asha",
+  }: { form?: FormOrigin; sending?: string; person?: string; id?: string } = {},
+) {
+  return store.query.transaction().execute((trx) =>
+    saveChanges(
+      trx,
+      { personId: person, form, callId: sending, now: clock },
+      {
+        changes: [{ kind: "profile", action: "change", id, fields }],
+      },
+    ),
+  );
+}
+
+/** The AI's get_overview for Asha, as it reads it. */
+async function overview() {
+  const answer = await forAgent(
+    () => ({ store: reader, personId: "asha" }),
+    () => undefined,
+  ).call("get_overview", {});
+  return (JSON.parse(answer.text) as { result: Record<string, unknown> })
+    .result;
+}
+
+describe("the profile", () => {
+  it("is read with the record: its values, the age they give, and what isn't set", async () => {
+    expect((await overview())["profile"]).toMatchObject({
+      id: "asha",
+      birth_date: { date: "1990-03", words: "March 1990" },
+      sex_for_ranges: "female",
+      not_set: ["blood_group", "height"],
+    });
+    // A month and year settle the age except in that month; a year alone never.
+    const age = async (on: string) =>
+      (await profileOf(store.query, "asha", on))?.age_today;
+    expect(await age("2026-02-28")).toBe(35);
+    expect(await age("2026-03-15")).toBe("35 or 36");
+    expect(await age("2026-10-04")).toBe(36);
+    await enter({ birth_date: { date: "1990", words: "1990" } });
+    expect(await age("2026-10-04")).toBe("35 or 36");
+  });
+
+  it("is changed in the chat after a yes, the name too, with Rufi's receipt there, and is never added or removed or left without a name", async () => {
+    const said = await say(
+      "Call me Asha F. My blood group is B+ and I'm 162 cm tall",
+    );
+    const saved = await save([
+      {
+        kind: "profile",
+        action: "change",
+        id: "asha",
+        fields: {
+          name: "Asha F.",
+          blood_group: "B+",
+          height: { value: 162, unit: "cm" },
+        },
+      },
+    ]);
+    expect(lines(saved.body.result.receipt)).toEqual([
+      "Saved",
+      "Changed your profile: name Asha Fictional → Asha F.; blood group not given → B+; height not given → 162 cm",
+    ]);
+    expect(row("profiles", "asha")).toMatchObject({
+      blood_group: "B+",
+      height: 162,
+      height_unit: "cm",
+      birth_date: "1990-03",
+    });
+    // The name stays where it lives, the person's.
+    expect(row("people", "asha")["display_name"]).toBe("Asha F.");
+    expect(row("people", "ravi")["display_name"]).toBe("Ravi Fictional");
+    expect(sourcesOf("asha")).toEqual([{ type: "message", entry_id: said }]);
+    expect(receipts()).toHaveLength(1);
+    for (const name of ["", null]) {
+      const refused = await save(
+        [{ kind: "profile", action: "change", id: "asha", fields: { name } }],
+        `call-name-${String(name)}`,
+      );
+      expect(refused.ok).toBe(false);
+    }
+    expect(row("people", "asha")["display_name"]).toBe("Asha F.");
+    for (const action of ["add", "remove", "restore"]) {
+      const refused = await save(
+        [{ kind: "profile", action, ...(action !== "add" && { id: "asha" }) }],
+        `call-${action}`,
+      );
+      expect(refused.ok).toBe(false);
+    }
+  });
+
+  it("is saved from a form with what was entered as its source and its receipt kept with the save, not in the chat; the same sending again saves once", async () => {
+    const entered = { blood_group: "O+" };
+    const first = await enter(entered);
+    const again = await enter(entered);
+    expect(again).toMatchObject({ id: first.id, fresh: false });
+    expect(lines(again.receipt)).toEqual([
+      "Saved",
+      "Changed your profile: blood group not given → O+",
+    ]);
+    expect(rows("SELECT origin, chat_id, receipt FROM operations")).toEqual([
+      { origin: "settings", chat_id: null, receipt: first.receipt },
+    ]);
+    expect(
+      rows(
+        "SELECT action, source_entry_id FROM record_changes WHERE record_id = 'asha'",
+      ),
+    ).toEqual([{ action: "change", source_entry_id: null }]);
+    expect(sourcesOf("asha")).toEqual([{ type: "form", page: null }]);
+    expect(receipts()).toEqual([]);
+    await expect(enter({ blood_group: "A+" })).rejects.toThrow(
+      "already used for another save",
+    );
+    expect(row("profiles", "asha")["blood_group"]).toBe("O+");
+  });
+
+  it("is in the AI's latest saves when changed in Settings, and the AI saves its reverse in the chat, with both in its history", async () => {
+    await enter({ birth_date: { date: "1991-03", words: "March 1991" } });
+    const [latest] = (await overview())["latest_saves"] as Record<
+      string,
+      unknown
+    >[];
+    // What the AI reverses: no page or visit to take off.
+    expect(latest).toEqual({
+      at: SUNDAY_10AM,
+      made_in: "settings",
+      receipt: expect.any(String) as unknown,
+      changes: [
+        {
+          kind: "profile",
+          id: "asha",
+          action: "change",
+          before: { birth_date: { date: "1990-03", words: "March 1990" } },
+          after: { birth_date: { date: "1991-03", words: "March 1991" } },
+        },
+      ],
+    });
+    // Where it came from: entered in Settings, and when.
+    const read = await forAgent(
+      () => ({ store: reader, personId: "asha" }),
+      () => undefined,
+    ).call("get_records", { kind: "profile" });
+    expect(
+      (
+        JSON.parse(read.text) as {
+          result: { records: { sources?: unknown }[] };
+        }
+      ).result.records[0]?.sources,
+    ).toEqual([{ entered_in: "settings", at: SUNDAY_10AM }]);
+    await say("Undo my last profile change");
+    const undone = await save([
+      {
+        kind: "profile",
+        action: "change",
+        id: "asha",
+        fields: { birth_date: { date: "1990-03", words: "March 1990" } },
+      },
+    ]);
+    expect(undone.ok).toBe(true);
+    expect(row("profiles", "asha")).toMatchObject({
+      birth_date: "1990-03",
+      birth_date_words: "March 1990",
+    });
+    expect(
+      rows(
+        "SELECT o.origin FROM record_changes c JOIN operations o ON o.id = c.operation_id WHERE c.record_id = 'asha' ORDER BY o.seq",
+      ),
+    ).toEqual([{ origin: "settings" }, { origin: "chat" }]);
+  });
+
+  it("is only the person's own: Ravi's chat or Ravi's form can't read or change Asha's, and nothing is saved", async () => {
+    const before = written();
+    const ravi = (await transcripts.chat("ravi")) as ChatRow;
+    await transcripts.startTurn(ravi, "t-1", {
+      id: "thread-ravi",
+      model: "gpt-6.1-sol",
+    });
+    await say("My blood group is A-", ravi);
+    const fromChat = await save(
+      [
+        {
+          kind: "profile",
+          action: "change",
+          id: "asha",
+          fields: { blood_group: "A-" },
+        },
+      ],
+      "call-ravi",
+      ravi,
+    );
+    expect(fromChat.body.issues).toEqual([
+      {
+        path: "changes.0.id",
+        got: '"asha"',
+        fix: "No profile with this id is in this person's record.",
+      },
+    ]);
+    await expect(
+      enter(
+        { blood_group: "A-" },
+        { form: "profile", person: "ravi", id: "asha" },
+      ),
+    ).rejects.toThrow("Nothing was saved");
+    expect(row("profiles", "asha")["blood_group"]).toBeNull();
+    expect(written()).toEqual({ ...before, revision: written().revision });
+    expect(await profileOf(store.query, "ravi", "2026-10-04")).toMatchObject({
+      id: "ravi",
+      not_set: ["birth_date", "sex_for_ranges", "blood_group", "height"],
+    });
+  });
+});
+
 describe("a visit and the records saved from it", () => {
   /** The AI's view of the record, as get_overview gives it. */
   const overview = async () =>
@@ -1536,7 +1758,7 @@ describe("a visit and the records saved from it", () => {
           await forAgent(
             () => ({ store: reader, personId: "asha" }),
             () => undefined,
-          ).forTurn()("get_overview", {})
+          ).call("get_overview", {})
         ).text,
       ) as {
         result: { latest_saves: { changes: Record<string, unknown>[] }[] };

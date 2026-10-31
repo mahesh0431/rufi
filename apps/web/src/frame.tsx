@@ -33,6 +33,7 @@ import { Dog } from "./dog.tsx";
 import { useAppearance } from "./appearance.tsx";
 import { CHAT_TITLE, ChatDock } from "./chat.tsx";
 import { ReadingSheet } from "./reading.tsx";
+import { AgentSheet } from "./agents.tsx";
 import { FirstRun } from "./first-run.tsx";
 import { retain } from "./live.ts";
 import { resetPanel } from "./panel.ts";
@@ -44,7 +45,7 @@ import { ICON, type Icon } from "./ui.tsx";
 const TITLES: Record<string, string> = {
   settings: "Settings",
   help: "Help",
-  "sign-in": "Sign in with ChatGPT",
+  "sign-in": "Sign in",
 };
 
 /** Whether the address is a person's chat page. */
@@ -70,6 +71,10 @@ const personAt = (pathname: string) => {
   const id = /^\/people\/([^/]+)/.exec(pathname)?.[1];
   return id === undefined ? undefined : decodeURIComponent(id);
 };
+
+/** Whether the address is a person's profile. */
+const isProfilePage = (pathname: string) =>
+  /^\/people\/[^/]+\/profile$/.test(pathname);
 
 /** Whether the address is a person's Follow-ups. */
 const isFollowUpsPage = (pathname: string) =>
@@ -150,9 +155,20 @@ export function Frame() {
           ) : (
             <Dog size={36} />
           )}
-          <p className="truncate font-semibold">
-            {person?.displayName ?? "Rufi"}
-          </p>
+          {person ? (
+            // Your name opens your profile.
+            <Link
+              to="/people/$personId/profile"
+              params={{ personId: person.id }}
+              title="Profile"
+              className="min-w-0 truncate rounded-md px-1 font-semibold hover:bg-surface/60"
+              activeProps={{ className: "bg-accent-soft text-accent-ink" }}
+            >
+              {person.displayName}
+            </Link>
+          ) : (
+            <p className="truncate font-semibold">Rufi</p>
+          )}
         </div>
         <nav
           aria-label="Pages"
@@ -213,7 +229,10 @@ export function Frame() {
                       ? "Visit brief"
                       : isVisitPage(pathname)
                         ? "Visit"
-                        : (TITLES[pathname.split("/")[1] ?? ""] ?? "Overview")}
+                        : isProfilePage(pathname)
+                          ? "Profile"
+                          : (TITLES[pathname.split("/")[1] ?? ""] ??
+                            "Overview")}
           </h1>
         </header>
         <Offline shown={connection === "offline"} />
@@ -227,6 +246,7 @@ export function Frame() {
       </div>
       {bar && <ChatDock person={person} />}
       <ReadingSheet />
+      <AgentSheet />
     </div>
   );
 }
@@ -340,18 +360,16 @@ function Place({
   );
 }
 
-/** The ChatGPT sign-in, at the bottom of the sidebar only when it needs you. */
+/** Codex's sign-in, at the bottom of the sidebar only when it needs you. */
 function Account() {
-  const account = useStatus().data?.account;
+  const account = useStatus().data?.codex.state;
   if (account === undefined || account === "signed_in") return null;
   return (
     <Link
       to="/sign-in"
       className="px-2 pt-2 text-xs text-accent-ink hover:underline"
     >
-      {account === "signed_out"
-        ? "Not signed in"
-        : "ChatGPT plan can't be used"}
+      {account === "signed_out" ? "Not signed in" : "Codex can't start"}
     </Link>
   );
 }

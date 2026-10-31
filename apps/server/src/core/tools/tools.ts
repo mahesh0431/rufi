@@ -1,15 +1,36 @@
 // Every Rufi tool, for the agent and the screens. What the AI is told about
 // using them is in the core (core/chat/instructions.ts) and the skills.
-import { createBrief } from "./brief.ts";
+import {
+  agentStatus,
+  readAgent,
+  sendAgent,
+  setAgentModel,
+  startAgent,
+  stopAgent,
+  usage,
+  waitingMessages,
+} from "./agents.ts";
+import { briefResult, createBrief } from "./brief.ts";
 import { readChat } from "./chat.ts";
-import { getDocuments, sortDocuments } from "./documents.ts";
+import {
+  getDocuments,
+  saveReading,
+  setReader,
+  sortDocuments,
+} from "./documents.ts";
 import { showFace } from "./face.ts";
 import { getOverview } from "./overview.ts";
-import { dismissItems, saveChanges } from "./save.ts";
+import {
+  dismissedResult,
+  dismissItems,
+  savedResult,
+  saveChanges,
+} from "./save.ts";
 import { getRecords } from "./records.ts";
 import {
+  answerOf,
+  type AgentTools,
   inputSchema,
-  REJECTIONS_PER_TURN,
   Refusal,
   specOf,
   toolCaller,
@@ -19,9 +40,17 @@ import {
 } from "./registry.ts";
 import type { Transaction } from "kysely";
 import type { Log } from "../../platform/logs.ts";
-import type { ChatRow, Transcripts } from "../chat/transcript.ts";
+import type { ChatRow, ToolCall, Transcripts } from "../chat/transcript.ts";
 import { createBrief as makeBrief } from "../briefs/briefs.ts";
 import type { Pages } from "../documents/pages.ts";
+import { setReader as setDocumentReader } from "../documents/readers.ts";
+import {
+  keptReading,
+  keptUnsaved,
+  type SaveReadingAnswer,
+  type SaveReadingInput,
+  type SaveReadingScope,
+} from "../documents/save-reading.ts";
 import type { SortAnswer, SortInput, SortScope } from "../documents/sorting.ts";
 import { dismissItems as dismissDrafts } from "../record/items.ts";
 import { saveChanges as saveToRecord } from "../record/save.ts";
@@ -36,8 +65,18 @@ export const TOOLS: readonly Tool[] = [
   saveChanges,
   dismissItems,
   sortDocuments,
+  saveReading,
+  setReader,
   createBrief,
   showFace,
+  startAgent,
+  agentStatus,
+  sendAgent,
+  readAgent,
+  stopAgent,
+  waitingMessages,
+  setAgentModel,
+  usage,
 ];
 
 /**
@@ -46,39 +85,23 @@ export const TOOLS: readonly Tool[] = [
  */
 const SERVER = "rufi";
 
-/** Why a Rufi event's turn can't save, sort or make a brief. */
-const EVENT_TURN =
-  "This turn was started by a Rufi event, not by the user, so nothing can be saved, sorted or made in it. Explain or ask; the user asks in a message of their own.";
-
-/**
- * The model's tools: their catalog for the MCP server, and a caller per
- * turn, which ends the turn after `rejections` refused calls.
- */
+/** The model's tools: their catalog for the MCP server, and their caller. */
 export function forAgent(
   context: () => ToolContext,
   log: Log,
-  rejections?: () => Promise<number>,
+  /** The agent's own tools, by name; all of them when not given. */
+  names?: readonly string[],
 ) {
-  const tools = TOOLS.filter((tool) => tool.callers !== "ui");
+  const tools = TOOLS.filter(
+    (tool) =>
+      tool.callers !== "ui" &&
+      (names === undefined || names.includes(tool.name)),
+  );
   return {
     server: SERVER,
     specs: tools.map(specOf),
-    forTurn: () => toolCaller(tools, context, log, rejections),
+    call: toolCaller(tools, context, log),
   };
-}
-
-/**
- * The setting for how many refused calls end a reply in Rufi's chat: a
- * whole number above 0, else REJECTIONS_PER_TURN. A limit on loops, not a
- * rule about health data; it isn't on the Settings screen.
- */
-export const REJECTIONS_SETTING = "rejections_per_reply";
-
-async function rejectionsPerReply(
-  setting: (key: string) => Promise<string | undefined>,
-): Promise<number> {
-  const value = Number(await setting(REJECTIONS_SETTING));
-  return Number.isInteger(value) && value > 0 ? value : REJECTIONS_PER_TURN;
 }
 
 /** tools.json: every tool as documentation, generated (pnpm tools:json). */
@@ -95,12 +118,35 @@ export function toolsJson(): string {
   return `${JSON.stringify({ tools }, null, 2)}\n`;
 }
 
+/** What a call to Rufi's tools runs with, as the door placed it (server/door.ts). */
+export interface CallScope {
+  /** Whose the agent is: its chat. */
+  chat: ChatRow;
+  agent: string;
+  /** The agent's conversation: the provider's reference, and its number. */
+  thread: string;
+  conversation: number;
+  /** The agent's turn: in the agent database, and as the provider names it. */
+  turn: string;
+  ref: string;
+  /** Rufi's id for the call: `<agent>/<conversation>/<provider call id>`. */
+  callId: string;
+  /** Rufi's tools the agent may use. */
+  tools: readonly string[];
+  /** A sub-agent's title, which its lines in the chat name; none for Rufi AI. */
+  label?: string;
+}
+
+/** What every call of one turn runs with. */
+export type TurnScope = Omit<CallScope, "callId">;
+
 /**
- * The tools of one turn in Rufi's own chat, the one place the AI can save,
- * sort or make a brief: each is written with its line in the chat. A turn a
- * Rufi event started can only read: the person didn't ask for it.
+ * The one Rufi caller, for an agent's turn, from the scope the door placed
+ * its calls in; each call gives Rufi's id for it: the agent's own tools, in its chat, the one place
+ * the AI can save, sort or make a brief. Each is written with its line in
+ * the chat.
  */
-export function chatCaller(
+export function rufiCaller(
   reader: Store | undefined,
   transcripts: Transcripts,
   log: Log,
@@ -114,98 +160,188 @@ export function chatCaller(
     /** After a sort is kept. */
     done: (personId: string) => void;
   },
+  /** The calling agent's agents, from its scope (server/sub-agents.ts). */
+  agents?: (scope: TurnScope) => AgentTools,
+  reading?: {
+    run: (
+      scope: SaveReadingScope,
+      input: SaveReadingInput,
+      trx: Transaction<Tables>,
+    ) => Promise<SaveReadingAnswer>;
+    /** After a reading is kept. */
+    done: (personId: string) => void;
+  },
 ) {
-  return (chat: ChatRow, agentTurnId: string, origin: "person" | "rufi") => {
-    // Sorts kept with their call, by call id, till their answer goes out.
-    const kept = new Set<string>();
+  return (scope: TurnScope) => {
+    const { chat, ref } = scope;
+    const below = agents?.(scope);
     const call = forAgent(
       () => ({
         store: reader,
         personId: chat.personId,
         chatId: chat.id,
         pages,
-        save: (input, callId) =>
-          origin === "rufi"
-            ? Promise.reject(new Refusal(EVENT_TURN))
-            : transcripts.saveWithReceipt(
-                chat,
-                agentTurnId,
-                (trx, at, refs, turnId) =>
-                  saveToRecord(
-                    trx,
-                    {
-                      personId: chat.personId,
-                      chatId: chat.id,
-                      turnId,
-                      callId,
-                      now: at,
-                      refs,
-                    },
-                    input,
-                  ),
+        agents: below,
+      }),
+      log,
+      scope.tools,
+    ).call;
+    /**
+     * The writes of one call: each commits with its receipt or line and
+     * the call with the answer the AI gets, in one transaction, then
+     * `kept` says so.
+     */
+    const writes = (made: ToolCall, kept: () => void): Partial<ToolContext> => {
+      return {
+        save: async (input, callId) => {
+          const saved = await transcripts.saveWithReceipt(
+            chat,
+            made,
+            (trx, at, refs, turnId) =>
+              saveToRecord(
+                trx,
+                {
+                  personId: chat.personId,
+                  chatId: chat.id,
+                  turnId,
+                  callId,
+                  now: at,
+                  refs,
+                },
+                input,
               ),
-        dismiss: (input, callId) =>
-          origin === "rufi"
-            ? Promise.reject(new Refusal(EVENT_TURN))
-            : transcripts.saveWithReceipt(chat, agentTurnId, (trx, _at, refs) =>
-                dismissDrafts(
-                  trx,
-                  { personId: chat.personId, callId, refs },
-                  input,
-                ),
+            (done) => answerOf(savedResult(done)),
+          );
+          kept();
+          return saved;
+        },
+        dismiss: async (input, callId) => {
+          const dismissed = await transcripts.saveWithReceipt(
+            chat,
+            made,
+            (trx, _at, refs) =>
+              dismissDrafts(
+                trx,
+                { personId: chat.personId, callId, refs },
+                input,
               ),
-        // In the sort's transaction, which keeps the call too.
+            (done) => answerOf(dismissedResult(done)),
+          );
+          kept();
+          return dismissed;
+        },
         sort: async (input, callId) => {
-          if (origin === "rufi") throw new Refusal(EVENT_TURN);
           if (!sort) throw new Refusal("Rufi can't sort documents here.");
           const sorted = await transcripts.withToolCall(
             chat,
-            agentTurnId,
-            { callId, tool: "sort_documents", input },
+            made,
             (trx) =>
               sort.run(
                 {
                   personId: chat.personId,
                   chatId: chat.id,
-                  agentTurnId,
+                  agentTurnId: ref,
                   callId,
                 },
                 input,
                 trx,
               ),
+            answerOf,
           );
-          kept.add(callId);
+          kept();
           sort.done(chat.personId);
           return sorted;
         },
-        brief: (input, callId) =>
-          origin === "rufi"
-            ? Promise.reject(new Refusal(EVENT_TURN))
-            : transcripts.briefWithLine(chat, agentTurnId, (trx, at, turnId) =>
-                makeBrief(
-                  trx,
-                  {
-                    personId: chat.personId,
-                    chatId: chat.id,
-                    turnId,
-                    callId,
-                    now: at,
-                  },
-                  input,
-                ),
+        // Kept without its page text: that goes with its document.
+        saveReading: async (input, callId) => {
+          if (!reading) throw new Refusal("Rufi can't save a reading here.");
+          const saved = await transcripts.withToolCall(
+            chat,
+            { ...made, input: keptReading(input, true) },
+            (trx) =>
+              reading.run(
+                { personId: chat.personId, chatId: chat.id, callId },
+                input,
+                trx,
               ),
-      }),
-      log,
-      () => rejectionsPerReply(transcripts.setting),
-    ).forTurn();
+            answerOf,
+          );
+          kept();
+          reading.done(chat.personId);
+          return saved;
+        },
+        setReader: async (input) => {
+          if (!below?.inChat(input.agent)) {
+            throw new Refusal(
+              `No agent ${input.agent} is in your chat: give an agent agent_status lists.`,
+            );
+          }
+          const set = await transcripts.withToolCall(
+            chat,
+            made,
+            (trx) => setDocumentReader(trx, chat.personId, input),
+            answerOf,
+          );
+          kept();
+          reading?.done(chat.personId);
+          return set;
+        },
+        brief: async (input, callId) => {
+          const written = await transcripts.briefWithLine(
+            chat,
+            made,
+            (trx, at, turnId) =>
+              makeBrief(
+                trx,
+                {
+                  personId: chat.personId,
+                  chatId: chat.id,
+                  turnId,
+                  callId,
+                  now: at,
+                },
+                input,
+              ),
+            (done) => answerOf(briefResult(done)),
+          );
+          kept();
+          return written;
+        },
+      };
+    };
     return async (
       name: string,
       input: unknown,
-      callId?: string,
+      callId: string,
     ): Promise<ToolAnswer> => {
-      const answer = await call(name, input, callId);
-      return callId !== undefined && kept.delete(callId)
-        ? { ...answer, kept: true }
+      const own = { kept: false };
+      const answer = await call(
+        name,
+        input,
+        callId,
+        writes(
+          {
+            agent: scope.agent,
+            agentTurn: scope.turn,
+            ref,
+            callId,
+            tool: name,
+            input,
+            startedAt: transcripts.now(),
+            ...(scope.label !== undefined && { label: scope.label }),
+          },
+          () => {
+            own.kept = true;
+          },
+        ),
+      );
+      if (own.kept) return { ...answer, kept: true };
+      // A reading not saved is kept without its page text too.
+      return name === saveReading.name
+        ? {
+            ...answer,
+            keep: await keptUnsaved(reader, chat.personId, input, answer),
+          }
         : answer;
     };
   };

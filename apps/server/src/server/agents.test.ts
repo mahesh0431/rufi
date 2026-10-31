@@ -1,0 +1,272 @@
+// Rufi and the agent package start in step: through startAgents, on a real
+// record, a real agent database and the package's fake provider.
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createAgents, type NewAgent } from "@rufi/agents/agents";
+import { fakeProvider, type FakeProvider } from "@rufi/agents/fake";
+import type { ProviderAdapter } from "@rufi/agents/provider";
+import { openAgentStore, type AgentStore } from "@rufi/agents/store";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  databasePath,
+  openWritable,
+  type Store,
+} from "../core/store/database.ts";
+import { agentsPath, startAgents, type AgentSystem } from "./agents.ts";
+
+let home: string;
+let record: Store;
+let fake: FakeProvider;
+let running: { store: AgentStore; system: AgentSystem } | undefined;
+let logged: string[];
+
+const TOOLS = { url: "http://127.0.0.1:9/mcp", key: "fictional-key" };
+
+beforeEach(async () => {
+  home = await mkdtemp(join(tmpdir(), "rufi-agents-"));
+  record = openWritable(databasePath(home));
+  record.db.exec(`
+    INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional'), ('ravi', 'Ravi Fictional');
+    INSERT INTO chats (id, person_id, model, effort, created_at) VALUES
+      ('c-asha', 'asha', 'gpt-6.1-sol', 'high', '2026-10-08T09:00:00Z'),
+      ('c-ravi', 'ravi', NULL, NULL, '2026-10-08T09:00:00Z');
+  `);
+  fake = fakeProvider();
+  logged = [];
+});
+
+afterEach(async () => {
+  await stop();
+  record.close();
+  await rm(home, { recursive: true, force: true });
+});
+
+async function start(adapters: readonly ProviderAdapter[] = [fake.adapter]) {
+  const store = openAgentStore(agentsPath(home));
+  const system = await startAgents({
+    store,
+    record,
+    adapters,
+    host: {
+      opening: () =>
+        Promise.resolve({ instructions: "Fictional rules.", tools: TOOLS }),
+      claim: () => Promise.resolve({ status: "gone" }),
+    },
+    tools: ["get_records", "save_changes"],
+    cwd: join(home, "ai"),
+    model: "gpt-6-astra",
+    log: (event) => logged.push(event),
+  });
+  running = { store, system };
+  return running;
+}
+
+/** The agent database's file goes, as when it is lost. */
+async function lose() {
+  for (const end of ["", "-wal", "-shm"]) {
+    await rm(`${agentsPath(home)}${end}`, { force: true });
+  }
+}
+
+async function stop() {
+  await running?.system.close();
+  running?.store.close();
+  running = undefined;
+}
+
+const rows = (sql: string, ...params: string[]) =>
+  record.db
+    .prepare(sql)
+    .all(...params)
+    .map((row) => ({ ...row }));
+
+const agentRows = (store: AgentStore) =>
+  store.db
+    .prepare(
+      "SELECT id, provider, provider_ref AS ref, conversation, admitted, model, effort FROM agents ORDER BY rowid",
+    )
+    .all()
+    .map((row) => ({ ...row }));
+
+const rootOf = (chat: string) =>
+  rows("SELECT agent_id FROM agent_owners WHERE chat_id = ? AND root = 1", chat)
+    .map((row) => row["agent_id"] as string)
+    .at(0) ?? "";
+
+const cursor = () =>
+  rows("SELECT number FROM agent_cursor").at(0) as
+    | { number: number }
+    | undefined;
+
+describe("at the first start", () => {
+  it("each chat gets its own agent, which takes over its thread, and again changes nothing", async () => {
+    record.db.exec(
+      "UPDATE chats SET thread_id = 'thread-asha', thread_provider = 'codex', thread_model = 'gpt-6-astra' WHERE id = 'c-asha'",
+    );
+    const { store } = await start([]);
+    const asha = rootOf("c-asha");
+    const ravi = rootOf("c-ravi");
+
+    expect(agentRows(store)).toEqual([
+      {
+        id: asha,
+        provider: "codex",
+        ref: "thread-asha",
+        conversation: 1,
+        admitted: 1,
+        model: "gpt-6.1-sol",
+        effort: "high",
+      },
+      {
+        id: ravi,
+        provider: "codex",
+        ref: null,
+        conversation: 0,
+        admitted: 1,
+        model: "gpt-6-astra",
+        effort: "medium",
+      },
+    ]);
+    expect(
+      rows(
+        "SELECT chat_id, agent_id, conversation, provider, ref FROM agent_conversations",
+      ),
+    ).toEqual([
+      {
+        chat_id: "c-asha",
+        agent_id: asha,
+        conversation: 1,
+        provider: "codex",
+        ref: "thread-asha",
+      },
+    ]);
+    // Rufi has read every event, and reads the next as it commits.
+    const last = store.eventsAfter(0).at(-1)?.number;
+    expect(cursor()).toEqual({ number: last });
+    running?.system.agents.create({
+      id: "agent-reader",
+      parent: asha,
+      title: "Reading report.pdf",
+      provider: "codex",
+      model: "gpt-6-astra",
+      effort: "medium",
+      tools: ["get_records"],
+      cwd: join(home, "ai"),
+    });
+    await vi.waitFor(() => {
+      expect(cursor()?.number).toBe((last ?? 0) + 1);
+    });
+
+    await stop();
+    await start([]);
+    expect(rows("SELECT agent_id FROM agent_owners ORDER BY agent_id")).toEqual(
+      [asha, ravi].sort().map((agent_id) => ({ agent_id })),
+    );
+    expect(rows("SELECT agent_id FROM agent_conversations")).toHaveLength(1);
+  });
+});
+
+describe("a lost agent database", () => {
+  it("ends Rufi's links to it but keeps the ledger, and chats start afresh", async () => {
+    record.db.exec(
+      "UPDATE chats SET thread_id = 'thread-asha', thread_provider = 'codex' WHERE id = 'c-asha'",
+    );
+    await start([]);
+    const old = rootOf("c-asha");
+    await stop();
+    // Rufi was far into the old database's events.
+    record.db.exec("UPDATE agent_cursor SET number = 99");
+    await lose();
+
+    const { store } = await start([]);
+
+    const asha = rootOf("c-asha");
+    expect(asha).not.toBe(old);
+    // The new agent never takes the old thread over.
+    expect(agentRows(store).map(({ id, ref }) => ({ id, ref }))).toEqual([
+      { id: asha, ref: null },
+      { id: rootOf("c-ravi"), ref: null },
+    ]);
+    expect(rows("SELECT agent_id, ref FROM agent_conversations")).toEqual([
+      { agent_id: old, ref: "thread-asha" },
+    ]);
+    expect(cursor()).toEqual({
+      number: store.eventsAfter(0).at(-1)?.number,
+    });
+  });
+});
+
+describe("a crash between the steps of making an agent", () => {
+  it("is finished or undone at the next start", async () => {
+    record.db.exec(`
+      UPDATE chats SET thread_id = 'thread-asha', thread_provider = 'codex' WHERE id = 'c-asha';
+      INSERT INTO people (id, display_name) VALUES ('mei', 'Mei Fictional');
+      INSERT INTO chats (id, person_id, created_at) VALUES ('c-mei', 'mei', '2026-10-08T09:00:00Z');
+    `);
+    const store = openAgentStore(agentsPath(home));
+    record.db
+      .prepare("INSERT INTO agent_cursor (id, number) VALUES (1, 0)")
+      .run();
+    const made = createAgents({
+      store,
+      adapters: [],
+      host: {
+        opening: () => Promise.reject(new Error("Not opened in this test.")),
+        ledger: () => Promise.resolve(),
+        claim: () => Promise.resolve({ status: "gone" }),
+      },
+      onError: (error) => {
+        throw error;
+      },
+    });
+    const agent = (id: string, adopt?: string): NewAgent => ({
+      id,
+      title: "Rufi AI",
+      provider: "codex",
+      model: "gpt-6-astra",
+      effort: "medium",
+      tools: ["get_records"],
+      cwd: join(home, "ai"),
+      ...(adopt !== undefined && { adopt }),
+    });
+    const own = (id: string, person: string) => {
+      record.db
+        .prepare(
+          "INSERT INTO agent_owners (agent_id, person_id, chat_id, root, created_at) VALUES (?, ?, ?, 1, '2026-10-08T09:00:00Z')",
+        )
+        .run(id, person, `c-${person}`);
+    };
+    // Asha's agent was made, and Rufi stopped before keeping its owner.
+    made.create(agent("agent-unowned", "thread-asha"));
+    // Ravi's was owned, and Rufi stopped before admitting it.
+    made.create(agent("agent-unadmitted"));
+    own("agent-unadmitted", "ravi");
+    // Mei's owner outlived its agent.
+    own("agent-gone", "mei");
+    await made.close();
+    store.close();
+
+    const { store: started } = await start([]);
+
+    const asha = rootOf("c-asha");
+    const mei = rootOf("c-mei");
+    expect(rootOf("c-ravi")).toBe("agent-unadmitted");
+    expect(
+      agentRows(started).map(({ id, ref, admitted }) => ({
+        id,
+        ref,
+        admitted,
+      })),
+    ).toEqual([
+      { id: "agent-unadmitted", ref: null, admitted: 1 },
+      { id: asha, ref: "thread-asha", admitted: 1 },
+      { id: mei, ref: null, admitted: 1 },
+    ]);
+    expect(["agent-unowned", "agent-gone"]).not.toContain(asha);
+    expect(mei).not.toBe("agent-gone");
+    expect(rows("SELECT agent_id FROM agent_conversations")).toEqual([
+      { agent_id: asha },
+    ]);
+  });
+});
