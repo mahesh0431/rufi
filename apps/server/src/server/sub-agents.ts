@@ -42,6 +42,8 @@ export function subAgents(deps: {
   models: () => Promise<readonly OfferedModel[]>;
   /** Each provider's usage now, as it reported it. */
   usage: () => Promise<readonly ProviderUsage[]>;
+  /** Rufi's name for a tool as the provider names it to its AI. */
+  rufiTool: (provider: string, name: string) => string;
 }): (scope: TurnScope) => AgentTools {
   const { agents, kept } = deps;
   /** A model of the shortlist, else refused with the chat's own line. */
@@ -62,7 +64,14 @@ export function subAgents(deps: {
         if (!parent) throw new Error(`No agent ${scope.agent}.`);
         // Its own or its parent's: the shortlist decides either way.
         const on = await shortlisted(model ?? parent.model);
-        const given = [...new Set(tools ?? parent.tools)];
+        // By Rufi's names, also those its provider wrote its own way.
+        const given = [
+          ...new Set(
+            (tools ?? parent.tools).map((tool) =>
+              deps.rufiTool(parent.provider, tool),
+            ),
+          ),
+        ];
         const wider = given.filter((tool) => !parent.tools.includes(tool));
         if (wider.length > 0) {
           throw new Refusal(

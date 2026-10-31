@@ -162,6 +162,11 @@ export interface ProviderAdapter {
    * call has none, and it is refused.
    */
   callOf: (meta: unknown) => string | undefined;
+  /**
+   * Rufi's name for one of Rufi's tools as the provider names it to its AI,
+   * when the provider names them its own way; nothing for any other name.
+   */
+  rufiTool?: (name: string) => string | undefined;
   /** Ends the adapter's processes and everything they started. */
   close: () => Promise<void>;
 }

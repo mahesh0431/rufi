@@ -139,16 +139,13 @@ export const codexMeta = (call: {
   },
 });
 
-/** Calls a tool with the `_meta` Codex gives a call. */
+/** Calls a tool with the `_meta` Codex gives a call, or the one given. */
 export const callTool = (
   server: McpServerConfig,
-  call: {
-    name: string;
-    arguments: unknown;
-    callId: string;
-    threadId: string;
-    turnId: string;
-  },
+  call: { name: string; arguments: unknown } & (
+    | { callId: string; threadId: string; turnId: string }
+    | { meta: object }
+  ),
 ) =>
   post(
     server,
@@ -158,7 +155,7 @@ export const callTool = (
       params: {
         name: call.name,
         arguments: call.arguments,
-        _meta: codexMeta(call),
+        _meta: "meta" in call ? call.meta : codexMeta(call),
       },
     },
     { "mcp-protocol-version": PROTOCOL },
