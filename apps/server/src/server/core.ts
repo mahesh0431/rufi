@@ -288,9 +288,20 @@ export const startCore = (options: CoreOptions) =>
     const isProvider = (id: string): id is Provider =>
       id === "codex" || id === "claude";
     // How each provider is signed in, as it last said (server/signin.ts).
-    const signedIn = yield* Effect.acquireRelease(
-      Effect.sync(() => keptSignIns(signIns)),
-      (kept) => Effect.sync(kept.close),
+    // Both end, with their providers' processes, before Rufi stops: closed
+    // together, as a sign-in's last step waits on a sign-in check.
+    const { signedIn, signIn } = yield* Effect.acquireRelease(
+      Effect.sync(() => {
+        const kept = keptSignIns(signIns);
+        return {
+          signedIn: kept,
+          signIn: signInFlow(signIns, log, kept.refresh),
+        };
+      }),
+      (both) =>
+        Effect.promise(() =>
+          Promise.all([both.signIn.close(), both.signedIn.close()]),
+        ),
     );
     const agentSystem = yield* Effect.acquireRelease(
       attempt(() =>
@@ -496,7 +507,7 @@ export const startCore = (options: CoreOptions) =>
         folder: aiSandbox(home).folder,
         generated: generatedImages(home),
       }),
-      signIn: signInFlow(signIns, log, signedIn.refresh),
+      signIn,
       launcher,
       launchUrl,
       ...(options.screens !== undefined && { screens: options.screens }),
