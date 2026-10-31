@@ -414,9 +414,9 @@ export const FollowUps = Schema.Struct({
 export type FollowUps = typeof FollowUps.Type;
 
 /**
- * The person's profile: the few facts their record is read with, each null
- * until given. A birth date is at the precision given, with its words; a
- * height is a number and its unit.
+ * The person's profile: their name, never empty, and the few facts their
+ * record is read with, each null until given. A birth date is at the
+ * precision given, with its words; a height is a number and its unit.
  */
 export const BirthDate = Schema.Struct({
   date: RecordDate,
@@ -424,6 +424,11 @@ export const BirthDate = Schema.Struct({
 });
 export const SexForRanges = Schema.Literals(["female", "male"]);
 export const ProfileValues = Schema.Struct({
+  name: Schema.String.check(
+    Schema.isTrimmed(),
+    Schema.isMinLength(1),
+    Schema.isMaxLength(200),
+  ),
   birth_date: Schema.NullOr(BirthDate),
   sex_for_ranges: Schema.NullOr(SexForRanges),
   blood_group: Schema.NullOr(
@@ -463,6 +468,7 @@ export const ProfileChange = Schema.Struct({
   madeIn: MadeIn,
   fields: Schema.Array(
     Schema.Union([
+      fieldChange("name"),
       fieldChange("birth_date"),
       fieldChange("sex_for_ranges"),
       fieldChange("blood_group"),
@@ -492,6 +498,7 @@ export const SaveProfile = Schema.Struct({
   sending: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
   in: Schema.Literals(["profile", "settings"]),
   changes: Schema.Struct({
+    name: Schema.optionalKey(ProfileValues.fields.name),
     birth_date: Schema.optionalKey(ProfileValues.fields.birth_date),
     sex_for_ranges: Schema.optionalKey(ProfileValues.fields.sex_for_ranges),
     blood_group: Schema.optionalKey(ProfileValues.fields.blood_group),

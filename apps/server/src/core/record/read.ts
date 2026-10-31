@@ -226,7 +226,7 @@ type Reads = Kysely<Tables>;
 export async function profileOf(query: Reads, personId: string, today: string) {
   const kind = kindNamed("profile") as Kind;
   const { rows } =
-    await sql<Row>`SELECT * FROM profiles WHERE person_id = ${personId} AND id = ${personId}`.execute(
+    await sql<Row>`SELECT * FROM profile_rows WHERE person_id = ${personId} AND id = ${personId}`.execute(
       query,
     );
   const row = rows[0];

@@ -1580,19 +1580,25 @@ describe("the profile", () => {
     expect(await age("2026-10-04")).toBe("35 or 36");
   });
 
-  it("is changed in the chat after a yes, with Rufi's receipt there, and is never added or removed", async () => {
-    const said = await say("My blood group is B+ and I'm 162 cm tall");
+  it("is changed in the chat after a yes, the name too, with Rufi's receipt there, and is never added or removed or left without a name", async () => {
+    const said = await say(
+      "Call me Asha F. My blood group is B+ and I'm 162 cm tall",
+    );
     const saved = await save([
       {
         kind: "profile",
         action: "change",
         id: "asha",
-        fields: { blood_group: "B+", height: { value: 162, unit: "cm" } },
+        fields: {
+          name: "Asha F.",
+          blood_group: "B+",
+          height: { value: 162, unit: "cm" },
+        },
       },
     ]);
     expect(lines(saved.body.result.receipt)).toEqual([
       "Saved",
-      "Changed your profile: blood group not given → B+; height not given → 162 cm",
+      "Changed your profile: name Asha Fictional → Asha F.; blood group not given → B+; height not given → 162 cm",
     ]);
     expect(row("profiles", "asha")).toMatchObject({
       blood_group: "B+",
@@ -1600,8 +1606,19 @@ describe("the profile", () => {
       height_unit: "cm",
       birth_date: "1990-03",
     });
+    // The name stays where it lives, the person's.
+    expect(row("people", "asha")["display_name"]).toBe("Asha F.");
+    expect(row("people", "ravi")["display_name"]).toBe("Ravi Fictional");
     expect(sourcesOf("asha")).toEqual([{ type: "message", entry_id: said }]);
     expect(receipts()).toHaveLength(1);
+    for (const name of ["", null]) {
+      const refused = await save(
+        [{ kind: "profile", action: "change", id: "asha", fields: { name } }],
+        `call-name-${String(name)}`,
+      );
+      expect(refused.ok).toBe(false);
+    }
+    expect(row("people", "asha")["display_name"]).toBe("Asha F.");
     for (const action of ["add", "remove", "restore"]) {
       const refused = await save(
         [{ kind: "profile", action, ...(action !== "add" && { id: "asha" }) }],

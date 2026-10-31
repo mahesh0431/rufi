@@ -1452,6 +1452,7 @@ it("upgrades a record of version 26 to profiles: everyone's is empty, every save
     expect(upgraded.sources).toEqual(before.sources);
     expect(await profileOf(store.query, "asha", "2026-10-31")).toEqual({
       id: "asha",
+      name: "Asha Fictional",
       not_set: ["birth_date", "sex_for_ranges", "blood_group", "height"],
     });
 

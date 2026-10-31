@@ -83,6 +83,7 @@ describe("get_overview", () => {
         // Her age today depends on the day the test runs.
         profile: {
           id: "asha",
+          name: "Asha Fictional",
           birth_date: { date: "1990-03", words: "March 1990" },
           age_today: expect.anything() as unknown,
           sex_for_ranges: "female",

@@ -169,7 +169,7 @@ function Welcome() {
  */
 function AboutYou() {
   const [name, setName] = useState("");
-  const [profile, setProfile] = useState<ProfileValues>({
+  const [profile, setProfile] = useState<Omit<ProfileValues, "name">>({
     birth_date: null,
     sex_for_ranges: null,
     blood_group: null,
@@ -242,8 +242,9 @@ function AboutYou() {
         />
       </div>
       <ProfileFields
-        values={profile}
+        values={{ ...profile, name: trimmed }}
         asTyped
+        withName={false}
         commit={(field, value) => {
           setProfile((now) => ({ ...now, [field]: value }));
         }}
