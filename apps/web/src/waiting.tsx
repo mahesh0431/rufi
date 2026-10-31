@@ -121,11 +121,15 @@ export function WaitingView({
     choice: "retry" | "new_thread",
   ) =>
     void act(() => request("POST", `${one(item)}/recover`, { hold, choice }));
+  // Held for the sign-in, a row goes by itself once you sign in; any
+  // other hold waits for you.
   const heading = running
     ? "Waiting · these go in order after the reply"
-    : items.some((item) => item.held !== null)
+    : items.some((item) => item.held !== null && item.held !== "signed_out")
       ? "Not sent · Rufi sends these only when you say"
-      : "Waiting";
+      : items.some((item) => item.held === "signed_out")
+        ? "Waiting until you sign in"
+        : "Waiting";
 
   return (
     <section aria-label="Waiting messages" className="mt-3 flex flex-col gap-2">
