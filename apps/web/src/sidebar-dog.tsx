@@ -53,7 +53,7 @@ function chosenFace(state: Live): Face | undefined {
 
 export function SidebarDog({ person }: { person: Person }) {
   const connection = useConnection();
-  const account = useStatus().data?.account;
+  const account = useStatus().data?.codex.state;
   const live = liveStore(person.id);
   const working = useStore(live, isRunning);
   const turn = useStore(live, lastTurn);

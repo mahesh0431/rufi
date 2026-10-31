@@ -4,7 +4,8 @@
 // real database. It captures every request Codex sends the model and fails
 // on any tool but get_page and save_page, also after a compaction; it checks
 // a page image reaches the model, and that the tools' binding and the
-// copies' write boundary hold.
+// copies' write boundary hold. It runs in the chat's Codex home, as in Rufi,
+// with the chat's skills and the AI's permission profile in it.
 import {
   mkdir,
   mkdtemp,
@@ -16,6 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  codexArgs,
   fakeModel,
   type FakeModel,
   type ModelRequest,
@@ -34,9 +36,11 @@ import {
   type Store,
 } from "../../core/store/database.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "../../server/mcp.ts";
+import { SKILLS } from "../../core/skills/skills.ts";
 import type { SubAgentOutcome } from "../runtime.ts";
 import { codexBinary } from "./binary.ts";
 import { callOf } from "./events.ts";
+import { prepareCodexHome } from "./settings.ts";
 import { subAgentRunner } from "./subagent.ts";
 
 /** The reader's direct model: Codex adds no tools of its own. */
@@ -162,6 +166,17 @@ const drawn = () =>
     ),
   );
 
+/** The chat's Codex home, which the reader shares, as the chat prepares it. */
+const chatCodexHome = () =>
+  prepareCodexHome(root, {
+    userHome: join(root, "user-home"),
+    sandbox: {
+      folder: join(root, "ai"),
+      unreadable: [join(root, "rufi.sqlite")],
+    },
+    skills: SKILLS,
+  });
+
 /** A reader turn on the real Codex: the scripted steps, then "done". */
 async function read(
   run: Run,
@@ -194,13 +209,12 @@ async function read(
     command: {
       file: await codexBinary(),
       args: [
-        "-c",
-        `model_providers.openai_chatgpt_plan.base_url="${model.url}"`,
+        ...codexArgs(model.url),
         ...config.flatMap((value) => ["-c", value]),
       ],
     },
     env: { PATH: process.env["PATH"] ?? "", HOME: join(root, "user-home") },
-    token: () => Promise.resolve("not-a-real-token"),
+    codexHome: chatCodexHome,
     version: "0.0.0",
   });
   const outcome = await runner({
@@ -407,7 +421,8 @@ describe("the reader on the pinned Codex", () => {
       );
     }
     // Codex's own prompt with no personality (as a developer message), then
-    // Rufi's instructions only, and no history: then just the task.
+    // Rufi's instructions only, and no history (nor the chat's skills from the
+    // Codex home they share): then just the task.
     const messages = requests[0]?.input.map((item) => [
       item.role,
       item.content,
@@ -672,7 +687,7 @@ describe("the reader's tool route", () => {
           PATH: process.env["PATH"] ?? "",
           FAKE_CODEX: JSON.stringify(scenario),
         },
-        token: () => Promise.resolve("not-a-real-token"),
+        codexHome: chatCodexHome,
         version: "0.0.0",
       })({
         model: readerModel,
@@ -710,7 +725,7 @@ describe("the reader's provider outcomes", () => {
           PATH: process.env["PATH"] ?? "",
           FAKE_CODEX: JSON.stringify(scenario),
         },
-        token: () => Promise.resolve("not-a-real-token"),
+        codexHome: chatCodexHome,
         version: "0.0.0",
       });
       const outcome = await runner({
@@ -757,7 +772,7 @@ describe("the reader's turn when Codex's lines come together", () => {
         FAKE_CODEX: JSON.stringify({ ...scenario, together: true }),
         FAKE_CODEX_LOG: log(),
       },
-      token: () => Promise.resolve("not-a-real-token"),
+      codexHome: chatCodexHome,
       version: "0.0.0",
     })(
       {

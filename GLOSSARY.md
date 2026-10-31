@@ -49,7 +49,7 @@ Rufi AI's work on a file once it is read, in the reply to the message that sent 
 _Avoid_: classification, grouping, parsing
 
 **Draft item**:
-One result or measurement Rufi AI drafted from a page copy, with its value as the copy prints it (for a digit the reader marked unclear, Rufi AI's reading) and the words it came from, marks included (**From the page**), waiting for you: not part of your record, so it counts in no Overview or trend until you save it; when the AI gives one in an answer, it says it isn't saved yet. The drafted values are kept beside any change. It points to its document and page, and may be **worth a look**, with Rufi AI's reason (on a reading from an older Rufi, why its reader wasn't sure). One whose page was read again since is out of date and can't be saved. It waits until it is saved (new, as another source of a saved result, or as a correction) or dismissed (set aside, as the document's page says); a dismissed item is never saved.
+One result or measurement Rufi AI drafted from a page copy, with its value as the copy prints it (for a digit the reader marked unclear, Rufi AI's reading) and the words it came from, marks included (**From the page**), waiting for you: not part of your record, so it counts in no Overview or trend until you save it; when the AI gives one in an answer, it says it isn't saved yet. The drafted values are kept beside any change. It points to its document and page, and may be **worth a look**, with Rufi AI's reason (on a reading from an older Rufi, why its reader wasn't sure). It names the reading of the page it was drafted from; one whose page was read again after that reading is out of date and can't be saved. It waits until it is saved (new, as another source of a saved result, or as a correction) or dismissed (set aside, as the document's page says); a dismissed item is never saved.
 _Avoid_: pending result, unconfirmed record, extracted row
 
 **Report**:
@@ -268,7 +268,7 @@ What an agent is told when one it started ends a turn: its title, and its whole 
 _Avoid_: callback, notification
 
 **The AI's folder**:
-The folder where the AI works: `ai/` in the data folder. It keeps its programs, notes and research files there between messages, with their caches in `ai/.cache`, and it is the only place where the AI's programs can write. Nothing in it is part of the record. It isn't in backups, the export or a move yet.
+The folder where the AI works: `ai/` in the data folder. It keeps its programs, notes and research files there between messages, with their caches in `ai/.cache`, and it is the only place where the AI's programs can write. Its working notes go in `ai/work/`, a folder for each day; at each start and once a day Rufi removes the days older than 3, and a deleted document's notes go with it. Nothing in it is part of the record. It isn't in backups, the export or a move yet.
 _Avoid_: workspace, sandbox, scratch folder
 
 **Tool**:
@@ -288,14 +288,11 @@ The pages that say what works in Rufi today and how to use it: in Rufi under Hel
 _Avoid_: manual, documentation
 
 **Sign in with ChatGPT**:
-How you connect Rufi to your ChatGPT account, in your browser, so the AI runs on your ChatGPT plan.
+How you sign Codex in to your ChatGPT account, in your browser, so the AI runs on your ChatGPT plan. Codex keeps and renews its sign-in itself, in the data folder's `codex/`; Claude signs in the same way with your Claude account, in `claude/`. Rufi keeps no sign-in of its own.
 _Avoid_: login, API key
 
-**ChatGPT plan use**:
-The permission you give Rufi when you sign in, so it can use your ChatGPT plan. Without it the AI can't answer.
-
 **Data folder**:
-The one folder on your Mac where Rufi keeps everything for your records: the record, the sign-in details, the log, the AI's own files and the AI's folder. Rufi makes it at its first start, `~/.rufi/data`, and remembers it in the location file; `RUFI_HOME` picks another one for one run.
+The one folder on your Mac where Rufi keeps everything for your records: the record, Codex's and Claude's sign-ins, the log, the AI's own files and the AI's folder. Rufi makes it at its first start, `~/.rufi/data`, and remembers it in the location file; `RUFI_HOME` picks another one for one run.
 _Avoid_: vault, profile, workspace, home
 
 **Location file**:
@@ -303,11 +300,11 @@ _Avoid_: vault, profile, workspace, home
 _Avoid_: pointer, config
 
 **Move (the data folder)**:
-Copying the whole data folder into a new, empty folder with `pnpm rufi move-data`, while Rufi doesn't run: checked, then the location file names the new folder. The old folder is kept, marked moved, and Rufi never opens it again. Unlike a restore, a move keeps the sign-in and every backup.
+Copying the whole data folder into a new, empty folder with `pnpm rufi move-data`, while Rufi doesn't run: checked, then the location file names the new folder. The old folder is kept, marked moved, and Rufi never opens it again. Unlike a restore, a move keeps every backup; Codex and Claude sign in again.
 _Avoid_: relocate, sync
 
 **Keychain**:
-Your Mac's store for secrets. Rufi keeps the sign-in itself there, never in the data folder.
+Your Mac's store for secrets. Claude keeps its sign-in there, under a name made from its folder's path in the data folder.
 
 **Log**:
 Rufi's diagnostic file, `logs/rufi.log` in the data folder: fixed events with checked details, never your words or health text.
@@ -318,7 +315,7 @@ The short steps a new data folder starts with: what Rufi is and isn't, what goes
 _Avoid_: onboarding, setup wizard
 
 **Demo folder**:
-A data folder of made-up people for trying Rufi, `~/Rufi-demo`, apart from yours. `pnpm demo` gives it the same test data each time and keeps only its sign-in.
+A data folder of made-up people for trying Rufi, `~/Rufi-demo`, apart from yours. `pnpm demo` gives it the same test data each time and keeps only Codex's and Claude's sign-ins.
 _Avoid_: sandbox, test account
 
 ## Device data

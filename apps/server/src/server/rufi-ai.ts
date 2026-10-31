@@ -192,7 +192,10 @@ function endOf(end: Ended): TurnEnd {
 }
 
 /** A provider event as one of today's agent events, in `threadId`. */
-function eventOf(threadId: string, event: ProviderEvent): RufiAiEvent {
+function eventOf(
+  threadId: string,
+  event: Exclude<ProviderEvent, { type: "turnUsage" }>,
+): RufiAiEvent {
   const turnId = event.turn;
   switch (event.type) {
     case "turnStarted":
@@ -376,6 +379,8 @@ export async function startRufiAi(
     if (threads.get(ref) !== agent) follow(agent, ref);
     // The chat shows Rufi AI's conversation; a sub-agent's is its own.
     if (system.agents.get(agent)?.parent !== null) return;
+    // A turn's own usage is for the usage tool; the chat shows the context.
+    if (event.type === "turnUsage") return;
     if (event.type === "turnEnded") {
       const own = ends.get(event.turn);
       ends.delete(event.turn);

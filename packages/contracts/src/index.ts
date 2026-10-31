@@ -453,20 +453,43 @@ export type Settings = typeof Settings.Type;
 export const EntryDetails = Schema.Struct({ details: Schema.Unknown });
 export type EntryDetails = typeof EntryDetails.Type;
 
-/** The ChatGPT sign-in, as the screens need it. */
+/** The providers the AI runs on, each signed in by itself. */
+export const Provider = Schema.Literals(["codex", "claude"]);
+export type Provider = typeof Provider.Type;
+
+/**
+ * A provider's sign-in, as the provider reports it: its account when it
+ * names one. Unavailable: Rufi can't ask it (not installed, say), with why.
+ */
+export const ProviderStatus = Schema.Struct({
+  state: Schema.Literals(["signed_in", "signed_out", "unavailable"]),
+  account: Schema.NullOr(Schema.String),
+  text: Schema.NullOr(Schema.String),
+});
+export type ProviderStatus = typeof ProviderStatus.Type;
+
+/** Each provider's sign-in, as the screens need it; the chat runs on Codex. */
 export const Status = Schema.Struct({
-  account: Schema.Literals(["signed_out", "signed_in", "no_plan_use"]),
-  email: Schema.NullOr(Schema.String),
+  codex: ProviderStatus,
+  claude: ProviderStatus,
 });
 export type Status = typeof Status.Type;
 
-/** How a sign-in from the screens goes: waiting has the link once it is known. */
+/**
+ * How a sign-in from the screens goes, one at a time: the provider's own
+ * sign-in in the browser; waiting has its link once it is known.
+ */
 export const SignInState = Schema.Struct({
+  provider: Schema.NullOr(Provider),
   state: Schema.Literals(["idle", "waiting", "done", "failed"]),
   link: Schema.NullOr(Schema.String),
   error: Schema.NullOr(Schema.String),
 });
 export type SignInState = typeof SignInState.Type;
+
+/** Starts a provider's sign-in. */
+export const StartSignIn = Schema.Struct({ provider: Provider });
+export type StartSignIn = typeof StartSignIn.Type;
 
 /** The last good backup, and the last failed try when it is newer. */
 export const Backups = Schema.Struct({

@@ -153,7 +153,7 @@ What Rufi does when it saves a document's results:
 - **Its sources.** Each result keeps where it came from: the document and its page, your message, or both. The receipt, the AI's reads and a visit brief show them.
 - **All or nothing.** Rufi saves all the results in one step, however many there are. If one can't be saved, nothing is saved, and the AI tells you why.
 - **Each result once.** A result you already saved isn't saved again: the AI gets the earlier save back. After an undo, you can ask the AI to save it again.
-- **Nothing changed since.** If a result changed after the AI read it (it was sorted again, or you changed it), Rufi refuses the save. The AI reads the document again and asks you again. A draft whose page was read again since it was drafted is **out of date**: Rufi refuses to save it, and the AI saves the page's new drafts instead.
+- **Nothing changed since.** If a result changed after the AI read it (it was sorted again, or you changed it), Rufi refuses the save. The AI reads the document again and asks you again. Each draft remembers which reading of its page it was drafted from. If the page was read again after that reading, the draft is **out of date**: Rufi refuses to save it, and the AI saves the page's new drafts instead.
 
 ### Results you don't want
 
@@ -182,8 +182,8 @@ You can also tell the AI about a visit with no paper, such as a video call with 
 Your reply stops in Rufi's part, before Rufi AI starts on your message. Its last line says why and how far it got, with **Retry**. The pages already copied are kept, and Rufi AI never gets half a message.
 
 - **You clicked Stop:** the step says **stopped · 13 of 60**, and the reply ends **Stopped. · read 13 of 60**. As after any Stop, nothing more goes by itself until you send a message.
-- **You're signed out, your sign-in has ended, or your plan's usage limit is reached:** the reading stops at once. The line says why, in Rufi's or the service's words, for example **Couldn't read scan-2024.pdf · Not signed in. Sign in with ChatGPT: in Rufi, or with pnpm rufi signin. · read 13 of 60**. Sign in, or wait until the limit resets, then click **Retry**. Rufi doesn't try again by itself.
-- **The AI connection was lost or restarted, or ChatGPT can't renew your sign-in just now:** Rufi tries again by itself, up to three times: after 30 seconds, then 1 minute, then 2 minutes. Meanwhile the step says **waiting to copy again**.
+- **You're signed out, your sign-in has ended, or your plan's usage limit is reached:** the reading stops at once. The line says why, in Rufi's or the service's words, for example **Couldn't read scan-2024.pdf · Codex isn't signed in to ChatGPT. Sign in from Settings, then try again. · read 13 of 60**. Sign in, or wait until the limit resets, then click **Retry**. Rufi doesn't try again by itself.
+- **The AI connection was lost or restarted:** Rufi tries again by itself, up to three times: after 30 seconds, then 1 minute, then 2 minutes. Meanwhile the step says **waiting to copy again**.
 - **It took too long, or failed again:** the line says **Couldn't read … · read 3 of 5**. Between them is why: "the reading took too long", or the AI service's error as the service reported it, such as "exceeded retry limit, last status: 429 Too Many Requests".
 - **Rufi closed while reading:** when Rufi starts again, the reply ends **Rufi closed while reading.**, with **Retry**. Nothing goes on by itself after a restart.
 
@@ -292,6 +292,7 @@ Your health record changes only in the chat, with your yes. The delete itself re
 | The original file and the pages Rufi drew from it       | Your health record, with its history and receipts                                            |
 | The reader's copies of its pages and its unsaved drafts | The chat: your messages, the AI's replies and Rufi's lines                                   |
 | A reading that waits or runs: it stops                  | Visit briefs, as they were written                                                           |
+| The AI's working notes on it                            |                                                                                              |
 |                                                         | The document's name and page numbers, so that what points at it can say **document deleted** |
 
 After the delete, a chip of the document in an old message says **document deleted** and opens nothing. A reading line about it from an earlier version has no **Open** or **Retry**. A saved result's sources say **Document deleted (Sunrise Labs August.pdf, page 2)**, and so do a visit's: the visit stays, with the records saved from it. A result you removed before can still come back with "undo that"; its source says **document deleted**. The document itself can't come back: add its file again if you need it.
@@ -308,5 +309,6 @@ A delete removes the document from Rufi's data folder. Copies outside it stay:
 
 - **Rufi's backups** keep the document until they age out, in about 5 weeks. Backups made before an update keep it until you remove them (see [Backups and export](backups-and-export.md#deleted-documents-in-backups)).
 - **Exports** you saved keep it.
+- **The AI's folder** keeps files the AI made from it, apart from its working notes on the document, which Rufi removes (see [Your data and the AI](your-data-and-the-ai.md#what-the-ai-can-do-in-its-folder)).
 - **Time Machine** and other backups of your Mac keep it.
 - **The AI** may remember what it already read in this chat. Rufi's tools no longer show it the document's pages, and Rufi tells it at once that you deleted the document, and not to use or quote what it read from its pages. Results that you kept stay facts in your health record: the AI reads them as it reads any result, and says the document was deleted.

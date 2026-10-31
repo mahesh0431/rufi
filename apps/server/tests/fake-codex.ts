@@ -4,10 +4,9 @@
 // does. What a turn does is chosen by its message's text, the
 // same words the fake model uses for the real Codex (tests/fake-model.ts):
 // "hang" never ends, "partial" writes "ok:part" and then never ends, "slow"
-// answers after 300 ms, "renew" runs Rufi's provider auth command for a
-// fresh token as Codex does after a 401 (failing the turn as Codex does when
-// the command fails), "fail" fails, "quiet" makes no tool call and runs no
-// command, "command"
+// answers after 300 ms, "sign-in ended" fails as Codex does when its
+// sign-in has ended and can't be renewed, "fail" fails, "quiet" makes no
+// tool call and runs no command, "command"
 // starts a long command ("background command": and the turn ends while it
 // runs), "drip" streams its answer in five parts 100 ms
 // apart, "long" streams 200 parts of 1,000 characters, "think" streams a
@@ -25,9 +24,13 @@
 // nothing, and a developer message thread/inject_items adds is the last
 // word (each turn logs the one it ran with, as `told`). Like Codex, it
 // answers a resume of a thread it has no record of with "no rollout found
-// for thread id <id>". The test passes a scenario in FAKE_CODEX and reads
-// what happened from the JSON lines written to FAKE_CODEX_LOG.
-import { execFile, spawn } from "node:child_process";
+// for thread id <id>". Like Codex, it is signed in when CODEX_HOME holds
+// its sign-in (auth.json), or the scenario doesn't say signed out: its own
+// sign-in (account/login/start) finishes at once, as if the person signed
+// in in the browser, and keeps a fictional sign-in there. The test passes a
+// scenario in FAKE_CODEX and reads what happened from the JSON lines
+// written to FAKE_CODEX_LOG.
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   appendFileSync,
@@ -43,6 +46,10 @@ import { NOTE, THINKING } from "./fake-model.ts";
 import { callTool, initialize, type McpServerConfig } from "./mcp-client.ts";
 
 export interface Scenario {
+  /** Signed out until a sign-in finishes (signed in when not said). */
+  signedIn?: false;
+  /** Codex's own sign-in fails, with Codex's words. */
+  loginFails?: true;
   /** Words that choose what every turn does, as if its message had them. */
   words?: string;
   /** Methods the fake never answers. */
@@ -54,6 +61,8 @@ export interface Scenario {
   slowMs?: number;
   /** Methods the fake takes at once but answers after `slowMs`. */
   answerLate?: string[];
+  /** Methods the fake holds, while the file `file` exists, before it answers. */
+  held?: { methods: string[]; file: string };
   /** How long after a turn starts Codex shows the user's message (at once). */
   userMessageMs?: number;
   /** Feature flags as Codex reports them, over what config.toml asked for. */
@@ -120,7 +129,9 @@ export interface Scenario {
    * `id` is Codex's call id (`call-<n>`; `exec-…` for a call made from exec).
    * The text "$document" in a call's arguments becomes the document the
    * turn's input names: in Rufi's note on what its reader copied
-   * ("(document <id>)"), or else the first document chip.
+   * ("(document <id>)"), or else the first document chip. A draft's
+   * reading "$reading" becomes the reading of its page's copy, which the
+   * fake reads with get_documents first, as the model would (not a step).
    */
   calls?: {
     id?: string;
@@ -388,34 +399,10 @@ function complete(
   });
 }
 
-/**
- * Like Codex, runs the auth command of Rufi's provider (its config.toml) for
- * a token. Its words when it fails, as Codex 0.163.0 gives them.
- */
-async function authToken(): Promise<{ token: string } | { failed: string }> {
-  const config = readFileSync(
-    join(process.env["CODEX_HOME"] ?? "", "config.toml"),
-    "utf8",
-  );
-  const auth = config.split("[model_providers.openai_chatgpt_plan.auth]")[1];
-  const command = /^command = (".*")$/m.exec(auth ?? "")?.[1];
-  const args = /^args = (\[.*\])$/m.exec(auth ?? "")?.[1];
-  if (command === undefined || args === undefined) {
-    return { failed: "Rufi's provider has no auth command." };
-  }
-  const file = JSON.parse(command) as string;
-  return new Promise((resolve) => {
-    execFile(file, JSON.parse(args) as string[], (error, stdout, stderr) => {
-      resolve(
-        error
-          ? {
-              failed: `provider auth command \`${file}\` exited with status exit status: 1: ${stderr}`,
-            }
-          : { token: stdout.trim() },
-      );
-    });
-  });
-}
+/** Where Codex keeps its sign-in. */
+const authFile = () => join(process.env["CODEX_HOME"] ?? "", "auth.json");
+
+const signedIn = () => scenario.signedIn !== false || existsSync(authFile());
 
 async function runTurn(thread: Thread, turnId: string, entry: Queued) {
   const threadId = thread.id;
@@ -457,19 +444,14 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
   }
   event("item/started", { item: userItem(entry) });
   if (text.includes("crash")) process.exit(1);
-  // Like Codex after OpenAI refuses its token (a 401): it runs the auth
-  // command again, and fails the turn with the command's words when that
-  // fails (Codex first tries five times more).
-  if (text.includes("renew")) {
-    const renewed = await authToken();
-    record({ renewed: "token" in renewed ? renewed.token : null });
-    if ("failed" in renewed) {
-      complete(thread, turnId, "failed", {
-        message: renewed.failed,
-        codexErrorInfo: "other",
-      });
-      return;
-    }
+  // Like Codex when its sign-in has ended and can't be renewed.
+  if (text.includes("sign-in ended")) {
+    complete(thread, turnId, "failed", {
+      message:
+        "Your access token could not be refreshed because your refresh token has expired. Please log out and sign in again.",
+      codexErrorInfo: "unauthorized",
+    });
+    return;
   }
   const turnIndex = thread.history.findIndex((turn) => turn.id === turnId);
   const byText = Object.entries(scenario.callsByText ?? {}).find(([words]) =>
@@ -495,6 +477,33 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
           .replaceAll("$agent", agent ?? "$agent"),
       ) as unknown,
     };
+    const drafts = (call.arguments as { drafts?: unknown } | null)?.drafts;
+    if (
+      thread.mcp &&
+      named !== undefined &&
+      Array.isArray(drafts) &&
+      JSON.stringify(drafts).includes('"$reading"')
+    ) {
+      const read = await callTool(thread.mcp, {
+        name: "get_documents",
+        arguments: { document: named, copies: true },
+        callId: `${id ?? `call-${String(i)}`}-copies`,
+        threadId,
+        turnId,
+      });
+      const [text] = (read.result?.["content"] ?? []) as { text: string }[];
+      const copies =
+        (
+          JSON.parse(text?.text ?? "{}") as {
+            result?: { copies?: { page: number; reading?: string }[] };
+          }
+        ).result?.copies ?? [];
+      for (const draft of drafts as { page: number; reading?: string }[]) {
+        if (draft.reading === "$reading") {
+          draft.reading = copies.find((c) => c.page === draft.page)?.reading;
+        }
+      }
+    }
     // Like Codex: the item starts, then the call goes to Rufi's MCP server.
     const item = {
       id: id ?? `call-${String(i)}`,
@@ -931,10 +940,40 @@ async function handle(
         ? { data: all.slice(half), nextCursor: null }
         : { data: all.slice(0, half), nextCursor: "page-2" };
     }
+    case "account/read":
+      return {
+        account: signedIn()
+          ? { type: "chatgpt", email: "asha@example.com", planType: "plus" }
+          : null,
+        requiresOpenaiAuth: true,
+      };
+    case "account/login/start": {
+      const loginId = randomUUID();
+      // The person signs in in the browser at once.
+      setTimeout(() => {
+        if (scenario.loginFails !== true) {
+          writeFileSync(authFile(), '{"fictional": true}');
+        }
+        send({
+          method: "account/login/completed",
+          params: {
+            loginId,
+            success: scenario.loginFails !== true,
+            error:
+              scenario.loginFails === true ? "Login was not completed." : null,
+            onboardingEntrypoint: null,
+          },
+        });
+      }, 50);
+      return {
+        type: "chatgpt",
+        loginId,
+        authUrl: "https://auth.openai.com/oauth/authorize?fictional=1",
+      };
+    }
     case "config/read":
       return {
         config: {
-          model_provider: "openai_chatgpt_plan",
           model_reasoning_effort: "medium",
           model_reasoning_summary: "detailed",
           personality: "none",
@@ -1191,7 +1230,14 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       },
     );
   };
-  if (scenario.slow?.includes(method)) {
+  if (scenario.held?.methods.includes(method)) {
+    const { file } = scenario.held;
+    const wait = setInterval(() => {
+      if (existsSync(file)) return;
+      clearInterval(wait);
+      reply();
+    }, 20);
+  } else if (scenario.slow?.includes(method)) {
     setTimeout(reply, scenario.slowMs ?? 200);
   } else if (scenario.answerLate?.includes(method)) {
     void handle(method, message.params ?? {}).then((result) => {

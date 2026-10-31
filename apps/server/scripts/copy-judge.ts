@@ -195,11 +195,15 @@ export interface JudgeDeps {
   log: Log;
 }
 
-/** One page's verdicts, or why the judge gave none. */
+/**
+ * One page's verdicts, or why the judge gave none; the judge runs on the
+ * data folder `home` (live-run.ts caseFolder).
+ */
 export async function judgePage(
   deps: JudgeDeps,
   key: KeyPage,
   copy: string,
+  home: string,
 ): Promise<Judged | { failed: string }> {
   let answer: Answer | undefined;
   const tool = verdictTool((given) => {
@@ -217,9 +221,9 @@ export async function judgePage(
   });
   try {
     const { result: judged, kept } = await onScratch(
-      "rufi-judge-",
-      async (home): Promise<Judged | { failed: string }> => {
-        const outcome = await deps.run(home)({
+      home,
+      async (folder): Promise<Judged | { failed: string }> => {
+        const outcome = await deps.run(folder)({
           ...JUDGE,
           instructions: JUDGE_INSTRUCTIONS,
           input: judgeInput(key, copy),

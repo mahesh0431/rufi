@@ -10,9 +10,7 @@ import type { Conversation, ProviderEvent } from "@rufi/agents/provider";
 import { afterEach, expect, it } from "vitest";
 import type { Scenario } from "../../../tests/fake-codex.ts";
 import { codexMeta } from "../../../tests/mcp-client.ts";
-import { ChatGptError } from "../chatgpt/openai.ts";
 import { codexAdapter } from "./adapter.ts";
-import { TOKEN_VALID_MS } from "./token-door.ts";
 
 const FAKE = join(import.meta.dirname, "../../../tests/fake-codex.ts");
 /** Longer than Rufi waits for Codex's answer: the answer is lost. */
@@ -60,8 +58,8 @@ const WORDS: Record<NonNullable<Script["turn"]>, string | undefined> = {
   fails: "fail",
   usage_limit: "fail",
   dies: "crash",
-  renews: "renew",
-  renewal_fails: "renew",
+  renews: undefined,
+  renewal_fails: "sign-in ended",
 };
 
 /** The scripted Codex that behaves as `script` says. */
@@ -79,6 +77,7 @@ function scenarioOf(script: Script): Scenario {
     ...(script.turn === "usage_limit" && {
       resetsAt: Math.floor(Date.now() / 1000) + 3_600,
     }),
+    ...(script.signedIn === false && { signedIn: false }),
     ...(script.resumeFails && { resumeFails: 1 }),
     ...(script.start === "refuses" && { refuse: ["turn/start"] }),
     ...(script.start === "loses_reply" && lost("turn/start")),
@@ -103,15 +102,6 @@ async function setUp(script: Script, scenario = scenarioOf(script)) {
       FAKE_CODEX: JSON.stringify(scenario),
       FAKE_CODEX_LOG: join(home, "fake.jsonl"),
     },
-    // A failing renewal: the sign-in has ended by the time Codex asks its
-    // door for a fresh token.
-    token: (validForMs) =>
-      script.signedIn === false ||
-      (script.turn === "renewal_fails" && validForMs === TOKEN_VALID_MS)
-        ? Promise.reject(
-            new ChatGptError("sign_in_again", "Your sign-in has ended."),
-          )
-        : Promise.resolve("token-1"),
     version: "9.9.9",
     deadlines: {
       startMs: 10_000,
@@ -149,7 +139,10 @@ providerContract("Codex", {
     Promise.resolve(
       codexMeta({ callId: call, threadId: conversation.ref, turnId: turn }),
     ),
-  cannot: { nextTurn: "Codex never starts a turn by itself" },
+  cannot: {
+    nextTurn: "Codex never starts a turn by itself",
+    renews: "Codex renews its own sign-in, with nothing of Rufi's in it",
+  },
 });
 
 const closing: (() => Promise<void>)[] = [];
