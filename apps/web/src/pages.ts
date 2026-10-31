@@ -4,12 +4,14 @@
 export const documentPath = (personId: string, documentId: string) =>
   `/api/people/${encodeURIComponent(personId)}/documents/${encodeURIComponent(documentId)}`;
 
-/** Where the core gives page `position` of a document. */
+/** Where the core gives page `position` of a document, at full size when `full`. */
 export const pagePath = (
   personId: string,
   documentId: string,
   position: number,
-) => `${documentPath(personId, documentId)}/pages/${String(position)}`;
+  full = false,
+) =>
+  `${documentPath(personId, documentId)}/pages/${String(position)}${full ? "?size=full" : ""}`;
 
 /**
  * The page of a document a tool's result showed: the page Rufi's
@@ -19,10 +21,10 @@ export const pagePath = (
  */
 export function pageOf(
   item: Record<string, unknown>,
-): { document: string; page: number } | undefined {
+): { document: string; page: number; full: boolean } | undefined {
   const use = item["use"] as { input?: unknown } | undefined;
   const args = (item["arguments"] ?? use?.input) as
-    | { document?: unknown; page?: unknown }
+    | { document?: unknown; page?: unknown; full_size?: unknown }
     | null
     | undefined;
   const content = (item["result"] as { content?: unknown } | null | undefined)
@@ -32,5 +34,9 @@ export function pageOf(
     content.some((part) => (part as { type?: unknown }).type === "image");
   if (!image || typeof args?.document !== "string") return undefined;
   if (typeof args.page !== "number") return undefined;
-  return { document: args.document, page: args.page };
+  return {
+    document: args.document,
+    page: args.page,
+    full: args.full_size === true,
+  };
 }

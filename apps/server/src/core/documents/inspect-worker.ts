@@ -22,6 +22,14 @@ import type { Drawn, Inspected, Task } from "./inspect.ts";
  */
 const PAGE_PIXELS = 1600;
 
+/**
+ * A page at full size, when the AI asks for print too small to read at
+ * 1600 px: twice as long a side, four times the pixels. Codex sends it whole
+ * marked "original" (up to 6000 px and 10,000 patches); Claude Code scales
+ * it to fit 2000 px a side.
+ */
+const FULL_PAGE_PIXELS = 3200;
+
 /** pdf.js's fonts for PDFs that don't embed theirs, and its character maps. */
 const PDFJS = dirname(
   createRequire(import.meta.url).resolve("pdfjs-dist/package.json"),
@@ -91,7 +99,11 @@ async function look(bytes: Uint8Array): Promise<Inspected> {
  * the PDF gives it (its reading order), no positions. No scripts, no forms
  * and no annotations: links and a PDF's own actions are ignored.
  */
-async function drawPage(bytes: Uint8Array, number: number): Promise<Drawn> {
+async function drawPage(
+  bytes: Uint8Array,
+  number: number,
+  full: boolean,
+): Promise<Drawn> {
   const task = getDocument({
     data: bytes.slice(),
     enableXfa: false,
@@ -105,7 +117,9 @@ async function drawPage(bytes: Uint8Array, number: number): Promise<Drawn> {
     const page = await pdf.getPage(number);
     const whole = page.getViewport({ scale: 1 });
     const viewport = page.getViewport({
-      scale: PAGE_PIXELS / Math.max(whole.width, whole.height),
+      scale:
+        (full ? FULL_PAGE_PIXELS : PAGE_PIXELS) /
+        Math.max(whole.width, whole.height),
     });
     const canvas = createCanvas(
       Math.round(viewport.width),
@@ -145,7 +159,7 @@ const asked = workerData as Task;
 const answer: Inspected | Drawn =
   asked.task === "inspect"
     ? await look(asked.bytes)
-    : await drawPage(asked.bytes, asked.page);
+    : await drawPage(asked.bytes, asked.page, asked.full);
 const bytes =
   "display" in answer
     ? answer.display

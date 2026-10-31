@@ -274,6 +274,31 @@ describe("get_documents", () => {
     ]);
   });
 
+  it("gives a page at full size when asked: drawn twice as large, kept beside the usual one", async () => {
+    const [id = ""] = await add(
+      "asha",
+      await fixture("sunrise-labs-august.pdf"),
+    );
+    const page = await call(
+      { personId: "asha" },
+      { document: id, page: 2, full_size: true },
+    );
+    expect(page.images).toEqual([
+      {
+        mimeType: "image/png",
+        data: expect.any(String) as unknown,
+        full: true,
+      },
+    ]);
+    const image = await loadImage(
+      Buffer.from(page.images?.[0]?.data ?? "", "base64"),
+    );
+    expect([image.width, image.height]).toEqual([2261, 3200]);
+    const usual = ok(await pages(store, home).page("asha", id, 2));
+    const drawn = await loadImage(Buffer.from(usual.image.bytes));
+    expect([drawn.width, drawn.height]).toEqual([1131, 1600]);
+  });
+
   it("gives a fixed item what the reader read beside the person's fix, and an unfixed item as it is", async () => {
     const [id = ""] = await add(
       "asha",
