@@ -15,6 +15,16 @@ export function timeOf(date: string): number {
   return Date.UTC(year, month - 1, day, hour, minute);
 }
 
+/**
+ * Whether a date is a calendar date at the record's precision (YYYY,
+ * YYYY-MM, YYYY-MM-DD or YYYY-MM-DDTHH:MM) that gives a time: the only dates
+ * a trend places. Other words, such as "2026 (date unclear)", stay in the
+ * table.
+ */
+export const isCalendarDate = (date: string): boolean =>
+  /^\d{4}(-\d{2}(-\d{2}(T\d{2}:\d{2})?)?)?$/.test(date) &&
+  Number.isFinite(timeOf(date));
+
 /** What a trend reads of a result: the record page's, or one a reply's trend gives. */
 export type TrendValue = Pick<
   ResultRow,
@@ -42,7 +52,7 @@ export function placedOf(values: readonly TrendValue[]): Placed[] {
     (value): value is Placed =>
       value.number !== undefined &&
       value.measured !== undefined &&
-      /^\d{4}/.test(value.measured.date),
+      isCalendarDate(value.measured.date),
   );
 }
 

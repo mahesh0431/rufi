@@ -14,6 +14,7 @@ import {
   createLibrary,
   createParser,
   defineComponent,
+  type ElementNode,
 } from "@openuidev/lang-core";
 import { z } from "zod";
 
@@ -53,10 +54,38 @@ export const visuals = createLibrary({
 
 const parser = createParser(visuals.toJSONSchema(), "Trend");
 
+const isElement = (node: unknown): node is ElementNode =>
+  typeof node === "object" && node !== null && "props" in node;
+
+/** A Point with each prop as its schema has it (null is left out; nothing is coerced). */
+const isPoint = (node: unknown): node is ElementNode =>
+  isElement(node) &&
+  node.typeName === "Point" &&
+  Point.props.safeParse(node.props).success;
+
+const trendFields = Trend.props.omit({ points: true });
+
+/**
+ * Whether a parsed block is what the components say: a Trend whose points
+ * are all Points, every prop by its schema. OpenUI's parse doesn't check the
+ * root's component, which component sits in a point's place, or a scalar
+ * inside a prop that may be null.
+ */
+function fitsContract(root: ElementNode | null): boolean {
+  if (root?.typeName !== "Trend") return false;
+  const points = root.props["points"];
+  return (
+    trendFields.safeParse(root.props).success &&
+    Array.isArray(points) &&
+    points.every(isPoint)
+  );
+}
+
 /**
  * A block as OpenUI parses it: `whole` when nothing is cut off, every name
- * used is defined and every name defined is used, and nothing is wrong; and
- * its points' props, as the block gives them.
+ * used is defined and every name defined is used, nothing is wrong, and it
+ * is a Trend of Points as the components say; and its points' props, as
+ * the block gives them.
  */
 export function readTrend(source: string): {
   whole: boolean;
@@ -69,11 +98,10 @@ export function readTrend(source: string): {
       !meta.incomplete &&
       meta.unresolved.length === 0 &&
       meta.orphaned.length === 0 &&
-      meta.errors.length === 0,
+      meta.errors.length === 0 &&
+      fitsContract(root),
     points: (Array.isArray(points) ? points : []).flatMap((point: unknown) =>
-      typeof point === "object" && point !== null && "props" in point
-        ? [point.props as Record<string, unknown>]
-        : [],
+      isElement(point) ? [point.props] : [],
     ),
   };
 }

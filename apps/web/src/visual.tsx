@@ -18,7 +18,12 @@ import { Point, readTrend, Trend as TrendPart } from "@rufi/contracts/visuals";
 import { useMemo, useState, type ReactNode } from "react";
 import { printedDate } from "./dates.ts";
 import { Trend } from "./trend.tsx";
-import { placedOf, timeOf, type TrendValue } from "./trend-drawing.ts";
+import {
+  isCalendarDate,
+  placedOf,
+  timeOf,
+  type TrendValue,
+} from "./trend-drawing.ts";
 
 /** One value as the block gives it, with nothing it left out or set to null. */
 interface Given {
@@ -33,14 +38,14 @@ interface Given {
 const isElement = (node: unknown): node is ElementNode =>
   typeof node === "object" && node !== null && "props" in node;
 
-/** The value as a trend reads it: a date only when it has a year. */
+/** The value as a trend reads it: a date only when it is a calendar date. */
 const asTrendValue = (given: Given): TrendValue => ({
   value: given.value,
   ...(given.number !== undefined && { number: given.number }),
   ...(given.second !== undefined && { second_number: given.second }),
   ...(given.flag !== undefined && { flag: given.flag }),
   ...(given.range !== undefined && { range: given.range }),
-  ...(/^\d{4}/.test(given.date) && { measured: { date: given.date } }),
+  ...(isCalendarDate(given.date) && { measured: { date: given.date } }),
 });
 
 /** A point's props, with null as left out, so a missing number is never drawn at 0. */
@@ -61,11 +66,11 @@ function givenOf(props: Record<string, unknown>): Given {
   return given;
 }
 
-/** Oldest first by date, whatever order the block gave; those with no date last. */
+/** Oldest first by date, whatever order the block gave; those with no calendar date last. */
 const byDate = (values: readonly Given[]) =>
   values.toSorted((a, b) => {
-    const dated = (g: Given) => /^\d{4}/.test(g.date);
-    if (!dated(a) || !dated(b)) return Number(!dated(a)) - Number(!dated(b));
+    const [x, y] = [isCalendarDate(a.date), isCalendarDate(b.date)];
+    if (!x || !y) return Number(!x) - Number(!y);
     return timeOf(a.date) - timeOf(b.date);
   });
 
@@ -103,7 +108,7 @@ function TrendView({
           {given.map((g, i) => (
             <tr key={i}>
               <td>
-                {/^\d{4}/.test(g.date)
+                {isCalendarDate(g.date)
                   ? printedDate(g.date)
                   : g.date || "No date"}
               </td>

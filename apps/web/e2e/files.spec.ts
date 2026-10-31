@@ -697,7 +697,7 @@ test("a trend the AI wrote draws in the reply, oldest first, with every value in
   expect(await refusedIn(page)).toEqual([]);
 });
 
-test("a finished trend block that names a value it never gives shows as its text, never as a partial trend", async ({
+test("a finished trend block that names a value it never gives, or puts another part where a value goes, shows as its text, never as a partial trend", async ({
   page,
   rufi,
 }) => {
@@ -711,10 +711,21 @@ test("a finished trend block that names a value it never gives shows as its text
       'root = Trend("Haemoglobin", [p1, p2], "g/dL")',
       'p1 = Point("2026-02-10", "11.6", 11.6)',
       "```",
+      "",
+      "Not a Trend of Points:",
+      "",
+      "```openui-lang",
+      'root = Trend("Haemoglobin", [p1, more], "g/dL")',
+      'p1 = Point("2026-02-10", "11.2", 11.2)',
+      'more = Trend("Haemoglobin", [Point("2026-05-20", "11.9", 11.9)], "g/dL")',
+      "```",
     ].join("\n"),
   );
   const reply = log(page).locator(".reply").last();
-  await expect(reply.locator("pre")).toContainText('p1 = Point("2026-02-10"');
-  await expect(reply.getByText("This trend couldn't be drawn.")).toBeVisible();
+  await expect(reply.locator("pre")).toHaveText([
+    /p1 = Point\("2026-02-10", "11\.6"/,
+    /Point\("2026-05-20", "11\.9", 11\.9\)/,
+  ]);
+  await expect(reply.getByText("This trend couldn't be drawn.")).toHaveCount(2);
   await expect(reply.getByRole("img")).toHaveCount(0);
 });
