@@ -4,8 +4,8 @@
 // with or without everything under it, manages what waits for it and for
 // the agents below it, and lists the models of the user's shortlist and
 // moves an agent below it to one. Rufi's chat does them in the agent
-// system (server/sub-agents.ts); a sub-agent never gets more tools than the
-// agent that starts it.
+// system (server/sub-agents.ts); a sub-agent gets the tools of the agent
+// that starts it.
 import { Schema } from "effect";
 import { defineTool, NoInput, Refusal } from "./registry.ts";
 
@@ -18,12 +18,6 @@ export const StartAgentInput = Schema.Struct({
     description:
       "Its whole task, its first message: it sees nothing of your conversation but this.",
   }).check(Schema.isMinLength(1)),
-  tools: Schema.optionalKey(
-    Schema.Array(Schema.String).annotate({
-      description:
-        "Rufi's tools it may use, by name, among your own. Leave it out for all of yours.",
-    }),
-  ),
   model: Schema.optionalKey(
     Schema.String.annotate({
       description: "A model list_models gives. Leave it out for yours.",
@@ -142,7 +136,7 @@ const outside = () =>
 export const startAgent = defineTool({
   name: "start_agent",
   description:
-    "Starts an agent of your own for a task that can run on its own: it runs at once, on your model and effort unless you give one that list_models gives (a model the user hasn't ticked is refused, yours too), and goes on after your turn ends. Give it a title and its whole task, its first message. It has your tools unless you give it fewer (tools); one you don't have is refused. Its saves and briefs show in the chat with Rufi's receipt. Answers its id; agent_status says how it is, and read_agent reads its conversation.",
+    "Starts an agent of your own for a task that can run on its own: it runs at once, on your model and effort unless you give one that list_models gives (a model the user hasn't ticked is refused, yours too), and goes on after your turn ends. Give it a title and its whole task, its first message. It has all of your tools. Its saves and briefs show in the chat with Rufi's receipt. Answers its id; agent_status says how it is, and read_agent reads its conversation.",
   input: StartAgentInput,
   callers: "model",
   readOnly: false,
@@ -151,7 +145,6 @@ export const startAgent = defineTool({
     {
       title: "Checking the thyroid results",
       task: "Read the user's thyroid results with get_records and say which are outside the lab's range.",
-      tools: ["get_overview", "get_records"],
     },
   ],
   run: (input, { agents, callId }) => {

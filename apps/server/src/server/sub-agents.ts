@@ -1,9 +1,9 @@
 // What an agent does with agents (core/tools/agents.ts), in the agent
 // system (docs/adr/0026). A child of the calling agent is made by the call
 // that starts it, and its id is that call's, so the same call again finds
-// it; it is the caller's chat's, on the caller's model and effort, with no
-// more of Rufi's tools than the caller has. Each turn's end goes to its
-// parent as a done message (the package's). An agent sees how the agents
+// it; it is the caller's chat's, on the caller's model and effort, with
+// the caller's tools. Each turn's end goes to its parent as a done message
+// (the package's). An agent sees how the agents
 // below it are, writes to one or to its parent, reads the conversation of
 // any agent in its chat, its own too, by pages, stops one below it or
 // itself, with or without everything under it, and manages what waits for
@@ -57,18 +57,11 @@ export function subAgents(deps: {
         ? agents.get(id)
         : undefined;
     return {
-      start: async ({ title, task, tools, model, effort }, callId) => {
+      start: async ({ title, task, model, effort }, callId) => {
         const parent = agents.get(scope.agent);
         if (!parent) throw new Error(`No agent ${scope.agent}.`);
         // Its own or its parent's: the shortlist decides either way.
         const on = await shortlisted(model ?? parent.model);
-        const given = [...new Set(tools ?? parent.tools)];
-        const wider = given.filter((tool) => !parent.tools.includes(tool));
-        if (wider.length > 0) {
-          throw new Refusal(
-            `An agent you start can have only tools you have, and you don't have ${wider.join(", ")}. Nothing was started.`,
-          );
-        }
         // Each step again finds what it did: a crash before the owner is
         // kept leaves an agent the next start removes, its task with it.
         if (!agents.get(callId)) {
@@ -79,7 +72,8 @@ export function subAgents(deps: {
             provider: on.provider,
             model: on.id,
             effort: effort ?? parent.effort,
-            tools: given,
+            // Its parent's, all of them (T3 Code's way).
+            tools: parent.tools,
             cwd: parent.cwd,
           });
         }
