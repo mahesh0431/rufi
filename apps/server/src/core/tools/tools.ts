@@ -2,7 +2,7 @@
 // using them is in the core (core/chat/instructions.ts) and the skills.
 import { createBrief } from "./brief.ts";
 import { readChat } from "./chat.ts";
-import { getDocuments, sortDocuments } from "./documents.ts";
+import { getDocuments, saveReading, sortDocuments } from "./documents.ts";
 import { showFace } from "./face.ts";
 import { getOverview } from "./overview.ts";
 import { dismissItems, saveChanges } from "./save.ts";
@@ -22,6 +22,13 @@ import type { Log } from "../../platform/logs.ts";
 import type { ChatRow, Transcripts } from "../chat/transcript.ts";
 import { createBrief as makeBrief } from "../briefs/briefs.ts";
 import type { Pages } from "../documents/pages.ts";
+import {
+  keptReading,
+  keptUnsaved,
+  type SaveReadingAnswer,
+  type SaveReadingInput,
+  type SaveReadingScope,
+} from "../documents/save-reading.ts";
 import type { SortAnswer, SortInput, SortScope } from "../documents/sorting.ts";
 import { dismissItems as dismissDrafts } from "../record/items.ts";
 import { saveChanges as saveToRecord } from "../record/save.ts";
@@ -36,6 +43,7 @@ export const TOOLS: readonly Tool[] = [
   saveChanges,
   dismissItems,
   sortDocuments,
+  saveReading,
   createBrief,
   showFace,
 ];
@@ -114,9 +122,19 @@ export function chatCaller(
     /** After a sort is kept. */
     done: (personId: string) => void;
   },
+  reading?: {
+    run: (
+      scope: SaveReadingScope,
+      input: SaveReadingInput,
+      trx: Transaction<Tables>,
+    ) => Promise<SaveReadingAnswer>;
+    /** After a reading is kept. */
+    done: (personId: string) => void;
+  },
 ) {
   return (chat: ChatRow, agentTurnId: string, origin: "person" | "rufi") => {
-    // Sorts kept with their call, by call id, till their answer goes out.
+    // Sorts and readings kept with their call, by call id, till their
+    // answer goes out.
     const kept = new Set<string>();
     const call = forAgent(
       () => ({
@@ -178,6 +196,26 @@ export function chatCaller(
           sort.done(chat.personId);
           return sorted;
         },
+        // In the reading's transaction too, kept without its page text.
+        saveReading: async (input, callId) => {
+          if (origin === "rufi") throw new Refusal(EVENT_TURN);
+          if (!reading) throw new Refusal("Rufi can't save a reading here.");
+          const saved = await transcripts.withToolCall(
+            chat,
+            agentTurnId,
+            // Kept only once saved: its document is the person's.
+            { callId, tool: saveReading.name, input: keptReading(input, true) },
+            (trx) =>
+              reading.run(
+                { personId: chat.personId, chatId: chat.id, callId },
+                input,
+                trx,
+              ),
+          );
+          kept.add(callId);
+          reading.done(chat.personId);
+          return saved;
+        },
         brief: (input, callId) =>
           origin === "rufi"
             ? Promise.reject(new Refusal(EVENT_TURN))
@@ -204,8 +242,16 @@ export function chatCaller(
       callId?: string,
     ): Promise<ToolAnswer> => {
       const answer = await call(name, input, callId);
-      return callId !== undefined && kept.delete(callId)
-        ? { ...answer, kept: true }
+      if (callId !== undefined && kept.delete(callId)) {
+        return { ...answer, kept: true };
+      }
+      // A reading not saved is kept without its page text: that goes with
+      // its document.
+      return name === saveReading.name
+        ? {
+            ...answer,
+            keep: await keptUnsaved(reader, chat.personId, input, answer),
+          }
         : answer;
     };
   };

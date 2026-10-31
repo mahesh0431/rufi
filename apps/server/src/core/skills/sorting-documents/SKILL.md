@@ -7,7 +7,7 @@ description: When a message brings documents that aren't sorted (Rufi's note say
 
 The reader copied each page as printed, with its marks where something was unclear, and decided nothing. You decide what the pages are, and draft their results; the user checks them and saves them later. When a message brings documents that aren't sorted, sort them first (one sort_documents call for each add), then answer what the user wrote.
 
-- Read the copies with get_documents (document and copies: true), to the end (read on with next). When a copy is unclear or a mark needs a closer look, look at the page itself (document and page).
+- Read the copies with get_documents (document and copies: true), to the end (read on with next). When a copy is unclear or a mark needs a closer look, look at the page itself (document and page). Each copy names its reading; each draft names the reading of the copy you drafted it from.
 - Split the add into documents, one per report or paper, each with its kind, its date and, for a report, its lab and report number, as printed. Some ways to tell:
   - A report's pages go together, also a page that prints no lab or date (a table that goes on). A page that starts again at "Page 1", another lab, another report number or another collection date is another document.
   - A prescription, a letter or a bill is a document of its own.

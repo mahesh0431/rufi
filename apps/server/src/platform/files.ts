@@ -20,6 +20,9 @@ export async function readJson(path: string): Promise<unknown> {
  */
 export const tempPath = (path: string) => `${path}.${randomUUID()}.tmp`;
 
+/** Every temp file tempPath gives for `path`, as a glob. */
+export const tempPattern = (path: string) => `${path}.*.tmp`;
+
 /**
  * Writes JSON readable only by this user, replacing the file in one step.
  * The file and the folder's new entry are on the disk when it returns.

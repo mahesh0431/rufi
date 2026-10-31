@@ -18,7 +18,8 @@
     "check:quick": "oxfmt --check && oxlint --type-aware --deny-warnings && tsc --noEmit && tsc --noEmit -p apps/web && knip",
     "check": "pnpm check:quick && pnpm --filter @rufi/web build && vitest run && playwright test",
     "db:types": "node apps/server/scripts/db-types.ts",
-    "smoke": "node apps/server/scripts/smoke.ts"
+    "smoke": "node apps/server/scripts/smoke.ts",
+    "claude:live": "node apps/server/scripts/claude-live.ts"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",
