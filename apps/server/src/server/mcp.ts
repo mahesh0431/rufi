@@ -13,6 +13,7 @@ import {
   type CallToolResult,
 } from "@modelcontextprotocol/server";
 import { DEADLINES } from "../agent/codex/appserver.ts";
+import { callOf } from "../agent/codex/events.ts";
 import type { ToolAnswer, ToolSpec } from "../core/tools/registry.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 
@@ -245,7 +246,7 @@ function serverFor(
     };
     let timer: NodeJS.Timeout | undefined;
     const answer = await Promise.race([
-      scope.call({ tool: name, input: input ?? {}, ...about(_meta) }),
+      scope.call({ tool: name, input: input ?? {}, ...callOf(_meta) }),
       new Promise<ToolAnswer>((resolve) => {
         timer = setTimeout(resolve, toolMs, tooLong);
       }),
@@ -306,26 +307,6 @@ function resultOf(answer: ToolAnswer): CallToolResult {
       })),
     ],
     ...(!answer.ok && { isError: true }),
-  };
-}
-
-const record = (value: unknown): Record<string, unknown> =>
-  typeof value === "object" && value !== null
-    ? (value as Record<string, unknown>)
-    : {};
-const text = (value: unknown) =>
-  typeof value === "string" && value !== "" ? value : undefined;
-
-/**
- * What Codex says about a call in its `_meta` (0.159.3): its id, its thread,
- * and its turn in the turn metadata.
- */
-function about(meta: unknown): Omit<McpCall, "tool" | "input"> {
-  const fields = record(meta);
-  return {
-    callId: text(fields["callId"]),
-    threadId: text(fields["threadId"]),
-    turnId: text(record(fields["x-codex-turn-metadata"])["turn_id"]),
   };
 }
 
