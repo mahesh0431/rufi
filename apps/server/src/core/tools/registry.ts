@@ -155,7 +155,7 @@ export interface ToolAnswer {
   ok: boolean;
   /** JSON, for the model. */
   text: string;
-  /** Images the model sees after the text, in base64. Never stored. */
+  /** Images the model sees before the text, in base64. Never stored. */
   images?: readonly { mimeType: string; data: string }[];
   /** Kept already, with what the call changed: the chat keeps it no more. */
   kept?: true;

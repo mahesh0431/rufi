@@ -166,7 +166,7 @@ describe("Rufi's MCP endpoints", () => {
     expect(refused).toEqual(["origin", "host", "forwarded"]);
   });
 
-  it("gives a page image as MCP image content after the text, and a refusal as an error result", async () => {
+  it("gives a page image as MCP image content before the text, and a refusal as an error result", async () => {
     const server = at(chatKeys.issue(scope()));
     answer = () =>
       Promise.resolve({
@@ -176,8 +176,8 @@ describe("Rufi's MCP endpoints", () => {
       });
     expect((await call(server)).result).toEqual({
       content: [
-        { type: "text", text: '{"ok":true,"result":{"page":1}}' },
         { type: "image", data: "iVBORw0KGgo=", mimeType: "image/png" },
+        { type: "text", text: '{"ok":true,"result":{"page":1}}' },
       ],
     });
     answer = () =>
