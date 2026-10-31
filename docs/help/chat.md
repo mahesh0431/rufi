@@ -93,6 +93,8 @@ Activity shows what the AI did for a reply, as the AI's agent reported it. Rufi 
 
 Click a step to open everything the agent reported about it: for a command, the whole command, its folder, its exit code, how long it took and what it printed; for a tool, what the AI sent and what came back. Long output shows 12 lines, then **Show all**. A step from before Rufi kept these says "Rufi kept no details for this step."
 
+**Sub-agents.** Where the AI started a sub-agent, its Activity shows one line: the name the AI gave it, its status (such as running, done, stopped or failed) and the start of its result. Click the line, or press Enter on it, to open the sub-agent's own Activity below it: the task it got and the messages that came later, each with who sent it, then its notes, thinking and steps, as it reported them, and its answers. A sub-agent it started shows there as a line of its own, which opens the same way. A long Activity shows its latest 50 lines, and **Show earlier** shows 50 more each time. The lines follow what the sub-agents do while they work.
+
 While the AI works, Activity is open, starts with Rufi thinking, says "Activity · working" and how many steps, and grows as the AI goes. When the answer comes, it folds into one line under the answer: how many steps, how many failed or stopped, and how long the reply took. Click the line to fold or open it at any time, also while the AI works. When you fold it while the AI works, its line says "Working", how many steps, and the newest step.
 
 Choose how Activity opens in **Settings** › **Activity**:
@@ -103,7 +105,7 @@ Choose how Activity opens in **Settings** › **Activity**:
 
 In each one, you can still fold or open a reply's Activity yourself. That holds on this page until the reply ends; after a reload, Activity follows the setting again. Another tab or window shows the same steps and folds by itself.
 
-A reply that has no steps, such as an answer to "thanks", has no Activity line. In replies from before this version of Rufi, the AI's notes show as replies, and each step keeps the words Rufi gave it then. If the AI's working state is lost, replies show without their Activity (see [Your data and the AI](your-data-and-the-ai.md#your-chat)).
+A reply that has no steps, such as an answer to "thanks", has no Activity line. In replies from before this version of Rufi, the AI's notes show as replies, and each step keeps the words Rufi gave it then. If the AI's working state is lost, a reply from before says **Activity is gone with the AI's working state.**, and its sub-agents' Activity is gone too (see [Your data and the AI](your-data-and-the-ai.md#your-chat)).
 
 ## Pictures, pages and diagrams
 
@@ -196,7 +198,7 @@ If you stop the reply while the AI saves, the save can still finish. Then its re
 
 ### When the AI starts agents of its own
 
-For a task that can run on its own, the AI can start an agent of its own, a sub-agent. It gets only the task the AI gives it, never your chat, and works with the AI's tools or fewer, on the AI's model or another one you ticked in **Settings** › **Models**. Between a sub-agent's turns, the AI can move it to another of those models, never while it works. On another provider's model, the sub-agent starts a new conversation there, which has its last 10 turns. It can go on after the reply ends: what it saves shows in the chat with Rufi's receipt, also after the reply, with its title after **Saved**. It saves only what you said yes to. You don't see sub-agents on the screen yet.
+For a task that can run on its own, the AI can start an agent of its own, a sub-agent. It gets only the task the AI gives it, never your chat, and works with the AI's tools or fewer, on the AI's model or another one you ticked in **Settings** › **Models**. Between a sub-agent's turns, the AI can move it to another of those models, never while it works. On another provider's model, the sub-agent starts a new conversation there, which has its last 10 turns. It can go on after the reply ends: what it saves shows in the chat with Rufi's receipt, also after the reply, with its title after **Saved**. It saves only what you said yes to. In the Activity of the reply that started it, it is one line, which opens what it did (see [Activity](#activity)).
 
 When a sub-agent finishes, the AI hears it by itself. If the AI isn't replying then, it replies by itself, and a small line above that reply says which agent and why, such as "Reading report.pdf: done" or "Reading report.pdf asks a question". The AI tells you what it found, or asks you what it asks. While a sub-agent works, the AI may end its reply and say so: the sub-agent's result wakes it. The AI can also write to a sub-agent, for example to answer its question.
 

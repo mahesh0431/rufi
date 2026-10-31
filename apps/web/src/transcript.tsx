@@ -1037,21 +1037,13 @@ function SubAgentLine({ id, reported }: { id: string; reported: string }) {
         }}
         className="flex w-full min-w-0 cursor-pointer items-center gap-1.5 text-left hover:text-ink"
       >
-        <ActivityIcon
-          status={
-            working
-              ? "running"
-              : agent.status === "done"
-                ? "done"
-                : agent.status
-          }
-        />
+        <StatusSign status={working ? "running" : agent.status} />
         <span className="shrink-0 font-medium text-ink">
           {agent?.title ?? reported}
         </span>
-        {agent && <span className="shrink-0">· {agent.status}</span>}
+        {agent && <span className="shrink-0">{` · ${agent.status}`}</span>}
         {agent?.result && (
-          <span className="min-w-0 truncate">· {agent.result}</span>
+          <span className="min-w-0 truncate">{` · ${agent.result}`}</span>
         )}
         <ChevronRight
           size={13}
@@ -1093,7 +1085,7 @@ function AgentLogView({ id, title }: { id: string; title: string }) {
   });
   if (log.error) {
     return log.error instanceof ApiError && log.error.status === 404 ? (
-      <p>Its log is gone with the AI&apos;s working state.</p>
+      <p>Its Activity is gone with the AI&apos;s working state.</p>
     ) : (
       <Problem error={log.error} retry={() => void log.refetch()} />
     );
@@ -1262,22 +1254,25 @@ function ActivityIcon({
 }: {
   status: keyof typeof STATUS_WORDS | null;
 }) {
-  // The sign keeps its size beside a long detail.
-  const icon =
-    status === "running" ? (
-      <LoaderCircle size={13} className="shrink-0 animate-spin" aria-hidden />
-    ) : status === "failed" ? (
-      <X size={13} className="shrink-0" aria-hidden />
-    ) : status === "stopped" ? (
-      <Square size={11} className="shrink-0" aria-hidden />
-    ) : (
-      <Check size={13} className="shrink-0" aria-hidden />
-    );
   return (
     <>
-      {icon}
+      <StatusSign status={status} />
       <span className="sr-only">{status && STATUS_WORDS[status]}:</span>
     </>
+  );
+}
+
+/** A status's sign alone, where its word shows beside it. */
+function StatusSign({ status }: { status: keyof typeof STATUS_WORDS | null }) {
+  // The sign keeps its size beside a long detail.
+  return status === "running" ? (
+    <LoaderCircle size={13} className="shrink-0 animate-spin" aria-hidden />
+  ) : status === "failed" ? (
+    <X size={13} className="shrink-0" aria-hidden />
+  ) : status === "stopped" ? (
+    <Square size={11} className="shrink-0" aria-hidden />
+  ) : (
+    <Check size={13} className="shrink-0" aria-hidden />
   );
 }
 
