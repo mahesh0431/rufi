@@ -1112,15 +1112,14 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
         // A fictional picture: one pixel.
         const png =
           "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
-        await writeFile(
-          join(context.sandbox.folder, "dot.png"),
-          Buffer.from(png, "base64"),
-        );
+        const dot = join(context.sandbox.folder, "dot.png");
+        await writeFile(dot, Buffer.from(png, "base64"));
         const conversation = await open();
         const turn = await send(
           conversation,
           randomUUID(),
-          "Run this Bash command: echo hello-probe. Then use the Read tool on dot.png in your folder. Then reply 'done'.",
+          // The whole path: told "your folder", Claude may take its own.
+          `Run this Bash command: echo hello-probe. Then use the Read tool on ${dot}. Then reply 'done'.`,
         );
         const end = await until(endOf(turn));
         if (end.status !== "done")
@@ -1133,8 +1132,7 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
             step.kind === "command" && step.title.includes("echo hello-probe"),
         );
         const read = done.some(
-          (step) =>
-            step.title === "Read" && step.detail?.endsWith("dot.png") === true,
+          (step) => step.title === "Read" && step.detail === dot,
         );
         if (!ran || !read) {
           // Every step as it came, with how it ended, and Claude's words.
