@@ -3,9 +3,10 @@
 // two are brought into step in this order (docs/how-rufi-works.md): a new
 // agent database ends Rufi's links to the old one; owners and admission
 // agree; each chat has its own agent, Rufi AI, which takes over the chat's
-// thread; Rufi reads the events it hasn't; and hand-overs Rufi claimed
-// that the package never saved are settled by their provider. Dispatching
-// starts after Rufi's own recovery (core.ts).
+// thread; and Rufi reads the events it hasn't. Once the chat is open,
+// hand-overs Rufi claimed that the package never saved are settled by their
+// provider (recover); dispatching starts after that and Rufi's own recovery
+// (core.ts).
 import { join } from "node:path";
 import { DEFAULT_EFFORT } from "@rufi/contracts";
 import { createAgents, type Agents, type Host } from "@rufi/agents/agents";
@@ -31,6 +32,12 @@ export interface AgentSystem {
   agents: Agents;
   /** The chat's own agent, Rufi AI: made, owned and admitted if it has none. */
   root: (chatId: string) => Promise<string>;
+  /**
+   * Settles the hand-overs Rufi claimed that the package never saved, by
+   * what their provider says, once the host can open their conversations;
+   * before the package hands anything over.
+   */
+  recover: () => Promise<void>;
   /** Stops reading events and lets go of every conversation. */
   close: () => Promise<void>;
 }
@@ -170,25 +177,30 @@ export async function startAgents(options: {
   const unfollow = store.onCommit(() => void read());
   await read();
 
-  // 5. Claims the package never saved, asked of the provider by the
-  // conversation they went to, in the same generation too.
-  const claims = (await kept.claimed()).filter(
-    (claim) => !HELD.has(agents.input(claim.id)?.state ?? ""),
-  );
-  const answers = new Map<string, Answer>();
-  const byConversation = Map.groupBy(claims, (claim: Claimed) =>
-    sentAs(claim.agent, claim.conversation),
-  );
-  for (const [first, ...rest] of byConversation.values()) {
-    if (!first) continue;
-    const ids = [first, ...rest].map((claim) => claim.id);
-    const said = await agents.received(first.agent, first.conversation, ids);
-    for (const id of ids) answers.set(id, said.get(id) ?? "unknown");
-  }
-  if (answers.size > 0) await kept.settle(answers);
-
   return {
     agents,
+    // 5. Claims the package never saved, asked of the provider by the
+    // conversation they went to, in the same generation too.
+    recover: async () => {
+      const claims = (await kept.claimed()).filter(
+        (claim) => !HELD.has(agents.input(claim.id)?.state ?? ""),
+      );
+      const answers = new Map<string, Answer>();
+      const byConversation = Map.groupBy(claims, (claim: Claimed) =>
+        sentAs(claim.agent, claim.conversation),
+      );
+      for (const [first, ...rest] of byConversation.values()) {
+        if (!first) continue;
+        const ids = [first, ...rest].map((claim) => claim.id);
+        const said = await agents.received(
+          first.agent,
+          first.conversation,
+          ids,
+        );
+        for (const id of ids) answers.set(id, said.get(id) ?? "unknown");
+      }
+      if (answers.size > 0) await kept.settle(answers);
+    },
     root: async (chatId) => {
       const found = await kept.root(chatId);
       if (found !== undefined) return found;

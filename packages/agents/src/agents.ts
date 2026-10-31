@@ -174,7 +174,9 @@ export interface Agents {
   /** Every agent the database keeps, admitted or not. */
   list: () => string[];
   /** Where an input is in its agent's queue; nothing when the queue has none. */
-  input: (id: string) => { agent: string; state: string } | undefined;
+  input: (
+    id: string,
+  ) => { agent: string; state: string; held: Hold | null } | undefined;
   /** The agent's turn now, if one starts or runs. */
   current: (agent: string) => Current | undefined;
   /**
@@ -231,6 +233,18 @@ export interface Agents {
   dispatch: () => Promise<void>;
   /** Lifts these inputs' holds, so they go again. */
   release: (inputs: readonly string[]) => void;
+  /** These waiting inputs never go: removed. Others stay as they are. */
+  remove: (inputs: readonly string[]) => void;
+  /**
+   * The agent's waiting inputs among `inputs`, in this order, in the places
+   * they had between them; the others keep theirs.
+   */
+  reorder: (agent: string, inputs: readonly string[]) => void;
+  /**
+   * The input goes next: first in line, its hold lifted. One that surely
+   * never reached a provider (dropped, or removed) waits again so.
+   */
+  sendNow: (input: string) => void;
   /** The sign-in is back: inputs held as signed out go again. */
   signedIn: () => void;
   /**
@@ -1301,8 +1315,12 @@ export function createAgents(options: {
 
     input: (id) =>
       db
-        .prepare("SELECT agent_id AS agent, state FROM queue WHERE id = ?")
-        .get(id) as { agent: string; state: string } | undefined,
+        .prepare(
+          "SELECT agent_id AS agent, state, held FROM queue WHERE id = ?",
+        )
+        .get(id) as
+        | { agent: string; state: string; held: Hold | null }
+        | undefined,
 
     current: (id) => {
       const live = lives.get(id);
@@ -1524,6 +1542,64 @@ export function createAgents(options: {
           )
           .all(JSON.stringify(inputs)) as { id: string; agent: string }[],
       );
+    },
+
+    remove: (inputs) => {
+      const found = db
+        .prepare(
+          "SELECT id, agent_id AS agent FROM queue WHERE id IN (SELECT value FROM json_each(?)) AND state = 'waiting'",
+        )
+        .all(JSON.stringify(inputs)) as { id: string; agent: string }[];
+      if (found.length === 0) return;
+      store.change(({ event }) => {
+        for (const { id, agent } of found) {
+          db.prepare(
+            "UPDATE queue SET state = 'removed', held = NULL, held_text = NULL, updated_at = ? WHERE id = ?",
+          ).run(now(), id);
+          event("input.removed", agent, { input: id });
+        }
+      });
+    },
+
+    reorder: (agent, inputs) => {
+      const waiting = db
+        .prepare(
+          "SELECT id, position FROM queue WHERE agent_id = ? AND state = 'waiting' AND id IN (SELECT value FROM json_each(?)) ORDER BY position",
+        )
+        .all(agent, JSON.stringify(inputs)) as {
+        id: string;
+        position: number;
+      }[];
+      const known = new Set(waiting.map((input) => input.id));
+      const order = [...new Set(inputs)].filter((id) => known.has(id));
+      if (order.every((id, index) => waiting[index]?.id === id)) return;
+      store.change(({ event }) => {
+        for (const [index, id] of order.entries()) {
+          db.prepare(
+            "UPDATE queue SET position = ?, updated_at = ? WHERE id = ?",
+          ).run(waiting[index]?.position ?? index, now(), id);
+        }
+        event("input.reordered", agent, { inputs: order });
+      });
+      pump(agent);
+    },
+
+    sendNow: (input) => {
+      const found = db
+        .prepare("SELECT agent_id AS agent, state FROM queue WHERE id = ?")
+        .get(input) as { agent: string; state: string } | undefined;
+      if (!found || !["waiting", "dropped", "removed"].includes(found.state)) {
+        return;
+      }
+      store.change(({ event }) => {
+        db.prepare(
+          `UPDATE queue SET state = 'waiting', held = NULL, held_text = NULL, conversation = NULL, updated_at = ?,
+             position = (SELECT COALESCE(MIN(position), 1) - 1 FROM queue WHERE agent_id = ? AND state = 'waiting')
+           WHERE id = ?`,
+        ).run(now(), found.agent, input);
+        event("input.sent_now", found.agent, { input });
+      });
+      pump(found.agent);
     },
 
     signedIn: () => {

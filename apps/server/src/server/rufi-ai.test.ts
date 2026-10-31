@@ -1,17 +1,25 @@
 // Rufi AI on the agent package: the chat through startRufiAi, on a real
 // record, a real agent database and the package's fake provider.
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { fakeProvider } from "@rufi/agents/fake";
 import type { ProviderAdapter, ProviderEvent } from "@rufi/agents/provider";
 import { openAgentStore } from "@rufi/agents/store";
+import type { Pointer } from "@rufi/contracts";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { scriptedReader, type Script } from "../../tests/fake-reader.ts";
 import { chatQueue } from "../core/chat/queue.ts";
 import {
   transcripts as openTranscripts,
   type ChatRow,
 } from "../core/chat/transcript.ts";
+import { copies } from "../core/documents/copies.ts";
+import { copyReader } from "../core/documents/copy-reader.ts";
+import { documents } from "../core/documents/documents.ts";
+import { pages } from "../core/documents/pages.ts";
+import { readings } from "../core/documents/reading.ts";
 import {
   databasePath,
   openWritable,
@@ -20,6 +28,7 @@ import {
 import { agentsPath } from "./agents.ts";
 import { chat as openChat } from "./chat.ts";
 import { mcpKeys } from "./mcp.ts";
+import { reader as documentReader } from "./reader.ts";
 import { startRufiAi } from "./rufi-ai.ts";
 
 let home: string;
@@ -46,8 +55,15 @@ const rows = (sql: string) =>
     .all()
     .map((row) => ({ ...row }));
 
-/** Rufi as it starts: Rufi AI on the package, and the chat on it. */
-async function start(adapter: ProviderAdapter, logged: string[] = []) {
+/**
+ * Rufi as it starts: Rufi AI on the package, and the chat on it, with Rufi's
+ * reader playing `reader`, one script per reading.
+ */
+async function start(
+  adapter: ProviderAdapter,
+  logged: string[] = [],
+  reader: Script[] = [],
+) {
   const store = openAgentStore(agentsPath(home));
   const transcripts = openTranscripts(record);
   const system = await startRufiAi({
@@ -62,14 +78,25 @@ async function start(adapter: ProviderAdapter, logged: string[] = []) {
   });
   // Replies still running once Rufi has read the events were cut.
   await transcripts.interruptRunning();
-  await system.agents.dispatch();
+  const keys = mcpKeys();
+  const reads = readings(record);
+  const read = documentReader({
+    readings: reads,
+    kind: copyReader(pages(record, home), copies(record)),
+    run: scriptedReader(reader).run,
+    choice: () => Promise.resolve({ model: "fake-model", effort: "low" }),
+    mcp: { url: () => "http://127.0.0.1:9/mcp/reader", keys },
+    log: () => undefined,
+    retryWaitsMs: [],
+  }).read;
   const chat = openChat({
     transcripts,
     queue: chatQueue(record),
+    reading: { readings: reads, read },
     signedIn: () => Promise.resolve(true),
     agent: system.rufiAi,
     allowlist: ["fake-model"],
-    mcp: { url: () => "http://127.0.0.1:9/mcp", keys: mcpKeys() },
+    mcp: { url: () => "http://127.0.0.1:9/mcp", keys },
     rules: () => ({ instructions: "Fictional rules.", version: "rules-1" }),
     tools: {
       specs: [],
@@ -77,17 +104,38 @@ async function start(adapter: ProviderAdapter, logged: string[] = []) {
     },
     log: () => undefined,
   });
+  await system.recover();
+  await chat.carryAll();
+  await system.agents.dispatch();
   const row = async () => (await transcripts.chat("asha")) as ChatRow;
   return {
     store,
     system,
     row,
+    /** A Rufi event whose note asks the AI: a reply of its own. */
+    event: async (note: string) => {
+      await chat.event("asha", {
+        kind: "test",
+        line: "Rufi's line",
+        ask: note,
+      });
+    },
+    edit: async (id: string, text: string) => {
+      await chat.queue.edit(await row(), id, text);
+    },
+    /** The chat's waiting messages, by id, and their states. */
+    waiting: async () =>
+      (await chat.queue.list(await row())).items.map((item) => [
+        item.id,
+        item.state,
+      ]),
     /** The replies' and the AI's notes' text as the screens get it. */
     shown: async () =>
       (await transcripts.page(await row())).entries
         .filter((entry) => entry.kind === "reply" || entry.activity === "note")
         .map((entry) => entry.text),
-    send: async (id: string, text: string) => chat.send(await row(), id, text),
+    send: async (id: string, text: string, refs: Pointer[] = []) =>
+      chat.send(await row(), id, text, refs),
     /** Waits for the chat's reply to run; its provider turn. */
     running: async () => {
       const agent = await system.root("c-asha");
@@ -203,17 +251,23 @@ it("puts each turn, and its whole answer on its reply row, from the package's ev
 
   // The chat saves nothing of the next turn: its start and answer come
   // from the events alone.
-  const unsaved = rufi.system.rufiAi({
+  rufi.system.rufiAi({
     onEvent: () => undefined,
     saved: () => Promise.resolve(),
+    opening: () => Promise.reject(new Error("It is open already.")),
+    claim: () => Promise.resolve(undefined),
+    changed: () => undefined,
   });
-  const ask = (id: string) =>
-    unsaved.send(thread, {
+  const agent = await rufi.system.root("c-asha");
+  const ask = async (id: string) => {
+    rufi.system.agents.send(agent, {
       id,
       sender: "person",
-      input: ["What about my ferritin?"],
-      effort: "medium",
+      kind: "queue",
+      parts: ["What about my ferritin?"],
     });
+    await rufi.running();
+  };
   await ask("message-3");
   fake.end(thread, { status: "done", answer: "Ferritin was 40." });
   const turns = () =>
@@ -300,5 +354,114 @@ it("saves a steer the provider confirms after its turn ended under that turn; th
   expect(
     fake.received(thread).filter((input) => input.parts.includes(words)),
   ).toHaveLength(1);
+  await rufi.close();
+});
+
+it("sends a waiting message with its words as they are when it goes: an edit before Rufi's claim goes, one after is refused", async () => {
+  const fake = fakeProvider({ id: "codex", script: { turn: "runs" } });
+  const held = Promise.withResolvers<undefined>();
+  let gated = false;
+  const rufi = await start({
+    ...fake.adapter,
+    open: async (options) => {
+      const conversation = await fake.adapter.open(options);
+      return {
+        ...conversation,
+        // A start can wait at the provider, after Rufi's claim.
+        startTurn: async (turn) => {
+          if (gated) await held.promise;
+          return conversation.startTurn(turn);
+        },
+      };
+    },
+  });
+  // Rufi's note has a reply of its own: the person's message waits.
+  await rufi.event("A fictional report was read.");
+  await rufi.running();
+  await rufi.send("message-1", "Is my TSH high?");
+  await rufi.edit("message-1", "Is my fictional TSH high?");
+  gated = true;
+  const thread = (await rufi.row()).threadId ?? "";
+  fake.end(thread);
+  await vi.waitFor(async () => {
+    expect(await rufi.waiting()).toEqual([["message-1", "handing_over"]]);
+  });
+  await expect(rufi.edit("message-1", "Never mind.")).rejects.toThrow(
+    "That message isn't waiting any more.",
+  );
+  held.resolve(undefined);
+  await rufi.running();
+  expect(
+    fake
+      .received(thread)
+      .filter((input) => input.id === "message-1")
+      .map((input) => input.parts),
+  ).toEqual([["Is my fictional TSH high?"]]);
+  await rufi.close();
+});
+
+it("after a crash between Rufi's claim and the package's hand-over, sends the message once at the next start, with Rufi's note on what it read", async () => {
+  const fake = fakeProvider({ id: "codex", script: { turn: "runs" } });
+  // The reader finishes without looking at the page.
+  let rufi = await start(fake.adapter, [], [() => Promise.resolve(undefined)]);
+  const { added } = await documents(record, home).add(
+    "asha",
+    [
+      {
+        name: "Sunrise Labs August.pdf",
+        bytes: new Uint8Array(
+          await readFile(
+            join(
+              import.meta.dirname,
+              "../../tests/fixtures/documents/sunrise-labs-august.pdf",
+            ),
+          ),
+        ),
+      },
+    ],
+    true,
+  );
+  const document = added[0] ?? "";
+  await rufi.event("A fictional report was read.");
+  await rufi.running();
+  await rufi.send("message-1", "Is my TSH high?", [
+    { type: "document", id: document },
+  ]);
+  // The package can't keep the hand-over Rufi has just claimed.
+  const agents = new DatabaseSync(agentsPath(home));
+  agents.exec(`
+    CREATE TRIGGER fictional_crash BEFORE UPDATE OF state ON queue
+    WHEN NEW.state = 'handing_over'
+    BEGIN SELECT RAISE(ABORT, 'A fictional crash.'); END;
+  `);
+  const thread = (await rufi.row()).threadId ?? "";
+  fake.end(thread);
+  await vi.waitFor(async () => {
+    expect(await rufi.waiting()).toEqual([["message-1", "handing_over"]]);
+    expect(
+      rows("SELECT sent_as FROM chat_queue WHERE id = 'message-1'"),
+    ).not.toEqual([{ sent_as: null }]);
+  });
+  expect(rufi.system.agents.input("message-1")?.state).toBe("waiting");
+  await rufi.close();
+  agents.exec("DROP TRIGGER fictional_crash");
+  agents.close();
+
+  rufi = await start(fake.adapter);
+  await rufi.running();
+  expect(await rufi.waiting()).toEqual([]);
+  expect(
+    fake
+      .received(thread)
+      .filter((input) => input.id === "message-1")
+      .map((input) => input.parts),
+  ).toEqual([
+    [
+      expect.stringContaining(
+        `Rufi's reader copied Sunrise Labs August.pdf (document ${document})`,
+      ),
+      expect.stringMatching(/^Is my TSH high\?/),
+    ],
+  ]);
   await rufi.close();
 });

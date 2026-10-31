@@ -260,14 +260,14 @@ test("Stop keeps what the reply wrote so far", async ({ page, rufi }) => {
   await expect(chat(page).getByRole("button", { name: "Stop" })).toHaveCount(0);
 });
 
-/** Two of the person's messages wait, after a Stop. */
+/** Two of the person's messages wait behind a reply that runs on. */
 const WAITING = `
-  UPDATE chats SET paused = 'stopped' WHERE id = 'c-asha';
   INSERT INTO chat_queue (id, person_id, chat_id, origin, text, position, created_at, updated_at) VALUES
-    ('q-2', 'asha', 'c-asha', 'person', 'Second', 1, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z'),
-    ('q-3', 'asha', 'c-asha', 'person', 'Third', 2, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z');`;
+    ('q-1', 'asha', 'c-asha', 'person', 'hang', 1, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z'),
+    ('q-2', 'asha', 'c-asha', 'person', 'Second', 2, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z'),
+    ('q-3', 'asha', 'c-asha', 'person', 'Third', 3, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z');`;
 
-test("waiting messages: edit, reorder, remove, and send one now", async ({
+test("waiting messages: edit, reorder and remove; after a Stop, the next one goes", async ({
   page,
   rufi,
 }) => {
@@ -347,9 +347,9 @@ test("waiting messages: edit, reorder, remove, and send one now", async ({
   await expect(items).toHaveText(["Second, edited"]);
 
   await expect(waiting).toContainText(
-    "Stopped · these go when you send a message",
+    "Waiting · these go in order after the reply",
   );
-  await waiting.getByRole("button", { name: "Send now" }).click();
+  await chat(page).getByRole("button", { name: "Stop" }).click();
   await expect(log(chat(page)).locator(".reply").last()).toHaveText(
     "ok:Second, edited",
   );
@@ -738,36 +738,26 @@ test("when Rufi stops while it hands a message to the AI, the message is not sur
   await accessible(page);
 });
 
-test("a Rufi event shows as Rufi's line; after a Stop its note waits and goes with your next message", async ({
+test("a Rufi event shows as Rufi's line, and its note goes to the AI in a reply of its own", async ({
   page,
   rufi,
 }) => {
   await rufi.family(`
-    UPDATE chats SET paused = 'stopped' WHERE id = 'c-asha';
     INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, details, revision, created_at, updated_at)
       VALUES ('e-1', 'asha', 'c-asha', 1, 'event', 'Lab report · 12 Aug · 42 results read · 1 to check', '{"kind":"test"}', 1, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z');
     INSERT INTO chat_queue (id, person_id, chat_id, origin, text, event_id, position, held, created_at, updated_at)
-      VALUES ('q-e1', 'asha', 'c-asha', 'rufi', 'A lab report was read; one value is unsure.', 'e-1', 1, 'paused', '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z');`);
+      VALUES ('q-e1', 'asha', 'c-asha', 'rufi', 'A lab report was read; one value is unsure.', 'e-1', 1, NULL, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z');`);
   await rufi.start();
   await page.goto(rufi.link());
   await opener(chat(page)).click();
   await expect(log(chat(page))).toContainText(
     "RufiLab report · 12 Aug · 42 results read · 1 to check",
   );
-  const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
-  await expect(waiting).toContainText(
-    "Stopped · these go when you send a message",
-  );
-  await expect(waiting).toContainText(
-    "Rufi's note: Lab report · 12 Aug · 42 results read · 1 to check",
-  );
-  await expect(waiting).toContainText("Goes to the AI with your next message.");
+  await expect(log(chat(page)).locator(".reply")).toHaveCount(1);
+  await expect(
+    chat(page).getByRole("region", { name: "Waiting messages" }),
+  ).toHaveCount(0);
   await accessible(page);
-  await send(page, "What's new?");
-  await expect(log(chat(page)).locator(".reply").last()).toHaveText(
-    "ok:What's new?",
-  );
-  await expect(waiting).toHaveCount(0);
 });
 
 test("a draft longer than Rufi takes says so, and isn't kept or sent", async ({

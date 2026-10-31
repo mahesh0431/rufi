@@ -284,15 +284,12 @@ export const startCore = (options: CoreOptions) =>
     // Replies still running once Rufi has read the agent database's events
     // were cut when it stopped.
     const interrupted = yield* attempt(() => transcripts.interruptRunning());
-    // Hand-overs Rufi stopped after the AI may have got them are not sure,
-    // never sent again; one whose files Rufi was reading waits for its
-    // reply's Retry; what waits goes when the person sends.
+    // A message whose files Rufi was reading waits for its reply's Retry;
+    // one Rufi hadn't handed over yet waits again.
     yield* attempt(() => queue.endStopped(`${CLOSED_WHILE_READING}.`));
     // Readings Rufi stopped in the middle fail, their copies kept: nothing
     // reads by itself.
     yield* attempt(() => readings.recover());
-    // Only now may the agents' inputs go.
-    yield* attempt(() => agentSystem.agents.dispatch());
 
     const tools = forAgent(() => ({ store: reader, personId: undefined }), log);
     let port = 0;
@@ -498,6 +495,13 @@ export const startCore = (options: CoreOptions) =>
         ),
     );
     port = (server.address() as AddressInfo).port;
+    // Rufi's MCP server listens and the chat is open: hand-overs Rufi
+    // claimed that the package never saved are settled by their provider,
+    // each chat's waiting messages go into Rufi AI's queue, in order, and
+    // only now may the agents' inputs go.
+    yield* attempt(() => agentSystem.recover());
+    yield* attempt(() => chat.carryAll());
+    yield* attempt(() => agentSystem.agents.dispatch());
     convertLoop.start();
     yield* Effect.acquireRelease(
       attempt(() => writePrivateJson(coreFile(home), { port, launcher })),

@@ -366,11 +366,6 @@ function Added({ chips }: { chips: readonly BoxChip[] }) {
   );
 }
 
-/** Rufi's note that goes with the person's next message. */
-const rides = (item: QueueItem) =>
-  item.origin === "rufi" &&
-  (item.held === "paused" || item.held === "signed_out");
-
 /** Why a row doesn't go by itself, in words for the person. */
 function whyHeld(item: QueueItem): string | null {
   if (item.state === "not_sure") {
@@ -378,13 +373,9 @@ function whyHeld(item: QueueItem): string | null {
   }
   if (item.state === "handing_over") return "Sending…";
   switch (item.held) {
-    case "paused":
-    case "signed_out":
-      return item.origin === "rufi"
-        ? "Goes to the AI with your next message."
-        : null;
     case "restored":
       return "From a backup: it waited when the backup was made.";
+    case "signed_out":
     case "failed":
     case "open_failed":
     case "reply_ended":
@@ -410,7 +401,7 @@ function QueueView({
   running: boolean;
   act: (action: () => Promise<unknown>) => Promise<void>;
 }) {
-  const { items: all, paused } = useStore(live, (state) => state.queue);
+  const { items: all } = useStore(live, (state) => state.queue);
   const items = all.filter((item) => item.held !== "reply_ended");
   const error = useStore(live, (state) => state.queueError);
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(
@@ -448,25 +439,11 @@ function QueueView({
     choice: "retry" | "new_thread",
   ) =>
     void act(() => request("POST", `${one(item)}/recover`, { hold, choice }));
-  // What goes on when you say: the first row that only waits for the pause.
-  const first = shown.find(
-    (item) =>
-      item.state === "waiting" &&
-      (item.held === null || item.held === "paused"),
-  );
   const heading = running
     ? "Waiting · these go in order after the reply"
-    : paused === "stopped"
-      ? "Stopped · these go when you send a message"
-      : paused === "restarted"
-        ? "Rufi restarted · these go when you send a message"
-        : items.some(
-              (item) =>
-                item.state !== "waiting" ||
-                (item.held !== null && !rides(item)),
-            )
-          ? "Not sent · Rufi sends these only when you say"
-          : "Waiting";
+    : items.some((item) => item.state !== "waiting" || item.held !== null)
+      ? "Not sent · Rufi sends these only when you say"
+      : "Waiting";
 
   return (
     <section
@@ -475,17 +452,6 @@ function QueueView({
     >
       <h3 className="flex items-center gap-2 text-xs font-normal text-muted">
         <span className="flex-1">{heading}</span>
-        {!running && paused !== null && first && (
-          <Button
-            look="quiet"
-            icon={Send}
-            onClick={() => {
-              send(first);
-            }}
-          >
-            Send now
-          </Button>
-        )}
       </h3>
       {error !== null && <p className="text-muted">{error}</p>}
       <MovableList ids={ids} onMove={reorder}>
@@ -494,8 +460,7 @@ function QueueView({
           // Its AI thread didn't open: the person chooses, for this hold.
           const hold = item.held === "open_failed" ? item.holdId : null;
           const isWaiting = item.state === "waiting";
-          const free =
-            isWaiting && (item.held === null || item.held === "paused");
+          const free = isWaiting && item.held === null;
           return (
             <Row
               key={item.id}

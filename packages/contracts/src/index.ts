@@ -290,17 +290,16 @@ export const QueueItem = Schema.Struct({
   text: Schema.String,
   state: Schema.Literals(["waiting", "handing_over", "not_sure"]),
   /**
-   * Why a waiting row doesn't go by itself: paused or signed_out (an event
-   * that rides with the person's next message), restored (from a backup),
-   * failed (the AI refused it; heldText says why), open_failed (the AI's
-   * thread didn't open; heldText says why, and the person chooses Try
-   * again or New thread), reply_ended (its reply ended while Rufi read its
-   * files; it is in the chat already, and its reply's Retry sends it
-   * again; heldText says why).
+   * Why a waiting row doesn't go by itself: signed_out (the AI found the
+   * sign-in missing; it goes once the sign-in is back; heldText says so),
+   * restored (from a backup), failed (the AI refused it, or a Stop cut its
+   * start; heldText says why), open_failed (the AI's thread didn't open;
+   * heldText says why, and the person chooses Try again or New thread),
+   * reply_ended (its reply ended while Rufi read its files; it is in the
+   * chat already, and its reply's Retry sends it again; heldText says why).
    */
   held: Schema.NullOr(
     Schema.Literals([
-      "paused",
       "signed_out",
       "restored",
       "failed",
@@ -318,13 +317,9 @@ export const QueueItem = Schema.Struct({
 });
 export type QueueItem = typeof QueueItem.Type;
 
-/**
- * What waits, in order, and why nothing goes until the person sends:
- * stopped (Stop) or restarted (Rufi started again with rows waiting).
- */
+/** What waits, in order. */
 export const Queue = Schema.Struct({
   items: Schema.Array(QueueItem),
-  paused: Schema.NullOr(Schema.Literals(["stopped", "restarted"])),
 });
 export type Queue = typeof Queue.Type;
 

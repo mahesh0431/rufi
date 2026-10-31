@@ -21,6 +21,7 @@ import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
+import { DatabaseSync } from "node:sqlite";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { Entry, Status, StreamLine } from "@rufi/contracts";
 import { APPEARANCE_HEADER } from "@rufi/contracts/app";
@@ -34,6 +35,7 @@ import {
   openWritable,
 } from "../core/store/database.ts";
 import { backupsPath } from "../core/store/backup.ts";
+import { MIGRATIONS, migrate } from "../core/store/migrations.ts";
 import { devices } from "../core/devices/devices.ts";
 import { findDataFolder } from "../core/store/data-folder.ts";
 import { moveData } from "../core/store/move.ts";
@@ -359,88 +361,55 @@ describe("the core", () => {
     await release();
   });
 
-  it("marks the hand-overs a crash cut off as not sure, never sends them again, and holds what waits until the person sends; a reply cut off in Rufi's part ends there, its message held for Retry", async () => {
+  it("marks a hand-over a crash cut off as not sure and never sends it again; what waits goes; a reply cut off in Rufi's part ends there, its message held for Retry", async () => {
     const left = openWritable(databasePath(home));
     left.db.exec(`
       INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional'), ('ravi', 'Ravi Fictional');
       INSERT INTO chats (id, person_id, created_at) VALUES ('c-asha', 'asha', '2026-10-04T09:00:00Z'), ('c-ravi', 'ravi', '2026-10-04T09:00:00Z');
       INSERT INTO chat_queue (id, person_id, chat_id, origin, text, position, state, sent_as, created_at, updated_at) VALUES
-        ('q-1', 'asha', 'c-asha', 'person', 'Being handed over', 1, 'handing_over', 'q-1', '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z'),
+        ('q-1', 'asha', 'c-asha', 'person', 'Being handed over', 1, 'handing_over', 'agent-gone/1', '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z'),
         ('q-2', 'asha', 'c-asha', 'person', 'Waiting', 2, 'waiting', NULL, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z');
       -- Ravi's reply was copying his file, before the AI had his message.
       INSERT INTO turns (id, person_id, chat_id, agent_turn_id, thread_id, model, status, started_at)
         VALUES ('t-r', 'ravi', 'c-ravi', NULL, NULL, 'gpt-6.1-sol', 'running', '2026-10-04T10:00:00Z');
       INSERT INTO chat_queue (id, person_id, chat_id, origin, text, position, state, sent_as, turn_id, created_at, updated_at) VALUES
         ('q-r', 'ravi', 'c-ravi', 'person', 'Read this', 1, 'handing_over', NULL, 't-r', '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z'),
-        ('q-r2', 'ravi', 'c-ravi', 'person', 'Second', 2, 'waiting', NULL, NULL, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z'),
-        ('q-r3', 'ravi', 'c-ravi', 'person', 'Third', 3, 'waiting', NULL, NULL, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z');`);
+        ('q-r2', 'ravi', 'c-ravi', 'person', 'Second', 2, 'waiting', NULL, NULL, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z');`);
     left.close();
     const page = await session(await start());
-    await sleep(300);
-    expect((await page.api("GET", "/api/people/asha/chat/queue")).body).toEqual(
-      {
-        paused: "restarted",
-        items: [
-          {
-            id: "q-1",
-            origin: "person",
-            text: "Being handed over",
-            state: "not_sure",
-            held: null,
-            heldText: null,
-            holdId: null,
-            refs: [],
-          },
-          {
-            id: "q-2",
-            origin: "person",
-            text: "Waiting",
-            state: "waiting",
-            held: null,
-            heldText: null,
-            holdId: null,
-            refs: [],
-          },
-        ],
-      },
-    );
-    expect(
-      (await page.api("GET", "/api/people/asha/chat")).body["turns"],
-    ).toEqual([]);
-    const queue = "/api/people/asha/chat/queue";
-    const said = async () =>
+    const said = async (person: string) =>
       (
-        (await page.api("GET", "/api/people/asha/chat")).body["entries"] as {
-          id: string;
-          kind: string;
-          text: string;
-        }[]
+        (await page.api("GET", `/api/people/${person}/chat`)).body[
+          "entries"
+        ] as { id: string; kind: string; text: string }[]
       ).filter((entry) => entry.kind === "message");
-    // The person sends what waits: the one not sure stays.
-    expect((await page.api("POST", `${queue}/q-2/send`)).status).toBe(200);
-    await until(async () => (await said()).length === 1);
-    await sleep(300);
-    expect((await page.api("GET", queue)).body["items"]).toMatchObject([
-      { id: "q-1", state: "not_sure" },
-    ]);
+    // What waited goes by itself; the one not sure stays.
+    await until(async () => (await said("asha")).length === 1);
+    expect((await said("asha"))[0]?.id).toBe("q-2");
+    const queue = "/api/people/asha/chat/queue";
+    expect((await page.api("GET", queue)).body).toEqual({
+      items: [
+        {
+          id: "q-1",
+          origin: "person",
+          text: "Being handed over",
+          state: "not_sure",
+          held: null,
+          heldText: null,
+          holdId: null,
+          refs: [],
+        },
+      ],
+    });
     // Sent again only when asked, as a new message.
     expect((await page.api("POST", `${queue}/q-1/send`)).status).toBe(200);
-    await until(async () => (await said()).length === 2);
-    const [, again] = await said();
+    await until(async () => (await said("asha")).length === 2);
+    const [, again] = await said("asha");
     expect(again?.text).toBe("Being handed over");
     expect(again?.id).not.toBe("q-1");
 
     const ravi = "/api/people/ravi/chat";
-    // The waiting messages reorder without the one held for Retry, which
-    // the box doesn't show among them.
-    expect(
-      (await page.api("PUT", `${ravi}/queue`, { ids: ["q-r3", "q-r2"] })).body,
-    ).toMatchObject({
-      items: [{ id: "q-r" }, { id: "q-r3" }, { id: "q-r2" }],
-    });
-    for (const id of ["q-r2", "q-r3"]) {
-      await page.api("DELETE", `${ravi}/queue/${id}`);
-    }
+    await until(async () => (await said("ravi")).length === 1);
     const held = (await page.api("GET", `${ravi}/queue`)).body["items"] as {
       holdId: string;
     }[];
@@ -463,6 +432,7 @@ describe("the core", () => {
         status: "interrupted",
         endText: "Rufi closed while reading.",
       },
+      { status: "completed" },
     ]);
     // Two Retry clicks (two tabs) send it once.
     const hold = { hold: held[0]?.holdId };
@@ -473,13 +443,57 @@ describe("the core", () => {
     expect(retries.map((r) => r.status).sort((a, b) => a - b)).toEqual([
       200, 409,
     ]);
-    const sent = async () =>
-      (
-        (await page.api("GET", ravi)).body["entries"] as { kind: string }[]
-      ).filter((entry) => entry.kind === "message");
-    await until(async () => (await sent()).length === 1);
+    await until(async () => (await said("ravi")).length === 2);
     await sleep(300);
-    expect(await sent()).toHaveLength(1);
+    expect((await said("ravi")).map((entry) => entry.id)).toEqual([
+      "q-r2",
+      "q-r",
+    ]);
+  });
+
+  it("after an upgrade, sends each message that waited once and never one that may have reached the AI, also when its first start is cut short", async () => {
+    // Asha's chat as Rufi of version 19 left it, stopped: one message to
+    // go, one behind it, and one it may have given the AI.
+    const path = databasePath(home);
+    const first = new DatabaseSync(path);
+    first.exec(`${MIGRATIONS[0] ?? ""}; PRAGMA user_version = 1;`);
+    first.close();
+    migrate(path, MIGRATIONS.slice(0, 19));
+    const left = new DatabaseSync(path);
+    left.exec(`
+      INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional');
+      INSERT INTO chats (id, person_id, paused, created_at) VALUES ('c-asha', 'asha', 'stopped', '2026-10-04T09:00:00Z');
+      INSERT INTO chat_queue (id, person_id, chat_id, origin, text, position, state, sent_as, created_at, updated_at) VALUES
+        ('q-handed', 'asha', 'c-asha', 'person', 'Handed over', 1, 'handing_over', 'q-handed', '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z'),
+        ('q-first', 'asha', 'c-asha', 'person', 'hang', 2, 'waiting', NULL, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z'),
+        ('q-second', 'asha', 'c-asha', 'person', 'Second', 3, 'waiting', NULL, '2026-10-04T10:00:00Z', '2026-10-04T10:00:00Z');`);
+    left.close();
+    const said = async (page: Awaited<ReturnType<typeof session>>) =>
+      (
+        (await page.api("GET", "/api/people/asha/chat")).body["entries"] as {
+          id: string;
+          kind: string;
+          text: string;
+        }[]
+      ).filter((entry) => entry.kind === "message" || entry.kind === "reply");
+    // The first goes and runs on; Rufi closes before the second goes.
+    let page = await session(await start());
+    await until(async () => (await said(page)).length === 1);
+    await stop();
+    page = await session(await start());
+    await until(async () =>
+      (await said(page)).some((entry) => entry.text === "ok:Second"),
+    );
+    await sleep(300);
+    // Each message once; the first one's reply was cut with its start.
+    expect(
+      (await said(page)).map((entry) =>
+        entry.kind === "message" ? entry.id : entry.text,
+      ),
+    ).toEqual(["q-first", "q-second", "ok:Second"]);
+    expect(
+      (await page.api("GET", "/api/people/asha/chat/queue")).body["items"],
+    ).toMatchObject([{ id: "q-handed", state: "not_sure" }]);
   });
 
   it("marks replies cut off by a crash as interrupted when it starts", async () => {
@@ -943,7 +957,7 @@ describe("the local API", () => {
   });
 
   it(
-    "a Stop while a send goes into the reply keeps it out, and the chat stays stopped",
+    "a Stop while a send goes into the reply keeps it out",
     { timeout: 15_000 },
     async () => {
       const core = await start({
@@ -967,7 +981,7 @@ describe("the local API", () => {
       });
       await sleep(500);
       const queue = (await page.api("GET", `${c.path}/queue`)).body;
-      expect(queue).toMatchObject({ paused: "stopped", items: [] });
+      expect(queue).toEqual({ items: [] });
       expect(
         (await page.api("GET", c.path)).body["turns"] as { status: string }[],
       ).toMatchObject([{ status: "interrupted" }]);
@@ -1051,7 +1065,7 @@ describe("the local API", () => {
     ]);
   });
 
-  it("marks a hand-over the AI didn't answer as not sure, and pauses the chat", async () => {
+  it("marks a hand-over the AI didn't answer as not sure", async () => {
     const core = await start({
       adapters: scripted({ hang: ["turn/start"] }, { requestMs: 300 }),
     });
@@ -1065,9 +1079,6 @@ describe("the local API", () => {
             state: string;
           }[]
         )[0]?.state === "not_sure",
-    );
-    expect((await page.api("GET", `${c.path}/queue`)).body["paused"]).toBe(
-      "stopped",
     );
   });
 
@@ -1182,7 +1193,7 @@ describe("the local API", () => {
     expect(await readFile(join(home, "models.json"), "utf8")).toBe(old);
   });
 
-  it("shows the queue and lets the person act on what waits", async () => {
+  it("shows the queue and lets the person act on what waits; after a Stop, the next waiting message goes", async () => {
     const core = await start();
     const page = await session(core);
     const c = await chat(page);
@@ -1209,18 +1220,33 @@ describe("the local API", () => {
       (await page.api("PUT", `${c.path}/model`, { model: "gpt-6.1-sol" }))
         .status,
     ).toBe(409);
-    expect((await page.api("POST", `${c.path}/stop`)).status).toBe(200);
-    expect((await page.api("GET", queue)).body["paused"]).toBe("stopped");
     expect((await page.api("DELETE", `${queue}/${b?.id ?? ""}`)).status).toBe(
       200,
     );
     expect(
       (await page.api("DELETE", `${queue}/${b?.id ?? ""}`)).body["error"],
     ).toBe("That message isn't waiting any more.");
-    expect(
-      (await page.api("POST", `${queue}/${cc?.id ?? ""}/send`)).status,
-    ).toBe(200);
+    // Stop ends the reply, and what waits goes on by itself.
+    expect((await page.api("POST", `${c.path}/stop`)).status).toBe(200);
     await until(async () => (await items()).length === 0);
+    await until(async () =>
+      (
+        (await page.api("GET", c.path)).body["entries"] as {
+          kind: string;
+          text: string;
+        }[]
+      ).some((entry) => entry.kind === "reply" && entry.text === "ok:C"),
+    );
+    expect(
+      (
+        (await page.api("GET", c.path)).body["entries"] as {
+          kind: string;
+          text: string;
+        }[]
+      )
+        .filter((entry) => entry.kind === "message")
+        .map((entry) => entry.text),
+    ).toEqual(["C"]);
   });
 
   it("streams a snapshot, then every change after it, with no gap", async () => {

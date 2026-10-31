@@ -381,7 +381,7 @@ CREATE TABLE chats (
   thread_provider TEXT,        -- whose thread it is, so another agent never reuses it
   thread_model TEXT,           -- the model the thread started with
   thread_tools TEXT,           -- the tool set it started with (a thread keeps its tools)
-  paused TEXT CHECK (paused IN ('stopped', 'restarted')), -- nothing goes to the AI until the person sends: after a Stop, or Rufi started again with messages waiting
+  paused TEXT CHECK (paused IN ('stopped', 'restarted')), -- no longer used (0020): a chat once paused after a Stop or a restart
   revision INTEGER NOT NULL DEFAULT 0, -- grows with every change to the transcript
   context_tokens INTEGER,      -- the tokens of the thread's last request to the model, as the agent last reported them
   context_window INTEGER,      -- the model's context window then; null: the agent didn't say
@@ -500,13 +500,14 @@ CREATE TABLE chat_queue (
   event_id TEXT,               -- a Rufi event's line in the transcript
   position INTEGER NOT NULL,   -- order among the waiting rows
   state TEXT NOT NULL DEFAULT 'waiting' CHECK (state IN ('waiting', 'handing_over', 'sent', 'not_sure', 'removed')),
-  held TEXT CHECK (held IN ('paused', 'signed_out', 'restored', 'failed', 'open_failed', 'reply_ended')), -- a waiting row Rufi doesn't hand over by itself, and why: an event that came while the chat was paused rides with the person's next message; open_failed: the AI's thread didn't open, and the person chooses Try again or New thread; reply_ended: its reply ended in Rufi's part (a reading stopped or failed), it is in the chat already, and its reply's Retry sends it again
+  held TEXT CHECK (held IN ('paused', 'signed_out', 'restored', 'failed', 'open_failed', 'reply_ended')), -- a waiting row Rufi doesn't hand over by itself, and why (paused no longer: 0020): signed_out: the AI found the sign-in missing, and the row goes once it is back; restored: from a restored backup, for the person to send or remove; failed: the AI couldn't take it, or a Stop cut its start; open_failed: the AI's thread didn't open, and the person chooses Try again or New thread; reply_ended: its reply ended in Rufi's part (a reading stopped or failed), it is in the chat already, and its reply's Retry sends it again
   held_text TEXT,              -- why a hand-over failed, in words for the person
   hold_id TEXT,                -- which open_failed or reply_ended hold this is: the person's choice names it, so a stale click changes nothing
-  sent_as TEXT,                -- the id the AI got the hand-over under (the rows of one turn share it); set just before the AI is called
+  sent_as TEXT,                -- where Rufi handed it over: the agent and its conversation (<agent>/<number>), set in Rufi's claim before the AI is called; an older hand-over's id
   turn_id TEXT,                -- the turn that used it; set when Rufi's part of its reply starts
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  note TEXT,                   -- Rufi's note on what its part of the reply read, kept once the reading ends; it goes with the message
   UNIQUE (person_id, id),
   FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id),
   FOREIGN KEY (person_id, event_id) REFERENCES transcript_entries (person_id, id),
@@ -743,4 +744,4 @@ CREATE TABLE agent_cursor (
 ) STRICT;
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 19;
+PRAGMA user_version = 20;
