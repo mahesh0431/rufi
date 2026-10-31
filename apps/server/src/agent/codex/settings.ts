@@ -177,6 +177,8 @@ export async function prepareCodexHome(
   }
   const skills = join(paths.codexHome, "skills");
   await rm(skills, { recursive: true, force: true });
+  // Made even with no skills: the AI's permission profile names it.
+  await mkdir(skills, { recursive: true, mode: 0o700 });
   for (const skill of options.skills ?? []) {
     await mkdir(join(skills, skill.name), { recursive: true, mode: 0o700 });
     for (const [name, text] of [
