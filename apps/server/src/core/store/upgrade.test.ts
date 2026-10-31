@@ -4,6 +4,7 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import {
+  cp,
   mkdir,
   mkdtemp,
   readdir,
@@ -14,7 +15,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { familyFiles } from "../../../tests/fixtures/golden.ts";
 import { holdRufiLock } from "../../platform/files.ts";
 import { readBrief } from "../briefs/briefs.ts";
@@ -127,10 +128,25 @@ const sha = async (path: string) =>
     .update(await readFile(path))
     .digest("hex");
 
+/**
+ * The version 1 data folder, made once: its 135 inserts are each a commit
+ * synced to disk, which is slow on a busy Linux runner. Each test gets its
+ * own copy.
+ */
+let template: string;
+
+beforeAll(async () => {
+  template = join(
+    await mkdtemp(join(tmpdir(), "rufi-upgrade-template-")),
+    "home",
+  );
+  await version1(template);
+});
+
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "rufi-upgrade-"));
   home = join(root, "home");
-  await version1(home);
+  await cp(template, home, { recursive: true });
 });
 
 /** Ravi says something and the AI saves it, at `at`. */

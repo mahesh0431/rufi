@@ -2,11 +2,11 @@
 // real tool caller, the real transcripts, a real database with the
 // fictional family, and drafts made by a real sort of the reader's page
 // copies. Messages are sent at 10:00 on Sunday 11 Oct 2026 in India.
-import { mkdtemp, readFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Chip } from "@rufi/contracts";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   transcripts as openTranscripts,
   type ChatRow,
@@ -44,10 +44,25 @@ let chat: ChatRow;
 let said = 0;
 let calls = 0;
 
+/**
+ * The record with the fictional family, made once: each of its writes is
+ * synced to disk, which is slow on a busy Linux runner. Each test gets its
+ * own copy.
+ */
+let template: string;
+
+beforeAll(async () => {
+  template = await mkdtemp(join(tmpdir(), "rufi-items-template-"));
+  const made = openWritable(databasePath(template));
+  made.db.exec(family);
+  made.close();
+});
+
 beforeEach(async () => {
-  const path = databasePath(await mkdtemp(join(tmpdir(), "rufi-items-")));
+  const folder = await mkdtemp(join(tmpdir(), "rufi-items-"));
+  await cp(template, folder, { recursive: true });
+  const path = databasePath(folder);
   store = openWritable(path);
-  store.db.exec(family);
   reader = openReadOnly(path) as Store;
   transcripts = openTranscripts(store, () => SUNDAY_10AM);
   chat = (await transcripts.chat("asha")) as ChatRow;
