@@ -613,6 +613,7 @@ test.describe("first run", () => {
     ).toHaveCount(0);
     answer.resolve(undefined);
     await expect(sidebar(page).getByRole("link")).toHaveText([
+      "Asha Fictional",
       "Chat with Rufi",
       "Overview",
       "Lab results7",
