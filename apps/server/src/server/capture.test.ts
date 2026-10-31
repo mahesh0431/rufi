@@ -642,16 +642,14 @@ describe("The plan's usage, on the pinned Codex", () => {
       });
       // Each turn alone, not the thread's total so far; the running one has
       // none yet.
-      expect(answer("read_agent")).toMatchObject({
-        ok: true,
-        result: {
-          turns: [
-            { used: { input: 1_233, cached: 0, output: 1 } },
-            { used: { input: 2_344, cached: 0, output: 1 } },
-            expect.not.objectContaining({ used: expect.anything() }),
-          ],
-        },
-      });
+      const read = answer("read_agent") as {
+        result: { turns: { used?: unknown }[] };
+      };
+      expect(read.result.turns.map((turn) => turn.used)).toEqual([
+        { input: 1_233, cached: 0, output: 1 },
+        { input: 2_344, cached: 0, output: 1 },
+        undefined,
+      ]);
     },
   );
 });
