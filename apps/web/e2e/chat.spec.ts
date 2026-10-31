@@ -65,6 +65,11 @@ const sidebar = (page: Page) => page.getByRole("complementary");
  */
 const notSaved = (scope: Page | Locator) =>
   scope.getByRole("status").filter({ hasText: "Not saved" });
+/**
+ * An ended reply's Activity, folded: open it only then, as a person sees it.
+ * A click while the reply works folds it, and it stays folded at the end.
+ */
+const ENDED = /^Activity · \d+ steps?\b/;
 /** The line that folds or opens a reply's Activity (the last one). */
 const activity = (scope: Page | Locator) =>
   log(scope)
@@ -1558,9 +1563,7 @@ test("a helper Rufi AI starts is one line in its Activity, which opens the helpe
     },
   });
   await send(page, "Check my results");
-  const first = log(chat(page))
-    .getByRole("button", { name: /^Activity · / })
-    .first();
+  const first = log(chat(page)).getByRole("button", { name: ENDED }).first();
   await first.click();
   const helper = log(chat(page)).getByRole("button", { name: /Helper · / });
   // One line: its name, its status and its result's start.
@@ -1686,12 +1689,7 @@ test("a helper's long Activity shows its latest lines, and earlier ones on reque
     },
   });
   await send(page, "Read every page");
-  // Once the reply ended, its Activity is folded: open it then. A click
-  // while it works folds it, and it stays folded when the reply ends.
-  await log(chat(page))
-    .getByRole("button", { name: /^Activity · \d+ steps? · / })
-    .first()
-    .click();
+  await log(chat(page)).getByRole("button", { name: ENDED }).first().click();
   const reader = log(chat(page)).getByRole("button", { name: /Reader · / });
   await expect(reader).toHaveText(/^Reader · done/);
   await reader.click();
@@ -1749,10 +1747,7 @@ test("what Rufi AI tells a helper while it works shows last in the helper's Acti
     },
   });
   await send(page, "Read every page");
-  await log(chat(page))
-    .getByRole("button", { name: /^Activity · / })
-    .first()
-    .click();
+  await log(chat(page)).getByRole("button", { name: ENDED }).first().click();
   const line = log(chat(page)).getByRole("button", { name: /Reader · / });
   await line.click();
   const lines = page
