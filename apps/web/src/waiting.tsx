@@ -36,11 +36,12 @@ import {
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { useStore } from "zustand";
+import { useShallow } from "zustand/shallow";
 import type { StoreApi } from "zustand/vanilla";
 import { request } from "./api.ts";
 import { ChipView } from "./chips.tsx";
 import { chatPath, type Live, messageOf } from "./live.ts";
-import { isRunning } from "./transcript-state.ts";
+import { goingNow, isRunning } from "./transcript-state.ts";
 import { Button, buttonLook, ICON, IconButton } from "./ui.tsx";
 
 /** Whether anything waits to show in the chat. */
@@ -70,7 +71,16 @@ export function WaitingView({
   live: StoreApi<Live>;
   personId: string;
 }) {
-  const { items } = useStore(live, (state) => state.queue);
+  // Not what shows as sent: being given to the AI, or in the chat already.
+  const items = useStore(
+    live,
+    useShallow((state) => {
+      const going = goingNow(state);
+      return state.queue.items.filter(
+        (item) => !going.includes(item) && !(item.id in state.entries),
+      );
+    }),
+  );
   const error = useStore(live, (state) => state.queueError);
   const running = useStore(live, isRunning);
   const [problem, setProblem] = useState<string | null>(null);
