@@ -1,5 +1,5 @@
--- A person's profile: their birth date, sex for lab ranges, blood group and
--- height, one row per person, made empty for everyone already here. It
+-- A person's profile: their name, birth date, sex for lab ranges, blood
+-- group and height, one row per person, made empty for everyone already here. It
 -- changes only by a save, like the rest of the record, and a save can now
 -- come from the welcome, the profile page or Settings as well as the chat:
 -- operations says where (origin), keeps a form's receipt itself, and has a
@@ -21,6 +21,25 @@ CREATE TABLE profiles (
 ) STRICT;
 
 INSERT INTO profiles (id, person_id) SELECT id, id FROM people;
+
+-- The profile as the record reads and saves it: its values with the
+-- person's name, which stays in people. A save changes it here, and each
+-- value goes back where it lives.
+CREATE VIEW profile_rows AS
+  SELECT p.rowid AS rowid, p.id, p.person_id, people.display_name AS name,
+    p.birth_date, p.birth_date_words, p.sex_for_ranges, p.blood_group,
+    p.height, p.height_unit, p.removed
+  FROM profiles p JOIN people ON people.id = p.person_id;
+
+CREATE TRIGGER profile_rows_change INSTEAD OF UPDATE ON profile_rows
+BEGIN
+  UPDATE people SET display_name = NEW.name WHERE id = OLD.person_id;
+  UPDATE profiles SET
+    birth_date = NEW.birth_date, birth_date_words = NEW.birth_date_words,
+    sex_for_ranges = NEW.sex_for_ranges, blood_group = NEW.blood_group,
+    height = NEW.height, height_unit = NEW.height_unit, removed = NEW.removed
+  WHERE person_id = OLD.person_id AND id = OLD.id;
+END;
 
 CREATE TABLE operations_new (
   id TEXT PRIMARY KEY,

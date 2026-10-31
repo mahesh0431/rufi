@@ -55,6 +55,7 @@ const bloodGroup = (group: string) => group.replace("-", "−");
 
 /** Each field's name on the screen. */
 const FIELD_NAMES: Record<ProfileField, string> = {
+  name: "Name",
   birth_date: "Birth date",
   sex_for_ranges: "Sex for lab ranges",
   blood_group: "Blood group",
@@ -68,6 +69,8 @@ function shownValue<K extends ProfileField>(
 ): string {
   if (value === null) return "Not set";
   switch (field) {
+    case "name":
+      return value as string;
     case "birth_date":
       return printedDate(
         (value as NonNullable<ProfileValues["birth_date"]>).date,
@@ -110,6 +113,7 @@ export function ProfileFields({
   commit,
   report,
   asTyped = false,
+  withName = true,
 }: {
   values: ProfileValues;
   commit: <K extends ProfileField>(field: K, value: ProfileValues[K]) => void;
@@ -119,10 +123,24 @@ export function ProfileFields({
    * keep what was typed: the welcome's, where nothing else changes it.
    */
   asTyped?: boolean;
+  /** With the Name field; the welcome asks the name itself. */
+  withName?: boolean;
 }) {
   const id = useId();
   return (
     <div className="flex flex-col gap-4">
+      {withName && (
+        <Name
+          id={`${id}-name`}
+          value={values.name}
+          commit={(value) => {
+            commit("name", value);
+          }}
+          report={(problem) => {
+            report("name", problem);
+          }}
+        />
+      )}
       <BirthDate
         id={`${id}-birth`}
         value={values.birth_date}
@@ -203,6 +221,53 @@ export function ProfileFields({
   );
 }
 
+/** Your name: saved when you leave it changed; it can't be left empty. */
+function Name({
+  id,
+  value,
+  commit,
+  report,
+}: {
+  id: string;
+  value: string;
+  commit: (value: string) => void;
+  report: (problem: string | undefined) => void;
+}) {
+  // What you typed, until the profile has it; untouched, the field shows the profile.
+  const [draft, setDraft] = useState<string>();
+  const [problem, setProblem] = useState<string>();
+  if (draft !== undefined && draft.trim() === value) setDraft(undefined);
+  const done = () => {
+    if (draft === undefined) return;
+    const name = draft.trim();
+    const now = name === "" ? "Give a name: it can't be empty." : undefined;
+    setProblem(now);
+    report(now);
+    if (name !== "" && name !== value) commit(name);
+  };
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={id} className="font-medium">
+        Name
+      </label>
+      <input
+        id={id}
+        autoComplete="given-name"
+        maxLength={200}
+        value={draft ?? value}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          // Fixed, it says so at once: nothing moves under a click on Done.
+          if (event.target.value.trim() !== "") setProblem(undefined);
+        }}
+        onBlur={done}
+        className="rounded-lg border border-line bg-surface px-3 py-1.5"
+      />
+      {problem && <p className="text-muted">{problem}</p>}
+    </div>
+  );
+}
+
 /** Whether focus left the group, not moved within it. */
 const leaves = (event: FocusEvent<HTMLElement>) =>
   !event.currentTarget.contains(event.relatedTarget);
@@ -278,10 +343,10 @@ function BirthDate({
     date === undefined ? "Give a year, and a month with a day." : undefined;
   const setTyped = (next: TypedDate) => {
     setDraft(next);
-    if (!asTyped) return;
-    // An unfinished date is said when you leave it, not while you type.
+    // Fixed, it says so at once; an unfinished date is said when you leave it.
     const date = dateOf(next);
     if (date !== undefined) setProblem(undefined);
+    if (!asTyped) return;
     report(problemOf(date));
     if ((date ?? null)?.date !== value?.date) commit(date ?? null);
   };
@@ -420,6 +485,8 @@ function Height({
   const setTyped = (next: TypedHeight) => {
     setDraft(next);
     if (asTyped) check(next);
+    // Fixed, it says so at once: nothing moves under a click on Done.
+    else if (heightOf(next) !== undefined) setProblem(undefined);
   };
   const done = () => {
     if (draft !== undefined) check(draft);
@@ -657,7 +724,6 @@ export function ProfilePage({ person }: { person: Person }) {
         ) : (
           <>
             <dl>
-              <Row name="Name">{person.displayName}</Row>
               {(Object.keys(FIELD_NAMES) as ProfileField[]).map((field) => (
                 <Row key={field} name={FIELD_NAMES[field]}>
                   <span className={values[field] === null ? "text-muted" : ""}>

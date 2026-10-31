@@ -39,7 +39,7 @@ const value = (page: Page, name: string) =>
     .filter({ hasText: new RegExp(`^${name}$`) })
     .locator("xpath=following-sibling::dd");
 
-test("your name opens your profile; a change in Settings or on the page saves only that field, and the history says where each was made", async ({
+test("your name opens your profile; a change in Settings or on the page saves only that field, your name too, and the history says where each was made", async ({
   page,
   rufi,
 }) => {
@@ -86,6 +86,23 @@ test("your name opens your profile; a change in Settings or on the page saves on
     /Height Not set → 162 cm · on this page$/,
   );
   await expect(value(page, "Birth date")).toHaveText(/^Mar 1990/);
+
+  // The name too: never left empty, and the sidebar shows the new one.
+  await page.getByRole("button", { name: "Edit" }).click();
+  const name = page.getByLabel("Name", { exact: true });
+  await name.fill("");
+  await name.blur();
+  await expect(page.getByText("Give a name: it can't be empty.")).toBeVisible();
+  await expect(name).toHaveValue("");
+  await name.fill("Asha F.");
+  await page.getByRole("button", { name: "Done" }).click();
+  await expect(value(page, "Name")).toHaveText("Asha F.");
+  await expect(
+    page.getByRole("complementary").getByRole("link", { name: "Asha F." }),
+  ).toBeVisible();
+  await expect(history.first()).toHaveText(
+    /Name Asha Fictional → Asha F\. · on this page$/,
+  );
 });
 
 test("a field you only pass through takes a change made elsewhere and saves nothing over it", async ({

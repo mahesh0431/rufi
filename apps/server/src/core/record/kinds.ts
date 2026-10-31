@@ -327,13 +327,27 @@ export const KINDS: readonly Kind[] = [
     asserted: true,
   },
   {
-    // The person's profile: what their record is read with, such as which
-    // lab range fits. Height is the person's own value, apart from height
-    // measurements.
+    // The person's profile: their name and what their record is read with,
+    // such as which lab range fits. Height is the person's own value, apart
+    // from height measurements. Its table is a view: the name stays in
+    // people, and a save puts it back there.
     name: "profile",
-    table: "profiles",
+    table: "profile_rows",
     noun: "profile",
     fields: {
+      name: required({
+        column: "name",
+        shown: "name",
+        input: Schema.String.check(
+          Schema.isTrimmed(),
+          Schema.isMinLength(1),
+          Schema.isMaxLength(200),
+        ).annotate({
+          identifier: "Name",
+          description: "The name Rufi calls the user by; never empty.",
+        }),
+        type: "value",
+      }),
       birth_date: date("birth_date", "birth date"),
       sex_for_ranges: {
         ...choice("sex_for_ranges", ["female", "male"], "sex for lab ranges"),
