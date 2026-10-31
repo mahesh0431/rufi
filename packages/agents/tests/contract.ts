@@ -3,7 +3,7 @@
 // case needs. What the agent system relies on is checked here once, so no
 // part of it has to know which provider runs an agent.
 import { setTimeout as sleep } from "node:timers/promises";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   Missing,
   NotOpened,
@@ -28,15 +28,13 @@ export interface Script {
   start?: "takes" | "refuses" | "loses_reply";
   /**
    * What a turn does once started. Answers: ANSWER at once (the default).
-   * Runs: until stopped. Silent: longer than any limit the adapter has, then
-   * answers. Fails, or hits the usage limit (with a reset time), or its
-   * process dies. Renews: its sign-in is renewed during it, then it answers.
+   * Runs: until stopped. Fails, or hits the usage limit (with a reset time),
+   * or its process dies. Renews: its sign-in is renewed during it, then it answers.
    * Renewal fails: its sign-in can't be renewed during it.
    */
   turn?:
     | "answers"
     | "runs"
-    | "silent"
     | "fails"
     | "usage_limit"
     | "dies"
@@ -104,7 +102,8 @@ const CASES = {
   renews: "a turn that crosses a sign-in renewal ends done",
   renewalFails:
     "a renewal that fails ends the turn signed out, and the input isn't sent again",
-  noLimit: "a long silent turn isn't cut",
+  noLimit:
+    "a turn open for hours isn't ended or interrupted, and Stop still ends it",
   placed:
     "a call from the open turn is placed in it with its call id, also when repeated",
   closedTurn: "a call from a turn that ended is refused",
@@ -137,6 +136,8 @@ const CASE_MS = 30_000;
 const UNTIL_MS = 15_000;
 /** How long nothing more must happen. */
 const SETTLE_MS = 200;
+/** Hours: far past any limit a reply ever had (five minutes, then none). */
+const HOURS_MS = 6 * 60 * 60_000;
 
 /** Any text with words in it, in an expected value. */
 const someText = () => expect.stringMatching(/\S/) as string;
@@ -577,11 +578,27 @@ export function providerContract(name: string, harness: Harness): void {
     });
 
     test("noLimit", async () => {
-      const run = await begin({ turn: "silent" });
+      const run = await begin({ turn: "runs" });
       const conversation = await run.open();
-      expect(
-        await run.until(endOf(await run.start(conversation, "message-1"))),
-      ).toEqual({ status: "done", answer: ANSWER });
+      // The adapter's clock: its timeouts and Date. Its intervals stay real,
+      // and so does the provider's own clock.
+      vi.useFakeTimers({
+        toFake: ["setTimeout", "clearTimeout", "Date"],
+        now: Date.now(),
+      });
+      let turn: string;
+      try {
+        turn = await run.start(conversation, "message-1");
+        await vi.advanceTimersByTimeAsync(HOURS_MS);
+      } finally {
+        vi.useRealTimers();
+      }
+      await sleep(SETTLE_MS);
+      expect(run.events.filter((event) => event.type === "turnEnded")).toEqual(
+        [],
+      );
+      await conversation.stop(turn);
+      expect(await run.until(endOf(turn))).toEqual({ status: "stopped" });
     });
 
     test("placed", async () => {
