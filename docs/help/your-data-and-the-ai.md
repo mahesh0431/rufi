@@ -124,7 +124,7 @@ The AI keeps its working notes in `ai/work/`, a folder for each day: for example
 
 When you ask about a document in the chat, the AI can look at its pages, one at a time, the way you would:
 
-- **A PDF page:** Rufi draws the page as an image and gives it with the page's own text, when the PDF has text (a scanned PDF has none). Links and anything else in the PDF that would act on its own are left out.
+- **A PDF page:** Rufi draws the page as an image and gives it first, then the page's own text when the PDF has text (a scanned PDF has none). The AI reads the page from its image; the text only helps it confirm a character. Links and anything else in the PDF that would act on its own are left out.
 - **A photo:** the photo as you added it. A HEIC photo goes as its JPEG copy, because the AI can't open HEIC.
 
 Each page the AI looks at goes to the AI service you signed in with, like the parts of your record it reads. Rufi's tool gives the AI only the documents of the person whose chat it is. Looking at a page changes nothing; documents aren't part of your record until you save from them.

@@ -316,16 +316,19 @@ function inlined(schema: unknown): unknown {
   return walk(schema as Json, []);
 }
 
-/** A tool's answer as an MCP result: its text, then its images. */
+/**
+ * A tool's answer as an MCP result: its images first (a page is read from
+ * its image), then its text.
+ */
 function resultOf(answer: ToolAnswer): CallToolResult {
   return {
     content: [
-      { type: "text", text: answer.text },
       ...(answer.images ?? []).map((image) => ({
         type: "image" as const,
         data: image.data,
         mimeType: image.mimeType,
       })),
+      { type: "text", text: answer.text },
     ],
     ...(!answer.ok && { isError: true }),
   };
