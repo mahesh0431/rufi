@@ -1,7 +1,7 @@
 // What the record's screens get from Rufi's local API: Overview, a page per
-// kind (Lab results by test), a test's page, a row with its sources and
-// history, and a series. Rows carry their fields by the names save_changes
-// uses, as stored.
+// kind (Lab results by test), a test's page, and a row with its sources and
+// history. Rows carry their fields by the names save_changes uses, as
+// stored.
 import { Schema } from "effect";
 
 /** A date at the precision known: YYYY, YYYY-MM, YYYY-MM-DD or YYYY-MM-DDTHH:MM. */
@@ -239,8 +239,9 @@ export const RecordPage = Schema.Struct({
   next: Schema.NullOr(Schema.String),
   /**
    * On a results page, a row's small trend, by the row's id: the latest
-   * values of its series up to it, oldest first, a few at most, each with a
-   * date and a number. Only for a row with two or more.
+   * values of its test's line up to it, oldest first, a few at most, each
+   * with a date and a number in the test's unit. Only for a row with two or
+   * more.
    */
   trends: Schema.optionalKey(
     Schema.Record(Schema.String, Schema.Array(ResultRow)),
@@ -363,15 +364,6 @@ export const RecordDetail = Schema.Struct({
   fromVisit: Schema.optionalKey(Schema.Array(ShownRow)),
 });
 export type RecordDetail = typeof RecordDetail.Type;
-
-/** Every current value of one test in one unit and category, oldest first, undated last. */
-export const Series = Schema.Struct({
-  test: Schema.String,
-  unit: Schema.NullOr(Schema.String),
-  category: ResultCategory,
-  values: Schema.Array(ShownRow),
-});
-export type Series = typeof Series.Type;
 
 /** A page's tile on Overview: what it counts, worked out from the record. */
 export const Tile = Schema.Struct({

@@ -90,10 +90,10 @@ export interface ApiDeps {
   port: () => number;
   /** A person's Overview: Needs you, the tiles and the latest saves. */
   overview: (personId: string) => Promise<Overview>;
-  /** The record's pages, rows and series, read only. */
+  /** The record's pages, tests and rows, read only. */
   record: Pick<
     RecordViews,
-    "page" | "labResults" | "test" | "detail" | "series" | "followUps"
+    "page" | "labResults" | "test" | "detail" | "followUps"
   >;
   /** A person's profile with its history; what they enter in its form. */
   profile: {
@@ -688,7 +688,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   );
 
   // The record, read only: a kind's page, Lab results by test, a test's
-  // page, a row, a series. Changes start in the chat.
+  // page, a row. Changes start in the chat.
   app.get("/api/people/:personId/lab-results", async (c) =>
     c.json(await deps.record.labResults((await person(c)).id)),
   );
@@ -742,23 +742,6 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     if (!saved) throw new HttpError(404, "Not found.");
     return c.json(saved);
   });
-  app.get("/api/people/:personId/series", async (c) => {
-    const { id } = await person(c);
-    const test = c.req.query("test");
-    const category = c.req.query("category");
-    if (
-      test === undefined ||
-      test === "" ||
-      (category !== "lab" && category !== "measurement")
-    ) {
-      throw new HttpError(400, "That request isn't valid.");
-    }
-    // No unit: the test's values that have none.
-    return c.json(
-      await deps.record.series(id, test, c.req.query("unit") ?? null, category),
-    );
-  });
-
   // The person's follow-ups, in the Follow-ups page's groups.
   app.get("/api/people/:personId/follow-ups", async (c) =>
     c.json(await deps.record.followUps((await person(c)).id)),

@@ -1,9 +1,9 @@
-// A result's values over time as a calm line: an ink line, a ring on a value
+// A test's values over time as a calm line: an ink line, a ring on a value
 // the lab flagged, the newest value filled, and the lab's range as printed.
 // No red, amber or green: the lab's flag and note say what it means, in
-// words. Large in an open row, small after a row's value.
-import type { ShownRow } from "@rufi/contracts/record";
-import { drawTrend } from "./trend-drawing.ts";
+// words. Large on a test's page and in an open measurement, small after a
+// row's value.
+import { drawTrend, type TrendValue } from "./trend-drawing.ts";
 
 const LARGE = { width: 640, height: 150 };
 const MINI = { width: 88, height: 22, mini: true };
@@ -15,7 +15,8 @@ export function Trend({
 }: {
   /** What the values are, as the chart's spoken label starts. */
   title: string;
-  values: readonly ShownRow[];
+  /** Oldest first, as `lineOf` gives them. */
+  values: readonly TrendValue[];
   mini?: boolean;
 }) {
   const drawing = drawTrend(title, values, mini ? MINI : LARGE);
