@@ -3,14 +3,17 @@
 // the page as printed, the reader's marks for what was unclear included,
 // stored as it came: code never reads its words. It is known by its file
 // page (the person, the file, the page in the file) and its reading's job,
-// not by the document the page is in now. Only save_page writes it, through
+// not by the document the page is in now. save_page writes it, through
 // `save` here, under the notebook's rules (notebook.ts): for the running
 // job's current attempt, a target page, and a page looked at since the
-// last compaction. In the same transaction the page's notebook says which
-// run saved it last, as for an entry, so a reading resumes, fails and
-// finishes by the same rules.
+// last compaction; save_reading writes a whole reading's at once
+// (save-reading.ts). Either way, in the same transaction the page's notebook
+// says which run saved it last, as for an entry, so a reading resumes,
+// fails and finishes by the same rules.
 import { Schema } from "effect";
+import type { Transaction } from "kysely";
 import type { Store } from "../store/database.ts";
+import type { Tables } from "../store/tables.ts";
 import { Refusal } from "../tools/registry.ts";
 import { mayWrite, stillRunning, type Run } from "./notebook.ts";
 import { ranges } from "./naming.ts";
@@ -33,7 +36,7 @@ export const PageCopy = {
   ),
 };
 
-interface SavedCopy {
+export interface SavedCopy {
   outcome: "read" | "nothing_here" | "unreadable";
   copy: string;
   why?: string;
@@ -95,52 +98,7 @@ export function copies(
       mayWrite(run, position);
       await db.transaction().execute(async (trx) => {
         await stillRunning(trx, run);
-        const page = await trx
-          .selectFrom("document_pages")
-          .select(["file_id", "page_in_file"])
-          .where("person_id", "=", run.personId)
-          .where("document_id", "=", run.documentId)
-          .where("position", "=", position)
-          .executeTakeFirst();
-        if (!page?.file_id) {
-          throw new Refusal(`This document has no page ${String(position)}.`);
-        }
-        const at = now();
-        const values = {
-          attempt: run.attempt,
-          outcome: saved.outcome,
-          copy: saved.copy,
-          why: saved.why ?? null,
-          saved_at: at,
-        };
-        await trx
-          .insertInto("page_copies")
-          .values({
-            person_id: run.personId,
-            file_id: page.file_id,
-            page_in_file: page.page_in_file,
-            job_id: run.jobId,
-            ...values,
-          })
-          .onConflict((oc) =>
-            oc
-              .columns(["person_id", "file_id", "page_in_file", "job_id"])
-              .doUpdateSet(values),
-          )
-          .execute();
-        await trx
-          .updateTable("document_pages")
-          .set({
-            entry: null,
-            entry_job_id: run.jobId,
-            entry_attempt: run.attempt,
-            entry_at: at,
-            entry_checks: null,
-          })
-          .where("person_id", "=", run.personId)
-          .where("document_id", "=", run.documentId)
-          .where("position", "=", position)
-          .execute();
+        await writeCopy(trx, run, position, saved, now());
       });
       return progress(run);
     },
@@ -148,3 +106,64 @@ export function copies(
 }
 
 export type Copies = ReturnType<typeof copies>;
+
+/**
+ * In `trx`: a reading's copy of page `position`, replacing the one an
+ * earlier save of it wrote, and the page's notebook: the run that saved it,
+ * and no entry. Refused when the document has no such page. save_page
+ * writes through it for a running reader, save_reading for a whole reading
+ * (save-reading.ts).
+ */
+export async function writeCopy(
+  trx: Transaction<Tables>,
+  run: Pick<Run, "personId" | "documentId" | "jobId" | "attempt">,
+  position: number,
+  saved: SavedCopy,
+  at: string,
+) {
+  const page = await trx
+    .selectFrom("document_pages")
+    .select(["file_id", "page_in_file"])
+    .where("person_id", "=", run.personId)
+    .where("document_id", "=", run.documentId)
+    .where("position", "=", position)
+    .executeTakeFirst();
+  if (!page?.file_id) {
+    throw new Refusal(`This document has no page ${String(position)}.`);
+  }
+  const values = {
+    attempt: run.attempt,
+    outcome: saved.outcome,
+    copy: saved.copy,
+    why: saved.why ?? null,
+    saved_at: at,
+  };
+  await trx
+    .insertInto("page_copies")
+    .values({
+      person_id: run.personId,
+      file_id: page.file_id,
+      page_in_file: page.page_in_file,
+      job_id: run.jobId,
+      ...values,
+    })
+    .onConflict((oc) =>
+      oc
+        .columns(["person_id", "file_id", "page_in_file", "job_id"])
+        .doUpdateSet(values),
+    )
+    .execute();
+  await trx
+    .updateTable("document_pages")
+    .set({
+      entry: null,
+      entry_job_id: run.jobId,
+      entry_attempt: run.attempt,
+      entry_at: at,
+      entry_checks: null,
+    })
+    .where("person_id", "=", run.personId)
+    .where("document_id", "=", run.documentId)
+    .where("position", "=", position)
+    .execute();
+}
