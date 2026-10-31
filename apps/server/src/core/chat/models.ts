@@ -1,35 +1,20 @@
-// Which of the providers' models Rufi's AI may run on: the person's
-// shortlist in Settings, matched against the models offered now.
+// Rufi's four models (MODELS, in the contracts): the one a new chat starts
+// on, and why a model can't run, for the person and for agents alike.
+import { MODELS } from "@rufi/contracts";
 
-/** Rufi's models until the person chooses, the strongest today; the first is a new chat's. */
-export const DEFAULT_SHORTLIST = ["gpt-6-astra", "gpt-6.1-sol"];
+/** A new chat's model. */
+export const DEFAULT_MODEL: string = MODELS[0].id;
 
-/** The setting that keeps the shortlist: its model ids, in order, as JSON. */
-export const SHORTLIST_SETTING = "models";
+/** A model that isn't one of the four. */
+export const NOT_A_MODEL =
+  "That model isn't one of Rufi's: GPT-6-Astra, GPT-6.1-Sol, Claude Fable 5.1 or Claude Opus 5.5.";
 
-/** Why a model can't be chosen, for the person and for agents alike. */
-export const NOT_SHORTLISTED = "That model isn't allowed or isn't offered now.";
+/** A model whose provider isn't signed in, for the agent that asked for it. */
+export const notSignedIn = (provider: string) =>
+  provider === "claude"
+    ? "Claude isn't signed in, so its models can't run now."
+    : "ChatGPT isn't signed in, so its models can't run now.";
 
 /** A chat's model whose provider Rufi doesn't know: nothing goes. */
 export const UNKNOWN_PROVIDER =
   "Rufi doesn't know which AI runs this chat's model. Choose the model again in the menu.";
-
-/** The person's shortlist, as Settings keeps it; Rufi's own until they choose. */
-export async function shortlist(
-  setting: (key: string) => Promise<string | undefined>,
-): Promise<string[]> {
-  const kept = await setting(SHORTLIST_SETTING);
-  return kept === undefined
-    ? DEFAULT_SHORTLIST
-    : (JSON.parse(kept) as string[]);
-}
-
-/** The offered models that are shortlisted, in the shortlist's order. */
-export function allowedModels<M extends { id: string }>(
-  offered: readonly M[],
-  shortlisted: readonly string[],
-): M[] {
-  return shortlisted.flatMap((id) =>
-    offered.filter((model) => model.id === id),
-  );
-}

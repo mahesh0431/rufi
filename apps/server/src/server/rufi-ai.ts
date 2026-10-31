@@ -14,7 +14,7 @@ import {
   type UsageWindow,
 } from "@rufi/agents/provider";
 import { SIGNED_OUT } from "@rufi/contracts";
-import { type AgentEvent, type Model, type TurnEnd } from "../agent/runtime.ts";
+import { type AgentEvent, type TurnEnd } from "../agent/runtime.ts";
 import { chatAgents, sentAs } from "../core/chat/agents.ts";
 import { UNKNOWN_PROVIDER } from "../core/chat/models.ts";
 import type {
@@ -99,18 +99,9 @@ export interface ProviderUsage {
 }
 
 /** A model a provider offers now, with the provider it runs on. */
-export interface OfferedModel extends Model {
-  provider: string;
-  /** The efforts it takes, as the provider names them. */
-  efforts: readonly string[];
-  defaultEffort?: string;
-}
-
 /** Rufi AI for today's chat: each chat's own agent, its thread its conversation. */
 export interface RufiAi {
   provider: string;
-  /** The models the providers offer now. */
-  models: (signal?: AbortSignal) => Promise<OfferedModel[]>;
   /** The chat's next turns run on its model and effort. */
   configure: (chat: ChatRow) => Promise<void>;
   /**
@@ -300,6 +291,8 @@ export async function startRufiAi(
     transcripts: Transcripts;
     /** Tells the person's documents screens that a sub-agent changed. */
     documents?: (personId: string) => void;
+    /** A provider said it is signed out, as an agent's turn or hand-over went. */
+    signedOut?: () => void;
   },
 ): Promise<
   AgentSystem & {
@@ -459,6 +452,13 @@ export async function startRufiAi(
   const apply: Apply = async (event, advance) => {
     // Whatever a sub-agent's change, its chat's screens read it again.
     if (event.agent !== null) screens.logs?.changed(event.agent);
+    const said = event.payload as { held?: Hold; reason?: string };
+    if (
+      (event.type === "input.held" && said.held === "signed_out") ||
+      (event.type === "turn.ended" && said.reason === "signed_out")
+    ) {
+      options.signedOut?.();
+    }
     if (event.agent === null || !APPLIED.has(event.type)) return false;
     const row = await chatOf(event.agent);
     if (!row) return false;
@@ -481,7 +481,11 @@ export async function startRufiAi(
         await transcripts.applyStart(
           row,
           ref,
-          { id: row.threadId ?? "", model: row.model ?? row.threadModel ?? "" },
+          {
+            id: row.threadId ?? "",
+            model: row.model ?? row.threadModel ?? "",
+            effort: row.effort,
+          },
           inputs,
           messages ?? [],
           advance,
@@ -618,39 +622,12 @@ export async function startRufiAi(
     },
   });
 
-  /** Every provider's models now; one that can't say is left out, unless all fail. */
-  const models = async (signal?: AbortSignal): Promise<OfferedModel[]> => {
-    const settled = await Promise.allSettled(
-      adapters.map(async (adapter) =>
-        (await adapter.models(signal)).map(
-          ({ id, name, efforts, defaultEffort }) => ({
-            id,
-            name,
-            provider: adapter.id,
-            efforts,
-            ...(defaultEffort !== undefined && { defaultEffort }),
-          }),
-        ),
-      ),
-    );
-    const failed = settled.find((one) => one.status === "rejected");
-    if (failed && settled.every((one) => one.status === "rejected")) {
-      throw failed.reason;
-    }
-    const offered = settled.flatMap((one) =>
-      one.status === "fulfilled" ? one.value : [],
-    );
-    return offered;
-  };
-
   const rufiAi = (host: RufiAiHost): RufiAi => {
     chat = host;
     closed = false;
     const provider = adapters[0]?.id ?? "";
     return {
       provider,
-
-      models,
 
       configure: async (row) => {
         const agent = await system.root(row.id);

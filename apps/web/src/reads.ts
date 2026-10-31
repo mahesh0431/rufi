@@ -5,7 +5,6 @@ import {
   Backups,
   DataFolder,
   FirstRun,
-  Models,
   People,
   Settings,
   Status,
@@ -263,13 +262,6 @@ export const useSeries = (
         "GET",
         `${personPath(personId)}/series?${new URLSearchParams({ test, ...(unit !== undefined && { unit }), category }).toString()}`,
       ),
-  });
-
-/** The models a chat can use; asks the AI, so it can fail. */
-export const useModels = () =>
-  useQuery({
-    queryKey: ["models"],
-    queryFn: () => read(Models, "GET", "/api/models"),
   });
 
 /** A person's documents, newest first; looked at again while one is read. */

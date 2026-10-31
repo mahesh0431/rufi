@@ -1154,7 +1154,10 @@ it("upgrades a record of version 15 so files start on Send: every document sent 
       reader_agent: null,
     })),
   );
-  expect(after.turns).toEqual(before.turns);
+  // A reply from before keeps no effort (0026).
+  expect(after.turns).toEqual(
+    before.turns.map((turn) => ({ ...turn, effort: null })),
+  );
   expect(after.entries).toEqual(
     before.entries.map((line) => ({ ...line, questions: null })),
   );
@@ -1323,6 +1326,83 @@ it("upgrades a record of version 20 so every agent's calls can be kept: each cal
   );
 });
 
+it("upgrades a record of version 24 to Rufi's four models: a chat on another model moves to GPT-6-Astra, one of the four keeps it, every chat keeps the rest, and XHigh can be chosen", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 24));
+  const old = new DatabaseSync(path);
+  try {
+    old.exec(`
+      UPDATE chats SET model = 'gpt-retired', model_provider = 'codex', effort = 'high', thread_id = 'thread-asha', revision = 7
+        WHERE person_id = 'asha';
+      UPDATE chats SET model = 'claude-opus-5-5', model_provider = 'claude', effort = 'low'
+        WHERE person_id = 'ravi';
+      INSERT INTO settings (key, value) VALUES ('models', '["gpt-retired"]');
+    `);
+  } finally {
+    old.close();
+  }
+  const chats = () => {
+    const db = new DatabaseSync(path, { readOnly: true });
+    try {
+      return db
+        .prepare("SELECT * FROM chats ORDER BY person_id")
+        .all()
+        .map((row) => ({ ...row }));
+    } finally {
+      db.close();
+    }
+  };
+  const [asha, ...others] = chats();
+
+  const store = await openRecord(home);
+  try {
+    expect(chats()).toEqual([
+      { ...asha, model: "gpt-6-astra", model_provider: "codex" },
+      ...others,
+    ]);
+    expect(others).toContainEqual(
+      expect.objectContaining({ model: "claude-opus-5-5", effort: "low" }),
+    );
+    expect(
+      store.db.prepare("SELECT * FROM settings WHERE key = 'models'").all(),
+    ).toEqual([]);
+    store.db.exec("UPDATE chats SET effort = 'xhigh' WHERE person_id = 'asha'");
+  } finally {
+    store.close();
+  }
+});
+
+it("upgrades a record of version 25 so each reply keeps its effort: every reply kept as it was, its effort unknown", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 25));
+  const old = new DatabaseSync(path);
+  try {
+    old.exec(`
+      INSERT INTO turns (id, person_id, chat_id, agent_turn_id, thread_id, model, status, started_at)
+        SELECT 't-before', person_id, id, 'codex-turn', 'codex-thread', 'gpt-6.1-sol', 'completed', '2026-10-30T09:00:00Z'
+        FROM chats WHERE person_id = 'asha';
+    `);
+  } finally {
+    old.close();
+  }
+  const turns = () => {
+    const db = new DatabaseSync(path, { readOnly: true });
+    try {
+      return db
+        .prepare("SELECT * FROM turns ORDER BY id")
+        .all()
+        .map((row) => ({ ...row }));
+    } finally {
+      db.close();
+    }
+  };
+  const before = turns();
+
+  const store = await openRecord(home);
+  store.close();
+  expect(turns()).toEqual(before.map((row) => ({ ...row, effort: null })));
+});
+
 /** The saves, sources and profiles in a record, as stored. */
 function savesIn(path: string) {
   const db = new DatabaseSync(path, { readOnly: true });
@@ -1343,9 +1423,9 @@ function savesIn(path: string) {
   }
 }
 
-it("upgrades a record of version 24 to profiles: everyone's is empty, every save and source stays as it was, and a profile's saves come back exact from a backup", async () => {
+it("upgrades a record of version 26 to profiles: everyone's is empty, every save and source stays as it was, and a profile's saves come back exact from a backup", async () => {
   const path = databasePath(home);
-  migrate(path, MIGRATIONS.slice(0, 24));
+  migrate(path, MIGRATIONS.slice(0, 26));
   const db = new DatabaseSync(path, { readOnly: true });
   const before = {
     operations: db
