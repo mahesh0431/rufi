@@ -22,7 +22,7 @@ import {
   type SteerOutcome,
   type TurnEnd,
 } from "./provider.ts";
-import type { AgentStore } from "./store.ts";
+import type { AgentStore, Change } from "./store.ts";
 
 export type AgentStatus =
   | "idle"
@@ -1012,6 +1012,88 @@ export function createAgents(options: {
    * carry on after) carries on: a continue goes first, and its parent hears
    * nothing yet. At the cap it stops, and what waits for it is held.
    */
+  /**
+   * Its parent hears how the agent's turn went, or that a Stop came before
+   * one began: a steer from it, until it takes it. Inside the change.
+   */
+  function tellParent(
+    event: Change["event"],
+    agent: Agent,
+    input: string,
+    end: TurnEnd,
+    stopBy: string | null,
+    questions: { title: string; options: string[] }[],
+    at: string,
+  ): void {
+    const { parent } = agent;
+    if (parent === null) return;
+    const about: About =
+      end.status === "done"
+        ? questions.length > 0
+          ? "asked"
+          : "done"
+        : end.status;
+    const said = saidAtEnd(end, questions);
+    // Inside a tree that stops, it is kept but wakes nobody.
+    const dropped = together(parent, agent.id);
+    db.prepare(
+      `INSERT INTO queue (id, agent_id, sender, kind, parts, about, said, state, held, held_text, position, created_at, updated_at)
+       VALUES (?, ?, ?, 'steer', ?, ?, ?, 'waiting', ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue WHERE agent_id = ?), ?, ?)`,
+    ).run(
+      input,
+      parent,
+      agent.id,
+      JSON.stringify([
+        doneText(agent, end, stopBy, said, questions.length > 0),
+      ]),
+      about,
+      said,
+      dropped ? STOPPED.held : null,
+      dropped ? STOPPED.text : null,
+      parent,
+      at,
+      at,
+    );
+    event("input.added", parent, { input, kind: "steer", about });
+    if (dropped) {
+      event("input.held", parent, {
+        input,
+        held: STOPPED.held,
+        text: STOPPED.text,
+      });
+    }
+  }
+
+  /**
+   * A Stop came before the agent's turn began, and its input is held: one
+   * with no turn to say how it went (before its first, or going on after a
+   * restart) is stopped, and its parent hears so, as from a stopped turn.
+   * Inside the change that holds the input.
+   */
+  function stoppedBefore(
+    event: Change["event"],
+    id: string,
+    input: string,
+    by: string,
+  ): void {
+    const agent = get(id);
+    if (agent?.status !== "idle" && agent?.status !== "continuing") return;
+    const at = now();
+    db.prepare(
+      "UPDATE agents SET status = 'stopped', stopped_by = ?, updated_at = ? WHERE id = ?",
+    ).run(by, at, id);
+    event("agent.stopped", id, { by });
+    tellParent(
+      event,
+      agent,
+      `stopped:${input}`,
+      { status: "stopped" },
+      by,
+      [],
+      at,
+    );
+  }
+
   function endTurn(
     live: Live,
     ref: string,
@@ -1096,55 +1178,19 @@ export function createAgents(options: {
           event("input.held", live.id, { input: id, held: "restarts", text });
         }
       }
-      // Its parent hears how it went: a steer from it, until it takes it.
-      if (agent && parent !== null) {
-        const questions = (
-          db
-            .prepare(
-              "SELECT title, options FROM questions WHERE turn_id = ? ORDER BY rowid",
-            )
-            .all(turn.id) as { title: string; options: string }[]
-        ).map((question) => ({
-          title: question.title,
-          options: JSON.parse(question.options) as string[],
-        }));
-        const about: About =
-          end.status === "done"
-            ? questions.length > 0
-              ? "asked"
-              : "done"
-            : end.status;
-        const input = `done:${turn.id}`;
-        const said = saidAtEnd(end, questions);
-        // Inside a tree that stops, it is kept but wakes nobody.
-        const dropped = together(parent, live.id);
-        db.prepare(
-          `INSERT INTO queue (id, agent_id, sender, kind, parts, about, said, state, held, held_text, position, created_at, updated_at)
-           VALUES (?, ?, ?, 'steer', ?, ?, ?, 'waiting', ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue WHERE agent_id = ?), ?, ?)`,
-        ).run(
-          input,
-          parent,
-          live.id,
-          JSON.stringify([
-            doneText(agent, end, stopBy, said, questions.length > 0),
-          ]),
-          about,
-          said,
-          dropped ? STOPPED.held : null,
-          dropped ? STOPPED.text : null,
-          parent,
-          at,
-          at,
-        );
-        event("input.added", parent, { input, kind: "steer", about });
-        if (dropped) {
-          event("input.held", parent, {
-            input,
-            held: STOPPED.held,
-            text: STOPPED.text,
-          });
-        }
-      }
+      // Its parent hears how it went.
+      if (!agent || parent === null) return;
+      const questions = (
+        db
+          .prepare(
+            "SELECT title, options FROM questions WHERE turn_id = ? ORDER BY rowid",
+          )
+          .all(turn.id) as { title: string; options: string }[]
+      ).map((question) => ({
+        title: question.title,
+        options: JSON.parse(question.options) as string[],
+      }));
+      tellParent(event, agent, `done:${turn.id}`, end, stopBy, questions, at);
     });
     if (parent !== null) pump(parent);
     if (live.current?.ref === ref) {
@@ -1226,6 +1272,8 @@ export function createAgents(options: {
     from: "waiting" | "handing_over",
     to: Move,
     start?: string,
+    /** More of the same change. */
+    also?: (event: Change["event"]) => void,
   ): void {
     if (stateOf(input) !== from) return;
     store.change(({ event }) => {
@@ -1277,6 +1325,7 @@ export function createAgents(options: {
         ref,
         ...(message && { message }),
       });
+      also?.(event);
     });
   }
 
@@ -1430,8 +1479,25 @@ export function createAgents(options: {
       }
       const stopped = () =>
         starting.stopBy !== undefined || lives.get(live.id) !== live;
+      // Held by a Stop: the agent may stop with it.
+      const hold = (from: "waiting" | "handing_over", turn?: string) => {
+        const by = starting.stopBy;
+        move(
+          live,
+          input.id,
+          from,
+          STOPPED,
+          turn,
+          by === undefined
+            ? undefined
+            : (event) => {
+                stoppedBefore(event, live.id, input.id, by);
+              },
+        );
+        if (agent.parent !== null) pump(agent.parent);
+      };
       if (stopped()) {
-        move(live, input.id, "waiting", STOPPED);
+        hold("waiting");
         return;
       }
       const turn = randomUUID();
@@ -1440,7 +1506,7 @@ export function createAgents(options: {
       const parts = await claimed(live, input, turn);
       if (!parts) return;
       if (stopped()) {
-        move(live, input.id, "handing_over", STOPPED, turn);
+        hold("handing_over", turn);
         return;
       }
       let delivery: Delivery;
