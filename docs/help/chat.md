@@ -234,7 +234,7 @@ If the reply ends before your steer reaches it, your message goes in a following
 
 ## Waiting messages
 
-What waits shows in the chat, after its last message, in the order it goes: your messages as dashed bubbles, and Rufi's notes. It shows there also after a reload, a restart of Rufi, or a change of model. For each of your waiting messages you can:
+What waits shows just above the box, in the order it goes: your messages and Rufi's notes. It sits outside the chat's messages, so the chat doesn't move when a message starts or stops waiting, and a long list scrolls there. It shows there also after a reload, a restart of Rufi, or a change of model. For each of your waiting messages you can:
 
 - **Steer** it (two arrows that meet), while a reply runs: it goes into that reply now.
 - **Edit** it (the pencil), then **Save**.
@@ -268,7 +268,7 @@ Some things happen outside your chat. Rufi tells you with its own line in the ch
 When the AI should know too, Rufi gives it a note:
 
 - **When nothing runs**, the AI gets the note at once, in a short reply of its own. In that reply the AI explains or asks. It carries on with work you already asked for, and asks you first before any new change: every save rests on a message of yours.
-- **When a reply runs**, the note waits in the chat among the waiting messages, as "Rufi's note", and goes in its turn after the reply, in a short reply of its own. Each note gets its own reply. **Remove** it if the AI doesn't need it.
+- **When a reply runs**, the note waits among the waiting messages above the box, as "Rufi's note", and goes in its turn after the reply, in a short reply of its own. Each note gets its own reply. **Remove** it if the AI doesn't need it.
 - **When you're signed out**, it waits with the line on how to sign in, such as "You're signed out. Sign in with ChatGPT to chat.", and goes the next time Rufi gives the AI something after you sign in again.
 
 ## The model and effort
