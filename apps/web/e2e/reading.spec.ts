@@ -48,6 +48,7 @@ const SORT: Scenario = {
           ],
           drafts: [1, 2].map((page) => ({
             page,
+            reading: "$reading",
             test_name: "Haemoglobin",
             value_text: "13.2",
             unit: "g/dL",
