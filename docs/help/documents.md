@@ -292,6 +292,7 @@ Your health record changes only in the chat, with your yes. The delete itself re
 | The original file and the pages Rufi drew from it       | Your health record, with its history and receipts                                            |
 | The reader's copies of its pages and its unsaved drafts | The chat: your messages, the AI's replies and Rufi's lines                                   |
 | A reading that waits or runs: it stops                  | Visit briefs, as they were written                                                           |
+| The AI's working notes on it                            |                                                                                              |
 |                                                         | The document's name and page numbers, so that what points at it can say **document deleted** |
 
 After the delete, a chip of the document in an old message says **document deleted** and opens nothing. A reading line about it from an earlier version has no **Open** or **Retry**. A saved result's sources say **Document deleted (Sunrise Labs August.pdf, page 2)**, and so do a visit's: the visit stays, with the records saved from it. A result you removed before can still come back with "undo that"; its source says **document deleted**. The document itself can't come back: add its file again if you need it.
@@ -308,5 +309,6 @@ A delete removes the document from Rufi's data folder. Copies outside it stay:
 
 - **Rufi's backups** keep the document until they age out, in about 5 weeks. Backups made before an update keep it until you remove them (see [Backups and export](backups-and-export.md#deleted-documents-in-backups)).
 - **Exports** you saved keep it.
+- **The AI's folder** keeps files the AI made from it, apart from its working notes on the document, which Rufi removes (see [Your data and the AI](your-data-and-the-ai.md#what-the-ai-can-do-in-its-folder)).
 - **Time Machine** and other backups of your Mac keep it.
 - **The AI** may remember what it already read in this chat. Rufi's tools no longer show it the document's pages, and Rufi tells it at once that you deleted the document, and not to use or quote what it read from its pages. Results that you kept stay facts in your health record: the AI reads them as it reads any result, and says the document was deleted.

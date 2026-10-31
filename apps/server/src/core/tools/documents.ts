@@ -12,6 +12,7 @@ import { DELETED_DOCUMENT, ranges } from "../documents/naming.ts";
 import { readerValues } from "../documents/items.ts";
 import type { Entry } from "../documents/notebook.ts";
 import { readings } from "../documents/reading.ts";
+import { SaveReadingInput } from "../documents/save-reading.ts";
 import {
   addOf,
   documentsOf,
@@ -492,5 +493,38 @@ export const sortDocuments = defineTool({
       throw new Refusal("Documents can be sorted only in Rufi's own chat.");
     }
     return sort(input, callId);
+  },
+});
+
+export const saveReading = defineTool({
+  name: "save_reading",
+  description: `Saves your reading of a document, once, when you have copied every page you were asked to read (the reading-documents skill): your copy of each page, as Markdown exactly as printed with your marks where something is unclear, the part of your notes for that page. Each page is its number as get_documents gives it, once; outcome read, nothing_here (a blank page) or unreadable (with why, and what you could copy). Rufi keeps the copies as a reading of the document: its pages then wait for Rufi AI to sort them. Nothing is saved to the record. A document the user deleted refuses it. All or nothing; the same call again gets the same answer.`,
+  input: SaveReadingInput,
+  callers: "model",
+  readOnly: false,
+  destructive: false,
+  examples: [
+    {
+      document: "01a12345-0000-7000-8000-000000000000",
+      pages: [
+        {
+          page: 1,
+          outcome: "read",
+          copy: "# Example Clinic Lab\n\n| Test | Result | Unit |\n| --- | --- | --- |\n| Sodium | 139 | mmol/L |",
+        },
+        {
+          page: 2,
+          outcome: "unreadable",
+          copy: "| Potassium | 4.[2?] | mmol/L |",
+          why: "The lower half is out of focus.",
+        },
+      ],
+    },
+  ],
+  run: async (input, { saveReading, callId }) => {
+    if (!saveReading || callId === undefined) {
+      throw new Refusal("A reading can be saved only in Rufi's own chat.");
+    }
+    return saveReading(input, callId);
   },
 });

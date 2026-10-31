@@ -1323,6 +1323,13 @@ describe("a turn a Rufi event started", () => {
           drafts: [],
         },
       ],
+      [
+        "save_reading",
+        {
+          document: "doc-asha-aug",
+          pages: [{ page: 1, outcome: "read", copy: "| HbA1c | 7.1 | % |" }],
+        },
+      ],
     ] as const) {
       const answer = await call(tool, input, "rufi");
       expect(answer.ok).toBe(false);

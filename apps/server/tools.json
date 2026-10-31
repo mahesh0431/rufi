@@ -2073,6 +2073,91 @@
       ]
     },
     {
+      "name": "rufi.save_reading",
+      "description": "Saves your reading of a document, once, when you have copied every page you were asked to read (the reading-documents skill): your copy of each page, as Markdown exactly as printed with your marks where something is unclear, the part of your notes for that page. Each page is its number as get_documents gives it, once; outcome read, nothing_here (a blank page) or unreadable (with why, and what you could copy). Rufi keeps the copies as a reading of the document: its pages then wait for Rufi AI to sort them. Nothing is saved to the record. A document the user deleted refuses it. All or nothing; the same call again gets the same answer.",
+      "callers": "model",
+      "readOnly": false,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "document": {
+            "type": "string",
+            "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "The document you read, by its id."
+          },
+          "pages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer",
+                  "maximum": 9007199254740991,
+                  "exclusiveMinimum": 0,
+                  "description": "The page's number, as get_documents gives it for this document."
+                },
+                "outcome": {
+                  "type": "string",
+                  "enum": [
+                    "read",
+                    "nothing_here",
+                    "unreadable"
+                  ],
+                  "description": "read: you copied the page; nothing_here: a blank page; unreadable: you couldn't read it (say why, and copy what you could)."
+                },
+                "copy": {
+                  "type": "string",
+                  "maxLength": 100000,
+                  "description": "The page as Markdown, exactly as printed, with your marks where something is unclear. HTML tables are allowed where cells are merged."
+                },
+                "why": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300,
+                  "description": "Why the page is unreadable."
+                }
+              },
+              "required": [
+                "page",
+                "outcome",
+                "copy"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1,
+            "maxItems": 1000,
+            "description": "Your copy of each page you read, each page once: the part of your notes for that page."
+          }
+        },
+        "required": [
+          "document",
+          "pages"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "document": "01a12345-0000-7000-8000-000000000000",
+          "pages": [
+            {
+              "page": 1,
+              "outcome": "read",
+              "copy": "# Example Clinic Lab\n\n| Test | Result | Unit |\n| --- | --- | --- |\n| Sodium | 139 | mmol/L |"
+            },
+            {
+              "page": 2,
+              "outcome": "unreadable",
+              "copy": "| Potassium | 4.[2?] | mmol/L |",
+              "why": "The lower half is out of focus."
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "rufi.create_brief",
       "description": "Saves a visit brief for the active person: a dated page Rufi shows with a Copy button, and a line in this chat that opens it. Before you read the record for the brief, take record_version from get_overview, and give it here unchanged. Write the brief from saved records only, and give in cited every record its facts come from (kind and id, at least one); Rufi lists them under the brief as its Sources. Name the facts in plain words in the brief: no ids, footnotes or citation marks. Rufi refuses a record that wasn't saved in this person's record at record_version, or was removed then; nothing is made then. The same call again returns the same brief. The brief never changes once made; for a changed record, make a new one.",
       "callers": "model",
