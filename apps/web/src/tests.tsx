@@ -215,7 +215,6 @@ export function TestPage({
                 personId={person.id}
                 value={value}
                 unit={test.unit}
-                drawn={line.length > 0}
                 open={open === value.row.id}
                 onOpen={() => {
                   setOpen(open === value.row.id ? null : value.row.id);
@@ -262,7 +261,6 @@ function ValueLine({
   personId,
   value,
   unit,
-  drawn,
   open,
   onOpen,
 }: {
@@ -270,8 +268,6 @@ function ValueLine({
   value: TestValue;
   /** The test's unit. */
   unit: string | undefined;
-  /** The test has a line, so a value off it says so. */
-  drawn: boolean;
   open: boolean;
   onOpen: () => void;
 }) {
@@ -306,7 +302,7 @@ function ValueLine({
           {converted !== undefined && (
             <span className="block text-xs text-muted">= {converted}</span>
           )}
-          {drawn && !onTheLine(row) && (
+          {!onTheLine(row) && (
             <span className="block text-xs text-muted">Not on the line</span>
           )}
         </span>
