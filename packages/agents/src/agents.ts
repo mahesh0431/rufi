@@ -123,6 +123,11 @@ export interface Sent {
   parts?: readonly string[];
   /** A message one agent wrote to another (its done messages are the package's). */
   about?: "wrote";
+  /**
+   * The person wrote it: the agent's restarts in a row count from none
+   * again, and what the last one held goes.
+   */
+  person?: true;
 }
 
 /** Why an input from one agent to another came. */
@@ -295,10 +300,11 @@ export interface Agents {
   /**
    * Starts handing inputs over, once the host has finished starting: first
    * what a crash left handed over counts as sent, a start's turn stopped by
-   * the restart; then what waits goes. Nothing goes to a provider before
-   * it. Again does nothing.
+   * the restart; a turn that ran carries on, up to `continues` restarts in
+   * a row (none by default); then what waits goes. Nothing goes to a
+   * provider before it. Again does nothing.
    */
-  dispatch: () => Promise<void>;
+  dispatch: (options?: { continues?: number }) => Promise<void>;
   /** Lifts these inputs' holds, so they go again. */
   release: (inputs: readonly string[]) => void;
   /** These waiting inputs never go: removed. Others stay as they are. */
@@ -415,6 +421,9 @@ const steerLine = (by?: { title: string; id: string }) =>
 /** A start a Stop cut before it went: it waits, held. */
 const STOPPED = { state: "held", held: "stopped", text: "Stopped." } as const;
 
+/** What an agent a restart cut is told first, to carry on. */
+const CONTINUE = "Rufi stopped suddenly (restart). Please continue.";
+
 /** Where an input goes next. */
 type Move =
   | { state: "delivered"; turn: string }
@@ -452,6 +461,7 @@ interface AgentRow {
   status: AgentStatus;
   result: string | null;
   stopped_by: string | null;
+  continues: number;
 }
 
 const toAgent = (row: AgentRow): Agent => ({
@@ -936,7 +946,17 @@ export function createAgents(options: {
   }
 
   /** A turn ended, as the provider said: the turn's end, and the agent's status. */
-  function endTurn(live: Live, ref: string, end: TurnEnd): void {
+  /**
+   * A turn ended. One a restart cut (`restarts`: how many in a row it may
+   * carry on after) carries on: a continue goes first, and its parent hears
+   * nothing yet. At the cap it stops, and what waits for it is held.
+   */
+  function endTurn(
+    live: Live,
+    ref: string,
+    end: TurnEnd,
+    restarts?: number,
+  ): void {
     const answer = live.answers.get(ref);
     live.answers.delete(ref);
     const turn = turnOf(live, ref);
@@ -955,6 +975,8 @@ export function createAgents(options: {
       end.status === "stopped" ? (live.stopBy ?? "provider") : null;
     const agent = get(live.id);
     const parent = agent?.parent ?? null;
+    const continues = row(live.id)?.continues ?? 0;
+    const continuing = restarts !== undefined && continues < restarts;
     store.change(({ event }) => {
       const at = now();
       db.prepare(
@@ -970,22 +992,49 @@ export function createAgents(options: {
         at,
         turn.id,
       );
+      // A done turn starts the count of restarts in a row again.
       db.prepare(
-        "UPDATE agents SET status = ?, result = ?, stopped_by = ?, updated_at = ? WHERE id = ?",
+        "UPDATE agents SET status = ?, result = ?, stopped_by = ?, continues = ?, updated_at = ? WHERE id = ?",
       ).run(
-        end.status,
+        continuing ? "continuing" : end.status,
         end.status === "done"
           ? end.answer
           : end.status === "failed"
             ? (end.text ?? end.reason)
             : null,
-        stopBy,
+        continuing ? null : stopBy,
+        end.status === "done" ? 0 : continuing ? continues + 1 : continues,
         at,
         live.id,
       );
       // A whole answer names the item it streamed as, when it did.
       const item = end.status === "done" ? answer : undefined;
       event("turn.ended", live.id, { turn: turn.id, ref, ...end, item });
+      if (continuing) {
+        // Rufi's line, first: a restart finds it there and adds no other.
+        const input = `continue:${turn.id}`;
+        db.prepare(
+          `INSERT INTO queue (id, agent_id, sender, kind, parts, position, created_at, updated_at)
+           VALUES (?, ?, 'rufi', 'queue', ?, (SELECT COALESCE(MIN(position), 1) - 1 FROM queue WHERE agent_id = ?), ?, ?)`,
+        ).run(input, live.id, JSON.stringify([CONTINUE]), live.id, at, at);
+        event("input.added", live.id, { input, kind: "queue" });
+        return;
+      }
+      // At the cap, nothing starts it by itself: what waits is held.
+      if (restarts !== undefined && restarts > 0) {
+        const text = `Stopped after ${String(restarts)} restarts in a row.`;
+        const held = db
+          .prepare(
+            "SELECT id FROM queue WHERE agent_id = ? AND state = 'waiting' AND held IS NULL ORDER BY position",
+          )
+          .all(live.id) as { id: string }[];
+        for (const { id } of held) {
+          db.prepare(
+            "UPDATE queue SET held = 'restarts', held_text = ?, updated_at = ? WHERE id = ?",
+          ).run(text, at, id);
+          event("input.held", live.id, { input: id, held: "restarts", text });
+        }
+      }
       // Its parent hears how it went: a steer from it, until it takes it.
       if (agent && parent !== null) {
         const questions = (
@@ -1792,11 +1841,32 @@ export function createAgents(options: {
     },
 
     send: (id, input) => {
-      if (!row(id)) throw new Error(`No agent ${id}.`);
+      const kept = row(id);
+      if (!kept) throw new Error(`No agent ${id}.`);
       if (stateOf(input.id) !== undefined) return;
       const dropped = together(id, input.sender);
+      // The person, or its parent, writing to it lifts a hold at the cap.
+      const lifts = input.person === true || input.sender === kept.parent_id;
       store.change(({ event }) => {
         const at = now();
+        if (input.person) {
+          db.prepare(
+            "UPDATE agents SET continues = 0, updated_at = ? WHERE id = ?",
+          ).run(at, id);
+        }
+        if (lifts) {
+          const held = db
+            .prepare(
+              "SELECT id FROM queue WHERE agent_id = ? AND state = 'waiting' AND held = 'restarts'",
+            )
+            .all(id) as { id: string }[];
+          for (const { id: lifted } of held) {
+            db.prepare(
+              "UPDATE queue SET held = NULL, held_text = NULL, updated_at = ? WHERE id = ?",
+            ).run(at, lifted);
+            event("input.released", id, { input: lifted });
+          }
+        }
         db.prepare(
           `INSERT INTO queue (id, agent_id, sender, kind, parts, about, held, held_text, position, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue WHERE agent_id = ?), ?, ?)`,
@@ -1829,7 +1899,7 @@ export function createAgents(options: {
       pump(id);
     },
 
-    dispatch: () => {
+    dispatch: ({ continues = 0 } = {}) => {
       // Once: a start this process made is never taken for a crash's.
       if (begun) return Promise.resolve();
       begun = true;
@@ -1859,6 +1929,26 @@ export function createAgents(options: {
         admitTurn(live, input.turn, [input.id]);
         live.stopBy = "restart";
         endTurn(live, input.turn, { status: "stopped" });
+      }
+      // A turn that ran when Rufi stopped carries on; one a Stop was
+      // ending stops.
+      const ran = db
+        .prepare(
+          "SELECT agent_id AS agent, provider_turn AS ref, status FROM turns WHERE status IN ('running', 'stopping') ORDER BY rowid",
+        )
+        .all() as { agent: string; ref: string; status: string }[];
+      for (const turn of ran) {
+        const agent = get(turn.agent);
+        if (!agent) continue;
+        const live = liveOf(agent);
+        live.stopBy = "restart";
+        endTurn(
+          live,
+          turn.ref,
+          { status: "stopped" },
+          turn.status === "running" ? continues : undefined,
+        );
+        live.stopBy = undefined;
       }
       // A start that never got its input this far didn't run.
       const unstarted = db

@@ -1,6 +1,7 @@
 // Settings: how Codex and Claude are signed in, how Rufi looks, when a reply's
 // Activity opens by itself, what a message sent while a reply runs does,
-// the models the AI and its agents may run on, the region whose
+// the models the AI and its agents may run on, how often Rufi carries on
+// after a restart, the region whose
 // emergency number the AI gives, the model and effort documents are read
 // with, device data, backups, the export of your data, and where Rufi keeps it.
 import { Backups, DataFolder } from "@rufi/contracts";
@@ -85,6 +86,7 @@ export function SettingsPage() {
         </p>
       </div>
       <ModelsSection />
+      <RestartSection />
       <h2 className="mt-8 mb-2 px-0.5 font-semibold">Emergency</h2>
       <div className="rounded-xl border border-line bg-surface p-4">
         {settings.data === undefined && settings.error ? (
@@ -294,6 +296,56 @@ function ModelsSection() {
           </p>
         )}
       </section>
+    </>
+  );
+}
+
+/** How many restarts in a row Rufi carries on a reply that ran. */
+function RestartSection() {
+  const settings = useSettings();
+  const save = useMutation({ mutationFn: saveSettings });
+  const continues = settings.data?.continuesAfterRestart;
+  return (
+    <>
+      <h2 className="mt-8 mb-2 px-0.5 font-semibold">After a restart</h2>
+      <div className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-4">
+        {continues !== undefined && (
+          <div className="flex items-center gap-2">
+            <label htmlFor="continues" className="font-medium">
+              Carry on up to
+            </label>
+            <select
+              id="continues"
+              value={continues}
+              disabled={save.isPending}
+              onChange={(event) => {
+                save.mutate({
+                  continuesAfterRestart: Number(event.target.value),
+                });
+              }}
+              className="rounded-lg border border-line bg-surface px-2 py-1.5"
+            >
+              {Array.from({ length: 11 }, (_, count) => (
+                <option key={count} value={count}>
+                  {count}
+                </option>
+              ))}
+            </select>
+            <span>times in a row</span>
+          </div>
+        )}
+        <p className="text-muted">
+          When Rufi stops suddenly while the AI or its agents work, they carry
+          on when Rufi starts again. After this many restarts in a row, they
+          stop instead, and your waiting messages wait for you to send them. 0:
+          they never carry on by themselves.
+        </p>
+        {save.error && (
+          <p role="alert" className="text-muted">
+            {save.error.message}
+          </p>
+        )}
+      </div>
     </>
   );
 }

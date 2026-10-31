@@ -152,6 +152,7 @@ const APPLIED = new Set([
   "input.delivered",
   "input.held",
   "input.waiting",
+  "input.released",
 ]);
 
 /** An input's hold as the chat shows it: signed out with Rufi's line. */
@@ -162,10 +163,13 @@ const holdOf = (held: Hold, text: string) =>
   held === "signed_out"
     ? { held, text: SIGNED_OUT }
     : {
+        // Held at the restarts' cap: not sent, as a Stop's.
         held:
           held === "open_failed" || held === "stopped"
             ? held
-            : ("failed" as const),
+            : held === "restarts"
+              ? ("stopped" as const)
+              : ("failed" as const),
         text,
       };
 
@@ -477,6 +481,14 @@ export async function startRufiAi(
           { state: "waiting" },
           advance,
         );
+        break;
+      case "input.released":
+        await transcripts.applyInput(
+          row,
+          payload.input,
+          { state: "released" },
+          advance,
+        );
     }
     chat?.changed(row);
     return true;
@@ -637,7 +649,12 @@ export async function startRufiAi(
       queue: async (row, rows, order) => {
         const agent = await system.root(row.id);
         for (const { id, sender, kind } of rows) {
-          agents.send(agent, { id, sender, kind });
+          agents.send(agent, {
+            id,
+            sender,
+            kind,
+            ...(sender === "person" && { person: true as const }),
+          });
         }
         agents.reorder(agent, order);
       },

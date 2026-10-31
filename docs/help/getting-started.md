@@ -25,7 +25,7 @@ If a tab says "This session has ended", the link was already used, or Rufi was s
 2. Keep the terminal open while you use Rufi.
 
 - **⌘W** closes the window, and Rufi keeps running. To open the window again, click Rufi in the Dock.
-- **⌘Q** quits the app and stops Rufi. If a reply is running, Rufi stops it first, as Stop does. Ctrl-C in the terminal does the same. If Rufi doesn't stop within 10 seconds, the app ends it at once, with anything the AI started.
+- **⌘Q** quits the app and stops Rufi. If a reply is running, it ends, and the AI carries on when Rufi starts again (see [When Rufi closes during a reply](chat.md#while-the-ai-replies)). To end it for good, click Stop first. Ctrl-C in the terminal does the same. If Rufi doesn't stop within 10 seconds, the app ends it at once, with anything the AI started.
 - If you run `pnpm desktop` again while the app runs, the app comes to the front.
 - If Rufi already runs from `pnpm start`, the app opens on that Rufi and doesn't start a second one. Then ⌘Q closes only the app: that Rufi keeps running until you press Ctrl-C in its terminal.
 - A web link opens in your browser, as it does when you use Rufi in a browser tab.

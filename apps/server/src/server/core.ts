@@ -13,6 +13,7 @@ import { openAgentStore, type AgentStore } from "@rufi/agents/store";
 import { Effect } from "effect";
 import type { AgentSandbox, RunSubAgent } from "../agent/runtime.ts";
 import { readBrief } from "../core/briefs/briefs.ts";
+import { continuesAfterRestart } from "../core/chat/continues.ts";
 import { DEFAULT_SHORTLIST, shortlist } from "../core/chat/models.ts";
 import { drafts as openDrafts } from "../core/chat/drafts.ts";
 import { chatAgents } from "../core/chat/agents.ts";
@@ -23,6 +24,7 @@ import { documents } from "../core/documents/documents.ts";
 import { fileGate } from "../core/documents/gate.ts";
 import { copies } from "../core/documents/copies.ts";
 import { copyReader } from "../core/documents/copy-reader.ts";
+import { saveReading } from "../core/documents/save-reading.ts";
 import { sorting as openSorting } from "../core/documents/sorting.ts";
 import {
   CLOSED_WHILE_READING,
@@ -30,6 +32,7 @@ import {
 } from "../core/documents/reading.ts";
 import { draftItems } from "../core/documents/items.ts";
 import { backupJob } from "../core/store/backup.ts";
+import { workCleaner } from "../core/store/work.ts";
 import {
   databasePath,
   openReadOnly,
@@ -262,6 +265,10 @@ export const startCore = (options: CoreOptions) =>
     );
     // Before anything uses the files: what a delete left when Rufi stopped.
     yield* attempt(() => sweepFiles(writer, home));
+    yield* Effect.acquireRelease(
+      Effect.sync(() => workCleaner(writer, home, log, options.now)),
+      (cleaner) => Effect.promise(() => cleaner.close()),
+    );
     const gate = fileGate();
     yield* attempt(() => cleanExportStaging(home));
     const backups = yield* Effect.acquireRelease(
@@ -396,6 +403,12 @@ export const startCore = (options: CoreOptions) =>
                 models: (): Promise<readonly OfferedModel[]> =>
                   chat.shortlisted(),
               }),
+              {
+                run: saveReading(options.now),
+                done: (personId) => {
+                  readings.changed(personId);
+                },
+              },
             ),
           },
           log,
@@ -549,7 +562,11 @@ export const startCore = (options: CoreOptions) =>
     // messages go into Rufi AI's queue, in order, and only now may the
     // agents' inputs go.
     yield* attempt(() => chat.carryAll());
-    yield* attempt(() => agentSystem.agents.dispatch());
+    // A turn that ran when Rufi stopped carries on, as Settings says.
+    const continues = yield* attempt(() =>
+      continuesAfterRestart(transcripts.setting),
+    );
+    yield* attempt(() => agentSystem.agents.dispatch({ continues }));
     convertLoop.start();
     yield* Effect.acquireRelease(
       attempt(() => writePrivateJson(coreFile(home), { port, launcher })),

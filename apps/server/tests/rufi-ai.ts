@@ -2,6 +2,7 @@
 // opens the chat itself (server/chat.ts).
 import type { ProviderAdapter } from "@rufi/agents/provider";
 import { openAgentStore } from "@rufi/agents/store";
+import { continuesAfterRestart } from "../src/core/chat/continues.ts";
 import { DEFAULT_SHORTLIST } from "../src/core/chat/models.ts";
 import type { Transcripts } from "../src/core/chat/transcript.ts";
 import type { Store } from "../src/core/store/database.ts";
@@ -33,7 +34,10 @@ export async function rufiAiFor(options: {
     agent: system.rufiAi,
     agents: system.agents,
     /** As the core does once the chat is open. */
-    dispatch: () => system.agents.dispatch(),
+    dispatch: async () =>
+      system.agents.dispatch({
+        continues: await continuesAfterRestart(options.transcripts.setting),
+      }),
     close: async () => {
       await system.close();
       store.close();
