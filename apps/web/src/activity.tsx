@@ -2,12 +2,15 @@
 // it, read from the core when it opens (never sent with the chat), shown as
 // it came. A command shows its command, folder, exit code, time and output;
 // a tool call its arguments and result; anything else the agent's own JSON.
-// Long text shows 12 lines, then all of it on request.
+// A result with a page of the person's documents shows that page, as the
+// agent got it. Long text shows 12 lines, then all of it on request.
 import { EntryDetails } from "@rufi/contracts";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { read } from "./api.ts";
 import { ScanText } from "lucide-react";
+import { PageImage } from "./page-image.tsx";
+import { pageOf, pagePath } from "./pages.ts";
 import { openReading } from "./reading.tsx";
 import { Button, Problem } from "./ui.tsx";
 
@@ -93,7 +96,9 @@ export function StepDetails({
       </Button>
     );
   }
-  return <Reported item={item as Record<string, unknown>} />;
+  return (
+    <Reported personId={personId} item={item as Record<string, unknown>} />
+  );
 }
 
 const text = (value: unknown) =>
@@ -102,8 +107,22 @@ const number = (value: unknown) =>
   typeof value === "number" ? value : undefined;
 const json = (value: unknown) => JSON.stringify(value, null, 2);
 
-function Reported({ item }: { item: Record<string, unknown> }) {
+function Reported({
+  personId,
+  item,
+}: {
+  personId: string;
+  item: Record<string, unknown>;
+}) {
   const ms = number(item["durationMs"]);
+  const page = pageOf(item);
+  const seen = page && (
+    <PageImage
+      path={pagePath(personId, page.document, page.page)}
+      alt={`Page ${String(page.page)}`}
+      className="max-h-64 max-w-full self-start rounded-md border border-line"
+    />
+  );
   if (item["type"] === "commandExecution") {
     const exit = number(item["exitCode"]);
     const facts = [
@@ -132,23 +151,43 @@ function Reported({ item }: { item: Record<string, unknown> }) {
     return (
       <>
         <Folded label="Arguments" text={json(item["arguments"])} />
-        {said.length > 0 && <Folded label="Result" text={said.join("\n\n")} />}
+        {(seen || said.length > 0) && (
+          <Folded label="Result" text={said.join("\n\n")}>
+            {seen}
+          </Folded>
+        )}
         {typeof error === "string" && <Folded label="Error" text={error} />}
         {ms !== undefined && <p>Took {took(ms)}</p>}
       </>
     );
   }
-  return <Folded label="As the agent reported it" text={json(item)} />;
+  return (
+    <Folded label="As the agent reported it" text={json(item)}>
+      {seen}
+    </Folded>
+  );
 }
 
-/** Text as it came, in a block: 12 lines, then all of it on request. */
-function Folded({ label, text: whole }: { label: string; text: string }) {
+/**
+ * Text as it came, in a block: 12 lines, then all of it on request; what
+ * came before the text (a page's image) above it.
+ */
+function Folded({
+  label,
+  text: whole,
+  children,
+}: {
+  label: string;
+  text: string;
+  children?: ReactNode;
+}) {
   const [all, setAll] = useState(false);
   const lines = whole.split("\n");
   const long = lines.length > FOLDED_LINES;
   return (
     <div className="min-w-0">
       <p className="text-xs font-medium text-ink">{label}</p>
+      {children && <div className="mt-0.5 flex">{children}</div>}
       <pre className="mt-0.5 rounded-md bg-side px-2 py-1.5 font-mono text-xs [overflow-wrap:anywhere] whitespace-pre-wrap text-ink">
         {long && !all ? lines.slice(0, FOLDED_LINES).join("\n") : whole}
       </pre>

@@ -33,7 +33,7 @@ import {
 } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { useStore } from "zustand";
-import { ApiError, fetchFile, read } from "./api.ts";
+import { ApiError, read } from "./api.ts";
 import { AskRufi, ASKS } from "./ask.tsx";
 import { boxFor } from "./boxes.ts";
 import { printedDate, printedDay } from "./dates.ts";
@@ -42,6 +42,8 @@ import { describe, KIND_NAMES, placeWords, Viewer } from "./documents.tsx";
 import type { BoxChip } from "./draft.ts";
 import { messageOf, retain } from "./live.ts";
 import { askRufi } from "./panel.ts";
+import { PageImage } from "./page-image.tsx";
+import { documentPath, pagePath } from "./pages.ts";
 import { queries, useDocumentItems, useDocuments } from "./reads.ts";
 import {
   FIELDS,
@@ -53,9 +55,6 @@ import {
   Tag,
 } from "./reading.tsx";
 import { Button, IconButton, Problem } from "./ui.tsx";
-
-const documentPath = (personId: string, documentId: string) =>
-  `/api/people/${encodeURIComponent(personId)}/documents/${encodeURIComponent(documentId)}`;
 
 const PAGE_STATE = {
   read: "read",
@@ -803,49 +802,12 @@ function PageView({
       >
         <PageImage
           key={position}
-          path={`${documentPath(personId, documentId)}/pages/${String(position)}`}
+          path={pagePath(personId, documentId, position)}
           alt={`Page ${String(index + 1)} of ${String(of)}`}
+          className="h-fit max-w-full rounded-md shadow-sm"
         />
       </div>
     </section>
-  );
-}
-
-/** A page's image, fetched with the tab's proof and shown from a blob. */
-function PageImage({ path, alt }: { path: string; alt: string }) {
-  const [shown, setShown] = useState<{ url?: string; error?: Error }>({});
-  useEffect(() => {
-    let url: string | undefined;
-    let gone = false;
-    fetchFile(path).then(
-      (blob) => {
-        url = URL.createObjectURL(blob);
-        if (gone) URL.revokeObjectURL(url);
-        else setShown({ url });
-      },
-      (error: unknown) => {
-        if (!gone) setShown({ error: error as Error });
-      },
-    );
-    return () => {
-      gone = true;
-      if (url) URL.revokeObjectURL(url);
-    };
-  }, [path]);
-  if (shown.error) return <Problem error={shown.error} />;
-  if (!shown.url) {
-    return (
-      <p role="status" className="m-auto text-muted">
-        Preparing the page…
-      </p>
-    );
-  }
-  return (
-    <img
-      src={shown.url}
-      alt={alt}
-      className="h-fit max-w-full rounded-md shadow-sm"
-    />
   );
 }
 

@@ -187,6 +187,36 @@ test("a file shows Reading, with no Retry, while the reader Rufi AI set on it wo
   await accessible(page);
 });
 
+test("a step that read a page opens in Activity to the page's image, then its text", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi, {
+    callsByText: {
+      "Look at page 2": [
+        {
+          id: "look",
+          tool: "get_documents",
+          arguments: { document: "$document", page: 2 },
+        },
+      ],
+    },
+  });
+  await sendFiles(page, await report(), "Look at page 2");
+  await activity(page).click({ timeout: FILE_WORK_MS });
+  const step = log(page)
+    .getByRole("listitem")
+    .filter({ hasText: "rufi.get_documents" });
+  await step.getByRole("button").click();
+  const image = step.getByRole("img", { name: "Page 2" });
+  await expect(image).toBeVisible();
+  expect(
+    await image.evaluate((img) => (img as HTMLImageElement).naturalWidth),
+  ).toBeGreaterThan(0);
+  await expect(step).toContainText('"page":2,"of":2');
+  await accessible(page);
+});
+
 test("keeps unreadable pages to check, and Nothing to save for a reading with nothing to save; Retry puts the file in the box, and Send has Rufi AI read only the page that couldn't be read", async ({
   page,
   rufi,
