@@ -2276,18 +2276,23 @@ describe("the chat, on the scripted Codex", () => {
       );
       return added[0] ?? "";
     };
-    /** The person's message with these documents; its id. */
+    /** The person's message with these documents (`again`: Retry's chips); its id. */
     const sendWith = async (
       text: string,
       ids: readonly string[],
       kind?: "steer" | "queue",
+      again = false,
     ) => {
       const id = uuid();
       await chat?.send(
         await chatRow(),
         id,
         text,
-        ids.map((doc) => ({ type: "document" as const, id: doc })),
+        ids.map((doc) => ({
+          type: "document" as const,
+          id: doc,
+          ...(again && { readAgain: true }),
+        })),
         kind,
       );
       return id;
@@ -2402,9 +2407,10 @@ describe("the chat, on the scripted Codex", () => {
       expect(all.filter((entry) => entry.kind === "receipt")).toEqual([]);
     });
 
-    it("lets Rufi AI start a reader again when a reading fails, and sorts what the second one read", async () => {
+    it("lets Rufi AI start a reader again when a reading fails; a Retry while that one reads starts no other, and Rufi AI sorts what it read", async () => {
       const report = await addFile("sunrise-labs-august.pdf");
       const replied = Promise.withResolvers<undefined>();
+      const retried = Promise.withResolvers<undefined>();
       await startChat("fake", {
         scenario: {
           callsByText: {
@@ -2421,37 +2427,59 @@ describe("the chat, on the scripted Codex", () => {
             // Its failure wakes Rufi AI, which starts another reader.
             "Reading (document": [
               reader(
-                "Reading again",
+                "Reading: sunrise-labs-august.pdf",
                 "Read again (document $document) with the reading-documents skill.",
               ),
             ],
             "Read again": [saves([1, 2])],
-            "Reading again (": [sorts(report, [1, 2])],
+            // The user's Retry while it reads: Rufi AI looks at its readers
+            // first, as the sorting-documents skill offers, and starts none.
+            "Read it again": [
+              { id: "status-retry", tool: "agent_status", arguments: {} },
+            ],
+            "Reading: sunrise-labs-august.pdf (": [sorts(report, [1, 2])],
           },
         },
         waitFor: (tool) =>
-          tool === "get_documents" ? replied.promise : undefined,
+          tool === "get_documents"
+            ? replied.promise
+            : tool === "save_reading"
+              ? retried.promise
+              : undefined,
       });
       const c = await newChat();
       await sendWith("Read this", [report]);
       await ended(c.id);
       replied.resolve(undefined);
+      await ended(c.id, 2);
+      // The second reader is at its save, which waits.
+      await until(() => Promise.resolve(admitted.includes("save_reading")));
+      const readers = () =>
+        agentRows(
+          "SELECT title, status FROM agents WHERE parent_id IS NOT NULL ORDER BY rowid",
+        );
+      expect(readers()).toEqual([
+        { title: `Reading (document ${report})`, status: "failed" },
+        { title: "Reading: sunrise-labs-august.pdf", status: "running" },
+      ]);
+      await sendWith("Read it again", [report], undefined, true);
       await ended(c.id, 3);
+      expect(readers()).toHaveLength(2);
+      retried.resolve(undefined);
+      await ended(c.id, 4);
       await settled(c.id);
 
       const { turns } = await transcript(c.id);
       expect(turns.map((turn) => [turn.status, turn.cause?.about])).toEqual([
         ["completed", undefined],
         ["completed", "failed"],
+        ["completed", undefined],
         ["completed", "done"],
       ]);
-      expect(
-        agentRows(
-          "SELECT title, status FROM agents WHERE parent_id IS NOT NULL ORDER BY rowid",
-        ),
-      ).toEqual([
+      expect(admitted).toContain("agent_status");
+      expect(readers()).toEqual([
         { title: `Reading (document ${report})`, status: "failed" },
-        { title: "Reading again", status: "done" },
+        { title: "Reading: sunrise-labs-august.pdf", status: "done" },
       ]);
       expect(await listed()).toEqual([
         { id: report, kind: "letter", notSorted: false },

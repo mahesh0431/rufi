@@ -78,11 +78,12 @@ When your message brings files that aren't read yet, Rufi tells Rufi AI which on
 - It can start a reader for each file, or give a file to a reader that is still at work. A long document can go to several readers.
 - It chooses each reader's model and effort among the models you ticked in **Settings** › **Models**: a clear printed PDF may need less than handwriting or a blurred photo. It can look at how much of your plan is left first.
 - When a reading fails or stops, it can start a reader again, on the same model or another, or tell you what happened and let you choose.
+- Before it starts a reader, it looks at the readers it has. If you click **Retry** while a reader is still at work on that file, Rufi AI tells you it is still being read and starts no other. A reader that is stuck or failed it can stop, then start a fresh one.
 
 ### While a document is read
 
-- Your reply starts at once, with your message. In its Activity (see [Activity](chat.md#activity)), each reader Rufi AI started is one line, such as **Reading thyrocare-aug.pdf**, with its status. Click it to see what the reader did.
-- Rufi AI may tell you what is being read and end its reply. Each reader's result wakes it: a reply starts by itself, with a small line above it such as "Reading thyrocare-aug.pdf: done", and Rufi AI sorts the file and tells you what it found.
+- Your reply starts at once, with your message. In its Activity (see [Activity](chat.md#activity)), each reader Rufi AI started is one line, named after its document, such as **Reading: thyrocare-aug.pdf**, with its status. Click it to see what the reader did.
+- Rufi AI may tell you what is being read and end its reply. Each reader's result wakes it: a reply starts by itself, with a small line above it such as "Reading: thyrocare-aug.pdf: done", and Rufi AI sorts the file and tells you what it found.
 - **Stop** ends the reply, not its readers. To stop a reader, ask Rufi AI.
 - On the Documents page, the file says **Not read yet** until its reading is saved, then **Not sorted yet** until Rufi AI sorts it.
 - A message you send meanwhile goes as you choose: steered, it goes into the reply that runs; queued, it waits for a reply of its own (see [While the AI replies](chat.md#while-the-ai-replies)). A message with files goes the same way.
