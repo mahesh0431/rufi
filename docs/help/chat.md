@@ -212,6 +212,10 @@ If you click Stop, what the AI did so far stays in Activity, and the folded line
 
 **Stop.** The stop button (the square) ends the reply now, in every size of the chat. What the AI wrote so far stays. Stop ends only the reply: your waiting messages go next, in order, and the sub-agents keep working (to stop them, ask the AI; see [When the AI starts agents of its own](#when-the-ai-starts-agents-of-its-own)). A message whose reply was still starting when you clicked Stop doesn't go: it waits as **Not sent · Stopped.**, for you to **Send**, edit or remove.
 
+**When Rufi closes during a reply.** If you quit Rufi, or it stops suddenly, while the AI replies, the reply ends **Rufi closed before the reply finished.** When Rufi starts again, the AI carries on by itself in a new reply, before your waiting messages. Its sub-agents that were working carry on too. Rufi tells the AI and each sub-agent only that it stopped suddenly and that they can carry on. To end a reply for good, click Stop before you quit.
+
+If Rufi closes again and again while they work, they stop carrying on: after 5 restarts in a row, the AI and its sub-agents stay stopped, and your waiting messages show **Not sent · Stopped after 5 restarts in a row.** They go when you click **Send**, or with the next message you send. Choose how many times in **Settings** › **After a restart**. With 0, the AI never carries on by itself: the reply stays stopped, and your waiting messages go as usual. The count starts again when a reply finishes, or when you send a message.
+
 **Rufi's reader.** When your message brings files, your reply starts with Rufi's part: Rufi's reader copies the pages before the AI starts. Each file is a step in Activity, **Rufi's reader · thyrocare-aug.pdf**, with how far it is. Stop ends the reading too. The AI starts when all files are copied, and answers your message in the same reply (see [Documents](documents.md#while-a-document-is-read)). If the reading doesn't finish, the reply ends before the AI, with the reason and **Retry** (see [Documents](documents.md#when-a-reading-stops)).
 
 **Sending while the AI replies.** You choose where a message goes:
@@ -245,6 +249,7 @@ A held message says why under it, and goes only when you click **Send** (the pap
 
 - **Failed ·** and the error as it came, when Rufi couldn't hand the message to the AI, or the AI couldn't take it, for example when none of the models you ticked in **Settings** › **Models** is offered.
 - **Not sent · Stopped.** You clicked Stop while its reply was still starting, so it didn't go.
+- **Not sent · Stopped after 5 restarts in a row.** Rufi closed again and again while the AI worked, so the AI stopped carrying on by itself (see [While the AI replies](#while-the-ai-replies)). A new message from you sends it too, before your new one.
 - **Not sent · From a backup: it waited when the backup was made.** After a restore, nothing from the past goes to the AI by itself.
 
 When Rufi couldn't open the AI's memory of the chat (its thread), or start a new one, the failed message also has **New thread**. **Send** opens the same thread again, and the AI keeps its memory of the chat. **New thread** starts the AI with a new memory, and your chat and your health record stay as they are (see [The AI's memory of the chat](#the-ais-memory-of-the-chat)). While a reply runs, only **Send** shows (the message then goes after the reply); **New thread** shows again once the reply has ended. If Send meets an error again, the message waits again with both buttons. The message keeps waiting like this when you reload or Rufi starts again. When you click in two tabs, the first click counts, and the other tab shows what happened.
