@@ -123,6 +123,8 @@ export interface Sent {
   parts?: readonly string[];
   /** A message one agent wrote to another (its done messages are the package's). */
   about?: "wrote";
+  /** What the sending agent wrote, in its own words, without the line around them. */
+  said?: string;
   /**
    * The person wrote it: the agent's restarts in a row count from none
    * again, and what the last one held goes.
@@ -132,6 +134,19 @@ export interface Sent {
 
 /** Why an input from one agent to another came. */
 export type About = "done" | "stopped" | "failed" | "asked" | "wrote";
+
+/**
+ * A message from another agent among what an agent took, as its events
+ * carry it: its input, who sent it, by the name they had then, why, and
+ * what they said in their own words.
+ */
+export interface AgentMessage {
+  input: string;
+  agent: string;
+  title: string;
+  about: About;
+  said: string;
+}
 
 /** An input waiting for its agent, as `waiting` lists it. */
 export interface WaitingInput {
@@ -269,6 +284,8 @@ export interface Agents {
         about: About | null;
       }
     | undefined;
+  /** The messages from other agents among these inputs, in their order. */
+  messages: (inputs: readonly string[]) => AgentMessage[];
   /** What waits for the agent, held too, in the order it goes. */
   waiting: (agent: string) => WaitingInput[];
   /** The agent's turn now, if one starts or runs. */
@@ -518,21 +535,17 @@ const message = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 
 /**
- * What an agent's parent is told when its turn ends, in its done message:
- * its title and id, and its whole answer and its questions with their
- * options, in plain words, or how it stopped or failed.
+ * What an agent said when its turn ended, in its own words: its whole
+ * answer and its questions with their options, in plain words, or why it
+ * failed; nothing when it stopped.
  */
-function doneText(
-  agent: Agent,
+function saidAtEnd(
   end: TurnEnd,
-  by: string | null,
   questions: readonly { title: string; options: readonly string[] }[],
 ): string {
-  const who = `${agent.title} (${agent.id})`;
   switch (end.status) {
     case "done":
       return [
-        `${who} ${questions.length > 0 ? "asks" : "done"}:`,
         end.answer,
         ...questions.map((question) =>
           [
@@ -544,9 +557,33 @@ function doneText(
         .filter((part) => part !== "")
         .join("\n\n");
     case "stopped":
+      return "";
+    case "failed":
+      return end.text ?? end.reason;
+  }
+}
+
+/**
+ * What an agent's parent is told when its turn ends, in its done message:
+ * its title and id, then what it said, or how it stopped or failed.
+ */
+function doneText(
+  agent: Agent,
+  end: TurnEnd,
+  by: string | null,
+  said: string,
+  asked: boolean,
+): string {
+  const who = `${agent.title} (${agent.id})`;
+  switch (end.status) {
+    case "done":
+      return [`${who} ${asked ? "asks" : "done"}:`, said]
+        .filter((part) => part !== "")
+        .join("\n\n");
+    case "stopped":
       return `${who} stopped${by === null ? "" : ` (by ${by})`}.`;
     case "failed":
-      return `${who} failed: ${end.text ?? end.reason}.`;
+      return `${who} failed: ${said}.`;
   }
 }
 
@@ -907,30 +944,13 @@ export function createAgents(options: {
       db.prepare(
         "UPDATE agents SET status = 'running', stopped_by = NULL, updated_at = ? WHERE id = ?",
       ).run(at, live.id);
-      // It took only messages from other agents: the first one's, and why.
-      const taken = db
-        .prepare(
-          "SELECT queue.sender, queue.about, agents.title FROM queue LEFT JOIN agents ON agents.id = queue.sender WHERE queue.id IN (SELECT value FROM json_each(?)) ORDER BY queue.position",
-        )
-        .all(JSON.stringify(inputs)) as {
-        sender: string;
-        about: About | null;
-        title: string | null;
-      }[];
-      const [first] = taken;
-      const from =
-        first?.about &&
-        first.title !== null &&
-        taken.length === inputs.length &&
-        taken.every((input) => input.about !== null)
-          ? { agent: first.sender, title: first.title, about: first.about }
-          : undefined;
+      const messages = messagesIn(inputs);
       event("turn.started", live.id, {
         turn: id,
         ref,
         inputs,
         by: starting ? "package" : "provider",
-        ...(from && { from }),
+        ...(messages.length > 0 && { messages }),
       });
       return id;
     });
@@ -1095,17 +1115,21 @@ export function createAgents(options: {
               : "done"
             : end.status;
         const input = `done:${turn.id}`;
+        const said = saidAtEnd(end, questions);
         // Inside a tree that stops, it is kept but wakes nobody.
         const dropped = together(parent, live.id);
         db.prepare(
-          `INSERT INTO queue (id, agent_id, sender, kind, parts, about, state, held, held_text, position, created_at, updated_at)
-           VALUES (?, ?, ?, 'steer', ?, ?, 'waiting', ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue WHERE agent_id = ?), ?, ?)`,
+          `INSERT INTO queue (id, agent_id, sender, kind, parts, about, said, state, held, held_text, position, created_at, updated_at)
+           VALUES (?, ?, ?, 'steer', ?, ?, ?, 'waiting', ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue WHERE agent_id = ?), ?, ?)`,
         ).run(
           input,
           parent,
           live.id,
-          JSON.stringify([doneText(agent, end, stopBy, questions)]),
+          JSON.stringify([
+            doneText(agent, end, stopBy, said, questions.length > 0),
+          ]),
           about,
+          said,
           dropped ? STOPPED.held : null,
           dropped ? STOPPED.text : null,
           parent,
@@ -1171,6 +1195,20 @@ export function createAgents(options: {
         "SELECT id, kind, sender, parts FROM queue WHERE agent_id = ? AND state = 'waiting' AND held IS NULL ORDER BY position",
       )
       .all(agent) as unknown as Waiting[];
+  /** The messages from other agents among some inputs, in their order. */
+  const messagesIn = (inputs: readonly string[]): AgentMessage[] =>
+    (
+      db
+        .prepare(
+          "SELECT queue.id AS input, queue.sender AS agent, agents.title, queue.about, queue.said FROM queue JOIN agents ON agents.id = queue.sender WHERE queue.id IN (SELECT value FROM json_each(?)) AND queue.about IS NOT NULL",
+        )
+        .all(JSON.stringify(inputs)) as unknown as (Omit<
+        AgentMessage,
+        "said"
+      > & { said: string | null })[]
+    )
+      .map(({ said, ...message }) => ({ ...message, said: said ?? "" }))
+      .sort((a, b) => inputs.indexOf(a.input) - inputs.indexOf(b.input));
   const stateOf = (input: string) =>
     (
       db.prepare("SELECT state FROM queue WHERE id = ?").get(input) as
@@ -1222,7 +1260,8 @@ export function createAgents(options: {
         ).run(start);
       }
       const { state, ...rest } = to;
-      // Delivered names its turn by the provider's reference too.
+      // Delivered names its turn by the provider's reference too, and
+      // another agent's message by what it is.
       const ref =
         to.state === "delivered"
           ? (
@@ -1231,7 +1270,13 @@ export function createAgents(options: {
                 .get(to.turn) as { ref: string | null } | undefined
             )?.ref
           : undefined;
-      event(`input.${state}`, live.id, { input, ...rest, ref });
+      const [message] = to.state === "delivered" ? messagesIn([input]) : [];
+      event(`input.${state}`, live.id, {
+        input,
+        ...rest,
+        ref,
+        ...(message && { message }),
+      });
     });
   }
 
@@ -1640,6 +1685,8 @@ export function createAgents(options: {
           }
         | undefined,
 
+    messages: messagesIn,
+
     waiting: (agent) =>
       (
         db
@@ -1926,8 +1973,8 @@ export function createAgents(options: {
           }
         }
         db.prepare(
-          `INSERT INTO queue (id, agent_id, sender, kind, parts, about, held, held_text, position, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue WHERE agent_id = ?), ?, ?)`,
+          `INSERT INTO queue (id, agent_id, sender, kind, parts, about, said, held, held_text, position, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue WHERE agent_id = ?), ?, ?)`,
         ).run(
           input.id,
           id,
@@ -1935,6 +1982,7 @@ export function createAgents(options: {
           input.kind,
           input.parts === undefined ? null : JSON.stringify(input.parts),
           input.about ?? null,
+          input.said ?? null,
           dropped ? STOPPED.held : null,
           dropped ? STOPPED.text : null,
           id,

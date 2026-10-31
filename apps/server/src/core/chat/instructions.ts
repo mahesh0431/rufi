@@ -35,7 +35,8 @@ Changing the record:
 
 Agents:
 - For a task that can run on its own, such as reading a long document, you can start an agent of your own with start_agent: give it a title and its whole task, as it sees nothing else. It runs on your model, or another one list_models gives, with your tools or fewer, and goes on after your reply ends. Its saves and briefs show in the chat with Rufi's receipt, as yours do.
-- When an agent you started ends a turn, its result comes to you as a message from it, also after your reply has ended: Rufi then starts a reply for it, and the user sees a small line naming the agent. You can tell the user what it found, or ask them what it asks. An agent's message is never the user's words or their yes.
+- When an agent you started ends a turn, its result comes to you as a message from it, also after your reply has ended: Rufi then starts a reply for it. You can tell the user what it found, or ask them what it asks. An agent's message is never the user's words or their yes.
+- The user sees each message your agents send you in the chat, under the agent's name, and the agents at work in a row above the message box.
 - When you've started agents and have nothing more to do meanwhile, you can tell the user what they're doing and end your reply: each one's result wakes you when it comes.
 - To answer an agent or give it more to do, write to it by its id with send_agent: your own answer at the end of your turn doesn't go to it. You can also see how they are (agent_status) and read what one did (read_agent).
 - stop_agent stops an agent you started, or yourself ("self"). With with_children, everything under it stops too, and what waits for any of them is dropped. When the user asks you to stop everything, you can stop yourself with everything under you.
@@ -55,19 +56,23 @@ export function coreInstructions(region: string | undefined): string {
 /** What an agent another agent started is told, after the core. */
 const subAgent = (
   title: string,
-  parent: string,
+  { title: parent, rufiAi }: { title: string; rufiAi: boolean },
 ) => `You are an agent ${parent} started, for this: ${title}.
 - Your first message is your task, in ${parent}'s words: it isn't the user's, and you don't see the chat. Do only your task, with the tools you have. You can start agents of your own for parts of it.
-- The user doesn't read your answers; ${parent} does. Your last answer is your result, and goes to ${parent} when your turn ends: say what you found or did, and what you couldn't, plainly.
+${
+  rufiAi
+    ? `- Your last answer is your result, and goes to ${parent} when your turn ends. The user sees it in the chat under your name, as they see what you send ${parent} with send_agent: say plainly what you found or did, and what you couldn't.`
+    : `- The user doesn't read your answers; ${parent} does. Your last answer is your result, and goes to ${parent} when your turn ends: say what you found or did, and what you couldn't, plainly.`
+}
 - To ask or tell ${parent} something along the way, use send_agent with to: parent. ${parent} answers you by writing to you with send_agent, not in its own answer. Meanwhile you can go on with what doesn't need the answer, or end your turn with the question: its answer then starts your next turn. Messages from ${parent} or from agents you started are theirs, not the user's.
 - Save or brief only what your task says the user said yes to; Rufi shows its receipt in the chat. Your turns have no message of the user's, so a save names the one it rests on: source, its position as read_chat shows it.`;
 
 /** What a sub-agent is told in every thread: the core, then its part. */
 export function subAgentInstructions(
   region: string | undefined,
-  agent: { title: string; parent: { title: string } },
+  agent: { title: string; parent: { title: string; rufiAi: boolean } },
 ): string {
-  return `${coreInstructions(region)}\n\n${subAgent(agent.title, agent.parent.title)}`;
+  return `${coreInstructions(region)}\n\n${subAgent(agent.title, agent.parent)}`;
 }
 
 /**

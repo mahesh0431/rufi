@@ -116,7 +116,7 @@ export interface ApiDeps {
   /** Their readings: what waits and runs, and each one's work. */
   readings: Readings;
   /** What the chat's sub-agents did. */
-  agents: Pick<AgentLogs, "list" | "log" | "step" | "subscribe">;
+  agents: Pick<AgentLogs, "list" | "log" | "step" | "stop" | "subscribe">;
   /** A document's draft items, and the person's fixes. */
   items: DraftItems;
   /** A document's pages as the reader saw them. */
@@ -923,6 +923,14 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     );
     if (!log) throw new HttpError(404, "Not found.");
     return c.json(log);
+  });
+  // Stops a sub-agent, and the agents it started, from its pop-up.
+  app.post(`${one}/agents/stop`, async (c) => {
+    const found = await chatOf(c);
+    if (!(await deps.agents.stop(found.id, c.req.query("agent") ?? ""))) {
+      throw new HttpError(404, "Not found.");
+    }
+    return c.json({ ok: true });
   });
   // Everything a sub-agent gave about one of its steps, when it opens.
   app.get(`${one}/agents/step`, async (c) => {

@@ -65,7 +65,7 @@ export interface ChatDeps {
    */
   rules: (
     region: string | undefined,
-    agent?: { title: string; parent: { title: string } },
+    agent?: { title: string; parent: { title: string; rufiAi: boolean } },
   ) => {
     instructions: string;
     version: string;
@@ -280,7 +280,7 @@ export function chat(deps: ChatDeps) {
           event.turnId,
           { id: event.threadId, model: chat.model ?? chat.threadModel ?? "" },
           event.inputs,
-          event.cause,
+          event.messages,
         );
         if (event.inputs.length > 0) queue.changed(chat.id);
         return;
@@ -850,7 +850,8 @@ const WHO = {
 /** What a new conversation is told first: the note, then the last messages. */
 function newThreadContext(
   earlier: readonly {
-    from: keyof typeof WHO;
+    /** An agent's message: Rufi's line in it names the agent. */
+    from: keyof typeof WHO | "agent";
     text: string;
     unfinished?: boolean;
   }[],
@@ -858,9 +859,10 @@ function newThreadContext(
   const note =
     "A new thread started. Older history is available through read_chat.";
   const messages = earlier
-    .map(
-      ({ from, text, unfinished }) =>
-        `${WHO[from]}${unfinished ? " (this reply didn't finish)" : ""}: ${text}`,
+    .map(({ from, text, unfinished }) =>
+      from === "agent"
+        ? text
+        : `${WHO[from]}${unfinished ? " (this reply didn't finish)" : ""}: ${text}`,
     )
     .join("\n\n");
   return `${note}\n\nThe last messages of this chat, oldest first:\n\n${messages}`;

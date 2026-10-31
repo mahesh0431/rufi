@@ -33,6 +33,7 @@ import { Dog } from "./dog.tsx";
 import { useAppearance } from "./appearance.tsx";
 import { CHAT_TITLE, ChatDock } from "./chat.tsx";
 import { ReadingSheet } from "./reading.tsx";
+import { AgentSheet } from "./agents.tsx";
 import { FirstRun } from "./first-run.tsx";
 import { retain } from "./live.ts";
 import { resetPanel } from "./panel.ts";
@@ -227,6 +228,7 @@ export function Frame() {
       </div>
       {bar && <ChatDock person={person} />}
       <ReadingSheet />
+      <AgentSheet />
     </div>
   );
 }

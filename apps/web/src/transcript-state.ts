@@ -168,12 +168,10 @@ export function lines(state: Transcript): string[] {
           (id) => (entries[id]?.createdAt ?? "") <= turn.startedAt,
         ) ?? "";
       if (turn.newThread) add(after, at, `a:${turn.id}`);
-      if (turn.cause) add(after, at, `w:${turn.id}`);
       if (cut(turn)) add(after, at, `x:${turn.id}`);
       continue;
     }
     if (turn.newThread) add(before, opens, `a:${turn.id}`);
-    if (turn.cause) add(before, opens, `w:${turn.id}`);
     const step = firstStep.get(turn.id);
     const answer = lastReply.get(turn.id);
     if (turn.status !== "running" && answer !== undefined) {

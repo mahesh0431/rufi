@@ -1137,9 +1137,7 @@ it("upgrades a record of version 15 so files start on Send: every document sent 
       reader_agent: null,
     })),
   );
-  expect(after.turns).toEqual(
-    before.turns.map((row) => ({ ...row, cause: null })),
-  );
+  expect(after.turns).toEqual(before.turns);
   expect(after.entries).toEqual(
     before.entries.map((line) => ({ ...line, questions: null })),
   );

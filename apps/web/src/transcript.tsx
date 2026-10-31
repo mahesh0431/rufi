@@ -18,8 +18,10 @@ import { Link } from "@tanstack/react-router";
 import {
   ArrowUpRight,
   Bell,
+  Bot,
   Brain,
   Check,
+  ChevronDown,
   ChevronRight,
   ChevronsUp,
   FileText,
@@ -46,7 +48,6 @@ import { unified } from "unified";
 import remend from "remend";
 import {
   AgentLog,
-  SubAgents,
   type ActivityShown,
   type AgentLine,
   type Entry,
@@ -60,6 +61,7 @@ import { boxFor } from "./boxes.ts";
 import { ChipView } from "./chips.tsx";
 import { Diagram, fileIn, NativePicture, Page, Picture } from "./files.tsx";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
+import { openAgent, useChatAgents } from "./agents-state.ts";
 import { chatPath, type Live } from "./live.ts";
 import { ApiError, read } from "./api.ts";
 import { RetryButton } from "./reading.tsx";
@@ -457,8 +459,6 @@ function Line({ live, line }: { live: StoreApi<Live>; line: string }) {
       return <DayLine live={live} id={id} />;
     case "a:":
       return <QuietLine>New thread started</QuietLine>;
-    case "w:":
-      return <WhyLine live={live} turnId={id} />;
     case "k:":
       return <QuietLine>Compacting chat history…</QuietLine>;
     case "c:":
@@ -523,22 +523,6 @@ function QuietLine({ children }: { children: ReactNode }) {
   return <p className="text-center text-xs text-muted italic">{children}</p>;
 }
 
-/** Why the AI replied by itself: the agent whose message started it. */
-function WhyLine({ live, turnId }: { live: StoreApi<Live>; turnId: string }) {
-  const cause = useStore(live, (state) => state.turns[turnId]?.cause);
-  if (!cause) return null;
-  const { title, about } = cause;
-  return (
-    <QuietLine>
-      {about === "asked"
-        ? `${title} asks a question`
-        : about === "wrote"
-          ? `${title} wrote`
-          : `${title}: ${about}`}
-    </QuietLine>
-  );
-}
-
 function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
   const entry = useStore(live, (state) => state.entries[id]);
   const turn = useStore(live, (state) => state.turns[entry?.turnId ?? ""]);
@@ -592,6 +576,8 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
     </div>
   ) : entry.kind === "brief" ? (
     <BriefLine id={id} text={entry.text} />
+  ) : entry.kind === "agent" ? (
+    <AgentMessage entry={entry} />
   ) : entry.kind === "activity" &&
     entry.activity === "picture" &&
     entry.status === "done" &&
@@ -895,63 +881,154 @@ function StepView({ entry, details: path }: { entry: Shown; details: string }) {
 /** Lines a sub-agent's Activity shows at first, and more each time. */
 const LOG_LINES = 50;
 
-/** The chat's sub-agents, as their lines show them; read again as they act. */
-function useSubAgents() {
-  const personId = use(Whose);
-  return useQuery({
-    queryKey: ["agents", personId],
-    queryFn: () => read(SubAgents, "GET", `${chatPath(personId)}/agents`),
-  });
-}
+/** Inside an agent's pop-up: its helpers' lines open below them. */
+const InPopup = createContext(false);
 
 /**
  * A sub-agent, in one line: the name its agent gave it, its status and the
- * start of its result. A click, or Enter, opens its own Activity below it.
+ * start of its result. A click, or Enter, opens its pop-up from Rufi AI's
+ * Activity, and its own Activity below it inside another agent's pop-up.
  * Until the chat's agents are read, the step shows as `reported`.
  */
 function SubAgentLine({ id, reported }: { id: string; reported: string }) {
-  const agent = useSubAgents().data?.agents.find((one) => one.id === id);
+  const personId = use(Whose);
+  const below = use(InPopup);
+  const agent = useChatAgents(personId).data?.agents.find(
+    (one) => one.id === id,
+  );
   const [open, setOpen] = useState(false);
   const log = useId();
-  const working =
-    agent === undefined ||
-    agent.status === "idle" ||
-    agent.status === "running" ||
-    agent.status === "continuing";
+  const title = agent?.title ?? reported;
   return (
     <div data-agent={id} className="min-w-0 text-muted">
       <button
         type="button"
-        aria-expanded={open}
-        aria-controls={log}
+        {...(below && { "aria-expanded": open, "aria-controls": log })}
         onClick={() => {
-          setOpen(!open);
+          if (below) setOpen(!open);
+          else openAgent(personId, id, title);
         }}
         className="flex w-full min-w-0 cursor-pointer items-center gap-1.5 text-left hover:text-ink"
       >
-        <StatusSign status={working ? "running" : agent.status} />
-        <span className="shrink-0 font-medium text-ink">
-          {agent?.title ?? reported}
-        </span>
+        <StatusSign
+          status={
+            agent === undefined ||
+            agent.status === "idle" ||
+            agent.status === "running" ||
+            agent.status === "continuing"
+              ? "running"
+              : agent.status
+          }
+        />
+        <span className="shrink-0 font-medium text-ink">{title}</span>
         {agent && (
           // Its status stays in view; a long result is cut at the end.
           <span className="min-w-0 truncate">
             {` · ${[agent.status, agent.result ?? []].flat().join(" · ")}`}
           </span>
         )}
-        <ChevronRight
-          size={13}
-          className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
-          aria-hidden
-        />
+        {below ? (
+          <ChevronRight
+            size={13}
+            className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
+            aria-hidden
+          />
+        ) : (
+          <ArrowUpRight size={13} className="shrink-0" aria-hidden />
+        )}
       </button>
       {open && (
         <div
           id={log}
           className="mt-1 mb-1 flex flex-col gap-1.5 border-l border-line pl-3"
         >
-          <AgentLogView id={id} title={agent?.title ?? reported} />
+          <AgentLogView id={id} title={title} />
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * An agent's own Activity in its pop-up (agents.tsx): its helpers' lines
+ * open below them there.
+ */
+export function AgentActivity({
+  personId,
+  id,
+  title,
+}: {
+  personId: string;
+  id: string;
+  title: string;
+}) {
+  return (
+    <Whose value={personId}>
+      <InPopup value>
+        <AgentLogView id={id} title={title} />
+      </InPopup>
+    </Whose>
+  );
+}
+
+/**
+ * A message to Rufi AI from an agent it started, where Rufi AI took it: on
+ * the right like the person's, under the agent's name, which opens its
+ * pop-up. Its words as Markdown without links, as in its Activity; a long
+ * one shows a few lines first.
+ */
+function AgentMessage({ entry }: { entry: Entry }) {
+  const personId = use(Whose);
+  const [all, setAll] = useState(false);
+  const words = useRef<HTMLDivElement>(null);
+  const [long, setLong] = useState(false);
+  useLayoutEffect(() => {
+    const shown = words.current;
+    if (shown && !all) setLong(shown.scrollHeight > shown.clientHeight + 1);
+  }, [entry.text, all]);
+  const title = entry.from?.title ?? "";
+  const about = entry.from?.about;
+  return (
+    <div
+      data-entry={entry.id}
+      className="max-w-[85%] self-end rounded-2xl border border-line bg-surface px-3.5 py-2"
+    >
+      <p className="flex items-center gap-1.5 text-xs text-muted">
+        <Bot size={14} className="shrink-0" aria-hidden />
+        <button
+          type="button"
+          onClick={() => {
+            if (entry.agent !== undefined)
+              openAgent(personId, entry.agent, title);
+          }}
+          className="cursor-pointer font-medium text-ink hover:underline"
+        >
+          {title}
+        </button>
+        {(about === "stopped" || about === "failed") && <span>· {about}</span>}
+      </p>
+      {entry.text !== "" && (
+        <>
+          <div
+            ref={words}
+            // A few lines, before Show all.
+            className={`mt-1 break-words ${all ? "" : "line-clamp-4"}`}
+          >
+            <Marked text={entry.text} links={false} />
+          </div>
+          {(long || all) && (
+            <Button
+              look="quiet"
+              icon={ChevronDown}
+              className={all ? "[&>svg]:rotate-180" : ""}
+              onClick={() => {
+                setAll(!all);
+              }}
+            >
+              {all ? "Show less" : "Show all"}
+            </Button>
+          )}
+        </>
       )}
     </div>
   );

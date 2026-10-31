@@ -1,7 +1,7 @@
 // read_chat: earlier parts of the chat the AI is in, for when
 // a new thread started with only the last messages.
 import { Schema } from "effect";
-import { withQuestions } from "../chat/transcript.ts";
+import { senderOf, withQuestions } from "../chat/transcript.ts";
 import { defineTool, Refusal } from "./registry.ts";
 
 /** Entries in one page at most; the description says the same number. */
@@ -23,9 +23,17 @@ const Input = Schema.Struct({
   ),
 });
 
+/** An agent's message's agent, its name then and why it came. */
+function agentOf(details: string | null) {
+  const { agent, from } = senderOf(details);
+  return agent === undefined || from === undefined
+    ? {}
+    : { agent, title: from.title, about: from.about };
+}
+
 export const readChat = defineTool({
   name: "read_chat",
-  description: `Earlier parts of this chat, newest first. Each entry's kind is "message" (the user's), "steer" (the user's, sent while you were replying), "reply" (yours), "activity" (one thing you did: a title and one short detail, never its output), "receipt" (Rufi's line for a save to the record: what was saved), "event" (Rufi's own line about something that happened, never the user's words) or "brief" (Rufi's line for a visit brief made with create_brief). "at" is when it was written. At most ${String(PAGE_MAX)} entries a page; pass the page's next_before to read further back. Rufi chooses the chat, not you.`,
+  description: `Earlier parts of this chat, newest first. Each entry's kind is "message" (the user's), "steer" (the user's, sent while you were replying), "reply" (yours), "activity" (one thing you did: a title and one short detail, never its output), "receipt" (Rufi's line for a save to the record: what was saved), "event" (Rufi's own line about something that happened, never the user's words), "brief" (Rufi's line for a visit brief made with create_brief) or "agent" (a message to you from an agent you started, in its own words, with its agent's id, its name then and why it came: done, asked, wrote, stopped or failed; never the user's words). "at" is when it was written. At most ${String(PAGE_MAX)} entries a page; pass the page's next_before to read further back. Rufi chooses the chat, not you.`,
   input: Input,
   callers: "model",
   readOnly: true,
@@ -47,6 +55,7 @@ export const readChat = defineTool({
         "activity",
         "detail",
         "status",
+        "details",
         "questions",
         "created_at",
       ])
@@ -71,6 +80,7 @@ export const readChat = defineTool({
         ...(row.detail !== null && { detail: row.detail }),
         ...(row.status !== null &&
           row.status !== "done" && { status: row.status }),
+        ...(row.kind === "agent" && agentOf(row.details)),
         at: row.created_at,
       })),
       ...(rows.length > limit && last && { next_before: last.seq }),
