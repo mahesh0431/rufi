@@ -72,7 +72,6 @@ async function start(adapter: ProviderAdapter, logged: string[] = []) {
     signIn: () =>
       Promise.resolve({ state: "signed_in", account: null, text: null }),
     agent: system.rufiAi,
-    shortlist: () => Promise.resolve(["fake-model"]),
     mcp: { url: () => "http://127.0.0.1:9/mcp", keys },
     rules: () => ({ instructions: "Fictional rules.", version: "rules-1" }),
     tools: {

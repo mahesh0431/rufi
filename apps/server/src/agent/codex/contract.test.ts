@@ -16,7 +16,7 @@ import {
   PROTOCOL_DIR,
 } from "../../../scripts/codex-types.ts";
 import { codexArgs, fakeModel } from "../../../tests/fake-model.ts";
-import { DEFAULT_SHORTLIST } from "../../core/chat/models.ts";
+import { MODELS } from "@rufi/contracts";
 import type { AgentRuntime } from "../runtime.ts";
 import { DEADLINES } from "./appserver.ts";
 import { codexBinary } from "./binary.ts";
@@ -126,9 +126,15 @@ describe("the pinned Codex", () => {
     }
   }, 60_000);
 
-  it("offers every model Rufi allows by default", async () => {
+  it("offers Rufi's Codex models", async () => {
     const ids = (await (await real()).models()).map((model) => model.id);
-    expect(ids).toEqual(expect.arrayContaining(DEFAULT_SHORTLIST));
+    expect(ids).toEqual(
+      expect.arrayContaining(
+        MODELS.filter((model) => model.provider === "codex").map(
+          (model) => model.id,
+        ),
+      ),
+    );
   }, 60_000);
 
   it("keeps the user's personal skills out, but runs commands with the real HOME", async () => {

@@ -90,7 +90,7 @@ What the restored copy has:
 - Your chat and drafts. A reply that was running when the backup was made shows as interrupted. Nothing is sent by itself.
 - Messages that were waiting for the AI come back held, in the chat among the waiting messages, marked **From a backup: it waited when the backup was made.** Nothing goes to the AI by itself: **Send** each one again, or **Remove** it. A message Rufi was giving the AI when the backup was made counts as sent: it shows in the chat, and its reply shows as stopped (see [Waiting messages](chat.md#waiting-messages)).
 - A file that wasn't sorted when the backup was made shows **Not sorted yet** on the Documents page. It isn't sorted by itself: click **Ask Rufi** (see [Documents](documents.md#when-a-file-isnt-sorted)).
-- Your next message starts a new thread for the AI with the chat's last messages, and the chat shows "New thread started" there.
+- Your next message starts a new thread for the AI with the chat's last messages.
 - Which follow-up notices you already had, as of the backup. A notice the Rufi app showed after the backup was made can show once more (see [Follow-ups](follow-ups.md#notices-on-your-mac)).
 
 If Rufi refuses:

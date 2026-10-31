@@ -22,7 +22,7 @@ Rufi waits up to 5 minutes for you, for one sign-in at a time. If the sign-in do
 - Not signed in: click **Sign in**, as above.
 - When Rufi can't ask Codex or Claude, for example because Claude isn't installed on your Mac, it shows why.
 
-Each one's models show in **Settings** › **Models** once it is signed in. A chat on one of Claude's models needs only Claude's sign-in, and a chat on one of Codex's only Codex's.
+Each one's two models can be chosen in the chat's model menu once it is signed in; until then they show greyed there. A chat on one of Claude's models needs only Claude's sign-in, and a chat on one of Codex's only Codex's.
 
 ## Sign in from the terminal
 
