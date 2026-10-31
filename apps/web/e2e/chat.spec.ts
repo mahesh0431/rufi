@@ -310,24 +310,6 @@ test("waiting messages float just above the box: edit, reorder, steer, queue and
   await expect(items).toHaveText([/^Second/, /^Third/]);
   await expect(log(chat(page))).toContainText("hang");
   await expect(log(chat(page))).not.toContainText("Second");
-  // At the chat's end, its newest line shows above the list.
-  const placeOf = async (locator: Locator) => {
-    const shown = await locator.boundingBox();
-    if (shown === null) throw new Error("not shown");
-    return shown;
-  };
-  const list = await placeOf(waiting);
-  await expect
-    .poll(async () => {
-      const newest = await placeOf(
-        log(chat(page)).locator(":scope > *").last(),
-      );
-      return newest.y + newest.height;
-    })
-    .toBeLessThanOrEqual(list.y);
-  // The box, and the chat's own area, as they are while the list shows.
-  const boxAt = await placeOf(chat(page).locator("form"));
-  const chatArea = await placeOf(log(chat(page)).locator("xpath=../.."));
   await accessible(page);
 
   // Each moves by its handle: dragged, or by keyboard (Space, the arrows,
@@ -415,11 +397,48 @@ test("waiting messages float just above the box: edit, reorder, steer, queue and
     "ok:Second, edited",
   );
   await expect(waiting).toHaveCount(0);
-  // With the list gone, neither the box nor the chat's area moved.
-  expect(await placeOf(chat(page).locator("form"))).toEqual(boxAt);
-  expect(await placeOf(log(chat(page)).locator("xpath=../.."))).toEqual(
-    chatArea,
+});
+
+test("the waiting list floats over the chat's end: the newest line shows above it, and the box and the chat stay put when it empties", async ({
+  page,
+  rufi,
+}) => {
+  // A first message long enough to fill the chat's view.
+  await rufi.family(
+    WAITING.replace("'hang'", `'${"A long first message. ".repeat(60)}hang'`),
   );
+  await rufi.start();
+  await page.goto(rufi.link());
+  await opener(chat(page)).click();
+  const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
+  const items = waiting.getByRole("listitem");
+  await expect(items).toHaveText([/^Second/, /^Third/]);
+  const placeOf = async (locator: Locator) => {
+    const shown = await locator.boundingBox();
+    if (shown === null) throw new Error("not shown");
+    return shown;
+  };
+  const form = chat(page).locator("form");
+  // The scrolling area that holds the chat's messages.
+  const area = log(chat(page)).locator("xpath=../..");
+  const list = await placeOf(waiting);
+  await expect
+    .poll(async () => {
+      const newest = await placeOf(
+        log(chat(page)).locator(":scope > *").last(),
+      );
+      return newest.y + newest.height;
+    })
+    .toBeLessThanOrEqual(list.y);
+  const boxAt = await placeOf(form);
+  const areaAt = await placeOf(area);
+
+  await items.first().getByRole("button", { name: "Remove" }).click();
+  await expect(items).toHaveText([/^Third/]);
+  await items.first().getByRole("button", { name: "Remove" }).click();
+  await expect(waiting).toHaveCount(0);
+  expect(await placeOf(form)).toEqual(boxAt);
+  expect(await placeOf(area)).toEqual(areaAt);
 });
 
 test("an older read of the queue never undoes a newer change", async ({
