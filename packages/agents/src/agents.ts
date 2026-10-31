@@ -297,9 +297,16 @@ export interface Agents {
   /**
    * Stops the agent's turn: closed to new calls at once, then stopped by
    * the provider; the inputs waiting for it go on after. A start not yet
-   * with the provider doesn't go: its input waits, held as stopped.
+   * with the provider doesn't go: its input waits, held as stopped. With
+   * children, every agent below it stops too, and what waits for any of
+   * them is dropped (held as stopped); until they have stopped, what one
+   * of them sends another, its done message too, is dropped the same way.
    */
-  stop: (agent: string, by: string) => Promise<void>;
+  stop: (
+    agent: string,
+    by: string,
+    options?: { children?: boolean },
+  ) => Promise<void>;
   /**
    * Where a call of the agent's to the host's tools goes: its running turn,
    * with the call's id from its `_meta`. Nothing: no turn runs, a Stop
@@ -497,6 +504,11 @@ export function createAgents(options: {
   const { db } = store;
   const adapters = new Map(options.adapters.map((a) => [a.id, a]));
   const lives = new Map<string, Live>();
+  /** Agents a Stop with children is stopping now, and how many such Stops. */
+  const trees = new Map<string, number>();
+  /** Both stop together now: what one sends the other is dropped. */
+  const together = (agent: string, sender: string) =>
+    trees.has(agent) && trees.has(sender);
   /** Dispatch has begun: it settles what a crash left, once. */
   let begun = false;
   /** Inputs go to providers only once dispatch has settled that. */
@@ -957,20 +969,31 @@ export function createAgents(options: {
               : "done"
             : end.status;
         const input = `done:${turn.id}`;
+        // Inside a tree that stops, it is kept but wakes nobody.
+        const dropped = together(parent, live.id);
         db.prepare(
-          `INSERT INTO queue (id, agent_id, sender, kind, parts, about, state, position, created_at, updated_at)
-           VALUES (?, ?, ?, 'steer', ?, ?, 'waiting', (SELECT COALESCE(MAX(position), 0) + 1 FROM queue WHERE agent_id = ?), ?, ?)`,
+          `INSERT INTO queue (id, agent_id, sender, kind, parts, about, state, held, held_text, position, created_at, updated_at)
+           VALUES (?, ?, ?, 'steer', ?, ?, 'waiting', ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue WHERE agent_id = ?), ?, ?)`,
         ).run(
           input,
           parent,
           live.id,
           JSON.stringify([doneText(agent, end, stopBy, questions)]),
           about,
+          dropped ? STOPPED.held : null,
+          dropped ? STOPPED.text : null,
           parent,
           at,
           at,
         );
         event("input.added", parent, { input, kind: "steer", about });
+        if (dropped) {
+          event("input.held", parent, {
+            input,
+            held: STOPPED.held,
+            text: STOPPED.text,
+          });
+        }
       }
     });
     if (parent !== null) pump(parent);
@@ -1322,9 +1345,13 @@ export function createAgents(options: {
     handOver(live, input, current.turn);
     const parts = await claimed(live, input);
     if (!parts || lives.get(live.id) !== live) return;
-    const missed: Move = { state: "waiting", first: true, next: true };
+    // Back first in line; dropped when the agent stops with others.
+    const missed = (): Move =>
+      trees.has(live.id)
+        ? STOPPED
+        : { state: "waiting", first: true, next: true };
     if (live.current !== current || live.stopBy !== undefined) {
-      move(live, input.id, "handing_over", missed);
+      move(live, input.id, "handing_over", missed());
       live.asks += 1;
       return;
     }
@@ -1344,7 +1371,7 @@ export function createAgents(options: {
         (outcome: SteerOutcome): Move =>
           outcome.status === "delivered"
             ? { state: "delivered", turn: current.turn }
-            : missed,
+            : missed(),
         // It may have gone: it counts as sent.
         (): Move => ({ state: "delivered", turn: current.turn }),
       )
@@ -1354,6 +1381,46 @@ export function createAgents(options: {
         pump(live.id);
       })
       .catch(options.onError);
+  }
+
+  /**
+   * Stops one agent's turn: closed to new calls at once, then stopped by
+   * the provider; a start not yet with the provider doesn't go.
+   */
+  async function stopOne(id: string, by: string): Promise<void> {
+    const live = lives.get(id);
+    if (!live) return;
+    try {
+      const starting = live.starting;
+      if (starting) {
+        starting.stopBy ??= by;
+        if (starting.turn !== undefined) closeTurn(live, starting.turn);
+        await starting.settled.promise;
+      }
+      const { current, conversation } = live;
+      if (!conversation || !current) return;
+      if (live.stopBy === undefined) {
+        live.stopBy = by;
+        closeTurn(live, current.turn);
+      }
+      const { ref } = current;
+      live.stops += 1;
+      try {
+        await conversation.stop(ref);
+        // A turn the provider began meanwhile with a steer was closed
+        // when admitted, and is stopped too.
+        const started = live.current;
+        if (started && started.ref !== ref) {
+          await conversation.stop(started.ref);
+        }
+      } finally {
+        live.stops -= 1;
+        if (live.stops === 0 && !live.current) live.stopBy = undefined;
+      }
+    } finally {
+      // What waits for the agent goes on.
+      pump(id);
+    }
   }
 
   /** Lifts these inputs' holds, and their agents look again. */
@@ -1654,11 +1721,12 @@ export function createAgents(options: {
     send: (id, input) => {
       if (!row(id)) throw new Error(`No agent ${id}.`);
       if (stateOf(input.id) !== undefined) return;
+      const dropped = together(id, input.sender);
       store.change(({ event }) => {
         const at = now();
         db.prepare(
-          `INSERT INTO queue (id, agent_id, sender, kind, parts, about, position, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue WHERE agent_id = ?), ?, ?)`,
+          `INSERT INTO queue (id, agent_id, sender, kind, parts, about, held, held_text, position, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue WHERE agent_id = ?), ?, ?)`,
         ).run(
           input.id,
           id,
@@ -1666,6 +1734,8 @@ export function createAgents(options: {
           input.kind,
           input.parts === undefined ? null : JSON.stringify(input.parts),
           input.about ?? null,
+          dropped ? STOPPED.held : null,
+          dropped ? STOPPED.text : null,
           id,
           at,
           at,
@@ -1675,6 +1745,13 @@ export function createAgents(options: {
           kind: input.kind,
           ...(input.about && { about: input.about }),
         });
+        if (dropped) {
+          event("input.held", id, {
+            input: input.id,
+            held: STOPPED.held,
+            text: STOPPED.text,
+          });
+        }
       });
       pump(id);
     },
@@ -1812,39 +1889,32 @@ export function createAgents(options: {
       );
     },
 
-    stop: async (id, by) => {
-      const live = lives.get(id);
-      if (!live) return;
+    stop: async (id, by, options) => {
+      if (!options?.children) return stopOne(id, by);
+      const tree = [id, ...api.below(id)];
+      for (const agent of tree) trees.set(agent, (trees.get(agent) ?? 0) + 1);
       try {
-        const starting = live.starting;
-        if (starting) {
-          starting.stopBy ??= by;
-          if (starting.turn !== undefined) closeTurn(live, starting.turn);
-          await starting.settled.promise;
-        }
-        const { current, conversation } = live;
-        if (!conversation || !current) return;
-        if (live.stopBy === undefined) {
-          live.stopBy = by;
-          closeTurn(live, current.turn);
-        }
-        const { ref } = current;
-        live.stops += 1;
-        try {
-          await conversation.stop(ref);
-          // A turn the provider began meanwhile with a steer was closed
-          // when admitted, and is stopped too.
-          const started = live.current;
-          if (started && started.ref !== ref) {
-            await conversation.stop(started.ref);
+        // What waits for any of them never goes by itself.
+        for (const agent of tree) {
+          const found = get(agent);
+          if (!found) continue;
+          const live = liveOf(found);
+          for (const input of waitingOf(agent)) {
+            move(live, input.id, "waiting", STOPPED);
           }
-        } finally {
-          live.stops -= 1;
-          if (live.stops === 0 && !live.current) live.stopBy = undefined;
+        }
+        const stopped = await Promise.allSettled(
+          tree.map((agent) => stopOne(agent, by)),
+        );
+        for (const result of stopped) {
+          if (result.status === "rejected") throw result.reason;
         }
       } finally {
-        // What waits for the agent goes on.
-        pump(id);
+        for (const agent of tree) {
+          const count = (trees.get(agent) ?? 1) - 1;
+          if (count > 0) trees.set(agent, count);
+          else trees.delete(agent);
+        }
       }
     },
 

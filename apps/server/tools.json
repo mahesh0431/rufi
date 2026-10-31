@@ -2408,6 +2408,37 @@
           "agent": "self"
         }
       ]
+    },
+    {
+      "name": "rufi.stop_agent",
+      "description": "Stops an agent below you, or yourself (\"self\"): its turn ends now, and what it was given to do next goes on after. With with_children, every agent below it stops too, what waits for any of them is dropped (the user's messages show \"Not sent\" with Send), and none of their results wakes another; the stopped agent's own result goes to the agent that started it. Answers the agents that stop; agent_status says when they have.",
+      "callers": "model",
+      "readOnly": false,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "description": "An agent below you, by id, or \"self\".",
+            "minLength": 1
+          },
+          "with_children": {
+            "type": "boolean",
+            "description": "true: every agent below it stops too, and what waits for any of them is dropped. Leave it out to stop just this agent."
+          }
+        },
+        "required": [
+          "agent"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "agent": "self",
+          "with_children": true
+        }
+      ]
     }
   ]
 }

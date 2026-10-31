@@ -200,6 +200,8 @@ For a task that can run on its own, the AI can start an agent of its own, a sub-
 
 When a sub-agent finishes, the AI hears it by itself. If the AI isn't replying then, it replies by itself, and a small line above that reply says which agent and why, such as "Reading report.pdf: done" or "Reading report.pdf asks a question". The AI tells you what it found, or asks you what it asks. While a sub-agent works, the AI may end its reply and say so: the sub-agent's result wakes it. The AI can also write to a sub-agent, for example to answer its question.
 
+You can ask the AI to stop a sub-agent: just that one, or with every sub-agent it started. Its result goes to the AI, which says it stopped. When you ask the AI to stop everything, it stops every sub-agent and its own reply too. Then none of the stopped sub-agents' results wakes the AI, and your waiting messages don't go: each shows **Not sent · Stopped.**, for you to **Send**, edit or remove.
+
 ## While the AI replies
 
 While the AI replies, three buttons are where the send button was: **Steer** (two arrows that meet), **Queue** (a list with an arrow) and **Stop** (the square). The chat bar also shows a turning circle before its text, because Activity doesn't show there.
@@ -208,7 +210,7 @@ While the AI replies, three buttons are where the send button was: **Steer** (tw
 
 If you click Stop, what the AI did so far stays in Activity, and the folded line says how many steps stopped. If Rufi closed before the reply finished, its Activity shows no time, because Rufi doesn't know when the reply ended.
 
-**Stop.** The stop button (the square) ends the reply now, in every size of the chat. What the AI wrote so far stays. Stop ends only the reply: your waiting messages go next, in order. A message whose reply was still starting when you clicked Stop doesn't go: it waits as **Not sent · Stopped.**, for you to **Send**, edit or remove.
+**Stop.** The stop button (the square) ends the reply now, in every size of the chat. What the AI wrote so far stays. Stop ends only the reply: your waiting messages go next, in order, and the sub-agents keep working (to stop them, ask the AI; see [When the AI starts agents of its own](#when-the-ai-starts-agents-of-its-own)). A message whose reply was still starting when you clicked Stop doesn't go: it waits as **Not sent · Stopped.**, for you to **Send**, edit or remove.
 
 **Rufi's reader.** When your message brings files, your reply starts with Rufi's part: Rufi's reader copies the pages before the AI starts. Each file is a step in Activity, **Rufi's reader · thyrocare-aug.pdf**, with how far it is. Stop ends the reading too. The AI starts when all files are copied, and answers your message in the same reply (see [Documents](documents.md#while-a-document-is-read)). If the reading doesn't finish, the reply ends before the AI, with the reason and **Retry** (see [Documents](documents.md#when-a-reading-stops)).
 

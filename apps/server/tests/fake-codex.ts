@@ -486,16 +486,17 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
   const named =
     /\(document ([^)\s]+)\)/.exec(input)?.[1] ??
     /^- document ([^,\s]+),/m.exec(input)?.[1];
+  // An agent a message names, "(agent <id>)", as a test writes it.
+  const agent = /\(agent ([^)\s]+)\)/.exec(input)?.[1];
   for (const [i, { id, ...scripted }] of calls.entries()) {
-    const call =
-      named === undefined
-        ? scripted
-        : {
-            ...scripted,
-            arguments: JSON.parse(
-              JSON.stringify(scripted.arguments).replaceAll("$document", named),
-            ) as unknown,
-          };
+    const call = {
+      ...scripted,
+      arguments: JSON.parse(
+        JSON.stringify(scripted.arguments)
+          .replaceAll("$document", named ?? "$document")
+          .replaceAll("$agent", agent ?? "$agent"),
+      ) as unknown,
+    };
     const drafts = (call.arguments as { drafts?: unknown } | null)?.drafts;
     if (
       thread.mcp &&

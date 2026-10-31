@@ -1,6 +1,12 @@
 // Every Rufi tool, for the agent and the screens. What the AI is told about
 // using them is in the core (core/chat/instructions.ts) and the skills.
-import { agentStatus, readAgent, sendAgent, startAgent } from "./agents.ts";
+import {
+  agentStatus,
+  readAgent,
+  sendAgent,
+  startAgent,
+  stopAgent,
+} from "./agents.ts";
 import { briefResult, createBrief } from "./brief.ts";
 import { readChat } from "./chat.ts";
 import { getDocuments, saveReading, sortDocuments } from "./documents.ts";
@@ -57,6 +63,7 @@ export const TOOLS: readonly Tool[] = [
   agentStatus,
   sendAgent,
   readAgent,
+  stopAgent,
 ];
 
 /**

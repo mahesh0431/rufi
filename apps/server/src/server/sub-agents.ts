@@ -4,13 +4,15 @@
 // it; it is the caller's chat's, on the caller's model and effort, with no
 // more of Rufi's tools than the caller has. Each turn's end goes to its
 // parent as a done message (the package's). An agent sees how the agents
-// below it are, writes to one or to its parent, and reads the conversation
-// of any agent in its chat, its own too, by pages.
+// below it are, writes to one or to its parent, reads the conversation of
+// any agent in its chat, its own too, by pages, and stops one below it or
+// itself, with or without everything under it.
 import type { Agents } from "@rufi/agents/agents";
 import type { chatAgents } from "../core/chat/agents.ts";
 import type { ChatQueue } from "../core/chat/queue.ts";
 import { Refusal, type AgentTools } from "../core/tools/registry.ts";
 import type { TurnScope } from "../core/tools/tools.ts";
+import { errorCode, type Log } from "../platform/logs.ts";
 
 /** How many turns a page of an agent's conversation holds. */
 const PAGE = 10;
@@ -19,6 +21,7 @@ export function subAgents(deps: {
   agents: Agents;
   kept: ReturnType<typeof chatAgents>;
   queue: ChatQueue;
+  log: Log;
 }): (scope: TurnScope) => AgentTools {
   const { agents, kept } = deps;
   return (scope) => {
@@ -171,6 +174,20 @@ export function subAgents(deps: {
           })),
           earlier: page.earlier,
         };
+      },
+
+      stop: ({ agent, with_children: children = false }) => {
+        const id = agent === "self" ? scope.agent : agent;
+        if (id !== scope.agent && !agents.below(scope.agent).includes(id)) {
+          throw new Refusal(
+            `No agent ${agent} is you or below you: stop "self", or an agent agent_status lists.`,
+          );
+        }
+        // It goes on after this answer: an agent can stop itself.
+        agents.stop(id, scope.agent, { children }).catch((error: unknown) => {
+          deps.log("agents.failed", { error: errorCode(error) });
+        });
+        return { stopping: children ? [id, ...agents.below(id)] : [id] };
       },
     };
   };
