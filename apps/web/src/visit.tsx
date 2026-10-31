@@ -123,6 +123,17 @@ function OpenRow({ personId, row }: { personId: string; row: RecordRow }) {
       Open
     </>
   );
+  if (row.kind === "profile") {
+    return (
+      <Link
+        to="/people/$personId/profile"
+        params={{ personId }}
+        className={look}
+      >
+        {label}
+      </Link>
+    );
+  }
   if (row.kind === "follow_up") {
     return (
       <Link

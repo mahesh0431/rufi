@@ -38,6 +38,8 @@ import type { FolderSource } from "../core/store/data-folder.ts";
 import { openRecord } from "../core/store/install.ts";
 import { claimNotices } from "../core/record/notices.ts";
 import { recordViews, waiting } from "../core/record/views.ts";
+import { changeProfile, readProfile } from "../core/record/profile.ts";
+import { localTime } from "../core/record/dates.ts";
 import { pages } from "../core/documents/pages.ts";
 import { rufiCaller, forAgent } from "../core/tools/tools.ts";
 import {
@@ -439,6 +441,25 @@ export const startCore = (options: CoreOptions) =>
         };
       },
       record,
+      profile: {
+        read: (personId) =>
+          readProfile(
+            (reader ?? writer).query,
+            personId,
+            localTime(clock().toISOString()).slice(0, 10),
+          ),
+        save: async (personId, form, sending, changes) => {
+          await writer.query
+            .transaction()
+            .execute((trx) =>
+              changeProfile(
+                trx,
+                { personId, form, sending, now: clock().toISOString() },
+                changes,
+              ),
+            );
+        },
+      },
       brief: async (personId, briefId) =>
         reader && (await readBrief(reader.query, personId, briefId)),
       account,

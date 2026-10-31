@@ -412,3 +412,94 @@ export const FollowUps = Schema.Struct({
   ),
 });
 export type FollowUps = typeof FollowUps.Type;
+
+/**
+ * The person's profile: their name, never empty, and the few facts their
+ * record is read with, each null until given. A birth date is at the
+ * precision given, with its words; a height is a number and its unit.
+ */
+export const ProfileValues = Schema.Struct({
+  name: Schema.String.check(
+    Schema.isTrimmed(),
+    Schema.isMinLength(1),
+    Schema.isMaxLength(200),
+  ),
+  birth_date: Schema.NullOr(
+    Schema.Struct({ date: RecordDate, words: Schema.String }),
+  ),
+  sex_for_ranges: Schema.NullOr(Schema.Literals(["female", "male"])),
+  blood_group: Schema.NullOr(
+    Schema.Literals(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]),
+  ),
+  height: Schema.NullOr(
+    Schema.Struct({
+      value: Schema.Finite,
+      unit: Schema.Literals(["cm", "in"]),
+    }),
+  ),
+});
+export type ProfileValues = typeof ProfileValues.Type;
+export type ProfileField = keyof ProfileValues;
+
+/** Where a save was made: in the chat, or entered in a form. */
+export const MadeIn = Schema.Literals([
+  "chat",
+  "welcome",
+  "profile",
+  "settings",
+]);
+export type MadeIn = typeof MadeIn.Type;
+
+/** A field of the profile, before and after a save: null when not set. */
+const fieldChange = <K extends ProfileField>(field: K) =>
+  Schema.Struct({
+    field: Schema.Literal(field),
+    before: ProfileValues.fields[field],
+    after: ProfileValues.fields[field],
+  });
+
+/** One save that changed the profile: when, where, and each field it changed. */
+export const ProfileChange = Schema.Struct({
+  save: Id,
+  at: Schema.String,
+  madeIn: MadeIn,
+  fields: Schema.Array(
+    Schema.Union([
+      fieldChange("name"),
+      fieldChange("birth_date"),
+      fieldChange("sex_for_ranges"),
+      fieldChange("blood_group"),
+      fieldChange("height"),
+    ]),
+  ),
+});
+export type ProfileChange = typeof ProfileChange.Type;
+
+/**
+ * The profile page: the values now, the age today from the birth date
+ * (youngest and oldest it can be, the same when the date settles it), and
+ * each save that changed it, oldest first.
+ */
+export const Profile = Schema.Struct({
+  values: ProfileValues,
+  age: Schema.NullOr(Schema.Tuple([Schema.Int, Schema.Int])),
+  history: Schema.Array(ProfileChange),
+});
+export type Profile = typeof Profile.Type;
+
+/**
+ * A change entered in the profile's form: only the fields changed, in one
+ * sending, named by the form so the same sending again saves once.
+ */
+export const SaveProfile = Schema.Struct({
+  sending: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
+  in: Schema.Literals(["profile", "settings"]),
+  changes: Schema.Struct({
+    name: Schema.optionalKey(ProfileValues.fields.name),
+    birth_date: Schema.optionalKey(ProfileValues.fields.birth_date),
+    sex_for_ranges: Schema.optionalKey(ProfileValues.fields.sex_for_ranges),
+    blood_group: Schema.optionalKey(ProfileValues.fields.blood_group),
+    height: Schema.optionalKey(ProfileValues.fields.height),
+  }),
+});
+export type SaveProfile = typeof SaveProfile.Type;

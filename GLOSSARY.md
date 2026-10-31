@@ -93,21 +93,21 @@ A procedure or an immunisation, planned or done. A visit to a doctor is a **visi
 _Avoid_: event, intervention
 
 **Source**:
-Where a saved record came from: the user's own message in the chat, a document and its page, or a visit (a record saved from a visit cites the visit; the visit cites its paper's page). A message source is the user's message with the facts the record came from, never their "yes" alone and never words the AI quotes: the AI names an earlier message by its place in the chat, and with none named it is the user's message in that turn. A record can have several, such as a result the user told the AI and then added in a lab report; the same result from another copy is another source, not another result. Undo of another source takes only that source off. A date keeps the words it came from ("last Monday"), which count from when the source message was sent.
+Where a saved record came from: the user's own message in the chat, a document and its page, what the user entered in their profile's form, or a visit (a record saved from a visit cites the visit; the visit cites its paper's page). A message source is the user's message with the facts the record came from, never their "yes" alone and never words the AI quotes: the AI names an earlier message by its place in the chat, and with none named it is the user's message in that turn. A record can have several, such as a result the user told the AI and then added in a lab report; the same result from another copy is another source, not another result. Undo of another source takes only that source off. A date keeps the words it came from ("last Monday"), which count from when the source message was sent.
 _Avoid_: origin, provenance, attachment
 
 ## Changes
 
 **Save**:
-One change to the record that the user agreed to in the chat: the AI's call to save it, then every record it changed, each with its before and after, and its receipt, all together or none. The same call again saves nothing new.
+One change to the record that the user agreed to in the chat, or entered themselves in their profile (in the welcome, on the profile page or in Settings): the AI's call or the form's sending, then every record it changed, each with its before and after, and its receipt, all together or none. The same call or sending again saves nothing new.
 _Avoid_: change set, batch, transaction, commit
 
 **Receipt**:
-What Rufi adds to the chat for each save: "Saved", then one line for each change, written from what was saved, never from the AI's words. A save of a document's draft items starts with a summary (how many new, more sources and corrections), and its lines say each one's page. A **sub-agent**'s names it by its title after "Saved".
+What Rufi adds to the chat for each save: "Saved", then one line for each change, written from what was saved, never from the AI's words. A change the user made in their profile's form has its receipt in Overview's Recent changes, not in the chat. A save of a document's draft items starts with a summary (how many new, more sources and corrections), and its lines say each one's page. A **sub-agent**'s names it by its title after "Saved".
 _Avoid_: toast, success message, confirmation
 
 **Undo**:
-Saving the reverse of an earlier save, by chat: the user says "undo that", the AI says what will change back and anything that changed since, and saves it after the user says yes. The earlier save stays in the history.
+Saving the reverse of an earlier save, by chat, also of a change made in the profile's form: the user says "undo that", the AI says what will change back and anything that changed since, and saves it after the user says yes. The earlier save stays in the history.
 _Avoid_: revert, rollback
 
 **Remove**:
