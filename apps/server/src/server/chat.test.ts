@@ -184,7 +184,7 @@ async function startChat(
           return options.tokenProvider?.() ?? token;
         },
         version: "0.0.0",
-        deadlines: { requestMs: 10_000, turnMs: 20_000, ...options.deadlines },
+        deadlines: { requestMs: 10_000, ...options.deadlines },
         host,
         log,
       }),
@@ -785,18 +785,6 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       expect(await waiting()).toEqual([["Hello", "waiting", null]]);
     },
   );
-
-  it("stops a reply that runs past its deadline", timeout, async () => {
-    await startChat(name, { deadlines: { turnMs: 2_000 } });
-    const c = await newChat();
-    await say(c, "hang");
-    await ended(c.id);
-    expect((await transcript(c.id)).turns[0]).toMatchObject({
-      status: "failed",
-      endReason: "timeout",
-      endText: "The reply took too long, so Rufi stopped it.",
-    });
-  });
 
   it(
     "keeps the thread on a model change: the next reply runs on the new model, with the whole chat",
@@ -2725,12 +2713,12 @@ describe("When the AI's thread doesn't open", () => {
     ).toEqual(["first", "second"]);
   });
 
-  it("starts a new thread when Codex has no record of it, also when the sign-in renews before the message goes", async () => {
+  it("starts a new thread when Codex has no record of it", async () => {
     await startChat("fake", { scenario: { forgets: true } });
     await say(await newChat(), "first");
     await ended("c-asha");
-    // A new token: Codex starts again, and its saved threads are gone.
-    token = "renewed-token";
+    // Rufi starts again, and Codex's saved threads are gone.
+    await startChat("fake", { scenario: { forgets: true } });
     await say(await chatRow(), "second");
     await ended("c-asha", 2);
     expect((await queue.list(await chatRow())).items).toEqual([]);

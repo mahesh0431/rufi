@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Scenario } from "../../../tests/fake-codex.ts";
 import { SKILLS } from "../../core/skills/skills.ts";
 import { childEnvironment } from "../../platform/config.ts";
+import { ChatGptError } from "../chatgpt/openai.ts";
 import {
   agentCall,
   NotOpened,
@@ -26,6 +27,7 @@ import { checkExecutable } from "./binary.ts";
 import { codexRuntime } from "./codex.ts";
 import { activityOf, endOf } from "./events.ts";
 import { isRunning } from "./processes.ts";
+import { TOKEN_VALID_MS } from "./token-door.ts";
 
 const FAKE = join(import.meta.dirname, "../../../tests/fake-codex.ts");
 const SETTINGS = { model: "gpt-6.1-sol", instructions: "Be careful." };
@@ -33,6 +35,8 @@ const SETTINGS = { model: "gpt-6.1-sol", instructions: "Be careful." };
 let home: string;
 let log: string;
 let token: string;
+/** The sign-in ends when Codex next asks its door for a fresh token. */
+let renewalEnds: boolean;
 let asked: number[];
 let diagnostics: { event: string; method?: unknown }[];
 let events: AgentEvent[];
@@ -46,6 +50,7 @@ beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), "rufi-codex-"));
   log = join(home, "fake.jsonl");
   token = "token-1";
+  renewalEnds = false;
   asked = [];
   diagnostics = [];
   events = [];
@@ -123,13 +128,15 @@ function start(
     token: async (validForMs) => {
       asked.push(validForMs);
       await tokenGate;
+      if (renewalEnds && validForMs === TOKEN_VALID_MS) {
+        throw new ChatGptError("sign_in_again", "Your sign-in has ended.");
+      }
       return token;
     },
     version: "9.9.9",
     deadlines: {
       startMs: 10_000,
       requestMs: 10_000,
-      turnMs: 3_000,
       interruptAckMs: 1_000,
       interruptEndMs: 1_000,
       answerMs: 500,
@@ -146,8 +153,9 @@ interface Entry {
   started?: string[];
   pid?: number;
   env?: string[];
-  token?: string;
   codexHome?: string;
+  /** The token the auth command gave, or null when it failed. */
+  renewed?: string | null;
   received?: { method?: string; params?: Record<string, unknown> };
   answered?: string;
   reply?: unknown;
@@ -205,15 +213,13 @@ async function ask(agent: AgentRuntime, text = "How are you?") {
 }
 
 describe("starting Codex", () => {
-  it("runs app-server as OpenAI documents, with only the environment Rufi gives it", async () => {
+  it("runs app-server as OpenAI documents, with only the environment Rufi gives it and no token", async () => {
     await start().startThread(SETTINGS);
     const [first] = await entries();
     expect(first?.started).toEqual(["app-server", "--listen", "stdio://"]);
-    expect(first?.token).toBe("token-1");
     expect(first?.codexHome).toBe(join(home, "codex"));
-    expect(first?.env).toEqual(
-      expect.arrayContaining(["ACCESS_TOKEN", "CODEX_HOME", "PATH"]),
-    );
+    expect(first?.env).toEqual(expect.arrayContaining(["CODEX_HOME", "PATH"]));
+    expect(first?.env).not.toContain("ACCESS_TOKEN");
     expect((await sent("initialize"))[0]).toEqual({
       clientInfo: { name: "Rufi", title: "Rufi", version: "9.9.9" },
       capabilities: { experimentalApi: true, requestAttestation: false },
@@ -222,7 +228,7 @@ describe("starting Codex", () => {
     for (const line of [
       'model_provider = "openai_chatgpt_plan"',
       'base_url = "https://api.openai.com/v1"',
-      'env_key = "ACCESS_TOKEN"',
+      "[model_providers.openai_chatgpt_plan.auth]",
       'wire_api = "responses"',
       "requires_openai_auth = false",
       "supports_websockets = false",
@@ -281,11 +287,6 @@ describe("starting Codex", () => {
     await expect(checkExecutable(binary)).rejects.toThrow(
       "can be changed by other users",
     );
-  });
-
-  it("asks for a token that outlasts a whole turn", async () => {
-    await start().startThread(SETTINGS);
-    expect(asked).toEqual([3_000 + 5 * 60_000]);
   });
 
   it("refuses Codex when it didn't take Rufi's settings, and stops it", async () => {
@@ -631,18 +632,6 @@ describe("a turn", () => {
       reason: "usage_limit",
       text: "You’ve hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again later.",
     });
-  });
-
-  it("stops a turn that runs past its deadline", async () => {
-    const thread = await ask(start({}, { turnMs: 300 }), "hang");
-    expect(await ended(thread)).toEqual({
-      status: "failed",
-      reason: "timeout",
-      text: "The reply took too long, so Rufi stopped it.",
-    });
-    expect(await sent("turn/interrupt")).toEqual([
-      { threadId: thread, turnId: TURN_1 },
-    ]);
   });
 
   it("declines approvals and refuses other requests, also a dynamic tool call", async () => {
@@ -1044,6 +1033,7 @@ describe("Stop", () => {
       status: "failed",
       reason: "provider_failed",
       text: "Codex stopped unexpectedly.",
+      died: true,
     });
     expect(programs.filter(isRunning)).toEqual([]);
   });
@@ -1178,35 +1168,29 @@ describe("closing", () => {
 });
 
 describe("token renewal", () => {
-  it("starts a new Codex with a new token, once no reply runs", async () => {
+  it("gives Codex a renewed token through its door, keeping the same Codex", async () => {
     const agent = start();
     const thread = await ask(agent, "first");
     await ended(thread);
     token = "token-2";
-    await agent.startThread(SETTINGS);
-    const starts = (await entries()).filter((entry) => entry.started);
-    expect(starts.map((entry) => entry.token)).toEqual(["token-1", "token-2"]);
-    expect((await pids()).slice(0, 1).filter(isRunning)).toEqual([]);
-    // The old app-server is gone, so the thread must be opened again.
-    expect(agent.loaded(thread)).toBe(false);
-  });
-
-  it("keeps Codex while a reply runs, even with a new token", async () => {
-    const agent = start();
-    const thread = await ask(agent, "hang");
-    await until(() => Promise.resolve(agent.running(thread)));
-    token = "token-2";
-    await agent.startThread(SETTINGS);
-    expect(await pids()).toHaveLength(1);
-  });
-
-  it("keeps the same Codex while the token is the same", async () => {
-    const agent = start();
-    const thread = await ask(agent, "first");
-    await ended(thread);
-    await agent.send(thread, { id: "m-2", input: ["second"] });
+    await agent.send(thread, { id: "m-2", input: ["renew"] });
     await ended(thread, 2);
     expect(await pids()).toHaveLength(1);
+    expect((await entries()).flatMap((entry) => entry.renewed ?? [])).toEqual([
+      "token-2",
+    ]);
+  });
+
+  it("ends a turn signed out when its door can't renew the sign-in", async () => {
+    const agent = start();
+    const thread = await ask(agent, "first");
+    await ended(thread);
+    renewalEnds = true;
+    await agent.send(thread, { id: "m-2", input: ["renew"] });
+    expect(await ended(thread, 2)).toMatchObject({
+      status: "failed",
+      reason: "sign_in",
+    });
   });
 
   it("gives a resumed thread Rufi's MCP server again (Codex keeps none)", async () => {
@@ -1277,6 +1261,10 @@ describe("Codex's items and endings for Rufi", () => {
     expect(failed("rateLimitExceeded")).toBe("rate_limit");
     expect(failed({ httpConnectionFailed: { httpStatusCode: null } })).toBe(
       "connection",
+    );
+    // OpenAI refused the token Codex had just renewed (0.163.0's error).
+    expect(failed({ httpConnectionFailed: { httpStatusCode: 401 } })).toBe(
+      "sign_in",
     );
     expect(failed("serverOverloaded")).toBe("provider_failed");
     expect(failed("contextWindowExceeded")).toBe("provider_failed");

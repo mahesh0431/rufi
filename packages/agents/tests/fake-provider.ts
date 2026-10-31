@@ -138,9 +138,8 @@ export function fakeProvider(
         case "renewal_fails":
           finish(ref, { status: "failed", reason: "signed_out" });
           return;
-        // It has no sign-in to renew, and no limits.
+        // It has no sign-in to renew.
         case "answers":
-        case "silent":
         case "renews":
           if (fake.script.picture !== undefined) {
             emit(ref, {

@@ -4,7 +4,10 @@
 // its page, in one sort_documents call. Code decides none of it. It keeps
 // only what must never go wrong: whose add it is, that every page ends in
 // one document, that a page a saved result cites stays where it is, and
-// that a draft's page has a copy. Rufi AI sorts in the person's reply, after
+// that a draft names the reading it was drafted from, one with a copy of
+// its page (jobs and page_copies, the person's own); it is kept as the
+// draft's job_id, so a draft from an older copy than its page's current one
+// shows out of date. Rufi AI sorts in the person's reply, after
 // Rufi's reader copied what they sent (server/chat.ts); a reply Rufi started
 // can't sort (core/tools/tools.ts). A sort is written in one transaction
 // with its stored tool call, which is its trace: the same call again gets
@@ -100,6 +103,10 @@ const SortedDocument = Schema.Struct({
 /** One draft: a current result or a measurement, as printed on its page. */
 const Draft = Schema.Struct({
   page: Page.annotate({ description: "The page it is printed on." }),
+  reading: Id.annotate({
+    description:
+      "The reading of the page's copy you drafted it from: that copy's reading in get_documents.",
+  }),
   test_name: Text(200, "The test's or measurement's name, exactly as printed."),
   value_text: Text(
     100,
@@ -173,6 +180,8 @@ export interface SortAnswer {
     pages: string;
     drafts: number;
     worth_a_look: number;
+    /** Drafts from an older copy of their page than its current one. */
+    out_of_date?: number;
   }[];
   note: string;
 }
@@ -567,7 +576,18 @@ export function sorting(
       }
     }
 
-    // Each draft on a named page that has a copy.
+    // Each draft on a named page that has a copy, naming a reading of the
+    // person's with a copy of that page.
+    const readings = [...new Set(input.drafts.map((d) => d.reading))];
+    const copied =
+      readings.length === 0
+        ? []
+        : await trx
+            .selectFrom("page_copies")
+            .select(["job_id", "file_id", "page_in_file"])
+            .where("person_id", "=", personId)
+            .where("job_id", "in", readings)
+            .execute();
     for (const [index, draft] of input.drafts.entries()) {
       const at = `drafts.${String(index)}`;
       const page = pages.find((p) => p.position === draft.page);
@@ -582,6 +602,19 @@ export function sorting(
           `${at}.page`,
           draft.page,
           `Page ${String(draft.page)} has no copy from the reader, so nothing can be drafted from it. Look at it with get_documents and tell the user.`,
+        );
+      } else if (
+        !copied.some(
+          (c) =>
+            c.job_id === draft.reading &&
+            c.file_id === page.fileId &&
+            c.page_in_file === page.pageInFile,
+        )
+      ) {
+        problem(
+          `${at}.reading`,
+          draft.reading,
+          `This reading has no copy of page ${String(draft.page)}: name the reading of the copy you drafted it from, as get_documents gives it.`,
         );
       }
     }
@@ -691,7 +724,6 @@ export function sorting(
 
     const seq = new Map<number, number>();
     for (const draft of input.drafts) {
-      const page = pages.find((p) => p.position === draft.page);
       const index = named.get(draft.page) ?? 0;
       const next =
         seq.get(draft.page) ??
@@ -715,7 +747,7 @@ export function sorting(
           document_id: ids[index] ?? "",
           page: draft.page,
           seq: next + 1,
-          job_id: page?.copy?.jobId ?? "",
+          job_id: draft.reading,
           kind: "lab_result",
           version: 1,
           status: "pending",
@@ -750,12 +782,16 @@ export function sorting(
       .where("person_id", "=", personId)
       .where("document_id", "in", ids)
       .execute();
+    const old = (draft: SortInput["drafts"][number]) =>
+      pages.find((p) => p.position === draft.page)?.copy?.jobId !==
+      draft.reading;
     const answer: SortAnswer = {
       sorted: true,
       documents: input.documents.map((_, index) => {
         const id = ids[index] ?? "";
         const document = after.find((d) => d.id === id);
         const drafts = input.drafts.filter((d) => named.get(d.page) === index);
+        const outOfDate = drafts.filter(old).length;
         return {
           id,
           kind: document?.kind ?? "other",
@@ -766,9 +802,10 @@ export function sorting(
           drafts: drafts.length,
           worth_a_look: drafts.filter((d) => d.worth_a_look !== undefined)
             .length,
+          ...(outOfDate > 0 && { out_of_date: outOfDate }),
         };
       }),
-      note: "Sorted. Nothing is saved: the drafts wait for the user on each document's page. Tell the user in a few lines what you found.",
+      note: `Sorted. Nothing is saved: the drafts wait for the user on each document's page.${input.drafts.some(old) ? " Drafts counted out_of_date came from an older copy of their page than its current one: they can't be saved. Read the copies again with get_documents and sort those pages again." : ""} Tell the user in a few lines what you found.`,
     };
     return answer;
   };
