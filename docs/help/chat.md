@@ -114,8 +114,8 @@ The AI chooses how to show its work: in words, as a table, as a diagram or as a 
 
 - **A page**, an HTML file that the AI made, such as a chart of your results or a page of your results to show your doctor, shows in the reply at the reply's width and a fixed height, with its title under it. When the page is taller, it scrolls inside its frame. **Open** shows the page large over the chat. **Close** or Esc goes back to the chat where you were, also after you click inside the page. Opening its address by itself says "Open this page from the chat in Rufi."
 - **A diagram** that the AI explains something with shows as a drawing, in Rufi's colours. While the reply is written, and when the diagram can't be drawn, it shows as its text.
-- **A picture** that you asked the AI for shows in the reply at its own size, up to the reply's width, with the AI's caption under it. Click it to see it full size; press Esc or click again to go back. Rufi shows PNG, JPEG, GIF and WebP pictures.
-- **A picture the AI generated** shows the same way, with "Made by the AI" under it. When the reply also shows that picture, it shows once. The AI doesn't generate pictures of your values: a picture model can change the numbers it draws.
+- **A picture**, such as one you asked the AI for, shows in the reply at its own size, up to the reply's width, with the AI's caption under it. Click it to see it full size; press Esc or click again to go back. Rufi shows PNG, JPEG, GIF and WebP pictures.
+- **A picture the AI generated** shows the same way, with "Made by the AI" under it. When the reply also shows that picture, it shows once. Rufi tells the AI never to generate a picture of your values: a picture model can change the numbers it draws.
 
 Rufi shows files only from the AI's folder and from the folder where the AI keeps the pictures it generates. A link to any other file shows as its words.
 
