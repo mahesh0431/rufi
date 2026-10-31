@@ -66,7 +66,6 @@ export function SignIn({
     if (state === "done") {
       void queries.invalidateQueries({ queryKey: ["status"] });
       void queries.invalidateQueries({ queryKey: ["first-run"] });
-      void queries.invalidateQueries({ queryKey: ["models"] });
     }
   }, [state]);
 

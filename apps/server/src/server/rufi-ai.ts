@@ -25,7 +25,6 @@ import type {
 } from "../core/chat/transcript.ts";
 import { startAgents, type AgentSystem, type Apply } from "./agents.ts";
 import { agentLogs, type AgentLogs } from "./agent-logs.ts";
-import { modelLists } from "./model-lists.ts";
 import type { Placed } from "./door.ts";
 
 /** What Rufi AI does, as it comes: its thread is its conversation. */
@@ -110,8 +109,8 @@ export interface OfferedModel extends Model {
 /** Rufi AI for today's chat: each chat's own agent, its thread its conversation. */
 export interface RufiAi {
   provider: string;
-  /** The models the providers offer, as each said last (server/model-lists.ts). */
-  models: () => Promise<OfferedModel[]>;
+  /** The models the providers offer now. */
+  models: (signal?: AbortSignal) => Promise<OfferedModel[]>;
   /** The chat's next turns run on its model and effort. */
   configure: (chat: ChatRow) => Promise<void>;
   /**
@@ -307,8 +306,6 @@ export async function startRufiAi(
     rufiAi: (host: RufiAiHost) => RufiAi;
     logs: AgentLogs;
     usage: () => Promise<ProviderUsage[]>;
-    /** Asks the provider for its models again; resolves once it said. */
-    refreshModels: (provider: string) => Promise<void>;
   }
 > {
   const { transcripts, adapters } = options;
@@ -621,7 +618,30 @@ export async function startRufiAi(
     },
   });
 
-  const lists = modelLists(adapters);
+  /** Every provider's models now; one that can't say is left out, unless all fail. */
+  const models = async (signal?: AbortSignal): Promise<OfferedModel[]> => {
+    const settled = await Promise.allSettled(
+      adapters.map(async (adapter) =>
+        (await adapter.models(signal)).map(
+          ({ id, name, efforts, defaultEffort }) => ({
+            id,
+            name,
+            provider: adapter.id,
+            efforts,
+            ...(defaultEffort !== undefined && { defaultEffort }),
+          }),
+        ),
+      ),
+    );
+    const failed = settled.find((one) => one.status === "rejected");
+    if (failed && settled.every((one) => one.status === "rejected")) {
+      throw failed.reason;
+    }
+    const offered = settled.flatMap((one) =>
+      one.status === "fulfilled" ? one.value : [],
+    );
+    return offered;
+  };
 
   const rufiAi = (host: RufiAiHost): RufiAi => {
     chat = host;
@@ -630,7 +650,7 @@ export async function startRufiAi(
     return {
       provider,
 
-      models: lists.models,
+      models,
 
       configure: async (row) => {
         const agent = await system.root(row.id);
@@ -748,7 +768,6 @@ export async function startRufiAi(
     ...system,
     rufiAi,
     logs: shown,
-    refreshModels: lists.refresh,
     usage: () =>
       Promise.all(
         adapters.map(async (adapter) => ({
@@ -757,7 +776,6 @@ export async function startRufiAi(
         })),
       ),
     close: async () => {
-      lists.close();
       shown.close();
       await system.close();
       const failed: unknown[] = [];

@@ -233,7 +233,7 @@ export const waitingMessages = defineTool({
 export const listModels = defineTool({
   name: "list_models",
   description:
-    "The models the user shortlisted in Settings that their providers offer now: each with its id, name, provider, the efforts it takes and its default effort, if it has one. An agent runs only on one of these. Your last answer from it in this chat usually still holds: reuse it, and ask again when a model is refused.",
+    "The models the user shortlisted in Settings that their providers offer now: each with its id, name, provider, the efforts it takes and its default effort, if it has one. An agent runs only on one of these.",
   input: NoInput,
   callers: "model",
   readOnly: true,

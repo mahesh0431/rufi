@@ -32,11 +32,7 @@ import { claudeAdapter } from "../agent/claude/adapter.ts";
 import { claudeFolder } from "../agent/claude/executable.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
 import { fakeProvider } from "@rufi/agents/fake";
-import type {
-  OpenOptions,
-  ProviderAdapter,
-  ProviderModel,
-} from "@rufi/agents/provider";
+import type { OpenOptions, ProviderAdapter } from "@rufi/agents/provider";
 import { codexAdapter, instructionsNote } from "../agent/codex/adapter.ts";
 import type { Deadlines } from "../agent/codex/appserver.ts";
 import { readings } from "../core/documents/reading.ts";
@@ -3312,76 +3308,6 @@ describe("the chat, on the scripted Codex", () => {
     expect(
       agentRows(`SELECT model, effort FROM turns WHERE agent_id = '${helper}'`),
     ).toEqual([{ model: "gpt-6-astra", effort: "high" }]);
-  });
-
-  it("keeps each provider's models from its last answer for the menu and the tools; one signed out or slow doesn't hold up the other's", async () => {
-    const other = fakeProvider({ id: "other", family: "anthropic" });
-    const otherModel = {
-      id: "other-model",
-      name: "Other model",
-      efforts: ["low"],
-    };
-    let answer = (): Promise<readonly ProviderModel[]> =>
-      Promise.reject(new Error("Other isn't signed in."));
-    let asked = 0;
-    await startChat("fake", {
-      shortlist: [...ALLOWED, "other-model"],
-      other: {
-        ...other.adapter,
-        models: () => {
-          asked += 1;
-          return answer();
-        },
-      },
-      scenario: {
-        callsByText: {
-          "Ask a helper": [
-            { tool: "list_models", arguments: {} },
-            {
-              id: "call-start",
-              tool: "start_agent",
-              arguments: {
-                title: "Helper",
-                task: "Read the March report.",
-                model: "other-model",
-              },
-            },
-          ],
-        },
-      },
-    });
-    const menu = async () =>
-      ((await chat?.models())?.models ?? []).map((model) => model.id);
-
-    // Signed out, then slow: the menu has Codex's models at once, and the
-    // other is asked again one ask at a time.
-    expect(await menu()).toEqual(ALLOWED);
-    const slow = Promise.withResolvers<readonly ProviderModel[]>();
-    answer = () => slow.promise;
-    asked = 0;
-    expect(await menu()).toEqual(ALLOWED);
-    expect(await menu()).toEqual(ALLOWED);
-    expect(asked).toBe(1);
-
-    // It signs in: asked again once the slow ask ends, it offers its model.
-    answer = () => Promise.resolve([otherModel]);
-    const signedIn = ai?.refreshModels("other");
-    slow.reject(new Error("Other isn't signed in."));
-    await signedIn;
-    expect(asked).toBe(2);
-    expect(await menu()).toEqual([...ALLOWED, "other-model"]);
-
-    // Rufi AI lists the models and starts a helper on it: nobody asks again.
-    const c = await newChat();
-    await say(c, "Ask a helper");
-    await ended(c.id);
-    expect(
-      agentRows(
-        `SELECT provider, model FROM agents WHERE parent_id IS NOT NULL`,
-      ),
-    ).toEqual([{ provider: "other", model: "other-model" }]);
-    expect(await menu()).toEqual([...ALLOWED, "other-model"]);
-    expect(asked).toBe(2);
   });
 
   it("moves a helper whose turn has ended to another provider's model: its next turn opens a new conversation there, which hears the helper's own turns and not the chat", async () => {
