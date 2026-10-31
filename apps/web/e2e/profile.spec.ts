@@ -94,6 +94,12 @@ test("your name opens your profile; a change in Settings or on the page saves on
   await name.blur();
   await expect(page.getByText("Give a name: it can't be empty.")).toBeVisible();
   await expect(name).toHaveValue("");
+  // Put back as it was: Done closes, and nothing is saved.
+  await name.fill("Asha Fictional");
+  await page.getByRole("button", { name: "Done" }).click();
+  await expect(value(page, "Name")).toHaveText("Asha Fictional");
+  await expect(history).toHaveCount(3);
+  await page.getByRole("button", { name: "Edit" }).click();
   await name.fill("Asha F.");
   await page.getByRole("button", { name: "Done" }).click();
   await expect(value(page, "Name")).toHaveText("Asha F.");

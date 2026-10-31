@@ -223,6 +223,10 @@ function Name({
   // What you typed, until the profile has it; untouched, the field shows the profile.
   const [draft, setDraft] = useState<string>();
   const [problem, setProblem] = useState<string>();
+  const fixed = () => {
+    setProblem(undefined);
+    report(undefined);
+  };
   if (draft !== undefined && draft.trim() === value) setDraft(undefined);
   const done = () => {
     if (draft === undefined) return;
@@ -244,8 +248,9 @@ function Name({
         value={draft ?? value}
         onChange={(event) => {
           setDraft(event.target.value);
-          // Fixed, it says so at once: nothing moves under a click on Done.
-          if (event.target.value.trim() !== "") setProblem(undefined);
+          // Fixed, it says so at once, also when it is the saved name again:
+          // nothing moves under a click on Done, and Done can close.
+          if (event.target.value.trim() !== "") fixed();
         }}
         onBlur={done}
         className="rounded-lg border border-line bg-surface px-3 py-1.5"
@@ -319,6 +324,10 @@ function BirthDate({
   // What you typed, until the profile has it; untouched, the field shows the profile.
   const [draft, setDraft] = useState<TypedDate>();
   const [problem, setProblem] = useState<string>();
+  const fixed = () => {
+    setProblem(undefined);
+    report(undefined);
+  };
   if (draft !== undefined) {
     const date = dateOf(draft);
     if (date !== undefined && date?.date === value?.date) setDraft(undefined);
@@ -326,7 +335,7 @@ function BirthDate({
   const typed = draft ?? typedDate(value);
   const setTyped = (next: TypedDate) => {
     setDraft(next);
-    if (dateOf(next) !== undefined) setProblem(undefined);
+    if (dateOf(next) !== undefined) fixed();
   };
   const done = () => {
     if (draft === undefined) return;
@@ -438,6 +447,10 @@ function Height({
   // What you typed, until the profile has it; untouched, the field shows the profile.
   const [draft, setDraft] = useState<TypedHeight>();
   const [problem, setProblem] = useState<string>();
+  const fixed = () => {
+    setProblem(undefined);
+    report(undefined);
+  };
   if (draft !== undefined && sameHeight(draft, value)) setDraft(undefined);
   const typed = draft ?? {
     number: value === null ? "" : String(value.value),
@@ -445,7 +458,7 @@ function Height({
   };
   const setTyped = (next: TypedHeight) => {
     setDraft(next);
-    if (heightOf(next) !== undefined) setProblem(undefined);
+    if (heightOf(next) !== undefined) fixed();
   };
   const done = () => {
     if (draft === undefined) return;
