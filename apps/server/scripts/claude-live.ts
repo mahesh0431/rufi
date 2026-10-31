@@ -1059,8 +1059,24 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
             step.title === "Read" && step.detail?.endsWith("dot.png") === true,
         );
         if (!ran || !read) {
+          // Every step as it came, with how it ended, and Claude's words.
+          const steps = events.flatMap((event) =>
+            event.type === "step"
+              ? [
+                  {
+                    kind: event.kind,
+                    title: event.title,
+                    detail: event.detail,
+                    status: event.status,
+                  },
+                ]
+              : [],
+          );
+          const said = events
+            .flatMap((event) => (event.type === "text" ? [event.delta] : []))
+            .join("");
           throw new Error(
-            `the steps were ${JSON.stringify(done.map(({ kind, title, detail }) => ({ kind, title, detail })))}`,
+            `the steps were ${JSON.stringify(steps)}; Claude said: ${said}`,
           );
         }
         if (JSON.stringify(events).includes(png)) {
