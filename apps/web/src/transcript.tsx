@@ -7,8 +7,10 @@
 // didn't finish. A line between days, and a quiet line where a new AI thread
 // started, and where Codex compacts or compacted the chat history. Activity is what the AI's agent reported,
 // in order: its progress notes in full, its thinking headings and its steps,
-// each step opening to all the agent gave about it (activity.tsx). While the
-// AI works it is open and live; once the reply ended it folds into one line,
+// each step opening to all the agent gave about it (activity.tsx). From the
+// moment you send until the reply ends, one working line shows the AI is at
+// it, with a timer: Thinking, until the reply's first step, then its
+// Activity, open and live while the AI works; once the reply ended it folds into one line,
 // as the Activity setting says; a click folds or opens it. It is plain
 // content in the chat, never a box of its own. The chat opens at the latest
 // page; older pages load as you scroll up, and the view stays where it is.
@@ -61,13 +63,24 @@ import { boxFor } from "./boxes.ts";
 import { ChipView } from "./chips.tsx";
 import { Diagram, fileIn, NativePicture, Page, Picture } from "./files.tsx";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
-import { openAgent, useChatAgents } from "./agents-state.ts";
+import {
+  openAgent,
+  useChatAgents,
+  useElapsed,
+  working,
+} from "./agents-state.ts";
 import { chatPath, type Live } from "./live.ts";
 import { ApiError, read } from "./api.ts";
 import { RetryButton } from "./reading.tsx";
 import { useSettings } from "./reads.ts";
 import { latestHeading } from "./thinking.ts";
-import { inActivity, isRunning, lines } from "./transcript-state.ts";
+import {
+  type Clock,
+  clockOf,
+  inActivity,
+  lines,
+  workingOf,
+} from "./transcript-state.ts";
 import { Dog, LiveDog } from "./dog.tsx";
 import { Button, buttonLook, ICON, Problem } from "./ui.tsx";
 import { anyWaiting, WaitingView } from "./waiting.tsx";
@@ -282,9 +295,11 @@ export function TranscriptView({
   );
   const before = useStore(live, (state) => state.before);
   const older = useStore(live, (state) => state.older);
-  const running = useStore(live, isRunning);
+  const clock = useWorkingClock(live, personId);
   const opening = useStore(live, (state) => state.window);
   const now = useToday();
+  // A first message on its way: the working line shows in place of hello.
+  const blank = empty && clock === null;
 
   // Follows the reply as it streams, unless you scrolled up to read.
   const scroller = useRef<HTMLDivElement>(null);
@@ -394,11 +409,11 @@ export function TranscriptView({
       }}
     >
       <div
-        className={`${inner ?? ""} ${status === "open" && empty ? "h-full" : ""}`}
+        className={`${inner ?? ""} ${status === "open" && blank ? "h-full" : ""}`}
       >
         {status === "missing" ? (
           <p className="text-muted">There is no chat here.</p>
-        ) : status === "open" && empty ? (
+        ) : status === "open" && blank ? (
           // A new chat: Rufi says hello over the box.
           <div className="flex h-full items-center justify-center">
             <LiveDog size={80} />
@@ -408,7 +423,7 @@ export function TranscriptView({
             ref={log}
             role="log"
             aria-label="Messages"
-            aria-busy={running}
+            aria-busy={clock !== null}
             className="flex flex-col gap-3"
           >
             {before !== null && (
@@ -437,15 +452,21 @@ export function TranscriptView({
             )}
             <Whose value={personId}>
               <Today value={now}>
-                {shown.map((line) => (
-                  <Line key={line} live={live} line={line} />
-                ))}
+                <WorkingClock value={clock}>
+                  {shown.map((line) => (
+                    <Line key={line} live={live} line={line} />
+                  ))}
+                </WorkingClock>
               </Today>
             </Whose>
           </div>
         )}
-        {status === "open" && !empty && (
+        {status === "open" && !blank && (
           <WaitingView live={live} personId={personId} />
+        )}
+        {/* Before the reply runs: under your message, waiting or on its way. */}
+        {status === "open" && clock?.key === "starting" && (
+          <ThinkingLine since={clock.since} className="mt-3" />
         )}
       </div>
     </div>
@@ -474,6 +495,57 @@ function Line({ live, line }: { live: StoreApi<Live>; line: string }) {
 
 /** Whose chat it is, for the lines that open a page of theirs. */
 const Whose = createContext("");
+
+/** The working status's clock, for the running reply's line. */
+const WorkingClock = createContext<Clock | null>(null);
+
+/**
+ * The chat's working status and its clock, from your send (the box's), the
+ * queue and the replies; what it was a moment ago keeps its timer going.
+ */
+function useWorkingClock(live: StoreApi<Live>, personId: string) {
+  const [clock, setClock] = useState<Clock | null>(null);
+  useLayoutEffect(() => {
+    const box = boxFor(personId).store;
+    const update = () => {
+      const now = workingOf(live.getState(), box.getState().sending);
+      const at = new Date().toISOString();
+      setClock((before) => clockOf(before, now, at));
+    };
+    update();
+    const unsubscribe = [live.subscribe(update), box.subscribe(update)];
+    return () => {
+      for (const stop of unsubscribe) stop();
+    };
+  }, [live, personId]);
+  return clock;
+}
+
+/**
+ * The working line before a reply's first step: the thinking dog,
+ * Thinking, and how long since it started when known.
+ */
+function ThinkingLine({
+  since,
+  className,
+}: {
+  since: string | null;
+  className?: string;
+}) {
+  const elapsed = useElapsed(since);
+  return (
+    <p
+      className={`flex min-h-8 items-center gap-1.5 text-muted ${className ?? ""}`}
+    >
+      <span aria-hidden className="shrink-0">
+        <Dog mood="thinking" size={20} />
+      </span>
+      <span className="tabular-nums">
+        {elapsed === undefined ? "Thinking" : `Thinking · ${elapsed}`}
+      </span>
+    </p>
+  );
+}
 
 /** Now, for the day lines: one value for all of them. */
 const Today = createContext(new Date(0));
@@ -633,7 +705,9 @@ const steps = (n: number) => `${String(n)} ${n === 1 ? "step" : "steps"}`;
  * into one line once the reply ended, as the Activity setting says ("always
  * show": open after too; "always hide": one working line, then folded). A
  * click folds or opens it; that choice holds until the reply ends, and is
- * this page's own. No line when there is nothing to show.
+ * this page's own. While the reply runs it shows its timer, and before its
+ * first step it is the Thinking line, whatever the setting. Once it ended,
+ * no line when there is nothing to show.
  */
 function ActivityView({
   live,
@@ -664,7 +738,13 @@ function ActivityView({
   const running = turn?.status === "running";
   const [chosen, choose] = useState<{ open: boolean; running: boolean }>();
   const list = useId();
+  const clock = use(WorkingClock);
+  const since = clock?.key === turnId ? clock.since : (turn?.startedAt ?? null);
+  const elapsed = useElapsed(running ? since : null);
   const gone = turn?.stepsGone === true && ids.length === 0;
+  if (turn && running && ids.length === 0) {
+    return <ThinkingLine since={since} />;
+  }
   if (!turn || (ids.length === 0 && !gone)) return null;
   const open =
     chosen?.running === running
@@ -678,9 +758,9 @@ function ActivityView({
       ? null
       : turn.endedAt;
   const label = running
-    ? open
-      ? `Activity · working · ${steps(ids.length)}`
-      : `Working · ${steps(ids.length)}`
+    ? [open ? "Activity · working" : "Working", steps(ids.length), elapsed]
+        .filter(Boolean)
+        .join(" · ")
     : [
         `Activity · ${steps(ids.length)}`,
         failed > 0 && `${String(failed)} failed`,
@@ -713,7 +793,7 @@ function ActivityView({
                 aria-hidden
               />
             )}
-            <span className="shrink-0">{label}</span>
+            <span className="shrink-0 tabular-nums">{label}</span>
             {running && !open && newest && (
               <MiddleCut
                 text={
@@ -1037,10 +1117,12 @@ function AgentMessage({ entry }: { entry: Entry }) {
 /**
  * A sub-agent's own Activity, as it reported it: its latest lines, and
  * earlier ones on request. Its sub-agents show as lines that open the same
- * way, at any depth.
+ * way, at any depth. While it works on a message it took, before its first
+ * step, the Thinking line shows under it, as in the chat.
  */
 function AgentLogView({ id, title }: { id: string; title: string }) {
   const personId = use(Whose);
+  const at = useChatAgents(personId).data?.agents.find((one) => one.id === id);
   const [last, setLast] = useState(LOG_LINES);
   const agent = encodeURIComponent(id);
   const log = useQuery({
@@ -1086,9 +1168,21 @@ function AgentLogView({ id, title }: { id: string; title: string }) {
           </li>
         ))}
       </ol>
+      {at !== undefined && working(at) && thinking(log.data.lines) && (
+        <ThinkingLine since={at.since} />
+      )}
     </>
   );
 }
+
+/**
+ * Nothing shows yet since the agent's last message: no lines, or its last
+ * line that shows is a message it took.
+ */
+const thinking = (lines: readonly AgentLine[]) =>
+  (lines.findLast(
+    (line) => line.kind !== "reasoning" || line.text.trim() !== "",
+  )?.kind ?? "message") === "message";
 
 /** One line of a sub-agent's Activity. */
 function AgentLineView({

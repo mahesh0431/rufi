@@ -4,7 +4,8 @@
 // running reply, or in a reply of its own. A waiting message can be steered
 // into the running reply, edited, moved by its handle (dragged, or by
 // keyboard) or removed; one Rufi didn't send says Failed, or Not sent, with
-// why as it came, and goes only when you send it.
+// why as it came, and goes only when you send it. One on its way to the AI
+// says nothing: the chat's working line shows it.
 import {
   closestCenter,
   DndContext,
@@ -47,7 +48,6 @@ export const anyWaiting = (state: Live) => state.queue.items.length > 0;
 
 /** Why a row doesn't go by itself: Failed, or Not sent, and why as it came. */
 function whyHeld(item: QueueItem): string | null {
-  if (item.state === "handing_over") return "Sending…";
   switch (item.held) {
     case "restored":
       return "Not sent · From a backup: it waited when the backup was made.";
@@ -123,7 +123,7 @@ export function WaitingView({
     void act(() => request("POST", `${one(item)}/recover`, { hold, choice }));
   const heading = running
     ? "Waiting · these go in order after the reply"
-    : items.some((item) => item.state !== "waiting" || item.held !== null)
+    : items.some((item) => item.held !== null)
       ? "Not sent · Rufi sends these only when you say"
       : "Waiting";
 
