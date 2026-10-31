@@ -7,7 +7,7 @@
 // system (server/sub-agents.ts); a sub-agent never gets more tools than the
 // agent that starts it.
 import { Schema } from "effect";
-import { defineTool, Refusal } from "./registry.ts";
+import { defineTool, NoInput, Refusal } from "./registry.ts";
 
 export const StartAgentInput = Schema.Struct({
   title: Schema.String.annotate({
@@ -241,7 +241,7 @@ export const listModels = defineTool({
   name: "list_models",
   description:
     "The models the user shortlisted in Settings that their providers offer now: each with its id, name, provider, the efforts it takes and its default effort, if it has one. An agent runs only on one of these.",
-  input: Schema.Struct({}),
+  input: NoInput,
   callers: "model",
   readOnly: true,
   destructive: false,
@@ -256,7 +256,7 @@ export const usage = defineTool({
   name: "usage",
   description:
     "How much of the user's plan is used now, for each provider (yours names the one your model runs on), as the provider last reported it: each usage window with its length in minutes, the percent used and when it resets. A provider reports it as its replies run, so a provider with no reply yet since Rufi started has no windows.",
-  input: Schema.Struct({}),
+  input: NoInput,
   callers: "model",
   readOnly: true,
   destructive: false,

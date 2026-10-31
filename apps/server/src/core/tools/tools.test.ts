@@ -19,6 +19,7 @@ import {
   defineTool,
   NoInput,
   Refusal,
+  specOf,
   toolCaller,
   type ToolContext,
 } from "./registry.ts";
@@ -917,6 +918,16 @@ describe("tables.ts", () => {
 describe("tools.json", () => {
   it("matches the registry (run pnpm tools:json)", async () => {
     expect(await readFile(TOOLS_JSON, "utf8")).toBe(toolsJson());
+  });
+
+  // MCP takes a tool only with an object schema for its input; a client
+  // that checks it can refuse the whole list.
+  it("gives every tool's input as an object schema", () => {
+    expect(
+      TOOLS.filter((tool) => specOf(tool).inputSchema["type"] !== "object").map(
+        (tool) => tool.name,
+      ),
+    ).toEqual([]);
   });
 
   it("has examples that every tool accepts", () => {
