@@ -169,6 +169,39 @@ describe("a reading agent's saved reading", () => {
     old.store.close();
   });
 
+  it("of fewer pages than the document has leaves the others not looked at, never read, until a reading saves them", async () => {
+    const states = () =>
+      rows(
+        rufi.store,
+        "SELECT position, state FROM document_pages WHERE document_id = 'doc-asha-aug' ORDER BY position",
+      );
+    const first = await call(
+      "save_reading",
+      { document: "doc-asha-aug", pages: [PAGES[0]] },
+      "call-first",
+    );
+    expect(first).toMatchObject({
+      ok: true,
+      result: { pages: "1", not_read: "2" },
+    });
+    expect(states()).toEqual([
+      { position: 1, state: "read" },
+      { position: 2, state: "not_looked_at" },
+    ]);
+    const rest = await call(
+      "save_reading",
+      { document: "doc-asha-aug", pages: [PAGES[1]] },
+      "call-rest",
+    );
+    expect(rest.result).toEqual(
+      expect.not.objectContaining({ not_read: expect.anything() as unknown }),
+    );
+    expect(states()).toEqual([
+      { position: 1, state: "read" },
+      { position: 2, state: "unreadable" },
+    ]);
+  });
+
   it("gets its kept answer when the same call comes again, writes once, and keeps no page text", async () => {
     const input = { document: "doc-asha-aug", pages: PAGES };
     const first = await call("save_reading", input, "call-read");
