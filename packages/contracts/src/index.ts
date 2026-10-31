@@ -283,9 +283,7 @@ export const MODELS = [
   { id: "claude-opus-5-5", name: "Claude Opus 5.5", provider: "claude" },
 ] as const;
 export type ModelId = (typeof MODELS)[number]["id"];
-export const ModelId = Schema.Literals(
-  MODELS.map((model) => model.id) as readonly ModelId[],
-);
+export const ModelId = Schema.Literals(MODELS.map((model) => model.id));
 
 /** One of the four by its id; another (stored before) is none of them. */
 export const modelOf = (id: string) => MODELS.find((model) => model.id === id);

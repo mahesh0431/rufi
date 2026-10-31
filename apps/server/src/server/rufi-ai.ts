@@ -14,7 +14,7 @@ import {
   type UsageWindow,
 } from "@rufi/agents/provider";
 import { SIGNED_OUT } from "@rufi/contracts";
-import { type AgentEvent, type Model, type TurnEnd } from "../agent/runtime.ts";
+import { type AgentEvent, type TurnEnd } from "../agent/runtime.ts";
 import { chatAgents, sentAs } from "../core/chat/agents.ts";
 import { UNKNOWN_PROVIDER } from "../core/chat/models.ts";
 import type {

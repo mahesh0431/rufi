@@ -249,7 +249,6 @@ const RUFI_TOOLS = [
   "mcp__rufi__get_documents",
   "mcp__rufi__get_overview",
   "mcp__rufi__get_records",
-  "mcp__rufi__list_models",
   "mcp__rufi__read_agent",
   "mcp__rufi__read_chat",
   "mcp__rufi__save_changes",

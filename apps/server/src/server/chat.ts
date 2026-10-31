@@ -413,7 +413,7 @@ export function chat(deps: ChatDeps) {
     inLane(chat, async (stored) => {
       let fresh = stored;
       if (closed) return;
-      const provider = await providerOf(stored).catch(() => undefined);
+      const provider = providerOf(stored);
       if (
         provider === undefined ||
         (await deps.signIn(provider)).state !== "signed_in"
@@ -749,13 +749,12 @@ export function chat(deps: ChatDeps) {
 
   /**
    * The provider the chat's next turn runs on: its model's, kept with the
-   * choice; before it has one, that of the model it would start on. A
-   * chosen model whose provider Rufi doesn't know goes nowhere else.
+   * choice; before it has one, a new chat's. A chosen model whose provider
+   * Rufi doesn't know has none, and goes nowhere else.
    */
-  async function providerOf(chat: ChatRow): Promise<string> {
+  function providerOf(chat: ChatRow): string | undefined {
     if (chat.model === null) return MODELS[0].provider;
-    if (chat.modelProvider === null) throw new ChatRefusal(UNKNOWN_PROVIDER);
-    return chat.modelProvider;
+    return chat.modelProvider ?? undefined;
   }
 
   /**
@@ -763,7 +762,8 @@ export function chat(deps: ChatDeps) {
    * the chat's provider says so, else its error as it came.
    */
   async function mustBeSignedIn(chat: ChatRow): Promise<void> {
-    const provider = await providerOf(chat);
+    const provider = providerOf(chat);
+    if (provider === undefined) throw new ChatRefusal(UNKNOWN_PROVIDER);
     const { state, text } = await deps.signIn(provider);
     if (state === "signed_out") {
       throw new ChatRefusal(
