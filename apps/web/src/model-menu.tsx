@@ -1,7 +1,8 @@
 // The chat's model and effort, chosen in its box: one button that says
 // both, and one menu with Rufi's four models, then the effort. A provider
 // that isn't signed in shows its models greyed, with a line that signs in.
-// Both are kept for the chat. Both apply from the next reply, in the same
+// Choosing keeps the menu open, to set both in one go; a click outside, the
+// button again or Esc closes it. Both are kept for the chat. Both apply from the next reply, in the same
 // AI thread.
 import { Menu } from "@base-ui/react/menu";
 import {
@@ -109,7 +110,7 @@ export function ModelMenu({
                       <Menu.RadioItem
                         key={m.id}
                         value={m.id}
-                        closeOnClick
+                        closeOnClick={false}
                         disabled={out(provider)}
                         className={`${ITEM} data-[disabled]:text-muted`}
                       >
@@ -151,7 +152,7 @@ export function ModelMenu({
                   <Menu.RadioItem
                     key={e}
                     value={e}
-                    closeOnClick
+                    closeOnClick={false}
                     className="flex-1 cursor-default rounded-lg py-1 text-center text-muted outline-none select-none data-[checked]:bg-surface data-[checked]:text-ink data-[checked]:shadow-sm data-[highlighted]:text-ink"
                   >
                     {EFFORT_NAMES[e]}

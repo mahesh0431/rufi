@@ -1,8 +1,10 @@
 // The chat's box, the same in every size: what you type is the chat's
 // draft, kept by the core, saved quietly; the box says only when it couldn't
-// be. Enter sends. While a reply runs, Steer puts the message into it and
-// Queue keeps it for after it, Enter doing what Settings chose, and Stop is
-// beside the box (Activity shows what the AI does; the bar, where it
+// be. Enter sends. While a reply runs, the one round button is Stop while
+// the box is empty, and sends once you type: Enter or a click does what
+// Settings chose (Steer puts the message into the reply, Queue keeps it for
+// after it), ⌘Enter or a ⌘-click the other, as a line under the box says
+// (Activity shows what the AI does; the bar, where it
 // doesn't show, has a busy sign from the send on; the chat's working line
 // shows the send, not the box). The box clears only when the core took the message, and nothing
 // is sent again by itself. Signed out, the core takes nothing: the box says so, with Sign in.
@@ -22,11 +24,9 @@ import {
 } from "@rufi/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import {
-  ListEnd,
   LoaderCircle,
   LogIn,
   type LucideProps,
-  Merge,
   RotateCw,
   Send,
   Square,
@@ -87,8 +87,9 @@ export function Box({
   const running = useStore(live, isRunning);
   // From the send until the reply ends: the bar's busy sign.
   const busy = useStore(live, (state) => workingOf(state, locked) !== null);
-  // What Enter does while a reply runs.
+  // What Enter does while a reply runs, and ⌘Enter.
   const enter = useSettings().data?.whileReplying ?? "steer";
+  const other: WhileReplying = enter === "steer" ? "queue" : "steer";
   const navigate = useNavigate();
   const [problem, setProblem] = useState<string | null>(null);
   const long = tooLong(text);
@@ -153,7 +154,11 @@ export function Box({
             !event.nativeEvent.isComposing
           ) {
             event.preventDefault();
-            if (hasText) submit();
+            if (hasText) {
+              submit(
+                running && (event.metaKey || event.ctrlKey) ? other : enter,
+              );
+            }
           }
         }}
         className="resize-none overflow-hidden bg-transparent outline-none placeholder:text-muted"
@@ -180,18 +185,23 @@ export function Box({
       className="rounded-full bg-ink text-surface not-disabled:hover:bg-ink"
     />
   );
-  /** While a reply runs: into it, or after it. */
-  const sendWhile = (kind: WhileReplying) => (
+  /**
+   * While a reply runs, the one button: Stop until you type, then what
+   * Settings chose, the other with ⌘.
+   */
+  const whileRunning = hasText ? (
     <IconButton
-      look={kind === enter ? "main" : "quiet"}
-      label={kind === "steer" ? "Steer" : "Queue"}
-      icon={kind === "steer" ? Merge : ListEnd}
-      disabled={!hasText || locked}
-      onClick={() => {
-        submit(kind);
+      look="main"
+      label={enter === "steer" ? "Steer" : "Queue"}
+      icon={Send}
+      disabled={locked}
+      onClick={(event) => {
+        submit(event.metaKey || event.ctrlKey ? other : enter);
       }}
       className="rounded-full"
     />
+  ) : (
+    stopButton
   );
 
   return (
@@ -236,15 +246,7 @@ export function Box({
             </span>
           </button>
           {choice}
-          {running ? (
-            <>
-              {hasText && sendWhile("steer")}
-              {hasText && sendWhile("queue")}
-              {stopButton}
-            </>
-          ) : (
-            sendButton
-          )}
+          {running ? whileRunning : sendButton}
         </div>
       ) : (
         <div
@@ -294,17 +296,15 @@ export function Box({
             <span className="flex-1" />
             {choice}
             <ContextMeter live={live} />
-            {running ? (
-              <>
-                {sendWhile("steer")}
-                {sendWhile("queue")}
-                {stopButton}
-              </>
-            ) : (
-              sendButton
-            )}
+            {running ? whileRunning : sendButton}
           </div>
         </div>
+      )}
+      {size !== "bar" && running && hasText && (
+        // The other way to send, light, while a reply runs.
+        <p className="px-3.5 pt-1 text-xs text-muted">
+          {other === "queue" ? "⌘↵ to queue" : "⌘↵ to steer"}
+        </p>
       )}
       {size === "bar"
         ? why !== null && (
