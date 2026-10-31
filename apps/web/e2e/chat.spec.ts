@@ -296,7 +296,7 @@ const WAITING = `
     ('q-2', 'asha', 'c-asha', 'person', 'Second', 2, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z'),
     ('q-3', 'asha', 'c-asha', 'person', 'Third', 3, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z');`;
 
-test("waiting messages show in the chat: edit, reorder, steer, queue and remove; after a Stop, the next one goes", async ({
+test("waiting messages show just above the box: edit, reorder, steer, queue and remove; after a Stop, the next one goes", async ({
   page,
   rufi,
 }) => {
@@ -304,14 +304,16 @@ test("waiting messages show in the chat: edit, reorder, steer, queue and remove;
   await rufi.start();
   await page.goto(rufi.link());
   await opener(chat(page)).click();
-  // In the transcript's scrolling area, after the chat's last message, in
-  // the order they go.
-  const waiting = log(chat(page)).locator(
-    "xpath=following-sibling::section[@aria-label='Waiting messages']",
-  );
+  // Just above the box, out of the chat's messages, in the order they go.
+  const waiting = chat(page)
+    .locator("form")
+    .locator(
+      "xpath=preceding-sibling::section[@aria-label='Waiting messages'][1]",
+    );
   const items = waiting.getByRole("listitem");
   await expect(items).toHaveText([/^Second/, /^Third/]);
   await expect(log(chat(page))).toContainText("hang");
+  await expect(log(chat(page))).not.toContainText("Second");
   await accessible(page);
 
   // Each moves by its handle: dragged, or by keyboard (Space, the arrows,

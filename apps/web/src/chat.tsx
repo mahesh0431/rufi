@@ -17,6 +17,7 @@ import { Menus } from "./model-menu.tsx";
 import { chatPage, isSmall, openPanel, usePanel } from "./panel.ts";
 import { TranscriptView } from "./transcript.tsx";
 import { IconButton } from "./ui.tsx";
+import { WaitingView } from "./waiting.tsx";
 
 /** The chat's name on screen. */
 export const CHAT_TITLE = "Chat with Rufi";
@@ -177,6 +178,7 @@ export function ChatDock({ person }: { person: Person }) {
               }
             >
               {open && <AgentsAtWork personId={person.id} />}
+              {open && <WaitingView live={live} personId={person.id} />}
               <Box
                 person={person}
                 live={live}
@@ -230,6 +232,7 @@ export function ChatPage({ person }: { person: Person }) {
         />
         <div className="mx-auto w-full max-w-[760px] px-10 pb-1">
           <AgentsAtWork personId={person.id} />
+          <WaitingView live={live} personId={person.id} />
           <Box person={person} live={live} size="page" inputRef={field} />
           <AiCanMakeMistakes />
         </div>

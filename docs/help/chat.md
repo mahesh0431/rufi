@@ -199,7 +199,7 @@ If you stop the reply while the AI saves, the save can still finish. Then its re
 
 For a task that can run on its own, the AI can start an agent of its own, a sub-agent. It gets only the task the AI gives it, never your chat, and works with all of the AI's tools, on the AI's model or another of Rufi's four, at any of the four efforts. A model whose provider isn't signed in can't start one. Between a sub-agent's turns, the AI can move it to another of the four, never while it works. On another provider's model, the sub-agent starts a new conversation there, which has its last 10 turns. It can go on after the reply ends: what it saves shows in the chat with Rufi's receipt, also after the reply, with its title after **Saved**. It saves only what you said yes to. A reader that copies your files' pages saves its copies with no receipt: they aren't part of your health record (see [Documents](documents.md#when-the-reading-ends)). In the Activity of the reply that started it, it is one line, which opens its pop-up (see [Activity](#activity)).
 
-**At work.** While the AI's sub-agents work, each is a chip in a row above the message box, below your waiting messages: a spinner, the name the AI gave it, and how long its turn has run, such as **Reading report.pdf 0:42**. When its turn ends (done, with a question, stopped or failed), its chip goes; when the AI gives it more to do, it comes back while it works. With no sub-agent at work, there is no row.
+**At work.** While the AI's sub-agents work, each is a chip in a row above the message box, above your waiting messages: a spinner, the name the AI gave it, and how long its turn has run, such as **Reading report.pdf 0:42**. When its turn ends (done, with a question, stopped or failed), its chip goes; when the AI gives it more to do, it comes back while it works. With no sub-agent at work, there is no row.
 
 **Its pop-up.** Click a chip, the sub-agent's line in Activity, or its name on its message in the chat, to open its pop-up over the chat. At the top: its name; its status, how long its turn has run, and its model and effort. Below, its own Activity, in the order things happened, and as it happens: the task it got from the AI and the messages that came later, each with who sent it, its notes, thinking and steps, as it reported them, and its answers and questions. While it works on a message, before its first step, "Thinking" shows under it, as in the chat. A sub-agent it started shows there as a line of its own, which opens below it. A long Activity shows its latest 50 lines, and **Show earlier** shows 50 more each time. While it works, **Stop** stops it and every sub-agent it started; its stopped message goes to the AI. Esc, the close button or a click outside closes the pop-up; the sub-agent goes on.
 
@@ -236,7 +236,7 @@ If the reply ends before your steer reaches it, your message goes in a following
 
 ## Waiting messages
 
-What waits shows in the chat, after its last message, in the order it goes: your messages as dashed bubbles, and Rufi's notes. It shows there also after a reload, a restart of Rufi, or a change of model. For each of your waiting messages you can:
+What waits shows just above the box, in the order it goes: your messages and Rufi's notes. It sits outside the chat's messages, so the chat doesn't move when a message starts or stops waiting, and a long list scrolls there. It shows there also after a reload, a restart of Rufi, or a change of model. For each of your waiting messages you can:
 
 - **Steer** it (two arrows that meet), while a reply runs: it goes into that reply now.
 - **Edit** it (the pencil), then **Save**.
@@ -270,7 +270,7 @@ Some things happen outside your chat. Rufi tells you with its own line in the ch
 When the AI should know too, Rufi gives it a note:
 
 - **When nothing runs**, the AI gets the note at once, in a short reply of its own. In that reply the AI explains or asks. It carries on with work you already asked for, and asks you first before any new change: every save rests on a message of yours.
-- **When a reply runs**, the note waits in the chat among the waiting messages, as "Rufi's note", and goes in its turn after the reply, in a short reply of its own. Each note gets its own reply. **Remove** it if the AI doesn't need it.
+- **When a reply runs**, the note waits among the waiting messages above the box, as "Rufi's note", and goes in its turn after the reply, in a short reply of its own. Each note gets its own reply. **Remove** it if the AI doesn't need it.
 - **When you're signed out**, it waits with the line on how to sign in, such as "You're signed out. Sign in with ChatGPT to chat.", and goes the next time Rufi gives the AI something after you sign in again.
 
 ## The model and effort
