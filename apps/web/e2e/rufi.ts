@@ -5,7 +5,7 @@
 import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Status } from "@rufi/contracts";
+import type { Provider, ProviderStatus } from "@rufi/contracts";
 import {
   expect,
   test as base,
@@ -14,7 +14,11 @@ import {
 } from "@playwright/test";
 import { Effect, Exit, Scope } from "effect";
 import type { Scenario } from "../../server/tests/fake-codex.ts";
-import { fakeModel, type FakeModel } from "../../server/tests/fake-model.ts";
+import {
+  codexArgs,
+  fakeModel,
+  type FakeModel,
+} from "../../server/tests/fake-model.ts";
 import {
   FAMILY,
   familyFiles,
@@ -32,17 +36,34 @@ import {
   startCore,
   type Core,
 } from "../../server/src/server/core.ts";
+import type { ProviderSignIn } from "../../server/src/server/signin.ts";
 
 const SERVER = join(import.meta.dirname, "../../server");
 const FAKE = join(SERVER, "tests/fake-codex.ts");
 const SCREENS = join(import.meta.dirname, "../dist");
 
+/** A provider's sign-in status: signed out. */
+export const SIGNED_OUT: ProviderStatus = {
+  state: "signed_out",
+  account: null,
+  text: null,
+};
+
+/** A provider's sign-in status: signed in, as `account` when it says. */
+export const signedIn = (account: string | null): ProviderStatus => ({
+  state: "signed_in",
+  account,
+  text: null,
+});
+
 export class Rufi {
-  /** What the sign-in status says; tests may change it. */
-  account: Status = { account: "signed_in", email: "asha@example.com" };
+  /** What Codex says of its sign-in; tests may change it. */
+  codex: ProviderStatus = signedIn("asha@example.com");
+  /** What Claude says of its sign-in; tests may change it. */
+  claude: ProviderStatus = SIGNED_OUT;
   /**
-   * The sign-ins started from the screens, waiting for ChatGPT's answer;
-   * one that succeeds signs Rufi in. No browser opens.
+   * The sign-ins started from the screens, waiting for the provider's
+   * answer; one that succeeds signs that provider in. No browser opens.
    */
   readonly signIns: PromiseWithResolvers<undefined>[] = [];
   /** The folders Show in Finder was asked to show; no Finder opens. */
@@ -93,13 +114,7 @@ export class Rufi {
     if (options.codex === "real") this.#model ??= await fakeModel();
     const command =
       options.codex === "real"
-        ? {
-            file: await codexBinary(),
-            args: [
-              "-c",
-              `model_providers.openai_chatgpt_plan.base_url="${this.#model?.url ?? ""}"`,
-            ],
-          }
+        ? { file: await codexBinary(), args: codexArgs(this.#model?.url) }
         : { file: process.execPath, args: [FAKE] };
     const scope = await Effect.runPromise(Scope.make());
     this.#scope = scope;
@@ -116,19 +131,13 @@ export class Rufi {
               FAKE_CODEX: JSON.stringify(options.scenario ?? {}),
               FAKE_CODEX_LOG: join(this.home, "fake-codex.jsonl"),
             },
-            token: () => Promise.resolve("token"),
             version: "0.0.0",
           }),
         ],
         log: () => undefined,
-        account: () => Promise.resolve(this.account),
-        signIn: async ({ showLink }) => {
-          showLink("https://auth.example.com/authorize?fictional=1");
-          const run = Promise.withResolvers<undefined>();
-          this.signIns.push(run);
-          await run.promise;
-          this.account = { account: "signed_in", email: "asha@example.com" };
-          return { email: "asha@example.com" };
+        signIns: {
+          codex: this.#signIn("codex"),
+          claude: this.#signIn("claude"),
         },
         screens: SCREENS,
         folder: {
@@ -143,6 +152,22 @@ export class Rufi {
       }).pipe(Scope.provide(scope)),
     );
     return this.#core;
+  }
+
+  /** A provider's sign-in as the test says it stands. */
+  #signIn(provider: Provider): ProviderSignIn {
+    return {
+      status: () => Promise.resolve(this[provider]),
+      start: async ({ showLink }) => {
+        showLink(`https://auth.example.com/${provider}?fictional=1`);
+        const run = Promise.withResolvers<undefined>();
+        this.signIns.push(run);
+        await run.promise;
+        this[provider] = signedIn(
+          provider === "codex" ? "asha@example.com" : null,
+        );
+      },
+    };
   }
 
   get core(): Core {

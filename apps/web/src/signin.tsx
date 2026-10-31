@@ -1,6 +1,7 @@
-// Sign in with ChatGPT, in the app: the core opens the browser on this Mac
-// and waits for ChatGPT to send you back; this page asks how it goes.
-import { SignInState } from "@rufi/contracts";
+// Signing in, in the app, each provider its own way: the core starts the
+// provider's own sign-in in the browser on this Mac (Codex with ChatGPT,
+// Claude with its account), and this page asks how it goes.
+import { SignInState, type Provider, type StartSignIn } from "@rufi/contracts";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ArrowRight, LogIn } from "lucide-react";
 import { useEffect } from "react";
@@ -11,6 +12,26 @@ import { Button } from "./ui.tsx";
 /** How often a waiting page asks whether the sign-in is done. */
 const POLL_MS = 1_000;
 
+/** What the page says of each provider: drafts. */
+const WORDS = {
+  codex: {
+    about:
+      "Rufi's AI runs on Codex, with your ChatGPT plan. Your health record works without it.",
+    signedIn: (account: string | null) =>
+      `Codex is signed in${account === null ? "" : ` as ${account}`}. Rufi's AI uses your ChatGPT plan.`,
+    waiting:
+      "Your browser opens ChatGPT's sign-in for Codex. Sign in there; this page goes on by itself.",
+    button: "Sign in with ChatGPT",
+  },
+  claude: {
+    about: "Claude signs in with your Claude account, for the AI on Claude.",
+    signedIn: () => "Claude is signed in.",
+    waiting:
+      "Your browser opens Claude's sign-in. Sign in there; this page goes on by itself.",
+    button: "Sign in to Claude",
+  },
+} as const;
+
 /** How the sign-in goes: asked again each second while it waits. */
 export const useSignInFlow = () =>
   useQuery({
@@ -20,14 +41,27 @@ export const useSignInFlow = () =>
       query.state.data?.state === "waiting" ? POLL_MS : false,
   });
 
-export function SignIn({ skip }: { skip?: () => void }) {
-  const status = useStatus().data;
+export function SignIn({
+  provider,
+  skip,
+}: {
+  provider: Provider;
+  skip?: () => void;
+}) {
+  const words = WORDS[provider];
+  const status = useStatus().data?.[provider];
   const flow = useSignInFlow();
   const start = useMutation({
-    mutationFn: () => read(SignInState, "POST", "/api/signin"),
+    mutationFn: () =>
+      read(SignInState, "POST", "/api/signin", {
+        provider,
+      } satisfies StartSignIn),
     onSuccess: (state) => queries.setQueryData(["signin"], state),
   });
-  const state = flow.data?.state;
+  const mine = flow.data?.provider === provider ? flow.data : undefined;
+  const state = mine?.state;
+  // One sign-in at a time: another provider's may be waiting.
+  const waiting = flow.data?.state === "waiting";
   useEffect(() => {
     if (state === "done") {
       void queries.invalidateQueries({ queryKey: ["status"] });
@@ -35,37 +69,21 @@ export function SignIn({ skip }: { skip?: () => void }) {
     }
   }, [state]);
 
-  if (status?.account === "signed_in") {
-    return (
-      <p>
-        Signed in{status.email === null ? "" : ` as ${status.email}`}. Rufi's AI
-        uses your ChatGPT plan.
-      </p>
-    );
-  }
-  const error = flow.data?.state === "failed" ? flow.data.error : null;
+  if (status?.state === "signed_in")
+    return <p>{words.signedIn(status.account)}</p>;
+  const error = mine?.state === "failed" ? mine.error : null;
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-muted">
-        Rufi's AI uses your ChatGPT plan. Your health record works without it.
-      </p>
-      {status?.account === "no_plan_use" && (
-        <p>
-          You are signed in, but ChatGPT plan use isn't allowed for Rufi. Sign
-          in again and allow it.
-        </p>
-      )}
+      <p className="text-muted">{words.about}</p>
+      {status?.state === "unavailable" && <p>{status.text}</p>}
       {state === "waiting" && (
         <div role="status" className="flex flex-col gap-1">
-          <p>
-            Your browser opens ChatGPT's sign-in. Approve Rufi there; this page
-            goes on by itself.
-          </p>
-          {flow.data?.link && (
+          <p>{words.waiting}</p>
+          {mine?.link && (
             <p className="text-muted">
               If the browser didn't open,{" "}
               <a
-                href={flow.data.link}
+                href={mine.link}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="underline"
@@ -78,16 +96,16 @@ export function SignIn({ skip }: { skip?: () => void }) {
         </div>
       )}
       <div className="flex gap-2">
-        {state !== "waiting" && (
+        {state !== "waiting" && status?.state !== "unavailable" && (
           <Button
             look="main"
             icon={LogIn}
-            disabled={start.isPending}
+            disabled={start.isPending || waiting}
             onClick={() => {
               start.mutate();
             }}
           >
-            Sign in with ChatGPT
+            {words.button}
           </Button>
         )}
         {skip && (

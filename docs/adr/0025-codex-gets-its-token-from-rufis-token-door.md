@@ -1,6 +1,6 @@
 # 0025 · Codex gets its ChatGPT token from Rufi's token door
 
-**Date:** 30 Oct 2026 · **Status:** accepted · **Pin:** `@openai/codex` 0.163.0
+**Date:** 30 Oct 2026 · **Status:** replaced on 31 Oct 2026: Codex signs in by itself (ADR 0001, its amendment of 31 Oct 2026) · **Pin:** `@openai/codex` 0.163.0
 
 A reply has no time limit. Codex ran with a fixed `ACCESS_TOKEN` in its environment (ADR 0001), so Rufi gave it a token that outlasted a whole turn, cut a turn at 5 minutes, and replaced app-server between replies when the token changed. And on macOS any program of the user's, the AI's sandboxed commands too, can read another process's arguments and environment (`sysctl` `KERN_PROCARGS2`): the token in Codex's environment was readable by the AI.
 
@@ -17,3 +17,5 @@ Considered: Codex's external-token login (`account/login/start` with `chatgptAut
 The cost: the auth command is undocumented, so each pin bump reruns the contract tests and the live probe (`scripts/codex-auth-probe.ts`). A node process starts each time Codex asks, about once a minute while it works. A door that never answers costs Codex's whole retry run before the turn fails.
 
 **31 Oct 2026: the reader's door goes (ADR 0009).** With the old reader gone, only the chat's Codex has a door (`chat.json`), and no reader deadline is left.
+
+**Replaced, 31 Oct 2026.** Codex now keeps and renews its own ChatGPT sign-in in Rufi's `CODEX_HOME`, so Rufi has no token to give: the door, the auth command, Rufi's own Sign in with ChatGPT and the live probe are gone. A reply still has no time limit, and Codex still runs with nothing secret in its arguments or environment; the AI's sandbox denies Codex's sign-in file instead of the door's folder.

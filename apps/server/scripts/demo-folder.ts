@@ -1,6 +1,6 @@
 // The demo folder: Rufi's data folder for `pnpm demo`, apart from every
-// other. Each run resets it to the golden data set and keeps only its
-// ChatGPT sign-in, so you sign in once.
+// other. Each run resets it to the golden data set and keeps only Codex's and
+// Claude's sign-ins, so you sign in once; Claude's conversations go.
 import { randomUUID } from "node:crypto";
 import {
   lstat,
@@ -31,15 +31,21 @@ export const demoFolder = (home = homedir()) => join(home, "Rufi-demo");
 const MARK = "demo.json";
 const markFor = (folder: string) => ({ kind: "rufi-demo-folder", folder });
 
-/** What a reset keeps: the mark, the sign-in's registration and the lock it holds. */
-const KEPT = new Set([MARK, "chatgpt.json", "rufi.lock"]);
+/**
+ * What a reset keeps: the mark, the lock it holds, and Claude's folder,
+ * whose sign-in Claude keeps in the Keychain under the folder's path, but
+ * not the conversations Claude keeps in it. Of Codex's folder it keeps only
+ * Codex's sign-in.
+ */
+const KEPT = new Set([MARK, "rufi.lock", "claude"]);
+const CODEX_SIGN_IN = "auth.json";
+const CLAUDE_CONVERSATIONS = "projects";
 
 /**
  * Resets `folder` to the golden data set, dated up to `today`. Refuses when
  * RUFI_HOME names another folder, when the folder holds files but isn't a
  * demo folder, when it or one of its own files is a link (a reset deletes
- * only inside the folder), and while Rufi runs on it. The sign-in's tokens
- * stay in the Keychain, under the registration kept here.
+ * only inside the folder), and while Rufi runs on it.
  */
 export async function resetDemo(
   folder: string,
@@ -65,10 +71,20 @@ export async function resetDemo(
     await checkDemo(folder);
     await writeMark(folder);
     // rm removes a link deeper inside without following it.
+    await rm(join(folder, "claude", CLAUDE_CONVERSATIONS), {
+      recursive: true,
+      force: true,
+    });
     for (const name of await readdir(folder)) {
-      if (!KEPT.has(name)) {
-        await rm(join(folder, name), { recursive: true, force: true });
+      if (KEPT.has(name)) continue;
+      if (name === "codex" && (await lstat(join(folder, name))).isDirectory()) {
+        for (const inner of await readdir(join(folder, name))) {
+          if (inner === CODEX_SIGN_IN) continue;
+          await rm(join(folder, name, inner), { recursive: true, force: true });
+        }
+        continue;
       }
+      await rm(join(folder, name), { recursive: true, force: true });
     }
     const store = await openRecord(folder);
     try {

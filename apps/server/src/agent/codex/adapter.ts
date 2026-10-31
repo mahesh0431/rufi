@@ -17,28 +17,23 @@ import {
   type UsageWindow,
 } from "@rufi/agents/provider";
 import { errorCode, type Log } from "../../platform/logs.ts";
-import { ChatGptError } from "../chatgpt/openai.ts";
 import {
   NotSent,
+  SignedOut,
   ThreadNotFound,
   type ActivityKind,
   type AgentEvent,
   type ThreadSettings,
   type TurnEnd,
 } from "../runtime.ts";
-import { codexRuntime, type CodexDeps } from "./codex.ts";
+import { codexRuntime, type CodexDeps, type CodexRuntime } from "./codex.ts";
 import { callOf } from "./events.ts";
 import type { RateLimitWindow } from "./protocol/v2/RateLimitWindow.ts";
 
-/** Sign-in failures that only signing in again ends. */
-const SIGNED_OUT = new Set(["not_signed_in", "sign_in_again", "plan_use_off"]);
-
-/** Whether `error`, or what caused it, says Rufi is signed out of ChatGPT. */
+/** Whether `error`, or what caused it, says Codex isn't signed in. */
 function signedOut(error: unknown): boolean {
   for (let cause = error; cause instanceof Error; cause = cause.cause) {
-    if (cause instanceof ChatGptError && SIGNED_OUT.has(cause.code)) {
-      return true;
-    }
+    if (cause instanceof SignedOut) return true;
   }
   return false;
 }
@@ -78,9 +73,13 @@ interface Open {
   answers: Map<string, string>;
 }
 
+/** Codex's adapter, and its home and sign-in, which the reader and the screens use. */
+export type CodexAdapter = ProviderAdapter &
+  Pick<CodexRuntime, "codexHome" | "account" | "signIn">;
+
 export function codexAdapter(
   deps: Omit<CodexDeps, "host"> & { log?: Log },
-): ProviderAdapter {
+): CodexAdapter {
   const log = deps.log ?? (() => undefined);
   const conversations = new Map<string, Open>();
   const runtime = codexRuntime({
@@ -336,6 +335,9 @@ export function codexAdapter(
   return {
     id: "codex",
     family: "openai",
+    codexHome: runtime.codexHome,
+    account: runtime.account,
+    signIn: runtime.signIn,
 
     models: async (signal) =>
       (await runtime.catalog(signal)).map((model) => ({
