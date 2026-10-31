@@ -1050,9 +1050,8 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     return { checks: {}, snapshot };
   },
   /**
-   * The analysis story: the AI reads the record, makes a chart with a
-   * program in its folder, and shows it in the reply as a picture or a page
-   * Rufi serves (the AI picks the form).
+   * The analysis story: the AI reads the record and shows a chart in the
+   * reply as a page Rufi serves, not a picture (one wasn't asked for).
    */
   chart_in_reply: async (api, home) => {
     const c = chat(api);
@@ -1063,15 +1062,12 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     return {
       checks: {
         read_records: recordReads(home).length > 0,
-        ran_a_program: snapshot.entries.some(
-          (e) => e.kind === "activity" && e.activity === "command",
-        ),
       },
       verdicts: [
         {
           check: "shows_a_chart",
           criterion:
-            "The reply shows a chart of fasting glucose and HbA1c over the years, as a picture or a page that opens in the chat, made from the records read.",
+            "The reply shows a chart of fasting glucose and HbA1c over the years as a page in the chat, not a picture, made from the records read.",
           evidence: replyOf(snapshot),
         },
       ],
