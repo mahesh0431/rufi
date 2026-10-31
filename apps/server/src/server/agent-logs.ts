@@ -60,16 +60,14 @@ export function agentLogs(deps: {
     const at = turn.endedAt ?? turn.startedAt;
     const plain = { activity: null, detail: null, status: null };
     return [
-      ...turn.inputs.map(
-        (input): AgentLine => ({
-          id: `${turn.id}:${input.id}`,
-          kind: "message",
-          from: from(input.sender),
-          text: (input.parts ?? []).join("\n\n"),
-          ...plain,
-          updatedAt: turn.startedAt,
-        }),
-      ),
+      ...turn.inputs.map((input): AgentLine => ({
+        id: `${turn.id}:${input.id}`,
+        kind: "message",
+        from: from(input.sender),
+        text: (input.parts ?? []).join("\n\n"),
+        ...plain,
+        updatedAt: turn.startedAt,
+      })),
       ...turn.items.map((item): AgentLine => {
         const child = started(agent, item);
         return {
@@ -93,28 +91,26 @@ export function agentLogs(deps: {
           ...(child !== undefined && { agent: child }),
         };
       }),
-      ...turn.questions.map(
-        (question): AgentLine => ({
-          id: `${turn.id}:${question.item}`,
-          kind: "question",
-          text: question.title,
-          activity: null,
-          detail: question.options.join(" · "),
-          status: null,
-          updatedAt: at,
-        }),
-      ),
+      ...turn.questions.map((question): AgentLine => ({
+        id: `${turn.id}:${question.item}`,
+        kind: "question",
+        text: question.title,
+        activity: null,
+        detail: question.options.join(" · "),
+        status: null,
+        updatedAt: at,
+      })),
       ...(turn.status === "stopped" || turn.status === "failed"
         ? [
             {
               id: `${turn.id}:end`,
-              kind: "end" as const,
+              kind: "end",
               text: turn.result ?? turn.reason ?? "",
               activity: null,
               detail: null,
-              status: turn.status as "stopped" | "failed",
+              status: turn.status,
               updatedAt: at,
-            },
+            } satisfies AgentLine,
           ]
         : []),
     ];
@@ -199,8 +195,7 @@ export function agentLogs(deps: {
           void kept
             .owner(one)
             .then((owner) => {
-              for (const listener of listeners.get(owner?.chatId ?? "") ??
-                []) {
+              for (const listener of listeners.get(owner?.chatId ?? "") ?? []) {
                 listener();
               }
             })

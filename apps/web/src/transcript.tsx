@@ -22,6 +22,7 @@ import {
   Brain,
   Check,
   ChevronRight,
+  ChevronsUp,
   FileText,
   Info,
   LoaderCircle,
@@ -45,7 +46,15 @@ import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
 import { unified } from "unified";
 import remend from "remend";
-import type { ActivityShown, Entry, Turn } from "@rufi/contracts";
+import {
+  AgentLog,
+  SubAgents,
+  type ActivityShown,
+  type AgentLine,
+  type Entry,
+  type Turn,
+} from "@rufi/contracts";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { StoreApi } from "zustand/vanilla";
 import { useStore } from "zustand";
 import { useShallow } from "zustand/shallow";
@@ -55,14 +64,14 @@ import { ChipView } from "./chips.tsx";
 import { Diagram, fileIn, NativePicture, Page, Picture } from "./files.tsx";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
 import { chatPath, messageOf, type Live } from "./live.ts";
-import { request } from "./api.ts";
+import { ApiError, read, request } from "./api.ts";
 import { RetryButton } from "./reading.tsx";
 import { useSettings } from "./reads.ts";
 import { Menus } from "./model-menu.tsx";
 import { latestHeading } from "./thinking.ts";
 import { isRunning } from "./transcript-state.ts";
 import { Dog, LiveDog } from "./dog.tsx";
-import { Button, buttonLook, ICON } from "./ui.tsx";
+import { Button, buttonLook, ICON, Problem } from "./ui.tsx";
 import { anyWaiting, WaitingView } from "./waiting.tsx";
 
 // The AI's text is shown as Markdown, never as HTML: no raw HTML, no remote
@@ -776,7 +785,8 @@ function ActivityView({
   const running = turn?.status === "running";
   const [chosen, choose] = useState<{ open: boolean; running: boolean }>();
   const list = useId();
-  if (!turn || (ids.length === 0 && turn.how === null)) return null;
+  const gone = turn?.stepsGone === true && ids.length === 0;
+  if (!turn || (ids.length === 0 && turn.how === null && !gone)) return null;
   const open =
     chosen?.running === running
       ? chosen.open
@@ -837,6 +847,11 @@ function ActivityView({
             )}
           </button>
         )}
+        {gone && (
+          <p className="text-muted">
+            Activity is gone with the AI&apos;s working state.
+          </p>
+        )}
         {turn.how !== null && <BasedOn how={turn.how} />}
       </div>
       {open && (
@@ -856,18 +871,48 @@ function ActivityView({
   );
 }
 
+/** One line of a reply's Activity, as the chat keeps it. */
+function Step({ live, id }: { live: StoreApi<Live>; id: string }) {
+  const entry = useStore(live, (state) => state.entries[id]);
+  const personId = use(Whose);
+  if (!entry) return null;
+  return (
+    <StepView
+      entry={entry}
+      details={`${chatPath(personId)}/entries/${encodeURIComponent(id)}`}
+    />
+  );
+}
+
+/** What a line of Activity shows, in a reply or in a sub-agent's own. */
+type Shown = Pick<
+  Entry,
+  | "id"
+  | "kind"
+  | "text"
+  | "activity"
+  | "detail"
+  | "status"
+  | "updatedAt"
+  | "link"
+  | "agent"
+>;
+
 /**
  * One line of Activity, as the agent reported it: a progress note in full;
  * a thinking heading, which opens to the whole summary when it has more; a
  * step with its sign, its text cut in the middle and its detail, which
- * opens to everything the agent gave about it.
+ * opens to everything the agent gave about it (from `details`); a step that
+ * started a sub-agent, as that agent's line.
  */
-function Step({ live, id }: { live: StoreApi<Live>; id: string }) {
-  const entry = useStore(live, (state) => state.entries[id]);
+function StepView({ entry, details: path }: { entry: Shown; details: string }) {
   const personId = use(Whose);
   const [open, setOpen] = useState(false);
   const details = useId();
-  if (!entry) return null;
+  const id = entry.id;
+  if (entry.agent !== undefined) {
+    return <SubAgentLine id={entry.agent} reported={entry.text} />;
+  }
   if (entry.activity === "note") {
     return (
       // The AI's working words: in the steps' colour and at their text's
@@ -943,7 +988,7 @@ function Step({ live, id }: { live: StoreApi<Live>; id: string }) {
         >
           <StepDetails
             personId={personId}
-            id={id}
+            path={path}
             version={entry.updatedAt}
             reading={
               entry.activity === "reading" ? entry.link?.document : undefined
@@ -953,6 +998,180 @@ function Step({ live, id }: { live: StoreApi<Live>; id: string }) {
       )}
     </div>
   );
+}
+
+/** Lines a sub-agent's Activity shows at first, and more each time. */
+const LOG_LINES = 50;
+
+/** The chat's sub-agents, as their lines show them; read again as they act. */
+function useSubAgents() {
+  const personId = use(Whose);
+  return useQuery({
+    queryKey: ["agents", personId],
+    queryFn: () => read(SubAgents, "GET", `${chatPath(personId)}/agents`),
+  });
+}
+
+/**
+ * A sub-agent, in one line: the name its agent gave it, its status and the
+ * start of its result. A click, or Enter, opens its own Activity below it.
+ * Until the chat's agents are read, the step shows as `reported`.
+ */
+function SubAgentLine({ id, reported }: { id: string; reported: string }) {
+  const agent = useSubAgents().data?.agents.find((one) => one.id === id);
+  const [open, setOpen] = useState(false);
+  const log = useId();
+  const working =
+    agent === undefined ||
+    agent.status === "idle" ||
+    agent.status === "running" ||
+    agent.status === "continuing";
+  return (
+    <div data-agent={id} className="min-w-0 text-muted">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={log}
+        onClick={() => {
+          setOpen(!open);
+        }}
+        className="flex w-full min-w-0 cursor-pointer items-center gap-1.5 text-left hover:text-ink"
+      >
+        <ActivityIcon
+          status={
+            working
+              ? "running"
+              : agent.status === "done"
+                ? "done"
+                : agent.status
+          }
+        />
+        <span className="shrink-0 font-medium text-ink">
+          {agent?.title ?? reported}
+        </span>
+        {agent && <span className="shrink-0">· {agent.status}</span>}
+        {agent?.result && (
+          <span className="min-w-0 truncate">· {agent.result}</span>
+        )}
+        <ChevronRight
+          size={13}
+          className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
+          aria-hidden
+        />
+      </button>
+      {open && (
+        <div
+          id={log}
+          className="mt-1 mb-1 flex flex-col gap-1.5 border-l border-line pl-3"
+        >
+          <AgentLogView id={id} title={agent?.title ?? reported} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A sub-agent's own Activity, as it reported it: its latest lines, and
+ * earlier ones on request. Its sub-agents show as lines that open the same
+ * way, at any depth.
+ */
+function AgentLogView({ id, title }: { id: string; title: string }) {
+  const personId = use(Whose);
+  const [last, setLast] = useState(LOG_LINES);
+  const agent = encodeURIComponent(id);
+  const log = useQuery({
+    queryKey: ["agents", personId, id, last],
+    queryFn: () =>
+      read(
+        AgentLog,
+        "GET",
+        `${chatPath(personId)}/agents/log?agent=${agent}&last=${String(last)}`,
+      ),
+    // More lines on their way: the ones there stay meanwhile.
+    placeholderData: keepPreviousData,
+  });
+  if (log.error) {
+    return log.error instanceof ApiError && log.error.status === 404 ? (
+      <p>Its log is gone with the AI&apos;s working state.</p>
+    ) : (
+      <Problem error={log.error} retry={() => void log.refetch()} />
+    );
+  }
+  if (!log.data) return <p>Loading…</p>;
+  return (
+    <>
+      {log.data.earlier && (
+        <Button
+          look="quiet"
+          icon={ChevronsUp}
+          busy={log.isPlaceholderData && "Loading…"}
+          onClick={() => {
+            setLast(last + LOG_LINES);
+          }}
+        >
+          Show earlier
+        </Button>
+      )}
+      <ol aria-label={`${title}'s Activity`} className="flex flex-col gap-1.5">
+        {log.data.lines.map((line) => (
+          <li key={line.id} data-line={line.id} className="min-w-0">
+            <AgentLineView
+              line={line}
+              details={`${chatPath(personId)}/agents/step?agent=${agent}&step=${encodeURIComponent(line.id)}`}
+            />
+          </li>
+        ))}
+      </ol>
+    </>
+  );
+}
+
+/** One line of a sub-agent's Activity. */
+function AgentLineView({
+  line,
+  details,
+}: {
+  line: AgentLine;
+  details: string;
+}) {
+  switch (line.kind) {
+    case "message":
+      return (
+        <div className="break-words text-muted">
+          <p className="text-xs font-medium">From {line.from}</p>
+          <Marked text={line.text} links={false} />
+        </div>
+      );
+    case "reply":
+      return (
+        <div className="break-words text-ink">
+          <Marked text={line.text} links={false} />
+        </div>
+      );
+    case "question":
+      return (
+        <p className="break-words text-muted">
+          Asks: {line.text}
+          {line.detail && ` (${line.detail})`}
+        </p>
+      );
+    case "end":
+      return (
+        <p className="flex min-w-0 items-center gap-1.5 text-muted">
+          <ActivityIcon status={line.status} />
+          <span className="break-words">
+            {line.status}
+            {line.text && ` · ${line.text}`}
+          </span>
+        </p>
+      );
+    case "activity":
+    case "reasoning":
+      return (
+        <StepView entry={{ ...line, kind: line.kind }} details={details} />
+      );
+  }
 }
 
 /** A receipt longer than this many lines shows its summary, its list folded. */

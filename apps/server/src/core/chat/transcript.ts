@@ -1131,11 +1131,14 @@ export function transcripts(
         return {
           revision: row.revision,
           chat: shown(toChat(row)),
-          entries: [...(await entriesOut(trx, entries)), ...kept.entries].toSorted(
-            (a, b) => a.seq - b.seq,
-          ),
+          entries: [
+            ...(await entriesOut(trx, entries)),
+            ...kept.entries,
+          ].toSorted((a, b) => a.seq - b.seq),
           turns: (await turnsOut(trx, turns)).map((turn) =>
-            kept.gone.has(turn.id) ? { ...turn, stepsGone: true as const } : turn,
+            kept.gone.has(turn.id)
+              ? { ...turn, stepsGone: true as const }
+              : turn,
           ),
           before: older ? (low ?? null) : null,
         };
@@ -1159,8 +1162,7 @@ export function transcripts(
         let entries: Entry[];
         if (shown === undefined) {
           entries = (await stepsOf(trx, chat, [turn])).entries;
-        }
-        else {
+        } else {
           const anchor = await anchorOf(trx, turn);
           entries = shown
             .filter(isStep)
