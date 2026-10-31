@@ -301,6 +301,9 @@ const DRAFTS = `
     json_object('test_name', 'Test ' || n, 'value_text', '' || n, 'date', json('{"label":"Collected","date":"12 Aug 2026","iso":"2026-08-12"}')),
     'Test ' || n || ' | ' || n, '2026-10-01T09:00:00Z'
   FROM (SELECT 1 AS n UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5 UNION SELECT 6 UNION SELECT 7);
+  INSERT INTO tests (id, person_id, name)
+  SELECT 'tst-' || n, 'asha', 'Test ' || n
+  FROM (SELECT 1 AS n UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5 UNION SELECT 6 UNION SELECT 7);
 `;
 
 test("a save of a document's items shows its summary, with what was saved folded", async ({
@@ -321,6 +324,7 @@ test("a save of a document's items shows its summary, with what was saved folded
                 version: 1,
                 as: "new",
                 category: "lab",
+                in_test: `tst-${String(n)}`,
               })),
             },
           },
@@ -341,7 +345,7 @@ test("a save of a document's items shows its summary, with what was saved folded
   await receipt.getByText("Show what was saved").click();
   await expect(list).toHaveCount(7);
   await expect(list.first()).toHaveText(
-    'Added result Test 1 1: category lab, measured 12 Aug 2026 ("Collected 12 Aug 2026") · page 1',
+    'Added result Test 1 1: category lab, measured 12 Aug 2026 ("Collected 12 Aug 2026"), in test Test 1 · page 1',
   );
   await accessible(page);
   // Overview's Recent changes names it by its summary alone.

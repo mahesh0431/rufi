@@ -477,6 +477,7 @@ const readsRecord = (home: string) =>
  */
 const day = (start: string, n: number) =>
   new Date(Date.parse(start) + n * 86_400_000).toISOString().slice(0, 10);
+/** A lab result of Asha's, in a test of its printed name and unit. */
 const result = (
   id: string,
   test: string,
@@ -484,11 +485,26 @@ const result = (
   unit: string,
   measured: string,
   comparator: string | null = null,
-) =>
-  `('${id}', 'asha', NULL, 'lab', '${test}', '${value}', ${comparator === null ? "NULL" : `'${comparator}'`}, ${String(Number.parseFloat(value.replace(/[<>]/, "")))}, '${unit}', NULL, NULL, NULL, '${measured}', '${measured}T09:00:00Z', NULL)`;
-const RESULTS = `INSERT INTO results (id, person_id, report_id, category, test_name, value_text, comparator, value_number, unit, reference_range, flag_text, context_text, measured_at, entered_at, replaces_id) VALUES `;
+) => {
+  const number = String(Number.parseFloat(value.replace(/[<>]/, "")));
+  return {
+    test,
+    unit,
+    row: `('${id}', 'asha', NULL, 'lab', '${test}', '${value}', ${comparator === null ? "NULL" : `'${comparator}'`}, ${number}, '${unit}', NULL, NULL, NULL, '${measured}', '${measured}T09:00:00Z', NULL, 'seed:${test}:${unit}', ${number})`,
+  };
+};
+/** Results with one test for each printed name and unit, as older results have. */
+const seeded = (rows: readonly ReturnType<typeof result>[]) => {
+  const tests = new Map(rows.map((r) => [`seed:${r.test}:${r.unit}`, r]));
+  return `INSERT INTO tests (id, person_id, name, unit) VALUES ${[...tests]
+    .map(([id, r]) => `('${id}', 'asha', '${r.test}', '${r.unit}')`)
+    .join(", ")};
+    INSERT INTO results (id, person_id, report_id, category, test_name, value_text, comparator, value_number, unit, reference_range, flag_text, context_text, measured_at, entered_at, replaces_id, test_id, test_number) VALUES ${rows.map((r) => r.row).join(", ")};`;
+};
 /** Asha's haemoglobin from June 2016, with no range printed. */
-const HAEMOGLOBIN_2016 = `${RESULTS}${result("res-hb-2016", "Haemoglobin", "11.9", "g/dL", "2016-06-10")};`;
+const HAEMOGLOBIN_2016 = seeded([
+  result("res-hb-2016", "Haemoglobin", "11.9", "g/dL", "2016-06-10"),
+]);
 const SEEDS: Record<string, string> = {
   profile_settings: HAEMOGLOBIN_2016,
   // Asha gave only her year of birth.
@@ -515,24 +531,22 @@ const SEEDS: Record<string, string> = {
       ('asha', 'result', 'res-a2', 'message', 'm-cat');
     INSERT INTO record_sources (person_id, kind, record_id, type, document_id, page) VALUES
       ('asha', 'result', 'res-a1', 'document_page', 'doc-asha-aug', 2);`,
-  trend:
-    RESULTS +
-    [
-      result("h1", "HbA1c", "7.9", "%", "2024-01-15"),
-      result("h2", "HbA1c", "7.4", "%", "2024-07-10"),
-      result("h3", "HbA1c", "7.1", "%", "2025-01-20"),
-      result("h4", "HbA1c", "6.9", "%", "2025-08-05"),
-      result("h5", "HbA1c", "7.0", "%", "2026-02-11"),
-      ...Array.from({ length: 25 }, (_, i) =>
-        result(
-          `g${String(i)}`,
-          "Glucose",
-          String(100 + (i % 9)),
-          "mg/dL",
-          day("2026-06-01", i * 4),
-        ),
+  trend: seeded([
+    result("h1", "HbA1c", "7.9", "%", "2024-01-15"),
+    result("h2", "HbA1c", "7.4", "%", "2024-07-10"),
+    result("h3", "HbA1c", "7.1", "%", "2025-01-20"),
+    result("h4", "HbA1c", "6.9", "%", "2025-08-05"),
+    result("h5", "HbA1c", "7.0", "%", "2026-02-11"),
+    ...Array.from({ length: 25 }, (_, i) =>
+      result(
+        `g${String(i)}`,
+        "Glucose",
+        String(100 + (i % 9)),
+        "mg/dL",
+        day("2026-06-01", i * 4),
       ),
-    ].join(", "),
+    ),
+  ]),
   how_many: `INSERT INTO symptoms (id, person_id, name, status, onset, ended, removed) VALUES
     ('s1', 'asha', 'Headache', 'resolved', '2025-11-30', '2025-11-30', 0),
     ('s2', 'asha', 'Headache', 'resolved', '2026-01-14', '2026-01-15', 0),
@@ -540,8 +554,7 @@ const SEEDS: Record<string, string> = {
     ('s4', 'asha', 'Headache', 'resolved', '2026-05-09', '2026-05-09', 1),
     ('s5', 'asha', 'Headache', 'resolved', '2026-06-21', '2026-06-22', 0),
     ('s6', 'asha', 'Headache', 'resolved', '2026-09-28', '2026-09-28', 0);`,
-  capped:
-    RESULTS +
+  capped: seeded(
     Array.from({ length: 250 }, (_, i) =>
       result(
         `d${String(i)}`,
@@ -550,45 +563,40 @@ const SEEDS: Record<string, string> = {
         "mg/dL",
         day("2026-01-01", i),
       ),
-    ).join(", "),
-  duplicate_beyond_200:
-    RESULTS +
-    [
-      // Saved first, so a read of 2 Jun gives it after the others.
-      result("dup-ldl", "LDL Cholesterol", "109", "mg/dL", "2026-06-02"),
-      ...Array.from({ length: 249 }, (_, i) =>
-        result(
-          `j${String(i)}`,
-          "Glucose",
-          String(90 + (i % 20)),
-          "mg/dL",
-          "2026-06-02",
-        ),
+    ),
+  ),
+  duplicate_beyond_200: seeded([
+    // Saved first, so a read of 2 Jun gives it after the others.
+    result("dup-ldl", "LDL Cholesterol", "109", "mg/dL", "2026-06-02"),
+    ...Array.from({ length: 249 }, (_, i) =>
+      result(
+        `j${String(i)}`,
+        "Glucose",
+        String(90 + (i % 20)),
+        "mg/dL",
+        "2026-06-02",
       ),
-    ].join(", "),
-  correction_vs_separate:
-    RESULTS +
-    [
-      result("cr-old", "Creatinine", "0.98", "mg/dL", "2026-08-25"),
-      result("cr-may", "Creatinine", "1.02", "mg/dL", "2026-05-10"),
-      result("hb-dup", "HbA1c", "5.6", "%", "2026-08-25"),
-    ].join(", "),
+    ),
+  ]),
+  correction_vs_separate: seeded([
+    result("cr-old", "Creatinine", "0.98", "mg/dL", "2026-08-25"),
+    result("cr-may", "Creatinine", "1.02", "mg/dL", "2026-05-10"),
+    result("hb-dup", "HbA1c", "5.6", "%", "2026-08-25"),
+  ]),
   follow_up_done: `INSERT INTO follow_ups (id, person_id, title, due, due_words, linked_kind, linked_id) VALUES
     ('fu-hba1c', 'asha', 'Recheck HbA1c', '2026-10', 'in October', 'result', 'res-a1');`,
-  analysis:
-    RESULTS +
-    [
-      result("c1", "CRP", "<5", "mg/L", "2026-03-04", "<"),
-      result("c2", "CRP", "8", "mg/L", "2026-05-06"),
-      result("c3", "CRP", "12", "mg/L", "2026-09-08"),
-      result("u1", "Glucose", "6.1", "mmol/L", "2026-04-02"),
-      result("u2", "Glucose", "118", "mg/dL", "2026-06-03"),
-      result("u3", "Glucose", "112", "mg/dL", "2026-09-08"),
-    ].join(", "),
+  analysis: seeded([
+    result("c1", "CRP", "<5", "mg/L", "2026-03-04", "<"),
+    result("c2", "CRP", "8", "mg/L", "2026-05-06"),
+    result("c3", "CRP", "12", "mg/L", "2026-09-08"),
+    result("u1", "Glucose", "6.1", "mmol/L", "2026-04-02"),
+    result("u2", "Glucose", "118", "mg/dL", "2026-06-03"),
+    result("u3", "Glucose", "112", "mg/dL", "2026-09-08"),
+  ]),
   // A blood pressure the August report printed, saved before results had
   // categories: it counts as a lab result until the person moves it.
-  move_category: `INSERT INTO results (id, person_id, report_id, category, test_name, value_text, value_number, unit, measured_at, measured_words, entered_at) VALUES
-    ('bp-aug', 'asha', 'rep-asha-aug', 'lab', 'Blood pressure', '124/80', 124, 'mmHg', '2026-08-12', 'Collected 12/08/2026', '2026-08-13T09:01:00Z');
+  move_category: `INSERT INTO results (id, person_id, report_id, category, test_name, value_text, value_number, unit, measured_at, measured_words, entered_at, test_id, test_number) VALUES
+    ('bp-aug', 'asha', 'rep-asha-aug', 'lab', 'Blood pressure', '124/80', 124, 'mmHg', '2026-08-12', 'Collected 12/08/2026', '2026-08-13T09:01:00Z', 'tst-bp', 124);
     INSERT INTO record_sources (person_id, kind, record_id, type, document_id, page) VALUES
     ('asha', 'result', 'bp-aug', 'document_page', 'doc-asha-aug', 1);`,
 };

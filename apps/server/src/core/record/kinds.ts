@@ -31,6 +31,22 @@ export const Position = Schema.Int.check(Schema.isGreaterThan(0)).annotate({
     "The user's message with the facts this rests on, as its position in read_chat. Leave it out when the facts are in their message in this turn, where they said yes.",
 });
 
+/** One of the person's tests: its id, or the ref of a test this save adds. */
+export const TestRef = Schema.Union([
+  Short.annotate({
+    description: "The test's id, from get_records with kind test.",
+  }),
+  Schema.Struct({
+    ref: Short.annotate({
+      description: "The ref of a test an earlier change of this save adds.",
+    }),
+  }),
+]).annotate({
+  identifier: "TestRef",
+  description:
+    "Which of the user's tests this result is in: an existing test's id, or {ref} of a test an earlier change of this save adds. You choose it, with the user, whatever the lab printed.",
+});
+
 export interface Field {
   /** The column it is stored in. */
   column: string;
@@ -42,9 +58,10 @@ export interface Field {
    * How it is stored: as given; a yes/no as 1/0; a date with its words in
    * `<column>_words`; a due date or 'next_visit'; a link to another record
    * in linked_kind and linked_id; a number with its unit in
-   * `<column>_unit`.
+   * `<column>_unit`; one of the person's tests, by its id or the ref of a
+   * test the same save adds, in its column.
    */
-  type: "value" | "boolean" | "date" | "due" | "link" | "amount";
+  type: "value" | "boolean" | "date" | "due" | "link" | "amount" | "test";
   /** Where a date's words are kept, when not in `<column>_words`. */
   wordsColumn?: string;
   /** The AI must give it when adding, and can't forget it. */
@@ -76,13 +93,18 @@ export interface Kind {
   inLabel: readonly string[];
   /** Set by Rufi, never the AI: the day the user said it. */
   asserted?: true;
-  /** The field get_records' from and to are compared with ("asserted" for Rufi's own date). */
-  dated: string;
+  /**
+   * The field get_records' from and to are compared with ("asserted" for
+   * Rufi's own date); none for a kind with no date (a test).
+   */
+  dated?: string;
   /**
    * One per person, made with them, its id theirs: only changed, never
    * added, removed or restored (the profile).
    */
   single?: true;
+  /** Never removed or restored: only added and changed (a test). */
+  kept?: true;
 }
 
 const text = (column: string, shown = column): Field => ({
@@ -257,6 +279,31 @@ export const KINDS: readonly Kind[] = [
         wordsColumn: "measured_words",
       },
       replaces: text("replaces_id", "replaces"),
+      // Which of the person's tests it is, and its numbers in the test's
+      // unit: the AI's choice and the AI's numbers, never worked out from
+      // the printed name or unit (docs/adr/0028).
+      in_test: {
+        column: "test_id",
+        shown: "in test",
+        input: TestRef,
+        type: "test",
+        required: true,
+        inheritsVia: "replaces",
+      },
+      test_number: {
+        ...number("test_number", "in the test's unit"),
+        input: Schema.Finite.annotate({
+          description:
+            "The result's number in its test's unit, as you work it out: the same number when its unit means the test's unit (mg/dl is mg/dL), converted when it doesn't and you know how for that substance, left out when you aren't sure or it has no number. Its test's line is drawn from it; the printed value stays as it came.",
+        }),
+      },
+      test_second_number: {
+        ...number("test_second_number", "second in the test's unit"),
+        input: Schema.Finite.annotate({
+          description:
+            "A two-number result's second number (a blood pressure's 84) in its test's unit, as test_number.",
+        }),
+      },
     },
     label: (row) => join(row["test_name"], row["value_text"], row["unit"]),
     // The printed value already shows its numbers.
@@ -377,6 +424,40 @@ export const KINDS: readonly Kind[] = [
     single: true,
   },
   {
+    // One of the person's tests, such as Creatinine: what their results
+    // are shown under, whatever each lab printed. Its name, section and
+    // unit are the AI's words; never removed (docs/adr/0028).
+    name: "test",
+    table: "tests",
+    noun: "test",
+    fields: {
+      name: required({
+        ...text("name"),
+        input: Short.annotate({
+          description:
+            "The test's plain name, as the user would call it: 'Creatinine', 'Urine creatinine', 'Glucose, fasting'.",
+        }),
+      }),
+      section: {
+        ...text("section"),
+        input: Short.annotate({
+          description:
+            "Where it shows on Lab results, in your words, like a report's heading: 'Kidney', 'Blood count', 'Thyroid'. Reuse the record's sections.",
+        }),
+      },
+      unit: {
+        ...text("unit"),
+        input: Short.annotate({
+          description:
+            "The unit its numbers are in, usually its first value's: every result's test_number is in it. Leave it out for a test with no unit.",
+        }),
+      },
+    },
+    label: (row) => join(row["name"]),
+    inLabel: ["name"],
+    kept: true,
+  },
+  {
     name: "follow_up",
     table: "follow_ups",
     noun: "follow-up",
@@ -413,6 +494,12 @@ export const KINDS: readonly Kind[] = [
     dated: "due",
   },
 ];
+
+/** The column a kind's records are dated by; none for a kind with no date. */
+export const dateColumn = (kind: Kind) =>
+  kind.dated === undefined
+    ? undefined
+    : (kind.fields[kind.dated]?.column ?? kind.dated);
 
 /** The column a date field keeps the user's words in. */
 export const wordsColumn = (field: Field) =>
@@ -454,6 +541,9 @@ export function columnsOf(field: Field, value: unknown): Row {
         [unitColumn(field)]: amount?.unit ?? null,
       };
     }
+    case "test":
+      // A ref stays as given until the save writes the test it names.
+      return { [field.column]: value };
   }
 }
 

@@ -1026,10 +1026,11 @@ describe("the local API", () => {
     // person's is refused and the draft stays as it was.
     const writable = openWritable(databasePath(home));
     try {
-      writable.db
-        .exec(`INSERT INTO results (id, person_id, category, test_name, value_text, unit, entered_at) VALUES
-        ('res-1', '${c.person}', 'lab', 'HbA1c', '6.8', '%', '2026-10-04T09:00:00Z'),
-        ('res-r', 'ravi', 'lab', 'LDL', '162', 'mg/dL', '2026-10-04T09:00:00Z')`);
+      writable.db.exec(`INSERT INTO tests (id, person_id, name) VALUES
+        ('t-1', '${c.person}', 'HbA1c'), ('t-r', 'ravi', 'LDL');
+        INSERT INTO results (id, person_id, category, test_name, value_text, unit, entered_at, test_id) VALUES
+        ('res-1', '${c.person}', 'lab', 'HbA1c', '6.8', '%', '2026-10-04T09:00:00Z', 't-1'),
+        ('res-r', 'ravi', 'lab', 'LDL', '162', 'mg/dL', '2026-10-04T09:00:00Z', 't-r')`);
       writable.db
         .exec(`INSERT INTO documents (id, person_id, added_at, added_from, sent_at) VALUES
         ('doc-1', '${c.person}', '2026-10-04T09:00:00Z', 'chat', '2026-10-04T09:00:00Z')`);

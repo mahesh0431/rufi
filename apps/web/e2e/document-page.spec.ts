@@ -313,6 +313,8 @@ const DRAFTS = `
     json_object('test_name', 'Test ' || n, 'value_text', CASE n WHEN 1 THEN '13.2' ELSE '' || n END, 'date', json('{"label":"Collected","date":"12 Aug 2026","iso":"2026-08-12"}')),
     'Test ' || n || ' | ' || CASE n WHEN 1 THEN '13.2' ELSE '' || n END, '2026-10-01T09:00:00Z'
   FROM (SELECT 1 AS n UNION SELECT 2 UNION SELECT 3);
+  INSERT INTO tests (id, person_id, name)
+  SELECT 'tst-' || n, 'asha', 'Test ' || n FROM (SELECT 1 AS n UNION SELECT 2 UNION SELECT 3);
 `;
 
 test("the list stays Not saved while an earlier value waits, then shows Saved when it is set aside", async ({
@@ -336,7 +338,13 @@ test("the list stays Not saved while an earlier value waits, then shows Saved wh
             tool: "save_changes",
             arguments: {
               items: [
-                { item: "drf-1", version: 2, as: "new", category: "lab" },
+                {
+                  item: "drf-1",
+                  version: 2,
+                  as: "new",
+                  category: "lab",
+                  in_test: "tst-1",
+                },
               ],
             },
           },
@@ -393,6 +401,7 @@ test("once nothing waits, the page says its results were saved to the health rec
               version: n === 1 ? 2 : 1,
               as: "new",
               category: "lab",
+              in_test: `tst-${String(n)}`,
             })),
           },
         },

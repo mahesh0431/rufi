@@ -91,6 +91,7 @@ describe("get_overview", () => {
         },
         documents: 2,
         reports: 2,
+        tests: 9,
         results: 10,
         earlier_versions_kept: 1,
         latest_results: [
@@ -99,6 +100,7 @@ describe("get_overview", () => {
             test: "Weight",
             value: "61.5",
             category: "measurement",
+            in_test: { id: "tst-weight", name: "Weight" },
             unit: "kg",
             measured: "2026-09-20",
           },
@@ -107,6 +109,7 @@ describe("get_overview", () => {
             test: "Blood pressure",
             value: "128/84",
             category: "measurement",
+            in_test: { id: "tst-bp", name: "Blood pressure" },
             unit: "mmHg",
             measured: "2026-09-20",
           },
@@ -115,6 +118,7 @@ describe("get_overview", () => {
             test: "Free T4",
             value: "1.1",
             category: "lab",
+            in_test: { id: "tst-ft4", name: "Free T4" },
             unit: "ng/dL",
             range: "0.8 - 1.8",
             context: "Direct",
@@ -125,6 +129,7 @@ describe("get_overview", () => {
             test: "TSH",
             value: "4.6",
             category: "lab",
+            in_test: { id: "tst-tsh", name: "TSH" },
             unit: "mIU/L",
             range: "0.4 - 4.0",
             flag: "High",
@@ -136,6 +141,7 @@ describe("get_overview", () => {
             test: "CRP",
             value: "<5",
             category: "lab",
+            in_test: { id: "tst-crp", name: "CRP" },
             unit: "mg/L",
             range: "<10",
             measured: "2026-08-12",
@@ -145,6 +151,7 @@ describe("get_overview", () => {
             test: "Glucose",
             value: "118",
             category: "lab",
+            in_test: { id: "tst-glucose", name: "Glucose, fasting" },
             unit: "mg/dL",
             range: "70 - 99",
             flag: "High",
@@ -156,6 +163,7 @@ describe("get_overview", () => {
             test: "HbA1c",
             value: "6.8",
             category: "lab",
+            in_test: { id: "tst-hba1c", name: "HbA1c" },
             unit: "%",
             range: "4.0 - 5.6",
             flag: "High",
@@ -166,6 +174,7 @@ describe("get_overview", () => {
             test: "Weight",
             value: "62",
             category: "measurement",
+            in_test: { id: "tst-weight", name: "Weight" },
             unit: "kg",
             measured: "2026-08",
           },
@@ -174,6 +183,7 @@ describe("get_overview", () => {
             test: "Vitamin D",
             value: "22",
             category: "lab",
+            in_test: { id: "tst-vitd", name: "Vitamin D" },
             unit: "ng/mL",
             range: "30 - 100",
             flag: "Low",
@@ -184,6 +194,7 @@ describe("get_overview", () => {
             test: "Blood group",
             value: "B positive",
             category: "lab",
+            in_test: { id: "tst-blood-group", name: "Blood group" },
           },
         ],
         record: {
@@ -229,11 +240,11 @@ describe("get_overview", () => {
   it(`shows at most ${String(RESULTS_SHOWN)} results, in a stable order`, async () => {
     const rows = Array.from({ length: 25 }, (_, i) => {
       const n = String(i).padStart(2, "0");
-      return `('extra-${n}', 'ravi', NULL, 'measurement', 'Weight', '${n}', NULL, NULL, 'kg', NULL, NULL, NULL, '2026-01-01', '2026-01-01T00:00:00Z', NULL)`;
+      return `('extra-${n}', 'ravi', NULL, 'measurement', 'Weight', '${n}', NULL, NULL, 'kg', NULL, NULL, NULL, '2026-01-01', '2026-01-01T00:00:00Z', NULL, 'tst-ldl')`;
     });
     const store = makeDatabase(
       family,
-      `INSERT INTO results (id, person_id, report_id, category, test_name, value_text, comparator, value_number, unit, reference_range, flag_text, context_text, measured_at, entered_at, replaces_id) VALUES ${rows.join(",")}`,
+      `INSERT INTO results (id, person_id, report_id, category, test_name, value_text, comparator, value_number, unit, reference_range, flag_text, context_text, measured_at, entered_at, replaces_id, test_id) VALUES ${rows.join(",")}`,
     );
     const { body } = await call({ store, personId: "ravi" });
     const latest = (body["result"] as { latest_results: { value: string }[] })
@@ -306,6 +317,46 @@ describe("get_records", () => {
     );
   });
 
+  it("lists the person's tests with what their current results printed, and reads one test's results; another person's test is refused", async () => {
+    const store = makeDatabase(
+      family,
+      "UPDATE results SET test_name = 'Body weight', unit = 'kgs' WHERE id = 'res-a11'",
+    );
+    const tests = (
+      (await records(store, { kind: "test" })).body["result"] as {
+        records: Record<string, unknown>[];
+      }
+    ).records;
+    const weight = tests.find((test) => test["id"] === "tst-weight");
+    expect(weight).toMatchObject({
+      name: "Weight",
+      unit: "kg",
+      results: 2,
+      latest: "2026-09-20",
+    });
+    expect(new Set(weight?.["printed_names"] as string[])).toEqual(
+      new Set(["Weight", "Body weight"]),
+    );
+    expect(new Set(weight?.["units"] as string[])).toEqual(
+      new Set(["kg", "kgs"]),
+    );
+    // The amended TSH counts once.
+    expect(tests.find((test) => test["id"] === "tst-tsh")).toMatchObject({
+      results: 1,
+    });
+    expect(ids(await records(store, { kind: "test" }, "ravi"))).toEqual([
+      "tst-hdl",
+      "tst-ldl",
+    ]);
+
+    expect(
+      ids(await records(store, { kind: "result", test: "tst-weight" })),
+    ).toEqual(["res-a10", "res-a11"]);
+    const ravis = await records(store, { kind: "result", test: "tst-ldl" });
+    expect(ravis.ok).toBe(false);
+    expect(JSON.stringify(ravis.body)).not.toContain("LDL");
+  });
+
   it("takes no person from the AI", async () => {
     const store = makeDatabase(family);
     const { ok, body } = await records(store, {
@@ -344,6 +395,8 @@ describe("get_records", () => {
     expect(result.records.slice(1, 5)).toEqual([
       {
         id: "res-a5",
+        in_test: "tst-tsh",
+        test_number: 4.6,
         version: null,
         test: "TSH",
         value: "4.6",
@@ -360,6 +413,8 @@ describe("get_records", () => {
       },
       {
         id: "res-a4",
+        in_test: "tst-tsh",
+        test_number: 2.1,
         version: null,
         test: "TSH",
         value: "2.1",
@@ -379,6 +434,8 @@ describe("get_records", () => {
       },
       {
         id: "res-a3",
+        in_test: "tst-crp",
+        test_number: 5,
         version: null,
         test: "CRP",
         value: "<5",
@@ -458,10 +515,10 @@ describe("get_records", () => {
         const day = new Date(Date.UTC(2025, 0, 1 + i))
           .toISOString()
           .slice(0, 10);
-        return `('g${String(i)}', 'asha', NULL, 'lab', 'Glucose', '5.${String(i % 10)}', NULL, NULL, 'mmol/L', NULL, NULL, NULL, '${day}', '2026-01-01T00:00:00Z', NULL)`;
+        return `('g${String(i)}', 'asha', NULL, 'lab', 'Glucose', '5.${String(i % 10)}', NULL, NULL, 'mmol/L', NULL, NULL, NULL, '${day}', '2026-01-01T00:00:00Z', NULL, 'tst-glucose')`;
       }).join(",");
     const insert = (n: number) =>
-      `DELETE FROM results WHERE person_id = 'asha'; INSERT INTO results (id, person_id, report_id, category, test_name, value_text, comparator, value_number, unit, reference_range, flag_text, context_text, measured_at, entered_at, replaces_id) VALUES ${glucose(n)}`;
+      `DELETE FROM results WHERE person_id = 'asha'; INSERT INTO results (id, person_id, report_id, category, test_name, value_text, comparator, value_number, unit, reference_range, flag_text, context_text, measured_at, entered_at, replaces_id, test_id) VALUES ${glucose(n)}`;
     const exactly = makeDatabase(family, insert(LIMITS.records));
     expect(
       (await records(exactly, { kind: "result" })).body["result"],
@@ -491,11 +548,11 @@ describe("get_records", () => {
     const day = Array.from(
       { length: 300 },
       (_, i) =>
-        `('d${String(i).padStart(3, "0")}', 'asha', NULL, '${i % 2 === 0 ? "lab" : "measurement"}', 'Glucose', '${String(90 + (i % 30))}', 'mg/dL', '2026-08-12', '2026-08-13T00:00:00Z')`,
+        `('d${String(i).padStart(3, "0")}', 'asha', NULL, '${i % 2 === 0 ? "lab" : "measurement"}', 'Glucose', '${String(90 + (i % 30))}', 'mg/dL', '2026-08-12', '2026-08-13T00:00:00Z', 'tst-glucose')`,
     ).join(",");
     const store = makeDatabase(
       family,
-      `INSERT INTO results (id, person_id, report_id, category, test_name, value_text, unit, measured_at, entered_at) VALUES ${day}`,
+      `INSERT INTO results (id, person_id, report_id, category, test_name, value_text, unit, measured_at, entered_at, test_id) VALUES ${day}`,
     );
     const readAll = async (input: Record<string, unknown>) => {
       const read: { id: string; category: string }[] = [];

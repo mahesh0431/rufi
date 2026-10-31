@@ -8,8 +8,14 @@
 import { Schema } from "effect";
 import { sql } from "kysely";
 import { dateProblem } from "../record/dates.ts";
-import { fieldsOf, recordVersions } from "../record/read.ts";
-import { KINDS, kindNamed, type Kind, type Row } from "../record/kinds.ts";
+import { fieldsOf, isCurrent, recordVersions } from "../record/read.ts";
+import {
+  KINDS,
+  dateColumn,
+  kindNamed,
+  type Kind,
+  type Row,
+} from "../record/kinds.ts";
 import { defineTool, Refusal } from "./registry.ts";
 
 /** The caps the description states; the read stops at the same numbers. */
@@ -64,10 +70,19 @@ const Input = Schema.Struct({
         "Only the results of this report, by its id (kind result only); not with ids.",
     }),
   ),
+  test: Schema.optionalKey(
+    Schema.String.check(
+      Schema.isMinLength(1),
+      Schema.isMaxLength(100),
+    ).annotate({
+      description:
+        "Only the results in this test, by its id from get_records with kind test (kind result only); not with ids.",
+    }),
+  ),
   after: Schema.optionalKey(
     Schema.String.annotate({
       description:
-        "The `next` of the previous answer, to read on with the same kind, category, from, to and report.",
+        "The `next` of the previous answer, to read on with the same kind, category, from, to, report and test.",
     }),
   ),
 }).check(
@@ -80,28 +95,37 @@ const Input = Schema.Struct({
       to?: unknown;
       after?: unknown;
       report?: unknown;
+      test?: unknown;
     }) =>
       input.category !== undefined && input.kind !== "result"
         ? "Give category only with kind result."
         : input.report !== undefined && input.kind !== "result"
           ? "A report holds results: give kind result with report."
-          : input.ids !== undefined &&
-              (input.category !== undefined ||
-                input.from !== undefined ||
-                input.to !== undefined ||
-                input.after !== undefined ||
-                input.report !== undefined)
-            ? "Give ids alone, or category, from, to, report and after without ids."
-            : undefined,
+          : input.test !== undefined && input.kind !== "result"
+            ? "A test holds results: give kind result with test."
+            : (input.from !== undefined || input.to !== undefined) &&
+                kindNamed(input.kind)?.dated === undefined
+              ? `A ${input.kind} has no date: leave from and to out.`
+              : input.ids !== undefined &&
+                  (input.category !== undefined ||
+                    input.from !== undefined ||
+                    input.to !== undefined ||
+                    input.after !== undefined ||
+                    input.report !== undefined ||
+                    input.test !== undefined)
+                ? "Give ids alone, or category, from, to, report, test and after without ids."
+                : undefined,
   ),
 );
 
 /** Each kind with the field its dates are compared with. */
-const datedBy = KINDS.map((kind) => `${kind.name} by ${kind.dated}`).join(", ");
+const datedBy = KINDS.flatMap((kind) =>
+  kind.dated === undefined ? [] : [`${kind.name} by ${kind.dated}`],
+).join(", ");
 
 export const getRecords = defineTool({
   name: "get_records",
-  description: `The active person's records of one kind (${names.join(", ")}), as stored: each with its id, its version (the save that last changed it; null when none did), its fields as save_changes takes them and its sources (the user's message, a document's page, a visit: its id, setting, date and doctor, or entered_in: where the user entered it themselves, welcome, profile (its page) or settings, with at: when), also the records removed from the record ("removed": true) and results replaced by an amended one ("replaced_by": the amended result's id). Newest first, undated last. For results, category reads only lab results or only measurements; without it, both. With from or to, only records dated in that period: ${datedBy}. A record dated at a lower precision is read when its year or month overlaps the period ("2026" is in from 2026-03); a record with no date is read only without from and to. With ids, exactly those records. With report (kind result), only the results of that report: the id of a report the user added to their message. At most ${String(LIMITS.records)} records and ${String(LIMITS.bytes / 1000)} KB of records (as UTF-8 JSON) come back at once (a single larger record comes back on its own); when there are more, the answer says "complete": false and gives "next": pass it as after, with the same kind, category, from, to and report, to read on until "complete" is true. Read only: nothing changes. Count, compare and find trends in the records yourself. Rufi chooses the person, not you.`,
+  description: `The active person's records of one kind (${names.join(", ")}), as stored: each with its id, its version (the save that last changed it; null when none did), its fields as save_changes takes them and its sources (the user's message, a document's page, a visit: its id, setting, date and doctor, or entered_in: where the user entered it themselves, welcome, profile (its page) or settings, with at: when), also the records removed from the record ("removed": true) and results replaced by an amended one ("replaced_by": the amended result's id). Newest first, undated last. For results, category reads only lab results or only measurements; without it, both. With from or to, only records dated in that period: ${datedBy}. A record dated at a lower precision is read when its year or month overlaps the period ("2026" is in from 2026-03); a record with no date is read only without from and to. With ids, exactly those records. With report (kind result), only the results of that report: the id of a report the user added to their message. With test (kind result), only the results in that test. A test (kind test) is one of the person's tests, which every result is in, with no date: each also gives, from its current results, how many there are (results), the newest date (latest), the names the labs printed (printed_names) and the units they printed (units). At most ${String(LIMITS.records)} records and ${String(LIMITS.bytes / 1000)} KB of records (as UTF-8 JSON) come back at once (a single larger record comes back on its own); when there are more, the answer says "complete": false and gives "next": pass it as after, with the same kind, category, from, to, report and test, to read on until "complete" is true. Read only: nothing changes. Count, compare and find trends in the records yourself. Rufi chooses the person, not you.`,
   input: Input,
   callers: "model",
   readOnly: true,
@@ -112,6 +136,8 @@ export const getRecords = defineTool({
     { kind: "symptom", from: "2026-01", to: "2026-06" },
     { kind: "result", ids: ["0199a0f2-0000-7000-8000-00000000000a"] },
     { kind: "result", report: "0199a0f2-0000-7000-8000-00000000000b" },
+    { kind: "test" },
+    { kind: "result", test: "0199a0f2-0000-7000-8000-00000000000c" },
   ],
   run: async (input, { store, personId }) => {
     if (!store) return { note: "Rufi has no records yet." };
@@ -121,8 +147,8 @@ export const getRecords = defineTool({
       );
     }
     const kind = kindNamed(input.kind) as Kind;
-    const field = kind.fields[kind.dated];
-    const date = sql.ref(`r.${field?.column ?? kind.dated}`);
+    const column = dateColumn(kind);
+    const date = column === undefined ? sql`NULL` : sql.ref(`r.${column}`);
     // A calendar date, not 'next_visit' or none.
     const calendar = sql`${date} GLOB '[0-9][0-9][0-9][0-9]*'`;
     // A date at the precision both have: "2026" overlaps from 2026-03.
@@ -138,7 +164,7 @@ export const getRecords = defineTool({
       input.category === undefined
         ? sql``
         : sql`AND r.category = ${input.category}`
-    } ${input.report === undefined ? sql`` : sql`AND r.report_id = ${input.report}`}`;
+    } ${input.report === undefined ? sql`` : sql`AND r.report_id = ${input.report}`} ${input.test === undefined ? sql`` : sql`AND r.test_id = ${input.test}`}`;
     let after = sql``;
     if (input.after !== undefined) {
       const { rows: last } = await sql<{
@@ -173,6 +199,22 @@ export const getRecords = defineTool({
         );
       }
     }
+    if (input.test !== undefined) {
+      const test = await store.query
+        .selectFrom("tests")
+        .select("id")
+        .where("person_id", "=", personId)
+        .where("id", "=", input.test)
+        .executeTakeFirst();
+      if (!test) {
+        throw new Refusal(
+          `There is no test ${input.test} in this person's record.`,
+        );
+      }
+    }
+    const result = kindNamed("result") as Kind;
+    // A test's current results, in x.
+    const inTest = sql`FROM results x WHERE x.person_id = r.person_id AND x.test_id = r.id AND ${isCurrent(result, "x")}`;
     const exactly =
       input.ids === undefined
         ? sql``
@@ -181,7 +223,12 @@ export const getRecords = defineTool({
       SELECT r.*${
         kind.name === "result"
           ? sql`, (SELECT n.id FROM results n WHERE n.person_id = r.person_id AND n.replaces_id = r.id AND n.removed = 0 ORDER BY n.rowid DESC LIMIT 1) AS replaced_by`
-          : sql``
+          : kind.name === "test"
+            ? sql`, (SELECT count(*) ${inTest}) AS in_test_results,
+                (SELECT max(x.measured_at) ${inTest} AND x.measured_at GLOB '[0-9][0-9][0-9][0-9]*') AS in_test_latest,
+                (SELECT json_group_array(DISTINCT x.test_name) ${inTest}) AS in_test_names,
+                (SELECT json_group_array(DISTINCT x.unit) ${inTest} AND x.unit IS NOT NULL) AS in_test_units`
+            : sql``
       }
       FROM ${sql.table(kind.table)} r
       WHERE r.person_id = ${personId}
@@ -268,6 +315,14 @@ export const getRecords = defineTool({
         ...(row["removed"] === 1 && { removed: true }),
         ...(typeof row["replaced_by"] === "string" && {
           replaced_by: row["replaced_by"],
+        }),
+        ...(kind.name === "test" && {
+          results: row["in_test_results"],
+          ...(typeof row["in_test_latest"] === "string" && {
+            latest: row["in_test_latest"],
+          }),
+          printed_names: JSON.parse(String(row["in_test_names"])) as unknown,
+          units: JSON.parse(String(row["in_test_units"])) as unknown,
         }),
         ...(mine.length > 0 && {
           sources: mine.map((source) =>

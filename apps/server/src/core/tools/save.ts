@@ -39,6 +39,8 @@ function valuesOf(field: Field): string {
       return " (true|false)";
     case "amount":
       return ' ({"value": 162, "unit": "cm"|"in"})';
+    case "test":
+      return ' (a test\'s id, or {"ref": "t1"} of a test this save adds)';
     case "value": {
       // A fixed set: an enum, or a union of them.
       const json = jsonSchemaOf(field.input);
@@ -69,8 +71,8 @@ const FIELDS = [
 export const saveChanges = defineTool({
   name: "save_changes",
   description: `Saves to the active person's record, all or nothing, after the user clearly said yes to exactly this in this chat. Two parts, either or both:
-- changes: typed changes from the user's own words or their documents. Each is one record: add one, change the fields given (the rest stay as they are), remove one (it stays in history), restore a removed one, link (add sources to a record whose values stay as they are) or remove_source (take sources off a record, as get_records lists them, to undo a link or "another source"); ids come from get_overview or get_records. from names the user's document pages ({document, page}) and visits ({visit: id}) a change rests on; a record saved from a visit cites the visit, and the visit cites its page. ref names a record an add makes ("v1"), so a later change in the same save can cite it as {visit: {ref: "v1"}}: add the visit first, then the records from it. Give only what the user said: a field they didn't give stays out, and a date comes with the words it came from. A result's category (lab or measurement) is the one field you choose, with the user: every added result needs one, except an amended result, which keeps the category of the one it replaces unless you give one. A result read from a document changes in place only its category, in a change of its own; what it prints and its date change only by amendment. source is the user's message with the facts the change rests on, so the record shows why it is there: when the facts came in an earlier message than the yes, give that message's position as read_chat shows it; when they are in this turn's message, leave source out. A change with from rests only on it unless you give source too: the user's yes alone is never a source.
-- items: draft items of the user's documents (get_documents), each with the version you read and how it goes in: new, another_source (the same result is already saved: its values stay, and the document page becomes another source) or correction (it corrects a saved result: a new result replaces it); record names the saved result, with its version from get_records. category: lab or measurement, for new; a correction keeps the corrected result's unless you give one; never for another_source. Rufi takes each item's values and date from the stored item, never from you, except the number of a value the user fixed on the document's page: give it in value_number (and comparator) as you read their value, and ask them when it is unclear; fix holds only a value the user corrected in the chat, or the date they gave for an item with none (a rough one is fine, at their precision), with the words it came from; its source is as a change's. An item saved at that version, and still in the record so (its page a source of that result, the result not removed), returns its earlier save and saves nothing; after an undo took its page off or removed its result, it can be saved again. A dismissed item, or one whose version changed, is refused, and nothing is saved.
+- changes: typed changes from the user's own words or their documents. Each is one record: add one, change the fields given (the rest stay as they are), remove one (it stays in history), restore a removed one, link (add sources to a record whose values stay as they are) or remove_source (take sources off a record, as get_records lists them, to undo a link or "another source"); ids come from get_overview or get_records. from names the user's document pages ({document, page}) and visits ({visit: id}) a change rests on; a record saved from a visit cites the visit, and the visit cites its page. ref names a record an add makes ("v1"), so a later change in the same save can cite it as {visit: {ref: "v1"}}: add the visit first, then the records from it. Give only what the user said: a field they didn't give stays out, and a date comes with the words it came from. What you choose, with the user, for a result: its category (lab or measurement); its test (in_test), one of the user's tests (kind test: read them with get_records) or a test this save adds first, with a ref, whatever the lab printed; and its numbers in that test's unit (test_number, test_second_number), the printed number when the units mean the same, converted when they don't and you know how, left out when you aren't sure. Every added result needs a category and a test, except an amended result, which keeps the ones of the result it replaces unless you give others. When a result moves to another test, or its printed number changes, give its numbers in the test's unit again in the same change, or null to clear them. A test is never removed. A result read from a document changes in place only its category, its test and its numbers in the test's unit, in a change of their own; what it prints and its date change only by amendment. source is the user's message with the facts the change rests on, so the record shows why it is there: when the facts came in an earlier message than the yes, give that message's position as read_chat shows it; when they are in this turn's message, leave source out. A change with from rests only on it unless you give source too: the user's yes alone is never a source.
+- items: draft items of the user's documents (get_documents), each with the version you read and how it goes in: new, another_source (the same result is already saved: its values stay, and the document page becomes another source) or correction (it corrects a saved result: a new result replaces it); record names the saved result, with its version from get_records. category and in_test (and test_number, test_second_number), for new; a correction keeps the corrected result's category and test unless you give others; never for another_source. Rufi takes each item's values and date from the stored item, never from you, except the number of a value the user fixed on the document's page: give it in value_number (and comparator) as you read their value, and ask them when it is unclear; fix holds only a value the user corrected in the chat, or the date they gave for an item with none (a rough one is fine, at their precision), with the words it came from; its source is as a change's. An item saved at that version, and still in the record so (its page a source of that result, the result not removed), returns its earlier save and saves nothing; after an undo took its page off or removed its result, it can be saved again. A dismissed item, or one whose version changed, is refused, and nothing is saved.
 No count limit. Rufi refuses a save with any problem and says each one; nothing is saved then. On success Rufi adds its own receipt to the chat and returns it; the same call again returns the same receipt. Never say something was saved without this tool's answer.
 ${FIELDS}`,
   input: SaveInput,
@@ -119,6 +121,8 @@ ${FIELDS}`,
             category: "lab",
             number: 6.8,
             measured: { date: "2026-10-03", words: "3 Oct" },
+            in_test: "0199a0f2-0000-7000-8000-00000000000c",
+            test_number: 6.8,
           },
         },
       ],
@@ -170,12 +174,22 @@ ${FIELDS}`,
       ],
     },
     {
+      changes: [
+        {
+          kind: "test",
+          action: "add",
+          ref: "t1",
+          fields: { name: "Creatinine", section: "Kidney", unit: "mg/dL" },
+        },
+      ],
       items: [
         {
           item: "0199a0f2-0000-7000-8000-000000000001",
           version: 1,
           as: "new",
           category: "lab",
+          in_test: { ref: "t1" },
+          test_number: 1.1,
         },
         {
           item: "0199a0f2-0000-7000-8000-000000000002",
@@ -188,6 +202,8 @@ ${FIELDS}`,
           version: 2,
           as: "new",
           category: "lab",
+          in_test: "0199a0f2-0000-7000-8000-00000000000c",
+          test_number: 132,
           fix: { fields: { value: "132", number: 132 } },
         },
       ],
