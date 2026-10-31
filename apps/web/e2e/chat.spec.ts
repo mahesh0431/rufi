@@ -59,6 +59,12 @@ const opener = (scope: Locator) =>
 const log = (scope: Page | Locator) =>
   scope.getByRole("log", { name: "Messages" });
 const sidebar = (page: Page) => page.getByRole("complementary");
+/**
+ * The box's line on a draft it couldn't save: Rufi's own status, never the
+ * live region of the waiting messages' drag and drop.
+ */
+const notSaved = (scope: Page | Locator) =>
+  scope.getByRole("status").filter({ hasText: "Not saved" });
 /** The line that folds or opens a reply's Activity (the last one). */
 const activity = (scope: Page | Locator) =>
   log(scope)
@@ -296,20 +302,28 @@ test("waiting messages: edit, reorder, remove, and send one now", async ({
   await expect(items).toHaveText(["Third", "Second"]);
   expect((await saved).ok()).toBe(true);
 
-  const top = async (n: number) => (await items.nth(n).boundingBox())?.y ?? 0;
+  /** How far a row is moved down to make room, in rows. */
+  const shifted = (n: number) =>
+    items
+      .nth(n)
+      .evaluate(
+        (row) =>
+          new DOMMatrix(getComputedStyle(row).transform).m42 /
+          row.getBoundingClientRect().height,
+      );
   const liftUp = async (n: number) => {
     await handle(n).focus();
     await page.keyboard.press("Space");
     await expect(handle(n)).toHaveAttribute("aria-pressed", "true");
     // The handle hears the arrows from just after it is picked up: until the
     // row above makes room, press again, as a person would. At the top, a
-    // press does nothing.
-    const was = await top(n - 1);
+    // press does nothing. Room is the row's own shift, not its place: the
+    // last drop still settling moves it down too.
     await expect(async () => {
       await page.keyboard.press("ArrowUp");
       await expect
-        .poll(() => top(n - 1), { timeout: 1_000 })
-        .toBeGreaterThan(was);
+        .poll(() => shifted(n - 1), { timeout: 1_000 })
+        .toBeGreaterThan(0.5);
     }).toPass();
   };
   await liftUp(1);
@@ -540,16 +554,14 @@ test("a save that fails says so and keeps the text in the tab, also on the chat'
       : route.continue(),
   );
   await box(chat(page)).fill("Half a question");
-  await expect(chat(page).getByRole("status")).toHaveText(
-    /^Not saved\s*Retry$/,
-  );
+  await expect(notSaved(chat(page))).toHaveText(/^Not saved\s*Retry$/);
   await expect(chat(page).getByRole("alert")).toHaveText("Rufi couldn't save.");
 
   // Off to the chat's page: its box has the text, still not saved, and
   // what is typed there fails to save too.
   await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
   await expect(box(page)).toHaveValue("Half a question");
-  await expect(page.getByRole("status")).toHaveText(/^Not saved\s*Retry$/);
+  await expect(notSaved(page)).toHaveText(/^Not saved\s*Retry$/);
   const refused = page.waitForResponse(
     (response) =>
       response.url().endsWith("/chat/draft") &&
@@ -558,13 +570,13 @@ test("a save that fails says so and keeps the text in the tab, also on the chat'
   );
   await box(page).fill("Half a question, and more");
   await refused;
-  await expect(page.getByRole("status")).toHaveText(/^Not saved\s*Retry$/);
+  await expect(notSaved(page)).toHaveText(/^Not saved\s*Retry$/);
 
   await page.unroute("**/chat/draft");
   const saved = kept(page, "and more");
   await page.getByRole("button", { name: "Retry" }).click();
   await saved;
-  await expect(page.getByRole("status")).toHaveCount(0);
+  await expect(notSaved(page)).toHaveCount(0);
   await page.reload();
   await expect(box(page)).toHaveValue("Half a question, and more");
 });
