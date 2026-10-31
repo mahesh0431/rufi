@@ -2,7 +2,7 @@
 // draft, kept by the core, saved quietly; the box says only when it couldn't
 // be. Enter sends. While a reply runs, Steer puts the message into it and
 // Queue keeps it for after it, Enter doing what Settings chose, and Stop is
-// beside the box (Activity shows what the AI does; the bar, where it
+// beside the box from the send on (Activity shows what the AI does; the bar, where it
 // doesn't show, has a busy sign from the send on; the chat's working line
 // shows the send, not the box). The box clears only when the core took the message, and nothing
 // is sent again by itself. Signed out, the core takes nothing: the box says so, with Sign in.
@@ -50,7 +50,7 @@ import { chatPath, type Live, messageOf } from "./live.ts";
 import { ModelMenu } from "./model-menu.tsx";
 import { usePanel } from "./panel.ts";
 import { useSettings } from "./reads.ts";
-import { isRunning, workingOf } from "./transcript-state.ts";
+import { workingOf } from "./transcript-state.ts";
 import { Button, IconButton } from "./ui.tsx";
 
 /**
@@ -84,9 +84,9 @@ export function Box({
   const notice = useStore(box.store, (state) => state.notice);
   const chips = useStore(box.store, (state) => state.refs);
   const refused = usePanel((state) => state.refused);
-  const running = useStore(live, isRunning);
-  // From the send until the reply ends: the bar's busy sign.
-  const busy = useStore(live, (state) => workingOf(state, locked) !== null);
+  // From the send until the reply ends: Steer, Queue and Stop, and the
+  // bar's busy sign.
+  const working = useStore(live, (state) => workingOf(state, locked) !== null);
   // What Enter does while a reply runs.
   const enter = useSettings().data?.whileReplying ?? "steer";
   const navigate = useNavigate();
@@ -216,7 +216,7 @@ export function Box({
             {/* Its name says what it does, then what it shows. */}
             <span className="sr-only">Open the chat: </span>
             <span className="flex min-w-0 flex-1 items-center gap-1.5">
-              {busy && (
+              {working && (
                 <LoaderCircle
                   size={14}
                   className="shrink-0 animate-spin text-muted"
@@ -236,7 +236,7 @@ export function Box({
             </span>
           </button>
           {choice}
-          {running ? (
+          {working ? (
             <>
               {hasText && sendWhile("steer")}
               {hasText && sendWhile("queue")}
@@ -294,7 +294,7 @@ export function Box({
             <span className="flex-1" />
             {choice}
             <ContextMeter live={live} />
-            {running ? (
+            {working ? (
               <>
                 {sendWhile("steer")}
                 {sendWhile("queue")}
