@@ -37,6 +37,8 @@ function valuesOf(field: Field): string {
     }
     case "boolean":
       return " (true|false)";
+    case "amount":
+      return ' ({"value": 162, "unit": "cm"|"in"})';
     case "value": {
       // A fixed set: an enum, or a union of them.
       const json = jsonSchemaOf(field.input);

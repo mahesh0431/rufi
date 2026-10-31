@@ -4,9 +4,11 @@
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
 import { sql, type Kysely } from "kysely";
+import { ageOn } from "./dates.ts";
 import {
   KINDS,
   kindNamed,
+  unitColumn,
   wordsColumn,
   type Field,
   type Kind,
@@ -34,6 +36,8 @@ function given(field: Field, row: Row): unknown {
       return { date: value, words: row[wordsColumn(field)] ?? undefined };
     case "link":
       return { kind: row["linked_kind"], id: value };
+    case "amount":
+      return { value, unit: row[unitColumn(field)] ?? undefined };
   }
 }
 
@@ -81,12 +85,12 @@ export function fieldsOf(
 
 /**
  * The person's records that aren't removed, by kind; results are in the
- * overview's latest_results.
+ * overview's latest_results, the profile in its own part.
  */
 export async function currentRecords(store: Store, personId: string) {
   const record: Record<string, unknown> = {};
   for (const kind of KINDS) {
-    if (kind.name === "result") continue;
+    if (kind.name === "result" || kind.single) continue;
     const { rows } =
       await sql<Row>`SELECT * FROM ${sql.table(kind.table)} r WHERE person_id = ${personId} AND ${isCurrent(kind, "r")} ORDER BY rowid DESC LIMIT ${RECORDS_SHOWN + 1}`.execute(
         store.query,
@@ -111,10 +115,15 @@ export async function currentRecords(store: Store, personId: string) {
 export async function recentSaves(store: Store, personId: string) {
   const saves = await store.query
     .selectFrom("operations as o")
-    .innerJoin("transcript_entries as e", (join) =>
+    .leftJoin("transcript_entries as e", (join) =>
       join.onRef("e.person_id", "=", "o.person_id").onRef("e.id", "=", "o.id"),
     )
-    .select(["o.id", "o.created_at", "e.text"])
+    .select([
+      "o.id",
+      "o.origin",
+      "o.created_at",
+      sql<string>`coalesce(o.receipt, e.text)`.as("text"),
+    ])
     .where("o.person_id", "=", personId)
     .orderBy("o.seq", "desc")
     .limit(SAVES_SHOWN)
@@ -152,6 +161,9 @@ export async function recentSaves(store: Store, personId: string) {
       .execute();
     shown.push({
       at: save.created_at,
+      // Where it was made: in the chat, or what the person entered in the
+      // welcome, on the profile page or in Settings.
+      made_in: save.origin,
       receipt: save.text,
       // One link or remove_source of several sources is a history row for
       // each: shown once, with them all.
@@ -204,6 +216,36 @@ export async function recentSaves(store: Store, personId: string) {
 }
 
 type Reads = Kysely<Tables>;
+
+/**
+ * The person's profile as get_overview gives it: its id, the values given,
+ * in save_changes' shape, with their age today (`today`, 'YYYY-MM-DD')
+ * from the birth date, and the fields not set.
+ */
+export async function profileOf(query: Reads, personId: string, today: string) {
+  const kind = kindNamed("profile") as Kind;
+  const { rows } =
+    await sql<Row>`SELECT * FROM profiles WHERE person_id = ${personId} AND id = ${personId}`.execute(
+      query,
+    );
+  const row = rows[0];
+  if (!row) return undefined;
+  const fields = fieldsOf(kind, row);
+  const birth = row["birth_date"];
+  const [youngest, oldest] =
+    typeof birth === "string" ? ageOn(birth, today) : [];
+  return {
+    id: row["id"],
+    ...fields,
+    ...(oldest !== undefined && {
+      age_today:
+        youngest === oldest
+          ? oldest
+          : `${String(youngest)} or ${String(oldest)}`,
+    }),
+    not_set: Object.keys(kind.fields).filter((name) => !(name in fields)),
+  };
+}
 
 /**
  * The person's record version: how many saves their record has had. Every

@@ -41,9 +41,10 @@ export interface Field {
   /**
    * How it is stored: as given; a yes/no as 1/0; a date with its words in
    * `<column>_words`; a due date or 'next_visit'; a link to another record
-   * in linked_kind and linked_id.
+   * in linked_kind and linked_id; a number with its unit in
+   * `<column>_unit`.
    */
-  type: "value" | "boolean" | "date" | "due" | "link";
+  type: "value" | "boolean" | "date" | "due" | "link" | "amount";
   /** Where a date's words are kept, when not in `<column>_words`. */
   wordsColumn?: string;
   /** The AI must give it when adding, and can't forget it. */
@@ -77,6 +78,11 @@ export interface Kind {
   asserted?: true;
   /** The field get_records' from and to are compared with ("asserted" for Rufi's own date). */
   dated: string;
+  /**
+   * One per person, made with them, its id theirs: only changed, never
+   * added, removed or restored (the profile).
+   */
+  single?: true;
 }
 
 const text = (column: string, shown = column): Field => ({
@@ -321,6 +327,42 @@ export const KINDS: readonly Kind[] = [
     asserted: true,
   },
   {
+    // The person's profile: what their record is read with, such as which
+    // lab range fits. Height is the person's own value, apart from height
+    // measurements.
+    name: "profile",
+    table: "profiles",
+    noun: "profile",
+    fields: {
+      birth_date: date("birth_date", "birth date"),
+      sex_for_ranges: {
+        ...choice("sex_for_ranges", ["female", "male"], "sex for lab ranges"),
+        input: Schema.Literals(["female", "male"]).annotate({
+          description:
+            "Only for choosing lab ranges, as the user gave it; not a question about gender.",
+        }),
+      },
+      blood_group: choice(
+        "blood_group",
+        ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"],
+        "blood group",
+      ),
+      height: {
+        column: "height",
+        shown: "height",
+        input: Schema.Struct({
+          value: Schema.Finite.check(Schema.isGreaterThan(0)),
+          unit: Schema.Literals(["cm", "in"]),
+        }).annotate({ identifier: "Height" }),
+        type: "amount",
+      },
+    },
+    label: () => "your profile",
+    inLabel: [],
+    dated: "birth_date",
+    single: true,
+  },
+  {
     name: "follow_up",
     table: "follow_ups",
     noun: "follow-up",
@@ -362,6 +404,9 @@ export const KINDS: readonly Kind[] = [
 export const wordsColumn = (field: Field) =>
   field.wordsColumn ?? `${field.column}_words`;
 
+/** The column an amount keeps its unit in. */
+export const unitColumn = (field: Field) => `${field.column}_unit`;
+
 export const kindNamed = (name: string) =>
   KINDS.find((kind) => kind.name === name);
 
@@ -387,6 +432,13 @@ export function columnsOf(field: Field, value: unknown): Row {
     case "link": {
       const link = value as { kind: string; id: string } | null;
       return { linked_kind: link?.kind ?? null, linked_id: link?.id ?? null };
+    }
+    case "amount": {
+      const amount = value as { value: number; unit: string } | null;
+      return {
+        [field.column]: amount?.value ?? null,
+        [unitColumn(field)]: amount?.unit ?? null,
+      };
     }
   }
 }
