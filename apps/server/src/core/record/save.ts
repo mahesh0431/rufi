@@ -1,5 +1,7 @@
 // A save to the record (docs/adr/0005): the AI's save_changes call, after
-// the user said yes in the chat. It holds typed changes the AI made from the
+// the user said yes in the chat, or what the person entered in a form (the
+// welcome, the profile page, Settings), which says where it came from in
+// place of a message. It holds typed changes the AI made from the
 // user's words, a document's draft items (items.ts), or both. Every one is
 // checked first; then the save, each record's before and after, its sources,
 // the items' outcome and nothing else are written in the caller's
@@ -21,6 +23,7 @@ import {
   kindNamed,
   literal,
   Position,
+  unitColumn,
   wordsColumn,
   visitWords,
   type Field,
@@ -56,6 +59,9 @@ const DOING: Record<Asked, string> = {
   link: "adding a source",
   remove_source: "taking off a source",
 };
+
+/** What an action did, in a refusal's words. */
+const DONE = { add: "added", remove: "removed", restore: "restored" } as const;
 
 /** A document page or a Visit a record rests on, as the AI names it. */
 const From = Schema.Union([
@@ -149,6 +155,18 @@ function changeOf(kind: Kind) {
             path: ["from"],
             issue: `Leave from out: ${change.action === "remove" ? "removing" : "restoring"} takes no source.`,
           });
+        }
+        if (
+          kind.single &&
+          (change.action === "add" ||
+            change.action === "remove" ||
+            change.action === "restore")
+        ) {
+          issues.push({
+            path: ["action"],
+            issue: `The ${kind.noun} is never ${DONE[change.action]}: change its fields, and null clears one.`,
+          });
+          return issues;
         }
         if (change.ref !== undefined && change.action !== "add") {
           issues.push({
@@ -250,17 +268,26 @@ export interface Saved {
   earlier: Earlier[];
 }
 
-interface Where {
+/** Where the person entered a form's save. */
+export type FormOrigin = "welcome" | "profile" | "settings";
+
+/** Where a save is made: in a chat, by the AI's call, or in a form. */
+type Where = {
   personId: string;
-  chatId: string;
-  /** Rufi's id for the turn the call is in, when it has one. */
-  turnId?: string | undefined;
-  /** The agent's id for the call. */
+  /** The agent's id for the call, or the form's id for one sending. */
   callId: string;
   now: string;
   /** The references of the user's messages in this turn: still as they were. */
   refs?: readonly Ref[];
-}
+} & (
+  | {
+      chatId: string;
+      /** Rufi's id for the turn the call is in, when it has one. */
+      turnId?: string | undefined;
+      form?: undefined;
+    }
+  | { form: FormOrigin; chatId?: undefined; turnId?: undefined }
+);
 
 /** A message of the user's a change rests on. */
 export interface Source {
@@ -311,7 +338,7 @@ export async function saveChanges(
   const earlier = await trx
     .selectFrom("operations")
     .select(["id", "request"])
-    .where("chat_id", "=", where.chatId)
+    .where("person_id", "=", where.personId)
     .where("call_id", "=", where.callId)
     .executeTakeFirst();
   if (earlier) {
@@ -323,7 +350,10 @@ export async function saveChanges(
     return replay(trx, where.personId, earlier);
   }
 
-  const messageAt = messagesOf(trx, where);
+  const messageAt: MessageAt =
+    where.form === undefined
+      ? messagesOf(trx, where.personId, where.chatId, where.turnId)
+      : () => Promise.resolve("A form's save rests on what was entered.");
 
   const problems: Problem[] = [];
   const problem = (path: string, got: unknown, fix: string) =>
@@ -423,12 +453,15 @@ export async function saveChanges(
       }
     }
     // A fact only from a page or a visit rests on no message: the user's
-    // yes isn't a source.
+    // yes isn't a source. A form's rests on what was entered in it.
     const fromAlone =
       change.from !== undefined &&
       change.source === undefined &&
       change.action !== "remove_source";
-    const source = fromAlone ? undefined : await messageAt(change.source);
+    const source =
+      fromAlone || where.form !== undefined
+        ? undefined
+        : await messageAt(change.source);
     if (typeof source === "string") {
       problem(`${at}.source`, change.source, source);
       continue;
@@ -629,7 +662,8 @@ export async function saveChanges(
       // Next in the order of saves; the save's transaction holds the write lock.
       seq: sql<number>`(SELECT COALESCE(MAX(seq), 0) + 1 FROM operations)`,
       person_id: where.personId,
-      chat_id: where.chatId,
+      origin: where.form ?? "chat",
+      chat_id: where.chatId ?? null,
       call_id: where.callId,
       request,
       created_at: where.now,
@@ -692,9 +726,22 @@ export async function saveChanges(
   ) {
     await checkAllergies(trx, where.personId);
   }
+  const receipt = receiptText(
+    written,
+    await linksOf(trx, where.personId, written),
+  );
+  // A chat's receipt goes in its transcript; a form's stays with the save.
+  if (where.form !== undefined) {
+    await trx
+      .updateTable("operations")
+      .set({ receipt })
+      .where("person_id", "=", where.personId)
+      .where("id", "=", id)
+      .execute();
+  }
   return {
     id,
-    receipt: receiptText(written, await linksOf(trx, where.personId, written)),
+    receipt,
     fresh: true,
     changes: written.map((w) => ({
       kind: w.kind.name,
@@ -710,20 +757,25 @@ export async function saveChanges(
  * none, the newest of theirs in this turn, as stored now. Only a message or
  * a steer of this person's chat: a position never reaches another chat.
  */
-function messagesOf(trx: Transaction<Tables>, where: Where): MessageAt {
+function messagesOf(
+  trx: Transaction<Tables>,
+  personId: string,
+  chatId: string,
+  turnId: string | undefined,
+): MessageAt {
   const found = new Map<number | undefined, Promise<Source | string>>();
   const entries = trx
     .selectFrom("transcript_entries")
     .select(["id", "kind", "created_at"])
-    .where("person_id", "=", where.personId)
-    .where("chat_id", "=", where.chatId);
+    .where("person_id", "=", personId)
+    .where("chat_id", "=", chatId);
   const look = async (position: number | undefined) => {
     if (position === undefined) {
       const newest =
-        where.turnId === undefined
+        turnId === undefined
           ? undefined
           : await entries
-              .where("turn_id", "=", where.turnId)
+              .where("turn_id", "=", turnId)
               .where("kind", "in", ["message", "steer"])
               .orderBy("seq", "desc")
               .executeTakeFirst();
@@ -919,19 +971,29 @@ async function write(
       : []),
     ...(change.cites ?? []),
   ];
-  const message = change.source && {
-    type: "message" as const,
-    entry_id: change.source.id,
-    document_id: null,
-    page: null,
-    visit_id: null,
-  };
+  // The user's message, or what was entered in a form: this save's own.
+  const message =
+    where.form === undefined
+      ? change.source && {
+          type: "message" as const,
+          entry_id: change.source.id,
+          document_id: null,
+          page: null,
+          visit_id: null,
+        }
+      : {
+          type: "form" as const,
+          entry_id: null,
+          document_id: null,
+          page: null,
+          visit_id: null,
+        };
   /** Adds a source the record doesn't have now; false when it has it. */
   const addSource = async (
     source: NonNullable<typeof message> | Cite,
   ): Promise<boolean> => {
     const values =
-      source.type === "message"
+      source.type === "message" || source.type === "form"
         ? source
         : {
             type: source.type,
@@ -941,7 +1003,11 @@ async function write(
             page: source.type === "document_page" ? source.page : null,
             visit_id: source.type === "visit" ? (source.id ?? "") : null,
           };
-    if (await currentRow(trx, where.personId, change.kind, id, values)) {
+    // Each form's save is a source of its own.
+    if (
+      values.type !== "form" &&
+      (await currentRow(trx, where.personId, change.kind, id, values))
+    ) {
       return false;
     }
     await trx
@@ -1179,15 +1245,18 @@ async function replay(
     .where("operation_id", "=", id)
     .orderBy("seq")
     .execute();
-  const receipt = await trx
-    .selectFrom("transcript_entries")
-    .select("text")
-    .where("person_id", "=", personId)
-    .where("id", "=", id)
+  const { receipt } = await trx
+    .selectFrom("operations as o")
+    .leftJoin("transcript_entries as e", (join) =>
+      join.onRef("e.person_id", "=", "o.person_id").onRef("e.id", "=", "o.id"),
+    )
+    .select(sql<string>`coalesce(o.receipt, e.text)`.as("receipt"))
+    .where("o.person_id", "=", personId)
+    .where("o.id", "=", id)
     .executeTakeFirstOrThrow();
   return {
     id,
-    receipt: receipt.text,
+    receipt,
     fresh: false,
     changes: rows.map((row) => ({
       kind: row.kind,
@@ -1259,7 +1328,9 @@ const storedOf = (field: Field, row: Row) =>
       ? [row["linked_kind"], row["linked_id"]]
       : field.type === "date" || field.type === "due"
         ? [row[field.column], row[wordsColumn(field)]]
-        : [row[field.column]],
+        : field.type === "amount"
+          ? [row[field.column], row[unitColumn(field)]]
+          : [row[field.column]],
   );
 
 /** A field of a stored record, in full, as a receipt says it; undefined when unknown. */
@@ -1280,6 +1351,8 @@ function shownField(field: Field, row: Row, links: Links): string | undefined {
         links.get(linkKey(row["linked_kind"], value)) ??
         `${kindNamed(String(row["linked_kind"]))?.noun ?? "record"} ${value as string}`
       );
+    case "amount":
+      return `${String(Number(value))} ${String(row[unitColumn(field)])}`;
     case "value":
       if (field.column === "replaces_id") {
         return links.get(linkKey("replaces", value)) ?? (value as string);
@@ -1346,9 +1419,10 @@ function receiptText(written: readonly Written[], links: Links): string {
   };
   const lines = written.map((w) => {
     const { kind, action, before, after } = w;
-    // A statement's label says what it is: "no known allergies (as of …)".
+    // A statement's or the profile's label says what it is: "no known
+    // allergies (as of …)", "your profile".
     const name =
-      kind.name === "none_known"
+      kind.name === "none_known" || kind.single
         ? `**${literal(kind.label(after))}**`
         : `${kind.noun} **${literal(kind.label(after))}**`;
     if (action === "link" || action === "unlink") {

@@ -390,6 +390,13 @@ function summary(kind: Kind, row: Row): string {
     .join(" · ");
 }
 
+/** Where a form's save was entered, as a source says it. */
+const ENTERED: Record<string, string> = {
+  welcome: "in the welcome",
+  profile: "on the profile page",
+  settings: "in Settings",
+};
+
 /** The longest part of a message a source shows, in characters. */
 const WORDS_MAX = 140;
 
@@ -436,7 +443,15 @@ async function sourceOf(
         .onRef("v.person_id", "=", "s.person_id")
         .onRef("v.id", "=", "s.visit_id"),
     )
+    .leftJoin("operations as o", (join) =>
+      join
+        .onRef("o.person_id", "=", "s.person_id")
+        .onRef("o.id", "=", "s.operation_id"),
+    )
     .select([
+      "s.type",
+      "o.origin",
+      "o.created_at as saved_at",
       "s.page",
       "p.file_name",
       "d.deleted_at",
@@ -472,6 +487,9 @@ async function sourceOf(
           .executeTakeFirst()
       : undefined;
   const words = sources.map((source) => {
+    if (source.type === "form" && source.saved_at !== null) {
+      return `Entered ${ENTERED[source.origin ?? ""] ?? "in Rufi"}, ${shownDate(localTime(source.saved_at).slice(0, 10))}`;
+    }
     if (source.text !== null && source.created_at !== null) {
       const said =
         source.text.length > WORDS_MAX

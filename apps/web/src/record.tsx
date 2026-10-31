@@ -54,6 +54,7 @@ const NOUNS: Record<RecordRow["kind"], string> = {
   care_event: "Care event",
   none_known: "Statement",
   follow_up: "Follow-up",
+  profile: "Profile",
 };
 
 const isBad = (row: ShownRow): row is Exclude<ShownRow, RecordRow> =>
@@ -193,6 +194,22 @@ export function cellsOf(row: RecordRow, groupDate?: string): Cells {
           row.asserted === undefined
             ? ""
             : `as of ${printedDate(row.asserted)}`,
+      };
+    case "profile":
+      return {
+        title: "Your profile",
+        detail: [
+          dated(row.birth_date),
+          row.sex_for_ranges === undefined
+            ? undefined
+            : row.sex_for_ranges === "female"
+              ? "Female"
+              : "Male",
+          row.blood_group?.replace("-", "−"),
+          row.height && `${String(row.height.value)} ${row.height.unit}`,
+        ]
+          .filter(Boolean)
+          .join(" · "),
       };
     case "follow_up":
       return {

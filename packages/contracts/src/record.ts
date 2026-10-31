@@ -145,6 +145,18 @@ export const FollowUpRow = Schema.Struct({
 });
 export type FollowUpRow = typeof FollowUpRow.Type;
 
+/** The person's profile: shown where a visit or a page it rests on lists it. */
+export const ProfileRow = Schema.Struct({
+  kind: Schema.Literal("profile"),
+  id: Id,
+  birth_date: When,
+  sex_for_ranges: Schema.optionalKey(Schema.Literals(["female", "male"])),
+  blood_group: Text,
+  height: Schema.optionalKey(
+    Schema.Struct({ value: Schema.Number, unit: Schema.String }),
+  ),
+});
+
 /** A stored row that doesn't fit its shape: shown as "can't show this row". */
 export const BadRow = Schema.Struct({
   kind: Schema.String,
@@ -164,6 +176,7 @@ export const RecordRow = Schema.Union([
   CareEventRow,
   NoneKnownRow,
   FollowUpRow,
+  ProfileRow,
 ]);
 export type RecordRow = typeof RecordRow.Type;
 

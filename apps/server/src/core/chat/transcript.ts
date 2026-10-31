@@ -929,8 +929,9 @@ export function transcripts(
         .execute(),
 
     /**
-     * Adds the first person, as first run does, and with them their chat, in
-     * one transaction; undefined when someone is already there. The person
+     * Adds the first person, as first run does, and with them their chat
+     * and their empty profile, in one transaction; undefined when someone is
+     * already there. The person
      * is added only when there is none, so two tabs never make two people or
      * two chats.
      */
@@ -942,6 +943,20 @@ export function transcripts(
           SELECT ${id}, ${displayName} WHERE NOT EXISTS (SELECT 1 FROM people)
         `.execute(trx);
         if (numAffectedRows !== 1n) return undefined;
+        await trx
+          .insertInto("profiles")
+          .values({
+            id,
+            person_id: id,
+            birth_date: null,
+            birth_date_words: null,
+            sex_for_ranges: null,
+            blood_group: null,
+            height: null,
+            height_unit: null,
+            removed: 0,
+          })
+          .execute();
         await trx
           .insertInto("chats")
           .values({

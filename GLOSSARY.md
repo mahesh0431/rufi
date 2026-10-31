@@ -12,12 +12,16 @@ _Avoid_: keeper, owner, admin, caregiver
 
 **Person**:
 Someone whose health record Rufi keeps; you are often one of them.
-_Avoid_: patient, profile, member
+_Avoid_: patient, member
+
+**Profile**:
+A few facts about a person that their record is read with: their name (never empty), birth date (a year, a month and year, or a full date, with the words it came in), sex for lab ranges (Female or Male, only for choosing ranges), blood group and height (a number and its unit). Each but the name is **Not set** until given. It is part of the person's record: it changes only by a save, keeps its history and is never removed. The AI reads it with the record and uses age and sex to choose a range when the lab printed none. Its height is the person's own value, apart from height measurements.
+_Avoid_: demographics, account, user details, personal info
 
 ## The record
 
 **Record**:
-Everything Rufi holds as true about one person: what the user said yes to in the chat, and what came from their documents. Each record (a medicine use, visit, symptom, condition, allergy, result, care event, "none known" statement or follow-up) keeps its source and its history; removing one takes it out of the current record and keeps its history.
+Everything Rufi holds as true about one person: what the user said yes to in the chat, and what came from their documents. Each record (a medicine use, visit, symptom, condition, allergy, result, care event, "none known" statement, follow-up or the person's profile) keeps its source and its history; removing one takes it out of the current record and keeps its history.
 _Avoid_: chart, file, history
 
 **Health record**:
