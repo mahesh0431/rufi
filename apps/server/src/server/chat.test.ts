@@ -3706,7 +3706,6 @@ describe("the chat, on the scripted Codex", () => {
   });
 
   describe("Claude's thinking", () => {
-    const shortlist = [...ALLOWED, "claude-fictional-1"];
     /** Claude's streaming event for its message's block `index`. */
     const part = (event: object) => ({
       type: "stream_event",
@@ -3742,9 +3741,9 @@ describe("the chat, on the scripted Codex", () => {
     /** Asha's chat on Claude, giving these frames for each message. */
     const onClaude = async (frames: object[]) => {
       const claude = await scriptedClaude({}, { frames });
-      await startChat("fake", { shortlist, other: claude.adapter });
+      await startChat("fake", { other: claude.adapter });
       const c = await newChat();
-      await chat?.selectModel(c, "claude-fictional-1");
+      await chat?.selectModel(c, "claude-opus-5-5");
       const shown: [string, string | null][] = [];
       transcripts.subscribe(c.id, (change) => {
         for (const entry of change.entries) {
@@ -3797,7 +3796,6 @@ describe("the chat, on the scripted Codex", () => {
       ];
       expect(await thoughts(c.id)).toEqual(kept);
       await startChat("fake", {
-        shortlist,
         other: (await scriptedClaude()).adapter,
       });
       expect(await thoughts(c.id)).toEqual(kept);
@@ -3833,7 +3831,6 @@ describe("the chat, on the scripted Codex", () => {
         { status: "interrupted" },
       ]);
       await startChat("fake", {
-        shortlist,
         other: (await scriptedClaude()).adapter,
       });
       expect(await thoughts(c.id)).toEqual(kept);
