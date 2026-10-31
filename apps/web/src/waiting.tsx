@@ -1,12 +1,12 @@
-// What waits to go to the AI, shown just above the box, out of the chat's
-// flow, so the chat doesn't move when something starts or stops waiting:
-// your messages and Rufi's notes, in the order they go, a compact list that
-// scrolls when long. A message shows here while it waits for a running
-// reply, or is held; one Rufi is giving to the AI shows in the chat as
-// sent. A waiting message can be steered
-// into the running reply, edited, moved by its handle (dragged, or by
-// keyboard) or removed; one Rufi didn't send says Failed, or Not sent, with
-// why as it came, and goes only when you send it. One on its way to the AI
+// What waits to go to the AI, shown over the chat's bottom edge, just above
+// the box, out of the chat's flow: the box stays put and the chat keeps its
+// size when something starts or stops waiting. Your messages and Rufi's
+// notes, in the order they go, a compact list that scrolls when long. A
+// message shows here while it waits for a running reply, or is held; one
+// Rufi is giving to the AI shows in the chat as sent. A waiting message can
+// be steered into the running reply, edited, moved by its handle (dragged,
+// or by keyboard) or removed; one Rufi didn't send says Failed, or Not sent,
+// with why as it came, and goes only when you send it. One on its way to the AI
 // says nothing: the chat's working line shows it.
 import {
   closestCenter,
@@ -36,7 +36,7 @@ import {
   Send,
   X,
 } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { useStore } from "zustand";
 import { useShallow } from "zustand/shallow";
 import type { StoreApi } from "zustand/vanilla";
@@ -63,7 +63,44 @@ function whyHeld(item: QueueItem): string | null {
   }
 }
 
-export function WaitingView({
+/**
+ * The waiting list over the chat's bottom edge, just above what holds it
+ * (the box). It tells its height, so the chat leaves that much room under
+ * its last message: at the chat's end, the newest lines show above it.
+ */
+export function FloatingWaiting({
+  live,
+  personId,
+  onHeight,
+  className,
+}: {
+  live: StoreApi<Live>;
+  personId: string;
+  onHeight: (height: number) => void;
+  /** Where it sits: across, and how far above the box. */
+  className: string;
+}) {
+  const here = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const element = here.current;
+    if (!element) return;
+    const sizes = new ResizeObserver(() => {
+      onHeight(element.offsetHeight);
+    });
+    sizes.observe(element);
+    return () => {
+      sizes.disconnect();
+      onHeight(0);
+    };
+  }, [onHeight]);
+  return (
+    <div ref={here} className={`absolute z-10 ${className}`}>
+      <WaitingView live={live} personId={personId} />
+    </div>
+  );
+}
+
+function WaitingView({
   live,
   personId,
 }: {
