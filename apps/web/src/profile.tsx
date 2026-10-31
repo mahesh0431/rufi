@@ -236,6 +236,10 @@ function Name({
   // What you typed, until the profile has it; untouched, the field shows the profile.
   const [draft, setDraft] = useState<string>();
   const [problem, setProblem] = useState<string>();
+  const fixed = () => {
+    setProblem(undefined);
+    report(undefined);
+  };
   if (draft !== undefined && draft.trim() === value) setDraft(undefined);
   const done = () => {
     if (draft === undefined) return;
@@ -257,8 +261,9 @@ function Name({
         value={draft ?? value}
         onChange={(event) => {
           setDraft(event.target.value);
-          // Fixed, it says so at once: nothing moves under a click on Done.
-          if (event.target.value.trim() !== "") setProblem(undefined);
+          // Fixed, it says so at once, also when it is the saved name again:
+          // nothing moves under a click on Done, and Done can close.
+          if (event.target.value.trim() !== "") fixed();
         }}
         onBlur={done}
         className="rounded-lg border border-line bg-surface px-3 py-1.5"
@@ -334,6 +339,10 @@ function BirthDate({
   // What you typed, until the profile has it; untouched, the field shows the profile.
   const [draft, setDraft] = useState<TypedDate>();
   const [problem, setProblem] = useState<string>();
+  const fixed = () => {
+    setProblem(undefined);
+    report(undefined);
+  };
   if (draft !== undefined && !asTyped) {
     const date = dateOf(draft);
     if (date !== undefined && date?.date === value?.date) setDraft(undefined);
@@ -345,7 +354,7 @@ function BirthDate({
     setDraft(next);
     // Fixed, it says so at once; an unfinished date is said when you leave it.
     const date = dateOf(next);
-    if (date !== undefined) setProblem(undefined);
+    if (date !== undefined) fixed();
     if (!asTyped) return;
     report(problemOf(date));
     if ((date ?? null)?.date !== value?.date) commit(date ?? null);
@@ -460,6 +469,10 @@ function Height({
   // What you typed, until the profile has it; untouched, the field shows the profile.
   const [draft, setDraft] = useState<TypedHeight>();
   const [problem, setProblem] = useState<string>();
+  const fixed = () => {
+    setProblem(undefined);
+    report(undefined);
+  };
   if (draft !== undefined && !asTyped && sameHeight(draft, value)) {
     setDraft(undefined);
   }
@@ -486,7 +499,7 @@ function Height({
     setDraft(next);
     if (asTyped) check(next);
     // Fixed, it says so at once: nothing moves under a click on Done.
-    else if (heightOf(next) !== undefined) setProblem(undefined);
+    else if (heightOf(next) !== undefined) fixed();
   };
   const done = () => {
     if (draft !== undefined) check(draft);
