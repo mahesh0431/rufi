@@ -16,7 +16,7 @@ import {
   openWritable,
 } from "../../server/src/core/store/database.ts";
 import { runningLink } from "../../server/src/server/core.ts";
-import { expect, SIGNED_OUT, test, type Rufi } from "./rufi.ts";
+import { expect, SIGNED_OUT, signedIn, test, type Rufi } from "./rufi.ts";
 
 async function accessible(page: Page) {
   const { violations } = await new AxeBuilder({ page }).analyze();
@@ -87,6 +87,24 @@ const steps = (scope: Page | Locator) =>
     .last()
     .locator(":scope > li");
 const toolbar = (page: Page) => page.getByRole("banner");
+
+/** The model and effort the scripted Codex's last turn ran on. */
+async function ranOn(rufi: Rufi) {
+  const turns = (await readFile(join(rufi.home, "fake-codex.jsonl"), "utf8"))
+    .trim()
+    .split("\n")
+    .map(
+      (line) =>
+        JSON.parse(line) as {
+          turn?: string;
+          model?: string;
+          effort?: string | null;
+        },
+    )
+    .filter((line) => line.turn !== undefined);
+  const last = turns.at(-1);
+  return { model: last?.model, effort: last?.effort };
+}
 
 /** Rufi with the fictional family, opened at its Overview. */
 async function opened(
@@ -451,32 +469,48 @@ test("while a reply runs, Enter steers a message into it, as your message; with 
   ).toContainText("And after that, my ferritin");
 });
 
-test("signed out, the model's menu signs in", async ({ page, rufi }) => {
+test("the menu always shows Rufi's four models: a provider that isn't signed in shows its two greyed, with a line that signs in", async ({
+  page,
+  rufi,
+}) => {
   rufi.codex = SIGNED_OUT;
-  // The core can't list the models without the sign-in.
-  await page.route("**/api/models", (route) =>
-    route.fulfill({
-      status: 409,
-      json: {
-        error:
-          "Not signed in. Sign in with ChatGPT: in Rufi, or with pnpm rufi signin.",
-      },
-    }),
-  );
   await opened(page, rufi);
   await opener(chat(page)).click();
-  await expect(
-    chat(page).getByRole("heading", { name: "Chat with Rufi" }),
-  ).toBeVisible();
   await chat(page)
     .getByRole("button", { name: /^Model and effort/ })
     .click();
-  await expect(page.getByRole("menu")).not.toContainText("pnpm");
+  const models = page.getByRole("menuitemradio", { name: /^(GPT|Claude)/ });
+  await expect(models).toHaveText([
+    "GPT-6-Astra",
+    "GPT-6.1-Sol",
+    "Claude Fable 5.1",
+    "Claude Opus 5.5",
+  ]);
+  for (const model of await models.all()) {
+    await expect(model).toHaveAttribute("aria-disabled", "true");
+  }
+  await expect(
+    page.getByRole("menuitem", { name: "Sign in to Claude" }),
+  ).toBeVisible();
   await page.getByRole("menuitem", { name: "Sign in with ChatGPT" }).click();
   await expect(page).toHaveURL(/\/sign-in$/);
+
+  // Signed in to ChatGPT: its two can be chosen; Claude's stay greyed.
+  rufi.codex = signedIn("asha@example.com");
+  await page.goto(rufi.link());
+  await openChat(page);
+  await chat(page)
+    .getByRole("button", { name: /^Model and effort/ })
+    .click();
   await expect(
-    page.getByRole("button", { name: "Sign in with ChatGPT" }),
-  ).toBeVisible();
+    page.getByRole("menuitemradio", { name: "GPT-6.1-Sol" }),
+  ).not.toHaveAttribute("aria-disabled", "true");
+  await expect(
+    page.getByRole("menuitemradio", { name: "Claude Opus 5.5" }),
+  ).toHaveAttribute("aria-disabled", "true");
+  await expect(
+    page.getByRole("menuitem", { name: "Sign in with ChatGPT" }),
+  ).toHaveCount(0);
 });
 
 test("the model and effort are chosen in the box, also in the bar, and kept for the chat; a new effort doesn't start a new thread; neither changes while a reply runs", async ({
@@ -494,9 +528,6 @@ test("the model and effort are chosen in the box, also in the bar, and kept for 
   await choice("GPT-6-Astra, Medium").click();
   await expect(option("GPT-6-Astra")).toHaveAttribute("aria-checked", "true");
   await expect(option("Medium")).toHaveAttribute("aria-checked", "true");
-  await expect(page.getByRole("menu")).toContainText(
-    "Medium: careful answers at a good speed. Low is faster; High thinks longer.",
-  );
   await option("GPT-6.1-Sol").click();
   await expect(choice("GPT-6.1-Sol, Medium")).toBeVisible();
   await send(page, "Hello");
@@ -504,11 +535,15 @@ test("the model and effort are chosen in the box, also in the bar, and kept for 
 
   // A new effort applies from the next reply, with no quiet line.
   await choice("GPT-6.1-Sol, Medium").click();
-  await option("High").click();
-  await expect(choice("GPT-6.1-Sol, High")).toBeVisible();
+  await option("XHigh").click();
+  await expect(choice("GPT-6.1-Sol, XHigh")).toBeVisible();
   await send(page, "Again");
   await expect(log(chat(page)).locator(".reply").last()).toHaveText("ok:Again");
   await expect(log(chat(page))).not.toContainText("New thread started");
+  expect(await ranOn(rufi)).toEqual({ model: "gpt-6.1-sol", effort: "xhigh" });
+  await choice("GPT-6.1-Sol, XHigh").click();
+  await option("High").click();
+  await expect(choice("GPT-6.1-Sol, High")).toBeVisible();
 
   // Neither changes while a reply runs.
   await send(page, "hang");
@@ -529,18 +564,8 @@ test("the model and effort are chosen in the box, also in the bar, and kept for 
   await expect(choice("GPT-6-Astra, High")).toBeVisible();
 
   // Kept for the chat: in the bar after a reload, and in the chat page's box,
-  // whose top has nothing to choose. While the list of models is slow, the
-  // button keeps the name's place empty: never "Model" or the model's id.
-  const slow = Promise.withResolvers<undefined>();
-  await page.route("**/api/models", async (route) => {
-    await slow.promise;
-    await route.continue();
-  });
+  // whose top has nothing to choose.
   await page.reload();
-  await expect(
-    chat(page).getByRole("button", { name: /^Model and effort/ }),
-  ).toHaveText("High");
-  slow.resolve(undefined);
   await expect(choice("GPT-6-Astra, High")).toBeVisible();
   await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
   await expect(toolbar(page)).toHaveText("Chat with Rufi");
@@ -548,87 +573,6 @@ test("the model and effort are chosen in the box, also in the bar, and kept for 
     page.getByRole("main").getByRole("button", { name: /^Model/ }),
   ).toHaveCount(1);
   await expect(choice("GPT-6-Astra, High")).toBeVisible();
-});
-
-test("the models ticked in Settings are the chat menu's, the first ticked is a new chat's, and a chat on a model unticked still shows it", async ({
-  page,
-  rufi,
-}) => {
-  await opened(page, rufi);
-  const choice = (now: string) =>
-    chat(page).getByRole("button", { name: `Model and effort: ${now}` });
-  await expect(choice("GPT-6-Astra, Medium")).toBeVisible();
-  const settings = () =>
-    sidebar(page).getByRole("link", { name: "Settings" }).click();
-  const models = page.getByRole("group", { name: "Models" });
-  const tick = (name: string) => models.getByRole("checkbox", { name });
-
-  // Untouched: the first one ticked is the one a new chat starts on.
-  await settings();
-  await expect(models.locator("label")).toHaveText([
-    "GPT-6-Astra",
-    "GPT-6.1-Sol",
-    "GPT-5.5",
-  ]);
-  await expect(tick("GPT-6-Astra")).toBeChecked();
-  await expect(tick("GPT-6.1-Sol")).toBeChecked();
-  await expect(tick("GPT-5.5")).not.toBeChecked();
-
-  // The chat answers on GPT-6-Astra; then the user unticks it.
-  await page.goBack();
-  await send(page, "Hello");
-  await expect(log(chat(page)).locator(".reply")).toHaveText("ok:Hello");
-  await settings();
-  await tick("GPT-5.5").click();
-  await expect(tick("GPT-5.5")).toBeChecked();
-  await tick("GPT-6-Astra").click();
-  await expect(tick("GPT-6-Astra")).not.toBeChecked();
-  await expect(models.locator("label")).toHaveText([
-    "GPT-6.1-Sol",
-    "GPT-5.5",
-    "GPT-6-Astra",
-  ]);
-
-  // The chat still says which model answers; the menu offers the ticked.
-  await page.goBack();
-  await choice("GPT-6-Astra, Medium").click();
-  await expect(page.getByRole("menuitemradio")).toHaveText([
-    "GPT-6.1-Sol",
-    "GPT-5.5",
-    "Low",
-    "Medium",
-    "High",
-  ]);
-});
-
-test("Settings › Models says how to get Claude's models when Claude isn't signed in or isn't on the Mac, and keeps Codex's", async ({
-  page,
-  rufi,
-}) => {
-  await opened(page, rufi);
-  await sidebar(page).getByRole("link", { name: "Settings" }).click();
-  const section = page.getByRole("region", { name: "Models" });
-
-  // Codex's models; Claude isn't signed in.
-  await expect(section.getByRole("checkbox")).toHaveCount(3);
-  await expect(section).toContainText(
-    "Claude's models show here once it's signed in. Sign in",
-  );
-  await section.getByRole("link", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/sign-in$/);
-
-  // Claude isn't on this Mac: its own words say what to do.
-  rufi.claude = {
-    state: "unavailable",
-    account: null,
-    text: "Claude Code isn't installed on this Mac. Install it, then try again.",
-  };
-  await page.goBack();
-  await page.reload();
-  await expect(section).toContainText(
-    "Claude Code isn't installed on this Mac. Install it, then try again.",
-  );
-  await expect(section.getByRole("checkbox")).toHaveCount(3);
 });
 
 test("a draft is saved as you type, silently; it survives a reload and a restart, and is never sent by itself", async ({

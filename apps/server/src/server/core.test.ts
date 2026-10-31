@@ -1224,39 +1224,17 @@ describe("the local API", () => {
     },
   );
 
-  it("offers the shortlist's models the provider has, and every model it has for Settings; a shortlist saved in Settings is the menu's, and an old models.json stays as it is, unused", async () => {
+  it("takes only Rufi's four models for a chat, also one whose provider isn't signed in, and an old models.json stays as it is, unused", async () => {
     const { readFile, writeFile } = await import("node:fs/promises");
     const old = '{"models": ["gpt-5.5"]}';
     await writeFile(join(home, "models.json"), old);
     const page = await session(await start());
-    const offered = [
-      { id: "gpt-6.1-sol", name: "GPT-6.1-Sol" },
-      { id: "gpt-6-astra", name: "GPT-6-Astra" },
-      { id: "gpt-5.5", name: "GPT-5.5" },
-    ];
-    expect((await page.api("GET", "/api/models")).body).toEqual({
-      models: [
-        { id: "gpt-6-astra", name: "GPT-6-Astra" },
-        { id: "gpt-6.1-sol", name: "GPT-6.1-Sol" },
-      ],
-      offered,
-    });
-    expect((await page.api("GET", "/api/settings")).body["models"]).toEqual([
-      "gpt-6-astra",
-      "gpt-6.1-sol",
-    ]);
-
-    // The person ticks GPT-5.5 and unticks GPT-6-Astra.
-    await page.api("PUT", "/api/settings", {
-      models: ["gpt-6.1-sol", "gpt-5.5"],
-    });
-    expect((await page.api("GET", "/api/models")).body).toEqual({
-      models: [
-        { id: "gpt-6.1-sol", name: "GPT-6.1-Sol" },
-        { id: "gpt-5.5", name: "GPT-5.5" },
-      ],
-      offered,
-    });
+    const c = await chat(page);
+    const choose = async (model: string) =>
+      (await page.api("PUT", `${c.path}/model`, { model })).status;
+    expect(await choose("gpt-5.5")).toBe(400);
+    expect(await choose("claude-opus-5-5")).toBe(200);
+    expect(await choose("gpt-6.1-sol")).toBe(200);
     expect(await readFile(join(home, "models.json"), "utf8")).toBe(old);
   });
 

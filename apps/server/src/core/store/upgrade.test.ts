@@ -1321,3 +1321,49 @@ it("upgrades a record of version 20 so every agent's calls can be kept: each cal
     before.map((row) => ({ ...row, agent_id: null, agent_turn_id: null })),
   );
 });
+
+it("upgrades a record of version 24 to Rufi's four models: a chat on another model moves to GPT-6-Astra, one of the four keeps it, every chat keeps the rest, and XHigh can be chosen", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 24));
+  const old = new DatabaseSync(path);
+  try {
+    old.exec(`
+      UPDATE chats SET model = 'gpt-retired', model_provider = 'codex', effort = 'high', thread_id = 'thread-asha', revision = 7
+        WHERE person_id = 'asha';
+      UPDATE chats SET model = 'claude-opus-5-5', model_provider = 'claude', effort = 'low'
+        WHERE person_id = 'ravi';
+      INSERT INTO settings (key, value) VALUES ('models', '["gpt-retired"]');
+    `);
+  } finally {
+    old.close();
+  }
+  const chats = () => {
+    const db = new DatabaseSync(path, { readOnly: true });
+    try {
+      return db
+        .prepare("SELECT * FROM chats ORDER BY person_id")
+        .all()
+        .map((row) => ({ ...row }));
+    } finally {
+      db.close();
+    }
+  };
+  const [asha, ...others] = chats();
+
+  const store = await openRecord(home);
+  try {
+    expect(chats()).toEqual([
+      { ...asha, model: "gpt-6-astra", model_provider: "codex" },
+      ...others,
+    ]);
+    expect(others).toContainEqual(
+      expect.objectContaining({ model: "claude-opus-5-5", effort: "low" }),
+    );
+    expect(
+      store.db.prepare("SELECT * FROM settings WHERE key = 'models'").all(),
+    ).toEqual([]);
+    store.db.exec("UPDATE chats SET effort = 'xhigh' WHERE person_id = 'asha'");
+  } finally {
+    store.close();
+  }
+});

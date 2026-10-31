@@ -29,7 +29,7 @@ import { codexBinary } from "../agent/codex/binary.ts";
 import { codexAdapter, instructionsNote } from "../agent/codex/adapter.ts";
 import { chatAgents } from "../core/chat/agents.ts";
 import { chatQueue } from "../core/chat/queue.ts";
-import { DEFAULT_SHORTLIST } from "../core/chat/models.ts";
+import { MODELS } from "@rufi/contracts";
 import {
   transcripts as openTranscripts,
   type Transcripts,
@@ -172,8 +172,6 @@ async function start(
     signIn: () =>
       Promise.resolve({ state: "signed_in", account: null, text: null }),
     agent: ai.agent,
-    shortlist: () =>
-      Promise.resolve(options.model ? [options.model] : DEFAULT_SHORTLIST),
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp`, keys },
     rules: (region) => ({
       instructions: coreInstructions(region),
@@ -196,16 +194,18 @@ async function start(
             if (!chat) throw new Error("no chat");
             return chat.queue;
           },
-          models: () => {
-            if (!chat) throw new Error("no chat");
-            return chat.shortlisted();
-          },
+          signIn: () =>
+            Promise.resolve({ state: "signed_in", account: null, text: null }),
           usage: running.usage,
         }),
       ),
     },
     log,
   });
+  const row = await transcripts.chat("asha");
+  if (options.model !== undefined && row) {
+    await transcripts.setModel(row, options.model, "codex");
+  }
   await chat.carryAll();
   await ai.dispatch();
   return { tools, chat };
@@ -249,7 +249,6 @@ const RUFI_TOOLS = [
   "mcp__rufi__get_documents",
   "mcp__rufi__get_overview",
   "mcp__rufi__get_records",
-  "mcp__rufi__list_models",
   "mcp__rufi__read_agent",
   "mcp__rufi__read_chat",
   "mcp__rufi__save_changes",
@@ -265,8 +264,13 @@ const RUFI_TOOLS = [
   "mcp__rufi__waiting_messages",
 ];
 
+/** Rufi's models that run on Codex. */
+const CODEX_MODELS = MODELS.filter((model) => model.provider === "codex").map(
+  (model) => model.id,
+);
+
 describe("Rufi's tools on the pinned Codex, over MCP", () => {
-  it.each(DEFAULT_SHORTLIST)(
+  it.each(CODEX_MODELS)(
     "on %s registers over HTTP with the thread's key and no Origin, and the code runner gets every tool with its input typed",
     { timeout: 120_000 },
     async (modelId) => {

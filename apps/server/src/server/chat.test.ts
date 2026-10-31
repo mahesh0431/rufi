@@ -58,7 +58,6 @@ import { forAgent, rufiCaller } from "../core/tools/tools.ts";
 import { v7 as uuid } from "uuid";
 import { chatQueue, type ChatQueue } from "../core/chat/queue.ts";
 import { chatAgents } from "../core/chat/agents.ts";
-import { shortlist, SHORTLIST_SETTING } from "../core/chat/models.ts";
 import { agentsPath } from "./agents.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
 import { agentRuns, subAgents } from "./sub-agents.ts";
@@ -66,7 +65,6 @@ import { agentSetup, claudeSetup } from "./core.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "./mcp.ts";
 
 const FAKE = join(import.meta.dirname, "../../tests/fake-codex.ts");
-const ALLOWED = ["gpt-6.1-sol", "gpt-6-astra"];
 
 let home: string;
 let store: Store;
@@ -133,8 +131,6 @@ async function startChat(
     doorMs?: number;
     /** What a call of this tool waits for before it runs. */
     waitFor?: (tool: string) => Promise<void> | undefined;
-    /** The shortlist Settings keeps from now on. */
-    shortlist?: string[];
     /** Names this Rufi's rules: another one is an update. */
     rules?: string;
     /** The agent database is lost while Rufi is closed. */
@@ -144,16 +140,6 @@ async function startChat(
   } = {},
 ): Promise<Chat> {
   const again = chat !== undefined;
-  // The shortlist Settings keeps: the tests' own, until a story changes it.
-  if (
-    options.shortlist !== undefined ||
-    (await transcripts.setting(SHORTLIST_SETTING)) === undefined
-  ) {
-    await transcripts.saveSetting(
-      SHORTLIST_SETTING,
-      JSON.stringify(options.shortlist ?? ALLOWED),
-    );
-  }
   await chat?.close();
   await ai?.close();
   await served?.close();
@@ -222,7 +208,6 @@ async function startChat(
         },
       ),
     agent: ai.agent,
-    shortlist: () => shortlist(transcripts.setting),
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp`, keys },
     rules: (region) => ({
       instructions: `Rufi's rules ${options.rules ?? "1"}, for ${region ?? "no region"}.`,
@@ -246,10 +231,14 @@ async function startChat(
               if (!chat) throw new Error("no chat");
               return chat.queue;
             },
-            models: () => {
-              if (!chat) throw new Error("no chat");
-              return chat.shortlisted();
-            },
+            signIn: (provider) =>
+              Promise.resolve(
+                signIns[provider] ?? {
+                  state: "signed_in",
+                  account: "asha@example.com",
+                  text: null,
+                },
+              ),
             usage: system.usage,
           }),
           { run: saveReading(), done: () => undefined },
@@ -572,7 +561,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       ["reply", "ok:Hello"],
     ]);
     expect(turns).toMatchObject([
-      { status: "completed", model: "gpt-6.1-sol", endReason: null },
+      { status: "completed", model: "gpt-6-astra", endReason: null },
     ]);
   });
 
@@ -890,15 +879,15 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       const c = await newChat();
       await say(c, "first");
       await ended(c.id, 1);
-      await chat?.selectModel(c, "gpt-6-astra");
+      await chat?.selectModel(c, "gpt-6.1-sol");
       await say(await chatRow(c.id), "after the switch");
       await ended(c.id, 2);
       const { turns } = await transcript(c.id);
       expect(turns.map((turn) => [turn.model, turn.newThread])).toEqual([
-        ["gpt-6.1-sol", false],
         ["gpt-6-astra", false],
+        ["gpt-6.1-sol", false],
       ]);
-      expect((await backend.models()).at(-1)).toBe("gpt-6-astra");
+      expect((await backend.models()).at(-1)).toBe("gpt-6.1-sol");
       // No new thread: nothing handed over to start it.
       expect(await backend.contexts()).toEqual([]);
     },
@@ -1024,7 +1013,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       const c = await newChat();
       await rufiReply(c);
       await until(async () => (await backend.efforts()).length === 1);
-      await expect(chat?.selectModel(c, "gpt-6-astra")).rejects.toThrow(
+      await expect(chat?.selectModel(c, "gpt-6.1-sol")).rejects.toThrow(
         "Stop the reply before changing the model.",
       );
       await expect(chat?.selectEffort(c, "low")).rejects.toThrow(
@@ -1032,18 +1021,15 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       );
       await chat?.stop(c);
       await ended(c.id);
-      await expect(chat?.selectModel(c, "gpt-5.5")).rejects.toThrow(
-        "That model isn't allowed or isn't offered now.",
-      );
-      await chat?.selectModel(c, "gpt-6-astra");
-      await chat?.selectEffort(c, "low");
+      await chat?.selectModel(c, "gpt-6.1-sol");
+      await chat?.selectEffort(c, "xhigh");
       await say(await chatRow(), "C");
       await ended(c.id, 2);
       expect((await transcript(c.id)).turns.map((t) => t.model)).toEqual([
-        "gpt-6.1-sol",
         "gpt-6-astra",
+        "gpt-6.1-sol",
       ]);
-      expect((await backend.efforts()).at(-1)).toBe("low");
+      expect((await backend.efforts()).at(-1)).toBe("xhigh");
     },
   );
 
@@ -1117,7 +1103,7 @@ it(
     expect(calls).toMatchObject([{ tool: "get_documents", ok: 1 }]);
     const snapshot = await transcript(c.id);
     expect(snapshot.turns).toMatchObject([
-      { status: "completed", model: "gpt-6.1-sol" },
+      { status: "completed", model: "gpt-6-astra" },
     ]);
     expect(
       snapshot.all.filter((entry) => entry.activity === "tool"),
@@ -1510,34 +1496,16 @@ describe("the chat, on the scripted Codex", () => {
     expect(await waiting()).toEqual([]);
   });
 
-  it("starts and changes to allowed models the provider offers only", async () => {
-    await startChat("fake", { shortlist: ["gpt-retired", "gpt-6-astra"] });
+  it("starts a new chat on GPT-6-Astra", async () => {
+    await startChat("fake");
     const c = await newChat();
     expect(c.model).toBeNull();
     await say(c, "Hello");
     await ended(c.id);
-    expect((await chatRow(c.id)).model).toBe("gpt-6-astra");
-    await expect(chat?.selectModel(c, "gpt-retired")).rejects.toThrow(
-      "That model isn't allowed or isn't offered now.",
-    );
-    // A chat with no model yet, when none of the allowed ones is offered.
-    await startChat("fake", { shortlist: ["gpt-retired"] });
-    store.db.exec(`
-      INSERT INTO people (id, display_name) VALUES ('ravi', 'Ravi Fictional');
-      INSERT INTO chats (id, person_id, created_at)
-        VALUES ('c-ravi', 'ravi', '2026-10-01T09:00:00Z');
-    `);
-    const ravis = await transcripts.chat("ravi");
-    if (!ravis) throw new Error("no chat");
-    await say(ravis, "Hello");
-    await until(
-      async () =>
-        (await queue.list(ravis)).items[0]?.heldText ===
-        "None of the allowed models is offered now.",
-    );
-    expect((await queue.list(ravis)).items).toMatchObject([
-      { text: "Hello", state: "waiting", held: "failed" },
-    ]);
+    expect(await chatRow(c.id)).toMatchObject({
+      model: "gpt-6-astra",
+      modelProvider: "codex",
+    });
   });
 
   it("goes on with a resumed thread when its history can't be read", async () => {
@@ -2143,7 +2111,7 @@ describe("the chat, on the scripted Codex", () => {
             agent: helper,
             title: "Helper",
             parent: "self",
-            model: "gpt-6.1-sol",
+            model: "gpt-6-astra",
             effort: "medium",
             status: "done",
             result: helperSaid,
@@ -2152,7 +2120,7 @@ describe("the chat, on the scripted Codex", () => {
             agent: second,
             title: "Second helper",
             parent: helper,
-            model: "gpt-6.1-sol",
+            model: "gpt-6-astra",
             effort: "medium",
             status: "done",
             result: "ok:second: hello",
@@ -3229,13 +3197,12 @@ describe("the chat, on the scripted Codex", () => {
     });
   });
 
-  it("runs a helper on the model of the user's shortlist Rufi AI gives it, and refuses one off the shortlist, given or its own, or a change while the helper runs", async () => {
+  it("runs a helper on the model Rufi AI gives it, and refuses one that isn't Rufi's, one whose provider isn't signed in, or a change while the helper runs", async () => {
+    signIns["claude"] = { state: "signed_out", account: null, text: null };
     await startChat("fake", {
       scenario: {
         callsByText: {
           "Ask a helper": [
-            { tool: "list_models", arguments: {} },
-            // Offered, but not on the user's shortlist.
             {
               tool: "start_agent",
               arguments: {
@@ -3245,13 +3212,21 @@ describe("the chat, on the scripted Codex", () => {
               },
             },
             {
+              tool: "start_agent",
+              arguments: {
+                title: "Helper",
+                task: "helper: hang",
+                model: "claude-opus-5-5",
+              },
+            },
+            {
               id: "call-start",
               tool: "start_agent",
               arguments: {
                 title: "Helper",
                 task: "helper: hang",
                 model: "gpt-6-astra",
-                effort: "high",
+                effort: "xhigh",
               },
             },
           ],
@@ -3259,12 +3234,6 @@ describe("the chat, on the scripted Codex", () => {
             {
               tool: "set_agent_model",
               arguments: { agent: "$agent", model: "gpt-6.1-sol" },
-            },
-          ],
-          "Ask another": [
-            {
-              tool: "start_agent",
-              arguments: { title: "Second helper", task: "helper: hang" },
             },
           ],
         },
@@ -3282,65 +3251,50 @@ describe("the chat, on the scripted Codex", () => {
     );
     await say(await chatRow(c.id), `Move it to Sol (agent ${helper})`);
     await ended(c.id, 2);
-    // The user unticks the chat's own model: the chat goes on on it, but a
-    // new helper doesn't start on it.
-    await transcripts.saveSetting(
-      SHORTLIST_SETTING,
-      JSON.stringify(["gpt-6-astra"]),
-    );
-    await say(await chatRow(c.id), "Ask another");
-    await ended(c.id, 3);
 
     const answers = (
       store.db
         .prepare(
-          "SELECT answer FROM tool_calls WHERE tool IN ('list_models', 'start_agent', 'set_agent_model') ORDER BY started_at",
+          "SELECT answer FROM tool_calls WHERE tool IN ('start_agent', 'set_agent_model') ORDER BY started_at",
         )
         .all() as { answer: string }[]
     ).map(({ answer }) => JSON.parse(answer) as unknown);
     expect(answers).toMatchObject([
+      { ok: false },
       {
-        ok: true,
-        result: {
-          models: [
-            {
-              id: "gpt-6.1-sol",
-              efforts: ["low", "medium", "high"],
-              default_effort: "medium",
-            },
-            { id: "gpt-6-astra" },
-          ],
-        },
+        ok: false,
+        error: "Claude isn't signed in, so its models can't run now.",
       },
-      { ok: false, error: "That model isn't allowed or isn't offered now." },
       { ok: true },
       {
         ok: false,
         error: "Helper is running: change its model once its turn has ended.",
       },
-      { ok: false, error: "That model isn't allowed or isn't offered now." },
     ]);
     expect(
       agentRows(
         `SELECT title, model, effort FROM agents WHERE parent_id IS NOT NULL`,
       ),
-    ).toEqual([{ title: "Helper", model: "gpt-6-astra", effort: "high" }]);
+    ).toEqual([{ title: "Helper", model: "gpt-6-astra", effort: "xhigh" }]);
     expect(
       agentRows(`SELECT model, effort FROM turns WHERE agent_id = '${helper}'`),
-    ).toEqual([{ model: "gpt-6-astra", effort: "high" }]);
+    ).toEqual([{ model: "gpt-6-astra", effort: "xhigh" }]);
   });
 
   it("moves a helper whose turn has ended to another provider's model: its next turn opens a new conversation there, which hears the helper's own turns and not the chat", async () => {
     const other = fakeProvider({
-      id: "other",
+      id: "claude",
       family: "anthropic",
       models: [
-        { id: "other-model", name: "Other model", efforts: ["low", "high"] },
+        {
+          id: "claude-opus-5-5",
+          name: "Claude Opus 5.5",
+          efforts: ["low", "high"],
+        },
       ],
     });
     const opened: OpenOptions[] = [];
     await startChat("fake", {
-      shortlist: [...ALLOWED, "other-model"],
       other: {
         ...other.adapter,
         open: (options) => {
@@ -3362,7 +3316,7 @@ describe("the chat, on the scripted Codex", () => {
               tool: "set_agent_model",
               arguments: {
                 agent: "$agent",
-                model: "other-model",
+                model: "claude-opus-5-5",
                 effort: "high",
               },
             },
@@ -3398,13 +3352,13 @@ describe("the chat, on the scripted Codex", () => {
         `SELECT model, effort FROM turns WHERE agent_id = '${helper}' ORDER BY rowid`,
       ),
     ).toMatchObject([
-      { model: "gpt-6.1-sol" },
-      { model: "other-model", effort: "high" },
+      { model: "gpt-6-astra" },
+      { model: "claude-opus-5-5", effort: "high" },
     ]);
     const [moved] = agentRows(
       `SELECT provider, provider_ref, conversation FROM agents WHERE id = '${helper}'`,
     );
-    expect(moved).toMatchObject({ provider: "other", conversation: 2 });
+    expect(moved).toMatchObject({ provider: "claude", conversation: 2 });
     // Its new conversation hears its own turn, never the chat.
     expect(opened).toHaveLength(1);
     expect(opened[0]?.seed).toContain("Read the March report.");
@@ -3419,13 +3373,14 @@ describe("the chat, on the scripted Codex", () => {
 
   it("keeps a chat on another provider's model there when the agent database is new: the next message opens there, with the chat", async () => {
     const other = fakeProvider({
-      id: "other",
+      id: "claude",
       family: "anthropic",
-      models: [{ id: "other-model", name: "Other model", efforts: ["low"] }],
+      models: [
+        { id: "claude-opus-5-5", name: "Claude Opus 5.5", efforts: ["low"] },
+      ],
     });
     const opened: OpenOptions[] = [];
     const options = {
-      shortlist: [...ALLOWED, "other-model"],
       other: {
         ...other.adapter,
         open: (open: OpenOptions) => {
@@ -3436,7 +3391,7 @@ describe("the chat, on the scripted Codex", () => {
     };
     await startChat("fake", options);
     const c = await newChat();
-    await chat?.selectModel(c, "other-model");
+    await chat?.selectModel(c, "claude-opus-5-5");
     await say(await chatRow(c.id), "Hello");
     await ended(c.id);
 
@@ -3445,10 +3400,10 @@ describe("the chat, on the scripted Codex", () => {
     await say(await chatRow(c.id), "Again");
     await ended(c.id, 2);
     expect(opened).toHaveLength(2);
-    expect(opened[1]).toMatchObject({ model: "other-model" });
+    expect(opened[1]).toMatchObject({ model: "claude-opus-5-5" });
     expect(opened[1]?.seed).toContain("Hello");
     expect(agentRows("SELECT provider FROM agents")).toEqual([
-      { provider: "other" },
+      { provider: "claude" },
     ]);
   });
 
@@ -3659,7 +3614,6 @@ describe("the chat, on the scripted Codex", () => {
   it("starts a helper on Claude, which answers Rufi AI through the package", async () => {
     const claude = await scriptedClaude();
     await startChat("fake", {
-      shortlist: [...ALLOWED, "claude-fictional-1"],
       other: claude.adapter,
       scenario: {
         callsByText: {
@@ -3670,7 +3624,7 @@ describe("the chat, on the scripted Codex", () => {
               arguments: {
                 title: "Helper",
                 task: "Read the March report.",
-                model: "claude-fictional-1",
+                model: "claude-opus-5-5",
                 effort: "low",
               },
             },
@@ -3689,7 +3643,7 @@ describe("the chat, on the scripted Codex", () => {
     );
     expect(row).toMatchObject({
       provider: "claude",
-      model: "claude-fictional-1",
+      model: "claude-opus-5-5",
     });
     expect(String(row?.["result"])).toContain(ANSWER);
   });
@@ -3697,18 +3651,17 @@ describe("the chat, on the scripted Codex", () => {
   it("opens a chat switched from Codex to Claude afresh there, hearing the chat, and Claude answers as Rufi runs it", async () => {
     const claude = await scriptedClaude();
     await startChat("fake", {
-      shortlist: [...ALLOWED, "claude-fictional-1"],
       other: claude.adapter,
     });
     const c = await newChat();
     await say(c, "Hello");
     await ended(c.id);
-    await chat?.selectModel(await chatRow(c.id), "claude-fictional-1");
+    await chat?.selectModel(await chatRow(c.id), "claude-opus-5-5");
     await say(await chatRow(c.id), "Again");
     await ended(c.id, 2);
 
     expect(claude.opened).toHaveLength(1);
-    expect(claude.opened[0]).toMatchObject({ model: "claude-fictional-1" });
+    expect(claude.opened[0]).toMatchObject({ model: "claude-opus-5-5" });
     expect(claude.opened[0]?.seed).toContain("Hello");
     expect(agentRows("SELECT provider FROM agents")).toEqual([
       { provider: "claude" },
@@ -3738,18 +3691,15 @@ describe("the chat, on the scripted Codex", () => {
   });
 
   it("keeps a chat on Claude with Claude, also after a restart: signed out of Claude, it takes nothing and says so; signed in, it sends while Codex is signed out", async () => {
-    const shortlist = [...ALLOWED, "claude-fictional-1"];
     await startChat("fake", {
-      shortlist,
       other: (await scriptedClaude()).adapter,
     });
     const c = await newChat();
-    await chat?.selectModel(c, "claude-fictional-1");
+    await chat?.selectModel(c, "claude-opus-5-5");
 
-    // Rufi restarts before the chat's first message, with Claude signed out:
-    // its models aren't listed now.
+    // Rufi restarts before the chat's first message, with Claude signed out.
     const out = await scriptedClaude({ signedIn: false });
-    await startChat("fake", { shortlist, other: out.adapter });
+    await startChat("fake", { other: out.adapter });
     signIns["claude"] = { state: "signed_out", account: null, text: null };
     await expect(say(await chatRow(c.id), "Hello")).rejects.toThrow(
       CLAUDE_SIGNED_OUT,
@@ -3761,7 +3711,7 @@ describe("the chat, on the scripted Codex", () => {
     expect(agentRows("SELECT count(*) AS n FROM turns")).toEqual([{ n: 0 }]);
 
     const claude = await scriptedClaude();
-    await startChat("fake", { shortlist, other: claude.adapter });
+    await startChat("fake", { other: claude.adapter });
     delete signIns["claude"];
     signIns["codex"] = { state: "signed_out", account: null, text: null };
     await say(await chatRow(c.id), "Hello");
@@ -4119,7 +4069,7 @@ describe("the chat, on the scripted Codex", () => {
       .find((entry) => entry.received?.method === "thread/start")
       ?.received?.params;
     expect(start).toMatchObject({
-      model: "gpt-6.1-sol",
+      model: "gpt-6-astra",
       developerInstructions: "Rufi's rules 1, for IN.",
       cwd: join(home, "ai"),
       permissions: "rufi-ai",

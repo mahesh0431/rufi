@@ -208,16 +208,12 @@ The message you started in the chat and haven't sent, with its chips, saved quie
 _Avoid_: note, unsent
 
 **Model**:
-The version of the AI that answers, such as GPT-6-Astra, chosen for the chat from the **shortlist**, with its **effort**, in the box. A new model answers from the next reply, in the same thread, with the whole chat; one of another provider starts a new thread there, with the chat's last messages.
+The version of the AI that answers, one of Rufi's four: GPT-6-Astra, GPT-6.1-Sol (Codex), Claude Fable 5.1 and Claude Opus 5.5 (Claude), fixed in Rufi, never asked of the providers. Chosen for the chat with its **effort**, in the box; a new chat starts on GPT-6-Astra; a provider that isn't signed in shows its two greyed. A new model answers from the next reply, in the same thread, with the whole chat; one of another provider starts a new thread there, with the chat's last messages.
 _Avoid_: engine, brain
 
 **Effort**:
-How hard the AI thinks before it answers: Low, Medium or High, chosen for the chat with the model. Medium until the user chooses another. A new effort applies from the next reply, in the same thread.
+How hard the AI thinks before it answers: Low, Medium, High or XHigh, the same four for every model, chosen for the chat with the model. Medium until the user chooses another. A new effort applies from the next reply, in the same thread.
 _Avoid_: reasoning level, thinking mode
-
-**Shortlist**:
-The models the AI and its agents may run on, ticked in **Settings** › **Models**: GPT-6-Astra and GPT-6.1-Sol until the user chooses. The ticked ones come first there, in the order they were ticked. The chat's menu offers those Codex or Claude offers now, and a new chat uses the first; an agent runs on its model's provider. An agent starts on one of them or is moved to one; any other is refused. An old `models.json` in the data folder is left as it is and not used.
-_Avoid_: allowlist, whitelist
 
 ## Coming back to things
 
@@ -256,7 +252,7 @@ An AI working in a conversation of its own, on a model and effort, with the tool
 _Avoid_: worker, thread (a conversation is the agent's, not the agent)
 
 **Sub-agent**:
-An agent another agent started for one task, with a title, such as checking a set of results. It sees its task and nothing of the chat, runs on the model and effort of the agent that started it, or others of the **shortlist** it was given, with the same tools or fewer, and goes on after the reply ends. What it saves to the record shows in the chat with Rufi's **receipt**, which names it by its title. When its turn ends, the agent that started it hears how it went (its **done message**), and Rufi AI says what it found. In the **Activity** of the reply that started it, it is one line. While one of Rufi AI's sub-agents works, it is a chip in the row above the message box; its line, its chip or its name on its message opens its pop-up: its own Activity, and Stop while it works. Its messages to Rufi AI show in the chat under its name.
+An agent another agent started for one task, with a title, such as checking a set of results. It sees its task and nothing of the chat, runs on the model and effort of the agent that started it, or another of Rufi's four models it was given, with the same tools or fewer, and goes on after the reply ends. What it saves to the record shows in the chat with Rufi's **receipt**, which names it by its title. When its turn ends, the agent that started it hears how it went (its **done message**), and Rufi AI says what it found. In the **Activity** of the reply that started it, it is one line. While one of Rufi AI's sub-agents works, it is a chip in the row above the message box; its line, its chip or its name on its message opens its pop-up: its own Activity, and Stop while it works. Its messages to Rufi AI show in the chat under its name.
 _Avoid_: helper, child (in screens and help), delegate
 
 **Done message**:
