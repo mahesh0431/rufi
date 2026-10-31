@@ -791,6 +791,23 @@ describe("saving draft items", () => {
       { kind: "result", action: "add", id },
       { kind: "result", action: "link", id },
     ]);
+    // What an undo reads: the link added page 2 alone; page 1 came with the add.
+    const { latest_saves } = (await call("get_overview", {}))
+      .result as unknown as { latest_saves: { changes: unknown[] }[] };
+    expect(latest_saves[0]?.changes).toEqual([
+      {
+        kind: "result",
+        id,
+        action: "add",
+        fields: expect.any(Object) as unknown,
+      },
+      {
+        kind: "result",
+        id,
+        action: "link",
+        from: [{ document: "doc-asha-aug", page: 2 }],
+      },
+    ]);
     await say("Undo both");
     for (const change of [
       {
