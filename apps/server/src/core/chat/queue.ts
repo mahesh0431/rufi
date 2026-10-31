@@ -9,12 +9,10 @@
 // (`sent_as`) and gives back its words, so an edit that came first is what
 // goes and one after is refused. A row Rufi didn't send shows why, and
 // goes when the person sends it; one whose AI thread didn't open can go in
-// a new thread too. A message whose reply ended in Rufi's part (its files'
-// reading stopped or failed, server/chat.ts) is in the chat already and
-// waits with a hold of its own until the person presses its reply's Retry.
+// a new thread too. A message with files goes like any other: Rufi's note
+// on them goes with it (server/chat.ts).
 import type { Chip, Pointer, Queue, QueueItem } from "@rufi/contracts";
-import { sql, type Kysely, type Transaction } from "kysely";
-import { v7 as uuid } from "uuid";
+import type { Kysely, Transaction } from "kysely";
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
 import { chipsOf, RefRefusal } from "./refs.ts";
@@ -36,10 +34,7 @@ export interface HandOver {
   id: string;
   /** The person's message: their turn; else Rufi's note, a Rufi event turn. */
   origin: "person" | "rufi";
-  /**
-   * Rufi's notes for the AI: a Rufi event's, or what its part of a
-   * message's reply read.
-   */
+  /** Rufi's notes for the AI: a Rufi event's. */
   notes: string[];
   /** The person's message, when it is one. */
   text: string | undefined;
@@ -69,12 +64,10 @@ const handOverOf = (row: {
   origin: string;
   text: string;
   refs: string;
-  note: string | null;
 }): HandOver => ({
   id: row.id,
   origin: row.origin as HandOver["origin"],
-  notes:
-    row.origin === "rufi" ? [row.text] : row.note === null ? [] : [row.note],
+  notes: row.origin === "rufi" ? [row.text] : [],
   text: row.origin === "person" ? row.text : undefined,
   refs: row.origin === "person" ? (JSON.parse(row.refs) as Chip[]) : [],
 });
@@ -123,36 +116,6 @@ export async function addRow(
       created_at: at,
       updated_at: at,
     })
-    .execute();
-}
-
-/**
- * In the transaction that ends a reply in Rufi's part (server/chat.ts): its
- * message, in the chat already, waits held with `why` and a new hold for
- * its reply's Retry.
- */
-export async function endPart(
-  trx: Transaction<Tables>,
-  chat: ChatOf,
-  turnId: string,
-  why: string,
-  at: string,
-): Promise<void> {
-  await trx
-    .updateTable("chat_queue")
-    .set({
-      state: "waiting",
-      sent_as: null,
-      held: "reply_ended",
-      held_text: why,
-      hold_id: uuid(),
-      updated_at: at,
-    })
-    .where("person_id", "=", chat.personId)
-    .where("chat_id", "=", chat.id)
-    .where("turn_id", "=", turnId)
-    .where("origin", "=", "person")
-    .where("state", "in", ["waiting", "handing_over"])
     .execute();
 }
 
@@ -258,7 +221,6 @@ export function chatQueue(
           "q.held_text",
           "q.hold_id",
           "q.refs",
-          "q.turn_id",
           "e.text as line",
         ])
         .where("q.person_id", "=", chat.personId)
@@ -277,7 +239,6 @@ export function chatQueue(
           heldText: row.held_text,
           holdId: row.hold_id,
           refs: JSON.parse(row.refs) as Chip[],
-          ...(row.turn_id !== null && { turnId: row.turn_id }),
         })),
       };
     },
@@ -297,20 +258,6 @@ export function chatQueue(
         held: row.held,
         refs: JSON.parse(row.refs) as Chip[],
       })),
-
-    /**
-     * Rows handing over that Rufi hasn't claimed for the agent system: a
-     * message whose files Rufi reads, or has read, first.
-     */
-    reading: async (chat: ChatOf) =>
-      (
-        await rows(db, chat)
-          .select("id")
-          .where("state", "=", "handing_over")
-          .where("sent_as", "is", null)
-          .orderBy("position")
-          .execute()
-      ).map((row) => row.id),
 
     /** The words of these rows of the chat, by id, as they are now. */
     words: async (
@@ -445,19 +392,12 @@ export function chatQueue(
         }
       }),
 
-    /**
-     * The waiting rows in a new order; `ids` must be all of them but the
-     * ones held for Retry, which the box shows apart and which keep their
-     * places.
-     */
+    /** The waiting rows in a new order; `ids` must be all of them. */
     reorder: (chat: ChatOf, ids: readonly string[]) =>
       write(chat, async (trx) => {
         const waiting = await rows(trx, chat)
           .select(["id", "position"])
           .where("state", "=", "waiting")
-          .where((eb) =>
-            eb.or([eb("held", "is", null), eb("held", "!=", "reply_ended")]),
-          )
           .orderBy("position")
           .execute();
         const known = new Set(waiting.map((row) => row.id));
@@ -503,13 +443,12 @@ export function chatQueue(
 
     /**
      * The person sends a row Rufi didn't: first in line, no longer held. A
-     * row whose thread didn't open goes by `recover`, one whose reply ended
-     * by `retry`.
+     * row whose thread didn't open goes by `recover`.
      */
     send: (chat: ChatOf, id: string) =>
       write(chat, async (trx) => {
         const row = await waitingRow(trx, chat, id);
-        if (row.held === "open_failed" || row.held === "reply_ended") {
+        if (row.held === "open_failed") {
           throw new QueueRefusal(CHANGED_ELSEWHERE);
         }
         await trx
@@ -568,9 +507,8 @@ export function chatQueue(
 
     /**
      * Rufi's claim of a row the agent system hands over to an agent's
-     * conversation (`sentAs`), in one transaction: a waiting row, or one
-     * whose files Rufi's part read, is handing over to it, and its words go.
-     * Any other is gone.
+     * conversation (`sentAs`), in one transaction: a waiting row is handing
+     * over to it, and its words go. Any other is gone.
      */
     claim: (chat: ChatOf, id: string, sentAs: string): Promise<Claimed> =>
       write(chat, async (trx) => {
@@ -578,65 +516,15 @@ export function chatQueue(
           .selectAll()
           .where("id", "=", id)
           .executeTakeFirst();
-        const free =
-          (row?.state === "waiting" && row.held === null) ||
-          (row?.state === "handing_over" && row.sent_as === null);
-        if (!row || !free) return { status: "gone" };
+        if (row?.state !== "waiting" || row.held !== null) {
+          return { status: "gone" };
+        }
         await trx
           .updateTable("chat_queue")
           .set({ state: "handing_over", sent_as: sentAs, updated_at: now() })
           .where("id", "=", id)
           .execute();
         return { status: "claimed", handOver: handOverOf(row) };
-      }),
-
-    /**
-     * A waiting message goes to Rufi's part first (its files are read):
-     * handing over, not yet claimed. False when it isn't waiting any more.
-     */
-    startReading: (chat: ChatOf, id: string) =>
-      write(chat, async (trx) => {
-        const { numUpdatedRows } = await trx
-          .updateTable("chat_queue")
-          .set({ state: "handing_over", sent_as: null, updated_at: now() })
-          .where("person_id", "=", chat.personId)
-          .where("chat_id", "=", chat.id)
-          .where("id", "=", id)
-          .where("state", "=", "waiting")
-          .where("held", "is", null)
-          .executeTakeFirst();
-        return numUpdatedRows === 1n;
-      }),
-
-    /**
-     * Rufi's part read a message's files: its note on what it read goes
-     * with the message, in every claim of it from now on.
-     */
-    readNote: (chat: ChatOf, id: string, note: string | undefined) =>
-      write(chat, async (trx) => {
-        await trx
-          .updateTable("chat_queue")
-          .set({ note: note ?? null, updated_at: now() })
-          .where("person_id", "=", chat.personId)
-          .where("chat_id", "=", chat.id)
-          .where("id", "=", id)
-          .where("state", "=", "handing_over")
-          .where("sent_as", "is", null)
-          .execute();
-      }),
-
-    /** A message Rufi's part had nothing to read for waits again. */
-    stopReading: (chat: ChatOf, id: string) =>
-      write(chat, async (trx) => {
-        await trx
-          .updateTable("chat_queue")
-          .set({ state: "waiting", updated_at: now() })
-          .where("person_id", "=", chat.personId)
-          .where("chat_id", "=", chat.id)
-          .where("id", "=", id)
-          .where("state", "=", "handing_over")
-          .where("sent_as", "is", null)
-          .execute();
       }),
 
     /**
@@ -674,67 +562,5 @@ export function chatQueue(
             .execute()
         ).map((row) => row.id),
       ),
-
-    /**
-     * The person's Retry of a message whose reply ended in Rufi's part, for
-     * the hold they saw: it goes first in line. An older hold changes
-     * nothing.
-     */
-    retry: (chat: ChatOf, id: string, hold: string) =>
-      write(chat, async (trx) => {
-        const row = await rows(trx, chat)
-          .select("id")
-          .where("id", "=", id)
-          .where("state", "=", "waiting")
-          .where("held", "=", "reply_ended")
-          .where("hold_id", "=", hold)
-          .executeTakeFirst();
-        if (!row) throw new QueueRefusal(CHANGED_ELSEWHERE);
-        const position = await front(trx, chat);
-        await trx
-          .updateTable("chat_queue")
-          .set({
-            held: null,
-            held_text: null,
-            hold_id: null,
-            // Its next reply is a new one.
-            turn_id: null,
-            position,
-            updated_at: now(),
-          })
-          .where("id", "=", id)
-          .execute();
-      }),
-
-    /**
-     * When Rufi starts, for rows it stopped before it claimed them for the
-     * agent system: a message whose files Rufi's part read waits held with
-     * `why` for its reply's Retry; the rest wait again. A claimed row is
-     * settled with the agent system (server/agents.ts). Returns how many
-     * replies were cut off.
-     */
-    endStopped: (why: string): Promise<number> =>
-      db.transaction().execute(async (trx) => {
-        const at = now();
-        const unclaimed = trx
-          .updateTable("chat_queue")
-          .where("state", "=", "handing_over")
-          .where("sent_as", "is", null);
-        const ended = await unclaimed
-          .set({
-            state: "waiting",
-            held: "reply_ended",
-            held_text: why,
-            hold_id: sql<string>`lower(hex(randomblob(16)))`,
-            updated_at: at,
-          })
-          .where("origin", "=", "person")
-          .where("turn_id", "is not", null)
-          .executeTakeFirst();
-        await unclaimed
-          .set({ state: "waiting", held: null, updated_at: at })
-          .execute();
-        return Number(ended.numUpdatedRows);
-      }),
   };
 }

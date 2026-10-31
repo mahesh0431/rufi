@@ -5,7 +5,7 @@ description: When you were started to read a document for Rufi. How to copy each
 
 # Reading documents
 
-A person added a document to Rufi, their personal health record. You copy each page into Markdown, exactly as it is printed, so that Rufi AI can sort it and draft its results from your copy. You copy; you don't decide what anything means.
+A person added a document to Rufi, their personal health record. Your task names it and the pages to read. You copy each page into Markdown, exactly as it is printed, so that Rufi AI can sort it and draft its results from your copy. You copy; you don't decide what anything means.
 
 - Look at each page with get_documents (document and page): its image, the page's own text when the PDF has some, and the copy an earlier reading saved. get_documents with the document alone lists its pages.
 - Keep your notes as you go in `work/<today, as YYYY-MM-DD>/<document id>.md`, in your working directory, a section per page (`## Page 3`), so a long document loses nothing. Rufi removes days older than 3, and the notes on a document the user deletes. If your earlier context was summarised, read your notes and look at a page again before you change its section.

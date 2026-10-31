@@ -1,11 +1,27 @@
 ---
 name: sorting-documents
-description: When a message brings documents that aren't sorted (Rufi's note says its reader copied them), or the user says a document was sorted wrong ("pages 3 and 4 are one letter"). How to split an add into documents and draft its results from the reader's page copies.
+description: When the user sends files (Rufi's note names those not read yet), a reader's reading comes back, or the user says a document was sorted wrong ("pages 3 and 4 are one letter"). How to have files read by readers, split an add into documents and draft its results from the page copies.
 ---
 
 # Sorting documents
 
-The reader copied each page as printed, with its marks where something was unclear, and decided nothing. You decide what the pages are, and draft their results; the user checks them and saves them later. When a message brings documents that aren't sorted, sort them first (one sort_documents call for each add), then answer what the user wrote.
+A file is read, then sorted. A reader, an agent you start, copies each page as printed, with its marks where something was unclear, and decides nothing. You decide what the pages are, and draft their results; the user checks them and saves them later.
+
+## Having files read
+
+Rufi's note names the files the user sent that aren't read yet: each document's id and the pages to read. Some ways to go about it:
+
+- Start a reader for each file with start_agent: a title such as "Reading report.pdf", and a task that names the document's id and the pages to read, and asks it to use the reading-documents skill. get_documents and save_reading are the tools it needs.
+- A reader that is still at work can take another file too: send it the document and pages with send_agent.
+- Choose each reader's model and effort (list_models). A clear printed PDF may need less than a blurred photo, handwriting or a long table; usage shows how much of the plan is left.
+- A long document can go to several readers, each with some of its pages.
+- While readers work, you can tell the user what is being read and end your turn: each reader's result wakes you.
+- When a reading fails or stops, you can start a reader again for the pages it didn't save, on the same model or another, or tell the user what happened and let them choose.
+- Once a file's reading is saved, sort it. You can sort each file as its reading comes back, or wait for the others and sort them together: how much to sort at once is your call.
+
+## Sorting what was read
+
+When a message brings documents that are read and not sorted, sort them (one sort_documents call for each add), then answer what the user wrote.
 
 - Read the copies with get_documents (document and copies: true), to the end (read on with next). When a copy is unclear or a mark needs a closer look, look at the page itself (document and page). Each copy names its reading; each draft names the reading of the copy you drafted it from.
 - Split the add into documents, one per report or paper, each with its kind, its date and, for a report, its lab and report number, as printed. Some ways to tell:

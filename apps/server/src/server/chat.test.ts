@@ -23,17 +23,9 @@ import { fakeProvider } from "@rufi/agents/fake";
 import type { OpenOptions, ProviderAdapter } from "@rufi/agents/provider";
 import { codexAdapter, instructionsNote } from "../agent/codex/adapter.ts";
 import type { Deadlines } from "../agent/codex/appserver.ts";
-import type { SubAgentTask } from "../agent/runtime.ts";
-import {
-  readPage,
-  scriptedReader,
-  type Script,
-} from "../../tests/fake-reader.ts";
-import { copies } from "../core/documents/copies.ts";
-import { copyReader } from "../core/documents/copy-reader.ts";
 import { readings } from "../core/documents/reading.ts";
+import { saveReading } from "../core/documents/save-reading.ts";
 import { addSent } from "../../tests/sent.ts";
-import { reader as documentReaderOf } from "./reader.ts";
 import {
   transcripts as openTranscripts,
   type ChatRow,
@@ -81,8 +73,6 @@ let tokenGate: Promise<void> | undefined;
 let admitted: string[];
 /** Rufi's MCP server for this run of the chat, as the core serves it. */
 let served: { port: number; close: () => Promise<void> } | undefined;
-/** The runs of Rufi's reader, in order. */
-let readerRuns: SubAgentTask[] = [];
 
 beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), "rufi-chat-"));
@@ -141,8 +131,6 @@ async function startChat(
     rules?: string;
     /** The sign-in's token decision, at the external edge. */
     tokenProvider?: () => Promise<string>;
-    /** What Rufi's reader does in each run (tests/fake-reader.ts). */
-    reader?: Script[];
     /** The agent database is lost while Rufi is closed. */
     loseAgents?: boolean;
     /** A second provider, beside the scripted Codex. */
@@ -193,18 +181,6 @@ async function startChat(
             `model_providers.openai_chatgpt_plan.base_url="${model?.url ?? ""}"`,
           ],
         };
-  const reads = readings(store);
-  const fakeReader = scriptedReader(options.reader ?? []);
-  readerRuns = fakeReader.runs;
-  const documentReader = documentReaderOf({
-    readings: reads,
-    kind: copyReader(pages(store, home), copies(store)),
-    run: fakeReader.run,
-    choice: () => Promise.resolve({ model: "gpt-6.1-sol", effort: "low" }),
-    mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp/reader`, keys },
-    log,
-    retryWaitsMs: [],
-  });
   codex = codexAdapter({
     home,
     ...agentSetup(home),
@@ -233,16 +209,11 @@ async function startChat(
   ai = system;
   // As the core does when it starts again, once Rufi has read the agent
   // database's events.
-  if (again) {
-    await transcripts.interruptRunning();
-    await queue.endStopped("Rufi closed while reading.");
-  }
+  if (again) await transcripts.interruptRunning();
   chat = openChat({
     transcripts,
     queue,
-    ...(options.reader && {
-      reading: { readings: reads, read: documentReader.read },
-    }),
+    readings: readings(store),
     signedIn: () => Promise.resolve(signedIn),
     agent: ai.agent,
     shortlist: () => shortlist(transcripts.setting),
@@ -275,6 +246,7 @@ async function startChat(
             },
             usage: system.usage,
           }),
+          { run: saveReading(), done: () => undefined },
         )(scope);
         return async (name, input, callId) => {
           admitted.push(name);
@@ -1210,6 +1182,9 @@ describe("the chat, on the scripted Codex", () => {
       INSERT INTO document_pages (person_id, document_id, position, file_id, page_in_file, file_name) VALUES
         ('asha', 'doc-1', 1, 'f-1', 1, 'Sunrise Labs August.pdf'),
         ('ravi', 'doc-r', 1, 'f-1', 1, 'Ravi lipid panel.pdf');
+      -- Read long ago: nothing of it is read again.
+      INSERT INTO jobs (id, person_id, kind, document_id, state, targets, sorted_at, created_at)
+        VALUES ('job-1', 'asha', 'document_read', 'doc-1', 'done', '[1]', '2026-10-01T09:00:00Z', '2026-10-01T09:00:00Z');
       INSERT INTO results (id, person_id, category, test_name, value_text, unit, measured_at, entered_at)
         VALUES ('res-1', 'asha', 'lab', 'HbA1c', '6.8', '%', '2026-08-12', '2026-08-13T00:00:00Z');
       INSERT INTO reports (id, person_id, document_id, issuer, collected) VALUES
@@ -1493,7 +1468,6 @@ describe("the chat, on the scripted Codex", () => {
         store = openWritable(databasePath(home));
         transcripts = openTranscripts(store);
         queue = chatQueue(store);
-        await queue.endStopped("Rufi closed while reading.");
         await startChat("fake", {
           scenario: { threads: { [threadId]: {} } },
         });
@@ -1511,204 +1485,6 @@ describe("the chat, on the scripted Codex", () => {
       expect((await inputs()).at(-1)).toEqual(["quiet And what else?"]);
     },
   );
-
-  describe("Rufi's part of a reply", () => {
-    /** Adds the fictional report from the chat box, unsent; its id. */
-    const attach = async () => {
-      const bytes = new Uint8Array(
-        await readFile(
-          join(
-            import.meta.dirname,
-            "../../tests/fixtures/documents/sunrise-labs-august.pdf",
-          ),
-        ),
-      );
-      const { added } = await documents(store, home).add(
-        "asha",
-        [{ name: "Sunrise Labs August.pdf", bytes }],
-        true,
-      );
-      return added[0] ?? "";
-    };
-    const reading = async (c: ChatRow) =>
-      (await transcript(c.id)).all
-        .filter((e) => e.activity === "reading")
-        .map((e) => [e.status, e.link]);
-    const jobs = () =>
-      store.db
-        .prepare("SELECT state FROM jobs ORDER BY rowid")
-        .all()
-        .map((row) => row["state"]);
-
-    it("reads a message's file first, as a step of its reply, then the AI gets the message with Rufi's note in the same reply", async () => {
-      await startChat("fake", {
-        reader: [
-          async (turn) => {
-            for (const page of [1, 2]) {
-              await turn.look(page);
-              await turn.save(page, readPage());
-            }
-            return undefined;
-          },
-        ],
-      });
-      const c = await newChat();
-      const id = await attach();
-      // Unsent, nobody reads it, and the Documents page doesn't list it.
-      expect(await documents(store, home).list("asha")).toEqual([]);
-      await chat?.send(c, uuid(), "quiet What does it say?", [
-        { type: "document", id },
-      ]);
-      await ended(c.id);
-
-      const { turns } = await transcript(c.id);
-      expect(turns).toMatchObject([{ status: "completed" }]);
-      expect(await reading(c)).toEqual([
-        ["done", { document: id, action: "open" }],
-      ]);
-      const [given] = await inputs();
-      expect(given?.join("\n")).toContain(
-        `Rufi's reader copied Sunrise Labs August.pdf (document ${id})`,
-      );
-      expect(given?.at(-1)).toMatch(/^quiet What does it say\?/);
-      expect(readerRuns).toHaveLength(1);
-      expect(await documents(store, home).list("asha")).toMatchObject([
-        { id, notSorted: true },
-      ]);
-    });
-
-    it("ends the reply before the AI when a reading fails or is stopped, its message held for Retry and no reading of its files left open; another message goes meanwhile, and Retry reads on", async () => {
-      const stoppedAt = Promise.withResolvers<undefined>();
-      await startChat("fake", {
-        reader: [
-          () =>
-            Promise.resolve({
-              end: {
-                status: "failed",
-                reason: "sign_in",
-                text: "Your access token could not be refreshed.",
-              },
-            }),
-          async (turn) => {
-            await turn.look(1);
-            await turn.save(1, readPage());
-            stoppedAt.resolve(undefined);
-            await turn.stopped();
-            return { end: { status: "interrupted", reason: "stopped" } };
-          },
-          async (turn) => {
-            await turn.look(2);
-            await turn.save(2, readPage());
-            return undefined;
-          },
-          // The second file, read only once the first is.
-          async (turn) => {
-            await turn.look(1);
-            await turn.save(1, readPage());
-            return undefined;
-          },
-        ],
-      });
-      const c = await newChat();
-      const id = await attach();
-      const [photo = ""] = (
-        await documents(store, home).add(
-          "asha",
-          [
-            {
-              name: "thyroid.jpg",
-              bytes: new Uint8Array(
-                await readFile(
-                  join(
-                    import.meta.dirname,
-                    "../../tests/fixtures/documents/thyroid-recheck.jpg",
-                  ),
-                ),
-              ),
-            },
-          ],
-          true,
-        )
-      ).added;
-      await chat?.send(c, uuid(), "quiet Read this", [
-        { type: "document", id },
-        { type: "document", id: photo },
-      ]);
-      await ended(c.id);
-      expect((await transcript(c.id)).turns).toMatchObject([
-        { status: "failed" },
-      ]);
-      expect((await reading(c)).map(([status]) => status)).toEqual(["failed"]);
-      // The second file's reading, never started, fails with the reply.
-      expect(jobs()).toEqual(["failed", "failed"]);
-      const held = async () => {
-        const [item] = (await queue.list(await chatRow())).items;
-        expect(item).toMatchObject({
-          text: "quiet Read this",
-          held: "reply_ended",
-        });
-        return item as { id: string; holdId: string };
-      };
-
-      // Retry: the reading goes on in a new reply, and the person stops it.
-      const first = await held();
-      await chat?.queue.retry(await chatRow(), first.id, first.holdId);
-      await stoppedAt.promise;
-      await chat?.stop(await chatRow());
-      await ended(c.id, 2);
-      expect((await transcript(c.id)).turns.at(-1)).toMatchObject({
-        status: "interrupted",
-      });
-      expect(jobs()).toEqual(["failed", "failed"]);
-      expect(await inputs()).toEqual([]);
-
-      // Another message goes on its own; the held one waits for Retry.
-      await say(await chatRow(), "quiet Thanks");
-      await ended(c.id, 3);
-      expect(await inputs()).toEqual([["quiet Thanks"]]);
-      const second = await held();
-      expect(second.holdId).not.toBe(first.holdId);
-
-      await chat?.queue.retry(await chatRow(), second.id, second.holdId);
-      await ended(c.id, 4);
-      expect((await transcript(c.id)).turns.at(-1)).toMatchObject({
-        status: "completed",
-      });
-      expect(readerRuns.map((run) => run.input)).toEqual([
-        expect.stringContaining("Sunrise Labs August.pdf"),
-        expect.stringContaining("Sunrise Labs August.pdf"),
-        expect.stringContaining("You saved pages 1 in an earlier run"),
-        expect.stringContaining("thyroid.jpg"),
-      ]);
-      expect(jobs()).toEqual(["done", "done"]);
-      expect((await inputs()).at(-1)?.at(-1)).toMatch(/^quiet Read this/);
-      expect(await waiting()).toEqual([]);
-
-      // The AI took one before a crash, and the next start confirmed it,
-      // with no turn of Rufi's.
-      store.db.exec(`
-        INSERT INTO chat_queue (id, person_id, chat_id, origin, text, position, state, sent_as, created_at, updated_at)
-          VALUES ('confirmed', 'asha', 'c-asha', 'person', 'quiet Confirmed after a crash', 99, 'handing_over', 'gone/1', '2026-10-30T10:00:00Z', '2026-10-30T10:00:00Z');`);
-      await transcripts.applyInput(
-        await chatRow(),
-        "confirmed",
-        { state: "delivered", agentTurn: null },
-        () => Promise.resolve(),
-      );
-
-      // A new thread has the message that went on Retry, and the confirmed
-      // one, once each.
-      await loseThread(c.id);
-      await startChat("fake");
-      await say(await chatRow(), "quiet And now?");
-      await ended(c.id, 5);
-      const seed = (await backendOf("fake").contexts()).at(-1) ?? "";
-      expect(seed.match(/User: quiet Read this/g)).toHaveLength(1);
-      expect(seed.match(/User: quiet Confirmed after a crash/g)).toHaveLength(
-        1,
-      );
-    });
-  });
 
   it("takes nothing the person sends while signed out", async () => {
     await startChat("fake");

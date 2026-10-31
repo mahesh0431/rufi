@@ -7,9 +7,8 @@
 // that a draft names the reading it was drafted from, one with a copy of
 // its page (jobs and page_copies, the person's own); it is kept as the
 // draft's job_id, so a draft from an older copy than its page's current one
-// shows out of date. Rufi AI sorts in the person's reply, after
-// Rufi's reader copied what they sent (server/chat.ts); a reply Rufi started
-// can't sort (core/tools/tools.ts). A sort is written in one transaction
+// shows out of date. Rufi AI sorts what its readers saved (save-reading.ts),
+// in any of its turns. A sort is written in one transaction
 // with its stored tool call, which is its trace: the same call again gets
 // its answer.
 //

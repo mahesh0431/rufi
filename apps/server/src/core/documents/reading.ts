@@ -1,16 +1,15 @@
-// Reading documents: the jobs that read them, one at a time. A job is made
-// or opened again when the reply of the message that sent its document
-// starts (server/chat.ts), and runs in that reply, before the AI gets the
-// message. It targets some pages of its document (all of them first; a
-// read-again only the pages that couldn't be read). Its runs write the
-// reader's page copies (copies.ts); only a run whose reader turn completed
-// normally finishes the job: page states, the document's version, the job
-// done. Rufi AI then sorts the pages in the same reply (sorting.ts), which
-// makes the drafts. A job that doesn't finish fails with its copies kept:
-// when its reply ends otherwise, or at the next start. It goes on when its
-// document is sent again. Nothing here writes the record or decides what a
-// page means. Pages an older reader saved as notebook entries keep them, and
-// are shown as they are.
+// Readings of documents: the jobs that read them. A reading agent that Rufi
+// AI starts saves a whole reading at once (save-reading.ts); the older
+// reader's jobs ran one at a time, their runs writing page copies
+// (copies.ts). Either way a reading targets some pages of its document (all
+// of them first; a read-again only the pages that couldn't be read), and
+// finishes once: page states, the document's version, the job done. Rufi AI
+// then sorts the pages (sorting.ts), which makes the drafts. An older job
+// that didn't finish failed with its copies kept, and its pages are read
+// again when its document is sent again. Nothing here writes the record or
+// decides what a page means. Pages an older reader saved as notebook entries
+// keep them, and are shown as they are.
+import type { Chip } from "@rufi/contracts";
 import { sql, type Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
 import type { Store } from "../store/database.ts";
@@ -158,9 +157,10 @@ export async function finishIn(
     .execute();
 }
 
-/** What a job does when its reply starts, for a document sent with it. */
+/** What a document sent with a message needs read: new pages, or the rest of a reading that stopped. */
 type Plan =
   | { kind: "new"; targets: number[] }
+  /** An older reader's reading that stopped. */
   | { kind: "again"; job: Job }
   | undefined;
 
@@ -390,6 +390,9 @@ export function readings(
         set.delete(listener);
       };
     },
+
+    // needs, open, failOpen and note are the older reader's
+    // (server/reader.ts), whose tests run it until it goes.
 
     /**
      * Whether the document needs reading when a message sends it: never
@@ -656,6 +659,59 @@ export function readings(
         sorts
           ? "Not sorted yet: sort it as the sorting-documents skill says, then answer the user's message."
           : "Nothing in it to sort: tell the user what couldn't be read, then answer their message.",
+      ].join("\n");
+    },
+
+    /**
+     * Rufi's note for the AI on the documents among a message's chips that
+     * aren't read: each one's pages to read (every page of one never read,
+     * the rest of a reading that stopped, and with Retry the pages that
+     * couldn't be read or weren't looked at). Undefined when all are read.
+     * Writes nothing.
+     */
+    toRead: async (
+      personId: string,
+      chips: readonly Chip[],
+    ): Promise<string | undefined> => {
+      const lines: string[] = [];
+      for (const { ref } of chips) {
+        if (ref.type !== "document") continue;
+        const again = ref.readAgain === true;
+        const plan = await planOf(db, personId, ref.id, again);
+        if (plan === undefined) continue;
+        const pages = await db
+          .selectFrom("document_pages")
+          .select(["position", "file_name"])
+          .where("person_id", "=", personId)
+          .where("document_id", "=", ref.id)
+          .orderBy("position")
+          .execute();
+        const name = documentName(pages.map((p) => p.file_name));
+        const of = `of ${String(pages.length)}`;
+        if (plan.kind === "again") {
+          const copied = await copiedBy(db, {
+            jobId: plan.job.id,
+            personId,
+            documentId: ref.id,
+          });
+          const rest = plan.job.targets.filter((t) => !copied.has(t));
+          lines.push(
+            `- ${name} (document ${ref.id}): pages ${ranges(rest)} ${of}, the rest of a reading that stopped`,
+          );
+        } else if (plan.targets.length === pages.length) {
+          lines.push(
+            `- ${name} (document ${ref.id}): ${pages.length === 1 ? "its page" : `all ${String(pages.length)} pages`}`,
+          );
+        } else {
+          lines.push(
+            `- ${name} (document ${ref.id}): pages ${ranges(plan.targets)} ${of} again, which couldn't be read or weren't looked at`,
+          );
+        }
+      }
+      if (lines.length === 0) return undefined;
+      return [
+        "Files the user sent that aren't read yet: nothing of these pages is copied, so they are read before they are sorted (the sorting-documents skill).",
+        ...lines,
       ].join("\n");
     },
 

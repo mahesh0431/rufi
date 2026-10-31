@@ -505,12 +505,11 @@ CREATE TABLE chat_queue (
   event_id TEXT,               -- a Rufi event's line in the transcript
   position INTEGER NOT NULL,   -- order among the waiting rows
   state TEXT NOT NULL DEFAULT 'waiting' CHECK (state IN ('waiting', 'handing_over', 'sent', 'removed')),
-  held TEXT CHECK (held IN ('signed_out', 'restored', 'failed', 'stopped', 'open_failed', 'reply_ended')), -- a waiting row Rufi doesn't hand over by itself, and why: signed_out: the AI found the sign-in missing, and the row goes once it is back; restored: from a restored backup, for the person to send or remove; failed: the AI couldn't take it; stopped: a Stop came before it went; open_failed: the AI's thread didn't open, and the person chooses Send or New thread; reply_ended: its reply ended in Rufi's part (a reading stopped or failed), it is in the chat already, and its reply's Retry sends it again
+  held TEXT CHECK (held IN ('signed_out', 'restored', 'failed', 'stopped', 'open_failed')), -- a waiting row Rufi doesn't hand over by itself, and why: signed_out: the AI found the sign-in missing, and the row goes once it is back; restored: from a restored backup, for the person to send or remove; failed: the AI couldn't take it; stopped: a Stop came before it went; open_failed: the AI's thread didn't open, and the person chooses Send or New thread
   held_text TEXT,              -- why, as it came
-  hold_id TEXT,                -- which open_failed or reply_ended hold this is: the person's choice names it, so a stale click changes nothing
+  hold_id TEXT,                -- which open_failed hold this is: the person's choice names it, so a stale click changes nothing
   sent_as TEXT,                -- the agent and its conversation (<agent>/<number>) that claimed it
-  turn_id TEXT,                -- the turn that used it; set when Rufi's part of its reply starts
-  note TEXT,                   -- Rufi's note on what its part of the reply read, kept once the reading ends; it goes with the message
+  turn_id TEXT,                -- the turn that used it
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   UNIQUE (person_id, id),
@@ -519,7 +518,7 @@ CREATE TABLE chat_queue (
   FOREIGN KEY (person_id, turn_id) REFERENCES turns (person_id, id),
   CHECK ((origin = 'rufi') = (event_id IS NOT NULL)),
   CHECK (held IS NULL OR state = 'waiting'),
-  CHECK ((held IS 'open_failed' OR held IS 'reply_ended') = (hold_id IS NOT NULL))
+  CHECK ((held IS 'open_failed') = (hold_id IS NOT NULL))
 ) STRICT;
 
 -- One save to the record, made by the AI's call to save_changes in a

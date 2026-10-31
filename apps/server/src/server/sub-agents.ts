@@ -317,7 +317,7 @@ export function subAgents(deps: {
                     },
                   ];
                 });
-              // Rufi's rows not in the agent's queue yet, behind a reading.
+              // Rufi's rows not in the agent's queue: held, or not put in yet.
               const later =
                 agent === root
                   ? [...rows.values()]
@@ -400,10 +400,7 @@ export function subAgents(deps: {
               // Rufi's order is whole, as the screens give it: these take
               // the places they had between them, the others keep theirs.
               const current = (await chat.list(scope.chat)).items
-                .filter(
-                  (item) =>
-                    item.state === "waiting" && item.held !== "reply_ended",
-                )
+                .filter((item) => item.state === "waiting")
                 .map((item) => item.id);
               const moving = [...new Set(order)].filter((message) =>
                 current.includes(message),

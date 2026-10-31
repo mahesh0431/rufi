@@ -71,7 +71,6 @@ export interface Tables {
     hold_id: string | null;
     sent_as: string | null;
     turn_id: string | null;
-    note: string | null;
     created_at: string;
     updated_at: string;
   };

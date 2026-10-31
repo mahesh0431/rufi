@@ -671,7 +671,6 @@ it("upgrades a record of version 9 so a chat keeps the context its thread used a
       before.queue.map((row) => ({
         ...row,
         hold_id: null,
-        note: null,
         kind: "queue",
       })),
     );
@@ -1120,7 +1119,6 @@ it("upgrades a record of version 15 so files start on Send: every document sent 
     before.queue.map((row) => ({
       ...row,
       ...(row["id"] === "queue-sort" && { state: "removed" }),
-      note: null,
       kind: "queue",
     })),
   );
