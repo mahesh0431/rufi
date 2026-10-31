@@ -1633,7 +1633,7 @@ describe("what the screens read", () => {
         signIns: {
           codex: {
             ...codex,
-            status: () => {
+            status: (signal) => {
               asked += 1;
               return out
                 ? Promise.resolve({
@@ -1641,7 +1641,7 @@ describe("what the screens read", () => {
                     account: null,
                     text: null,
                   })
-                : codex.status();
+                : codex.status(signal);
             },
           },
         },
