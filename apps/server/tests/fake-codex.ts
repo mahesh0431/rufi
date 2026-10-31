@@ -5,9 +5,8 @@
 // same words the fake model uses for the real Codex (tests/fake-model.ts):
 // "hang" never ends, "partial" writes "ok:part" and then never ends, "slow"
 // answers after 300 ms, "sign-in ended" fails as Codex does when its
-// sign-in has ended and can't be renewed, "fail" fails (the word: an
-// agent's "failed" doesn't), "quiet" makes no tool call and runs no
-// command, "command"
+// sign-in has ended and can't be renewed, "fail" fails (the word: an agent's
+// "failed" doesn't), "quiet" makes no tool call and runs no command, "command"
 // starts a long command ("background command": and the turn ends while it
 // runs), "drip" streams its answer in five parts 100 ms
 // apart, "long" streams 200 parts of 1,000 characters, "think" streams a
