@@ -189,23 +189,27 @@ function Sheet({
   );
   const elapsed = useElapsed(reading?.runAt ?? null);
   const status =
-    reading === undefined
-      ? document?.status === "reading" &&
-        document.reading &&
-        `reading · read ${String(document.reading.saved)} of ${String(document.reading.of)}`
-      : reading.status === "reading"
-        ? [
-            "reading",
-            `read ${String(reading.saved)} of ${String(reading.of)}`,
-            ...(elapsed ? [elapsed] : []),
-          ].join(" · ")
-        : reading.status === "failed"
-          ? `failed · read ${String(reading.saved)} of ${String(reading.of)}`
-          : reading.status === "done"
-            ? "read"
-            : "not read yet";
+    // Its reader at work: it saves its pages at once.
+    document?.status === "reading" && document.reader !== null
+      ? "reading"
+      : reading === undefined
+        ? document?.status === "reading" &&
+          document.reading &&
+          `reading · read ${String(document.reading.saved)} of ${String(document.reading.of)}`
+        : reading.status === "reading"
+          ? [
+              "reading",
+              `read ${String(reading.saved)} of ${String(reading.of)}`,
+              ...(elapsed ? [elapsed] : []),
+            ].join(" · ")
+          : reading.status === "failed"
+            ? `failed · read ${String(reading.saved)} of ${String(reading.of)}`
+            : reading.status === "done"
+              ? "read"
+              : "not read yet";
   const canRetry =
     reading !== undefined &&
+    document?.status !== "reading" &&
     (reading.status === "failed" ||
       (reading.status === "done" &&
         reading.pages.some(
@@ -268,6 +272,7 @@ function Sheet({
                     page={page}
                     personId={personId}
                     documentId={documentId}
+                    reading={document?.status === "reading"}
                     drafts={
                       items.isSuccess
                         ? items.data.items.filter(
@@ -313,12 +318,15 @@ function PageWork({
   documentId,
   page,
   drafts,
+  reading,
 }: {
   personId: string;
   documentId: string;
   page: ReadingView["pages"][number];
   /** The page's draft items, once the reading made them. */
   drafts: readonly DraftItem[] | undefined;
+  /** A reader is at work on the document: no Retry meanwhile. */
+  reading: boolean;
 }) {
   const { entry, checks } = page;
   const outcome = page.state
@@ -373,9 +381,10 @@ function PageWork({
           {summary}
         </span>
         {checks?.incomplete && <Tag>may be incomplete</Tag>}
-        {(page.state === "unreadable" || page.state === "not_looked_at") && (
-          <RetryButton personId={personId} documentId={documentId} />
-        )}
+        {!reading &&
+          (page.state === "unreadable" || page.state === "not_looked_at") && (
+            <RetryButton personId={personId} documentId={documentId} />
+          )}
       </h4>
       {rows.length > 0 && <ItemTable rows={rows} />}
       {page.copy !== null && (

@@ -175,6 +175,7 @@ export interface Tables {
     deleted_at: string | null;
     from_document: string | null;
     sent_at: string | null;
+    reader_agent: string | null;
   };
   draft_items: {
     id: string;

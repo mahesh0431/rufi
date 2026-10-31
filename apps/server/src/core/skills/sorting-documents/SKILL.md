@@ -11,9 +11,10 @@ A file is read, then sorted. A reader, an agent you start, copies each page as p
 
 Rufi's note names the files the user sent that aren't read yet: each document's id and the pages to read. Some ways to go about it:
 
-- Before you start a reader, look at your readers with agent_status, and read_agent when you need more. If one is still reading that document and getting on, tell the user it is still being read, and start nothing new. If it is stuck or failed, stop it if it still runs, then start a fresh one. If there is none, start one.
-- Start a reader for each file with start_agent: a title after its document, such as "Reading: report.pdf", so agent_status shows which reader has which document; and a task that names the document's id and the pages to read, and asks it to use the reading-documents skill. get_documents and save_reading are the tools it needs.
+- Before you start a reader, look at the document with get_documents: its agent is the reader set on it, and its status says "reading" while that agent is at work and hasn't saved. agent_status, and read_agent when you need more, show how the agent is getting on. If it is still reading and getting on, tell the user it is still being read, and start nothing new. If it is stuck or failed, stop it if it still runs, then start a fresh reader. If there is none, start one.
+- Start a reader for each file with start_agent: a title such as "Reading report.pdf", and a task that names the document's id and the pages to read, and asks it to use the reading-documents skill. get_documents and save_reading are the tools it needs.
 - A reader that is still at work can take another file too: send it the document and pages with send_agent.
+- Then set the reader on its documents with set_reader, with the agent's id from start_agent's answer: the user sees the document as Reading while it works, and you see its agent the next time you look.
 - Choose each reader's model and effort (list_models). A clear printed PDF may need less than a blurred photo, handwriting or a long table; usage shows how much of the plan is left.
 - A long document can go to several readers, each with some of its pages.
 - While readers work, you can tell the user what is being read and end your turn: each reader's result wakes you.

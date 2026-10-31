@@ -13,6 +13,7 @@
 --   once.
 -- - Rufi AI sorts as much of an add as it chooses: each page copy says
 --   when it was sorted, from its reading's mark, which goes.
+-- - A document keeps the agent Rufi AI set to read it (reader_agent).
 -- A row held from a restored backup, or for the person's choice, stays
 -- held; sent and removed rows stay as they are. Each message keeps how the
 -- person sent it while a reply ran: into the reply (steer), or after it
@@ -30,6 +31,7 @@ ALTER TABLE page_copies ADD COLUMN sorted_at TEXT;
 UPDATE page_copies
   SET sorted_at = (SELECT sorted_at FROM jobs WHERE jobs.id = page_copies.job_id);
 ALTER TABLE jobs DROP COLUMN sorted_at;
+ALTER TABLE documents ADD COLUMN reader_agent TEXT;
 
 CREATE TABLE chat_queue_new (
   id TEXT PRIMARY KEY,

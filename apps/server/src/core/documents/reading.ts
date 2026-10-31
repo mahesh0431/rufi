@@ -16,6 +16,7 @@ import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
 import type { Checks, Entry, Run } from "./notebook.ts";
 import { documentName, ranges } from "./naming.ts";
+import { readersOf } from "./readers.ts";
 import { pagesOf } from "./sorting.ts";
 
 export interface Job {
@@ -173,6 +174,10 @@ export const CLOSED_WHILE_READING = "Rufi closed while reading";
 export function readings(
   store: Store,
   now: () => string = () => new Date().toISOString(),
+  options: {
+    /** Whether an agent is at work (server/sub-agents.ts); none when not given. */
+    runs?: (agent: string) => boolean;
+  } = {},
 ) {
   const db = store.query;
   const listeners = new Map<string, Set<() => void>>();
@@ -724,6 +729,13 @@ export function readings(
      * Worked out from the document's own pages, so a document split from
      * an add has the add's reading of its pages.
      */
+    /**
+     * These documents' readers: each one's agent, and whether it is reading
+     * the document now (readers.ts).
+     */
+    readers: (personId: string, documentIds: readonly string[]) =>
+      readersOf(db, personId, documentIds, options.runs ?? (() => false)),
+
     statuses: async (personId: string) => {
       const jobs = (
         await db

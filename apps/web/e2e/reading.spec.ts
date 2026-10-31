@@ -153,6 +153,37 @@ test("a file waits in the box until Send; then Rufi AI has a reader read it, a l
   await accessible(page);
 });
 
+test("a file shows Reading, with no Retry, while the reader Rufi AI set on it works", async ({
+  page,
+  rufi,
+}) => {
+  // Rufi AI starts a reader and sets it on the file; the reader works on.
+  await opened(page, rufi, {
+    callsByText: {
+      "Read it": [
+        {
+          id: "start-reader",
+          tool: "start_agent",
+          arguments: {
+            title: "Reading",
+            task: "hang: read (document $document) with the reading-documents skill.",
+            tools: ["get_documents", "save_reading"],
+          },
+        },
+        {
+          id: "set-reader",
+          tool: "set_reader",
+          arguments: { documents: ["$document"], agent: "$started" },
+        },
+      ],
+    },
+  });
+  await sendFiles(page, await report(), "Read it");
+  await expect(row(page)).toContainText("Reading", { timeout: FILE_WORK_MS });
+  await expect(row(page).getByRole("button", { name: "Retry" })).toHaveCount(0);
+  await accessible(page);
+});
+
 test("keeps unreadable pages to check, and Nothing to save for a reading with nothing to save; Retry puts the file in the box, and Send has Rufi AI read only the page that couldn't be read", async ({
   page,
   rufi,

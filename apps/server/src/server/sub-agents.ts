@@ -25,6 +25,12 @@ import type { OfferedModel, ProviderUsage } from "./rufi-ai.ts";
 /** How many turns a page of an agent's conversation holds. */
 const PAGE = 10;
 
+/** Whether the agent is at work: not yet run, running, or going on after a restart. */
+export const agentRuns = (agents: Agents, id: string) => {
+  const status = agents.get(id)?.status;
+  return status === "idle" || status === "running" || status === "continuing";
+};
+
 export function subAgents(deps: {
   agents: Agents;
   kept: ReturnType<typeof chatAgents>;
@@ -214,6 +220,16 @@ export function subAgents(deps: {
         });
         return { stopping: children ? [id, ...agents.below(id)] : [id] };
       },
+
+      // The chat's agents share its root, as read checks.
+      inChat: (agent) => {
+        const found = agents.get(agent);
+        return (
+          found !== undefined && found.root === agents.get(scope.agent)?.root
+        );
+      },
+
+      runs: (agent) => agentRuns(agents, agent),
 
       usage: async () => ({
         yours: agents.get(scope.agent)?.provider ?? null,

@@ -56,6 +56,7 @@ CREATE TABLE documents (
   deleted_at TEXT,       -- when the person deleted it: a tombstone, out of every list and action
   from_document TEXT,    -- the add Rufi AI split it from; null for an add
   sent_at TEXT,          -- when the person sent it in a message; null while it waits unsent in the chat box (a split document has its add's)
+  reader_agent TEXT,     -- the agent Rufi AI set to read it (set_reader), in agents.sqlite; whether it is reading is worked out when shown
   UNIQUE (person_id, id),
   FOREIGN KEY (person_id, from_document) REFERENCES documents (person_id, id)
 ) STRICT;
