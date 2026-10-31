@@ -143,6 +143,19 @@ export const Face = Schema.Literals([
 export type Face = typeof Face.Type;
 
 /** One item of a chat's transcript, in order by `seq`. */
+/**
+ * Why an agent's message to the agent that started it came: its turn ended
+ * done, stopped or failed, it asked a question, or it wrote.
+ */
+export const AgentAbout = Schema.Literals([
+  "done",
+  "asked",
+  "wrote",
+  "stopped",
+  "failed",
+]);
+export type AgentAbout = typeof AgentAbout.Type;
+
 export const Entry = Schema.Struct({
   id: Schema.String,
   /**
@@ -158,7 +171,8 @@ export const Entry = Schema.Struct({
    * service gave it (status running while it thinks, then done, or stopped
    * when its turn ends before the summary is whole); event:
    * Rufi's own factual line about something that happened, never the
-   * person's words; brief: the line of a visit brief, whose id is the brief's.
+   * person's words; brief: the line of a visit brief, whose id is the brief's;
+   * agent: a message to Rufi AI from an agent it started, where Rufi AI took it.
    */
   kind: Schema.Literals([
     "message",
@@ -169,13 +183,15 @@ export const Entry = Schema.Struct({
     "receipt",
     "event",
     "brief",
+    "agent",
   ]),
   /**
    * The message; the reply's answer (without its rufi-basis blocks, which
    * the turn's How holds); an activity's text as the agent reported it (the
    * command, `server.tool`, the paths, a note's words; a line stored before
    * notes, its title); the reasoning's summary so far; a receipt's, an
-   * event's or a brief's line.
+   * event's or a brief's line; an agent's message in its own words (empty
+   * when it stopped).
    */
   text: Schema.String,
   activity: Schema.NullOr(ActivityKind),
@@ -199,8 +215,15 @@ export const Entry = Schema.Struct({
       action: Schema.Literals(["open", "retry"]),
     }),
   ),
-  /** The sub-agent this step started: its line shows it (SubAgent). */
+  /**
+   * The sub-agent this step started: its line shows it (SubAgent); for an
+   * agent's message, the agent that sent it.
+   */
   agent: Schema.optionalKey(Schema.String),
+  /** An agent's message: the agent's name when it sent it, and why it came. */
+  from: Schema.optionalKey(
+    Schema.Struct({ title: Schema.String, about: AgentAbout }),
+  ),
 });
 export type Entry = typeof Entry.Type;
 
@@ -238,24 +261,10 @@ export const Turn = Schema.Struct({
    * from, in the AI's words. Only once the reply completed.
    */
   how: Schema.NullOr(Schema.String),
-  /**
-   * The agent whose message started this reply, Rufi AI's by itself, and
-   * why: its turn ended done, stopped or failed, it asked a question, or it
-   * wrote.
-   */
-  cause: Schema.optionalKey(
-    Schema.Struct({
-      title: Schema.String,
-      about: Schema.Literals(["done", "stopped", "failed", "asked", "wrote"]),
-    }),
-  ),
   /** Its steps are gone: the agent database that kept them is new. */
   stepsGone: Schema.optionalKey(Schema.Literal(true)),
 });
 export type Turn = typeof Turn.Type;
-
-/** Why Rufi AI replied by itself: the agent's message that started it. */
-export type Cause = NonNullable<Turn["cause"]>;
 
 /** How hard the AI thinks for a reply: low is faster, high thinks longer. */
 export const Effort = Schema.Literals(["low", "medium", "high"]);

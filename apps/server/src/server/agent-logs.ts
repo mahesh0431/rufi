@@ -188,6 +188,17 @@ export function agentLogs(deps: {
       };
     },
 
+    /**
+     * Stops one of the chat's sub-agents and every agent it started, as
+     * the person asks on the screens; false when the chat has no such
+     * agent. Its stopped message goes to the agent that started it.
+     */
+    stop: async (chatId: string, agent: string): Promise<boolean> => {
+      if (!(await mine(chatId, agent))) return false;
+      await agents.stop(agent, "person", { children: true });
+      return true;
+    },
+
     /** Everything a sub-agent's step gave; undefined when there is no such step. */
     step: async (chatId: string, agent: string, line: string) => {
       if (!(await mine(chatId, agent))) return undefined;

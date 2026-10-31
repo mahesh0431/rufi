@@ -7,7 +7,7 @@
 // it is stored.
 import {
   type ActivityKind,
-  type Cause,
+  type AgentAbout,
   type Chat,
   type Chip,
   DEFAULT_EFFORT,
@@ -281,7 +281,50 @@ const toEntry = (
   ...(row.refs !== null && { refs: JSON.parse(row.refs) as Chip[] }),
   ...(row.kind === "event" && linkOf(row.details)),
   ...(row.activity === "reading" && linkOf(row.details, true)),
+  ...(row.kind === "agent" && senderOf(row.details)),
 });
+
+/**
+ * A message to Rufi AI from an agent it started, as Rufi AI took it: its
+ * input's id, the agent, its name then, why it came and its own words.
+ */
+export interface AgentMessage {
+  id: string;
+  agent: string;
+  title: string;
+  about: AgentAbout;
+  text: string;
+}
+
+/** An agent's message's agent and its name and why, from its stored facts. */
+function senderOf(details: string | null): Pick<Entry, "agent" | "from"> {
+  const { agent, title, about } = JSON.parse(details ?? "{}") as Partial<
+    Omit<AgentMessage, "id" | "text">
+  >;
+  return agent === undefined || title === undefined || about === undefined
+    ? {}
+    : { agent, from: { title, about } };
+}
+
+const SAYS = {
+  done: "done:",
+  asked: "asks:",
+  wrote: "writes:",
+  stopped: "stopped.",
+  failed: "failed:",
+} as const;
+
+/**
+ * An agent's message as Rufi AI gets it from an earlier thread: Rufi's line
+ * naming the agent by its name and id, then its words.
+ */
+function agentLine(details: string | null, text: string): string {
+  const { agent, from } = senderOf(details);
+  if (agent === undefined || from === undefined) return text;
+  return [`${from.title} (${agent}) ${SAYS[from.about]}`, text]
+    .filter((part) => part !== "")
+    .join("\n\n");
+}
 
 /**
  * An event's link to its document, from its facts, or a reading step's to
@@ -434,7 +477,6 @@ async function turnsOut(trx: Db, rows: TurnRow[]): Promise<Turn[]> {
         threadBefore !== null &&
         threadBefore !== row.thread_id,
       how: how ?? null,
-      ...(row.cause !== null && { cause: JSON.parse(row.cause) as Cause }),
     };
   });
 }
@@ -751,8 +793,8 @@ export function transcripts(
     agentTurnId: string,
     thread: { id: string; model: string },
     inputs: readonly string[],
-    /** The agent's message that started it, when Rufi AI replies by itself. */
-    cause?: Cause,
+    /** The messages of Rufi AI's agents among the inputs. */
+    messages: readonly AgentMessage[],
   ): Promise<{ entries: string[]; turns: string[] } | undefined> {
     if (await turnOf(trx, chat.id, agentTurnId)) return undefined;
     const rows = await handedOver(trx, chat, inputs);
@@ -776,11 +818,49 @@ export function transcripts(
         resets_at: null,
         started_at: now(),
         ended_at: null,
-        cause: cause === undefined ? null : JSON.stringify(cause),
       })
       .execute();
-    const entries = await sent(trx, chat, revision, rows, id);
+    // In the order the turn took them.
+    const entries: string[] = [];
+    for (const input of inputs) {
+      const row = rows.find((one) => one.id === input);
+      if (row) entries.push(...(await sent(trx, chat, revision, [row], id)));
+      const message = messages.find((one) => one.id === input);
+      const made =
+        message && (await agentEntry(trx, chat, revision, message, id));
+      if (made !== undefined) entries.push(made);
+    }
     return { entries, turns: [id] };
+  }
+
+  /**
+   * An agent's message enters the transcript, in `turnId`, by its input's
+   * id: once (one already there stays where it is).
+   */
+  async function agentEntry(
+    trx: Transaction<Tables>,
+    chat: ChatRow,
+    revision: number,
+    message: AgentMessage,
+    turnId: string | null,
+  ): Promise<string | undefined> {
+    if (
+      await trx
+        .selectFrom("transcript_entries")
+        .select("id")
+        .where("id", "=", message.id)
+        .executeTakeFirst()
+    ) {
+      return undefined;
+    }
+    const { id, text, ...sender } = message;
+    return insertEntry(trx, chat, revision, {
+      id,
+      turnId,
+      kind: "agent",
+      text,
+      details: JSON.stringify(sender),
+    });
   }
 
   /** Marks handed-over rows sent; the person's message enters the transcript. */
@@ -1148,10 +1228,10 @@ export function transcripts(
       agentTurnId: string,
       thread: { id: string; model: string },
       inputs: readonly string[] = [],
-      cause?: Cause,
+      messages: readonly AgentMessage[] = [],
     ) =>
       change(chat.id, (trx, revision) =>
-        begin(trx, chat, revision, agentTurnId, thread, inputs, cause),
+        begin(trx, chat, revision, agentTurnId, thread, inputs, messages),
       ),
 
     /** The chips of references, each checked to be the person's (RefRefusal). */
@@ -1260,12 +1340,47 @@ export function transcripts(
       agentTurnId: string,
       thread: { id: string; model: string },
       inputs: readonly string[],
-      cause: Cause | undefined,
+      messages: readonly AgentMessage[],
       write: (trx: Transaction<Tables>) => Promise<void>,
     ) =>
       change(chat.id, async (trx, revision) => {
         await write(trx);
-        return begin(trx, chat, revision, agentTurnId, thread, inputs, cause);
+        return begin(
+          trx,
+          chat,
+          revision,
+          agentTurnId,
+          thread,
+          inputs,
+          messages,
+        );
+      }),
+
+    /**
+     * A message from one of Rufi AI's agents that the agent system steered
+     * into Rufi AI's turn (server/rufi-ai.ts), with `write` in the same
+     * transaction: it enters the transcript in that turn's reply.
+     */
+    applyAgentMessage: (
+      chat: ChatRow,
+      message: AgentMessage,
+      agentTurn: string | null,
+      write: (trx: Transaction<Tables>) => Promise<void>,
+    ) =>
+      change(chat.id, async (trx, revision) => {
+        await write(trx);
+        const turn =
+          agentTurn === null
+            ? undefined
+            : await turnOf(trx, chat.id, agentTurn);
+        const made = await agentEntry(
+          trx,
+          chat,
+          revision,
+          message,
+          turn?.id ?? null,
+        );
+        return made === undefined ? undefined : { entries: [made], turns: [] };
       }),
 
     /**
@@ -1945,6 +2060,7 @@ export function transcripts(
           "e.kind",
           "e.text",
           "e.activity",
+          "e.details",
           "e.questions",
           "e.status as entryStatus",
           "t.status",
@@ -1960,6 +2076,7 @@ export function transcripts(
               "receipt",
               "event",
               "brief",
+              "agent",
             ]),
             eb.and([
               eb("e.kind", "=", "activity"),
@@ -1997,6 +2114,13 @@ export function transcripts(
             from: "note" as const,
             text: row.text,
             ...(!finished && { unfinished: true }),
+          };
+        }
+        // Rufi's line names the agent, as when Rufi AI first got it.
+        if (row.kind === "agent") {
+          return {
+            from: "agent" as const,
+            text: agentLine(row.details, row.text),
           };
         }
         if (row.kind !== "reply") {
