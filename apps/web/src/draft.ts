@@ -99,6 +99,8 @@ export interface BoxState {
   loaded: boolean;
   /** A send is on its way: the box can't change meanwhile. */
   sending: boolean;
+  /** A send the core took, by id, until the chat shows it. */
+  accepted: string | null;
   /** A send has no answer yet: appending must wait for it to be resolved. */
   unresolved: boolean;
   /** The last save failed: the text is only in this tab. */
@@ -147,6 +149,7 @@ export function draftBox(api: DraftApi) {
     draft: { text: "", refs: [] },
     loaded: false,
     sending: false,
+    accepted: null,
     unresolved: false,
     failed: false,
     notice: null,
@@ -342,6 +345,7 @@ export function draftBox(api: DraftApi) {
           forget();
           store.setState({
             sending: false,
+            accepted: id,
             draft: sent.draft,
             text: sent.draft.text,
             refs: shown(sent.draft.refs),

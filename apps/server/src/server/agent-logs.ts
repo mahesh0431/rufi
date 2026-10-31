@@ -136,6 +136,21 @@ export function agentLogs(deps: {
     return lines;
   };
 
+  /** The line before a turn on another model or effort than `earlier`. */
+  const modelLine = (earlier: KeptTurn, turn: KeptTurn): AgentLine => ({
+    id: `${turn.id}:model`,
+    kind: "model",
+    text: "",
+    activity: null,
+    detail: null,
+    status: null,
+    updatedAt: turn.startedAt,
+    changed: {
+      from: { model: earlier.model, effort: earlier.effort },
+      to: { model: turn.model, effort: turn.effort },
+    },
+  });
+
   return {
     started,
 
@@ -181,12 +196,28 @@ export function agentLogs(deps: {
       if (!(await mine(chatId, agent))) return undefined;
       const lines: AgentLine[] = [];
       let before: string | undefined;
+      /** The turn after the page read last, which a model line may open. */
+      let next: KeptTurn | undefined;
       do {
         const page = agents.history(agent, {
           ...(before !== undefined && { before }),
           limit: TURNS_AT_ONCE,
         });
-        lines.unshift(...page.turns.flatMap((turn) => linesOf(agent, turn)));
+        const turns = next === undefined ? page.turns : [...page.turns, next];
+        // Each turn after the first, on another model or effort, says so
+        // first; the page's first waits for the page before it.
+        const read = turns.flatMap((turn, at) => {
+          const earlier = turns[at - 1];
+          return [
+            ...(earlier !== undefined &&
+            (earlier.model !== turn.model || earlier.effort !== turn.effort)
+              ? [modelLine(earlier, turn)]
+              : []),
+            ...(turn === next ? [] : linesOf(agent, turn)),
+          ];
+        });
+        lines.unshift(...read);
+        next = page.turns[0];
         before = page.earlier ?? undefined;
       } while (before !== undefined && lines.length < last);
       const start = Math.max(0, lines.length - last);

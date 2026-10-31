@@ -30,7 +30,6 @@ export function readThen(
         arguments: {
           title,
           task: `${title}: read (document $document) with the reading-documents skill.`,
-          tools: ["get_documents", "save_reading"],
         },
       },
     ],

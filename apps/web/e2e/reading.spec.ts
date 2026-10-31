@@ -85,9 +85,12 @@ const chips = (page: Page) =>
     .locator("form")
     .getByRole("list", { name: "Added to this message" })
     .getByRole("listitem");
-/** The replies' Activity buttons, oldest first. */
+/**
+ * The ended replies' Activity buttons, oldest first: a click while a reply
+ * works folds its Activity, and it stays folded at the end.
+ */
 const activity = (page: Page) =>
-  log(page).getByRole("button", { name: /^Activity · / });
+  log(page).getByRole("button", { name: /^Activity · \d+ steps?\b/ });
 /** A click outside the chat panel steps back to the bar: open it again. */
 const reopen = (page: Page) =>
   chat(page)
@@ -128,6 +131,7 @@ test("a file waits in the box until Send; then Rufi AI has a reader read it, a l
     timeout: FILE_WORK_MS,
   });
   await expect(row(page)).toContainText("Not saved · 2 results");
+  await expect(activity(page)).toHaveCount(2);
   await activity(page).first().click();
   await expect(
     log(page).getByRole("button", { name: /^Reading · / }),
@@ -167,7 +171,6 @@ test("a file shows Reading, with no Retry, while the reader Rufi AI set on it wo
           arguments: {
             title: "Reading",
             task: "hang: read (document $document) with the reading-documents skill.",
-            tools: ["get_documents", "save_reading"],
           },
         },
         {
@@ -280,7 +283,8 @@ test("a file message waiting when a backup is made waits held after a restore, w
     timeout: FILE_WORK_MS,
   });
   await box.fill("Sort this please");
-  await chat(page).getByRole("button", { name: "Queue" }).click();
+  // ⌘Enter queues it for after the reply.
+  await box.press("ControlOrMeta+Enter");
   await expect(
     chat(page).getByRole("region", { name: "Waiting messages" }),
   ).toContainText("Sort this please");
