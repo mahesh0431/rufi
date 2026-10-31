@@ -747,49 +747,17 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       const c = await newChat();
       await say(c, "slow");
       await running(c.id);
-      await expect(say(c, "shorter please")).resolves.toMatchObject({
-        steered: true,
-      });
+      await say(c, "shorter please");
       await ended(c.id);
       const { entries } = await transcript(c.id);
       expect(entries).toContainEqual(["steer", "shorter please"]);
       expect(entries).toContainEqual(["reply", "ok:shorter please"]);
-      await expect(say(c, "after")).resolves.toMatchObject({ steered: false });
+      await say(c, "after");
       await ended(c.id, 2);
       expect((await transcript(c.id)).entries).toContainEqual([
         "reply",
         "ok:after",
       ]);
-    },
-  );
-
-  it(
-    "a Stop while a send is routed into the reply keeps it out",
-    timeout,
-    async () => {
-      // Stop lands while the send looks its id up.
-      const { known } = queue;
-      const looking = Promise.withResolvers<undefined>();
-      const go = Promise.withResolvers<undefined>();
-      queue = {
-        ...queue,
-        known: async (id) => {
-          looking.resolve(undefined);
-          await go.promise;
-          return known(id);
-        },
-      };
-      await startChat(name);
-      const c = await newChat();
-      await say(c, "hang");
-      await running(c.id);
-      const sending = say(c, "A fictional follow-up");
-      await looking.promise;
-      await chat?.stop(c);
-      await ended(c.id);
-      go.resolve(undefined);
-      await expect(sending).rejects.toThrow("Stopped.");
-      expect(await waiting()).toEqual([]);
     },
   );
 

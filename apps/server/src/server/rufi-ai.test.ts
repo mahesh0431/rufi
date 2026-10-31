@@ -341,19 +341,56 @@ it("saves a steer the provider confirms after its turn ended under that turn; th
   await rufi.running();
   const words = "Please include my fictional TSH.";
 
-  expect(await rufi.send("message-2", words)).toEqual({
-    id: "message-2",
-    steered: true,
+  await rufi.send("message-2", words);
+  await vi.waitFor(() => {
+    expect(
+      rows(
+        "SELECT kind, turn_id FROM transcript_entries WHERE id = 'message-2'",
+      ),
+    ).toEqual(rows("SELECT 'steer' AS kind, id AS turn_id FROM turns"));
   });
-  expect(
-    rows("SELECT turn_id FROM transcript_entries WHERE id = 'message-2'"),
-  ).toEqual(rows("SELECT id AS turn_id FROM turns"));
 
   await rufi.send("message-2", words);
   const thread = (await rufi.row()).threadId ?? "";
   expect(
     fake.received(thread).filter((input) => input.parts.includes(words)),
   ).toHaveLength(1);
+  await rufi.close();
+});
+
+it("keeps a message sent while a reply runs through a crash before it reached the AI, and sends it once at the next start", async () => {
+  const fake = fakeProvider({ id: "codex", script: { turn: "runs" } });
+  let rufi = await start(fake.adapter);
+  await rufi.send("message-1", "Summarise my fictional record.");
+  await rufi.running();
+  // The package can't keep the hand-over Rufi has just claimed.
+  const agents = new DatabaseSync(agentsPath(home));
+  agents.exec(`
+    CREATE TRIGGER fictional_crash BEFORE UPDATE OF state ON queue
+    WHEN NEW.state = 'handing_over'
+    BEGIN SELECT RAISE(ABORT, 'A fictional crash.'); END;
+  `);
+  const words = "Please include my fictional TSH.";
+  await rufi.send("message-2", words);
+  // Saved and shown before it goes.
+  await vi.waitFor(async () => {
+    expect(await rufi.waiting()).toEqual([["message-2", "handing_over"]]);
+  });
+  expect(rufi.system.agents.input("message-2")?.state).toBe("waiting");
+  await rufi.close();
+  agents.exec("DROP TRIGGER fictional_crash");
+  agents.close();
+
+  rufi = await start(fake.adapter);
+  await rufi.running();
+  expect(await rufi.waiting()).toEqual([]);
+  const thread = (await rufi.row()).threadId ?? "";
+  expect(
+    fake
+      .received(thread)
+      .filter((input) => input.id === "message-2")
+      .map((input) => input.parts),
+  ).toEqual([[words]]);
   await rufi.close();
 });
 

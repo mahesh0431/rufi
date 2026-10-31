@@ -770,6 +770,8 @@ export function transcripts(
     revision: number,
     rows: { id: string; origin: string; text: string; refs: string }[],
     turnId: string | null,
+    /** A steer went into a turn that ran already. */
+    kind: "message" | "steer" = "message",
   ): Promise<string[]> {
     if (rows.length === 0) return [];
     await trx
@@ -797,7 +799,7 @@ export function transcripts(
         await insertEntry(trx, chat, revision, {
           id: row.id,
           turnId,
-          kind: "message",
+          kind,
           text: row.text,
           refs: JSON.parse(row.refs) as Chip[],
         }),
@@ -1446,6 +1448,9 @@ export function transcripts(
         const [row] = await handedOver(trx, chat, [input]);
         if (!row) return undefined;
         const at = now();
+        // A turn's own inputs are sent as it starts: one taken into a turn
+        // the package names went into a turn that ran already, a steer. One
+        // confirmed with no turn (after a crash) is a message.
         if (outcome.state === "delivered") {
           const turn =
             outcome.agentTurn === null
@@ -1457,6 +1462,7 @@ export function transcripts(
             revision,
             [row],
             turn?.id ?? null,
+            outcome.agentTurn === null ? "message" : "steer",
           );
           return { entries, turns: [] };
         }

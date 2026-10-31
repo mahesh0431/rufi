@@ -38,13 +38,13 @@ A line between days says which day the messages under it are from: "Today", "Yes
 
 Type in the box and press Enter, or click the send button. Shift-Enter starts a new line. You can send files with no words: the send button works with at least one chip too.
 
-When you send, the box says "Sending…" for a moment, and you can't change it; then it empties. Rufi sends the text in this box, also when another tab saved other text just before. Then the message goes to the AI: at once when nothing else runs, or in its turn (see [Waiting messages](#waiting-messages)). It shows in the chat when the AI starts on it, or, when it brings new files, when Rufi starts to read them (see [Documents](documents.md#while-a-document-is-read)).
+When you send, the box says "Sending…" for a moment, and you can't change it; then it empties. Rufi sends the text in this box, also when another tab saved other text just before. Then the message goes to the AI: at once when nothing else runs, or in its turn (see [Waiting messages](#waiting-messages)). It shows in the chat at once: after the chat's last message, marked waiting, until the AI takes it, and then in its place in the chat. A message with new files takes its place when Rufi starts to read them (see [Documents](documents.md#while-a-document-is-read)).
 
 If you aren't signed in when you send, nothing goes to the AI and nothing waits: your text stays in the box, which says "You're signed out. Sign in with ChatGPT to chat." Click **Sign in** (see [Signing in with ChatGPT](signing-in.md)), then send again. A message that already waited when the sign-in went away keeps waiting, and so does one you send while the AI replies if the sign-in goes away just as it is handed over. Signing in alone doesn't send it: it goes the next time Rufi gives the AI something, with your next message or with one of Rufi's notes (see [Rufi's lines](#rufis-lines)). A reply has no time limit. If your sign-in ends while the AI replies, the reply ends there, with the error as the service reported it.
 
 If Rufi can't be reached when you send, your text stays in the box with the reason, also when you leave the chat or reload the page in this tab. Press Enter again: if Rufi did take the first one, it knows this is the same message and doesn't take it twice.
 
-Rufi never sends a message again by itself. If something goes wrong after Rufi took your message, the message shows above the box with the reason, and you choose: **Send** it (again) or **Remove** it.
+Rufi never sends a message again by itself. If something goes wrong after Rufi took your message, the message stays among the waiting messages with the reason, and you choose: **Send** it (again) or **Remove** it.
 
 A message can have up to 10,000 characters. When the box has more, it says so, and Rufi doesn't keep or send the text until you make it shorter.
 
@@ -206,14 +206,15 @@ If you click Stop, what the AI did so far stays in Activity, and the folded line
 
 **Rufi's reader.** When your message brings files, your reply starts with Rufi's part: Rufi's reader copies the pages before the AI starts. Each file is a step in Activity, **Rufi's reader · thyrocare-aug.pdf**, with how far it is. Stop ends the reading too. The AI starts when all files are copied, and answers your message in the same reply (see [Documents](documents.md#while-a-document-is-read)). If the reading doesn't finish, the reply ends before the AI, with the reason and **Retry** (see [Documents](documents.md#when-a-reading-stops)).
 
-You can send while Rufi is replying. A message without new files goes into the reply, and the AI carries on with it in mind. A message with new files, or one you send while Rufi's reader is copying, waits for a reply of its own. Stop ends the reply.
+You can send while Rufi is replying. A message without new files goes into the reply, and the AI carries on with it in mind: it shows as waiting until the AI takes it, then in the reply. A message with new files, or one you send while Rufi's reader is copying, waits for a reply of its own. Stop ends the reply.
 
 ## Waiting messages
 
-What waits shows above the box, also after a reload, a restart of Rufi, or a change of model. For each of your waiting messages you can:
+What waits shows in the chat, after its last message, in the order it goes: your messages as dashed bubbles, and Rufi's notes. It shows there also after a reload, a restart of Rufi, or a change of model. For each of your waiting messages you can:
 
 - **Edit** it (the pencil), then **Save**.
 - **Move** it, to change the order: drag it up or down by its handle (the dots on its left). With the keyboard, go to the handle with Tab, press Space to pick the message up, the up and down arrows to move it, and Space to put it down. Esc puts it back where it was.
+- **Send now**: it goes next, before the others. The one that goes next has no **Send now**.
 - **Remove** it (the X). It never goes to the AI.
 
 The line above them says what happens next:
@@ -238,7 +239,7 @@ Some things happen outside your chat. Rufi tells you with its own line in the ch
 When the AI should know too, Rufi gives it a note:
 
 - **When nothing runs**, the AI gets the note at once, in a short reply of its own. In that reply the AI can only read your health record: it can explain or ask, but it can't save anything or sort a file. Only your own messages can save.
-- **When a reply runs**, the note waits above the box as "Rufi's note", marked **Rufi**, and goes in its turn after the reply, in a short reply of its own. Each note gets its own reply. **Remove** it if the AI doesn't need it.
+- **When a reply runs**, the note waits in the chat among the waiting messages, as "Rufi's note", and goes in its turn after the reply, in a short reply of its own. Each note gets its own reply. **Remove** it if the AI doesn't need it.
 - **When you're signed out**, it waits, and goes the next time Rufi gives the AI something after you sign in again.
 
 ## The model and effort

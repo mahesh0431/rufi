@@ -4,14 +4,17 @@
 // answer; Stop and a failure end the reply before the AI, with Retry; Retry
 // on the Documents page puts a read again chip in the box; the model and
 // effort chosen in Settings; View reading with the reader's copies.
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { ChatGptError } from "../../server/src/agent/chatgpt/openai.ts";
 import type { Scenario } from "../../server/tests/fake-codex.ts";
 import { readPage, scriptedReader } from "../../server/tests/fake-reader.ts";
-import { expect, FILE_WORK_MS, sendFiles, test, type Rufi } from "./rufi.ts";
+import { backupsPath, makeBackup } from "../../server/src/core/store/backup.ts";
+import { restore } from "../../server/src/core/store/restore.ts";
+import { expect, FILE_WORK_MS, Rufi, sendFiles, test } from "./rufi.ts";
 
 // Wide enough for the Documents page beside the chat panel.
 test.use({ viewport: { width: 2000, height: 800 } });
@@ -183,7 +186,7 @@ test("a file waits in the box until Send; then one reply copies its pages as Ruf
   await expect(sheet.locator("pre").nth(1)).toContainText("| Haemoglobin |");
 });
 
-test("a Stop in Rufi's reader ends the reply before the AI with Retry, no waiting message; Retry goes on and the AI answers once", async ({
+test("a Stop in Rufi's reader ends the reply before the AI with Retry, no waiting message; Retry goes on and the AI answers once; restored from a backup, the message waits with Send and Remove", async ({
   page,
   rufi,
 }) => {
@@ -199,11 +202,19 @@ test("a Stop in Rufi's reader ends the reply before the AI with Retry, no waitin
       await turn.save(2, readPage());
       return undefined;
     },
+    // The restored Rufi's reading.
+    async (turn) => {
+      await turn.look(2);
+      await turn.save(2, readPage());
+      return undefined;
+    },
   ]);
   await opened(page, rufi, reader, SORT);
   await sendFiles(page, await report(), "Sort this please");
 
   await expect(row(page)).toContainText("Reading · read 1 of 2");
+  // A backup made now has the message as Rufi reads it.
+  const reading = await makeBackup(rufi.home, new Date());
   await chat(page).getByRole("button", { name: "Stop" }).click();
   await expect(log(page)).toContainText("Stopped. · read 1 of 2");
   // The AI never got the message; the message isn't waiting; Retry is.
@@ -215,6 +226,8 @@ test("a Stop in Rufi's reader ends the reply before the AI with Retry, no waitin
     .getByRole("button", { name: /^Activity · / })
     .click();
   await expect(steps(page).first()).toContainText("stopped · 1 of 2");
+  // A backup made now has the message waiting for Retry.
+  const stopped = await makeBackup(rufi.home, new Date());
 
   await log(page).getByRole("button", { name: "Retry" }).click();
   await expect(log(page).locator(".reply")).toHaveCount(1);
@@ -223,6 +236,42 @@ test("a Stop in Rufi's reader ends the reply before the AI with Retry, no waitin
     log(page).getByText("Sort this please", { exact: true }),
   ).toHaveCount(1);
   await expect(row(page)).toContainText("Not saved · 2 results");
+
+  // Restored from either backup, the message is in the chat with its
+  // reply, and waits held from the backup, with Send and Remove: one is
+  // removed, the other sent.
+  for (const [backup, action] of [
+    [reading, "Remove"],
+    [stopped, "Send"],
+  ] as const) {
+    const target = await mkdtemp(join(tmpdir(), "rufi-restored-"));
+    const restored = new Rufi(target);
+    try {
+      await restore(join(backupsPath(rufi.home), backup.name), target);
+      await restored.start({ reader: reader.run, scenario: SORT });
+      await page.goto(restored.link());
+      await reopen(page);
+      const waiting = chat(page).getByRole("region", {
+        name: "Waiting messages",
+      });
+      await expect(waiting).toContainText("Sort this please");
+      await expect(waiting).toContainText("From a backup");
+      await expect(
+        waiting.getByRole("button", { name: "Send", exact: true }),
+      ).toBeVisible();
+      await expect(
+        waiting.getByRole("button", { name: "Remove" }),
+      ).toBeVisible();
+      await waiting.getByRole("button", { name: action, exact: true }).click();
+      await expect(waiting).toHaveCount(0);
+      await expect(log(page).locator(".reply")).toHaveCount(
+        action === "Send" ? 1 : 0,
+      );
+    } finally {
+      await restored.close();
+      await rm(target, { recursive: true, force: true });
+    }
+  }
 });
 
 test("View reading says where a reading is while the reader's work loads; Retry on the Documents page reads only the pages that couldn't be read, when sent", async ({

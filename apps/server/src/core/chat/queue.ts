@@ -273,7 +273,7 @@ export function chatQueue(
           heldText: row.held_text,
           holdId: row.hold_id,
           refs: JSON.parse(row.refs) as Chip[],
-          ...(row.held === "reply_ended" && { turnId: row.turn_id }),
+          ...(row.turn_id !== null && { turnId: row.turn_id }),
         })),
       };
     },
@@ -306,19 +306,6 @@ export function chatQueue(
           .orderBy("position")
           .execute()
       ).map((row) => row.id),
-
-    /** Whether a send's id was used already: by a row here, or in a chat. */
-    known: async (id: string) =>
-      (await db
-        .selectFrom("chat_queue")
-        .select("id")
-        .where("id", "=", id)
-        .executeTakeFirst()) !== undefined ||
-      (await db
-        .selectFrom("transcript_entries")
-        .select("id")
-        .where("id", "=", id)
-        .executeTakeFirst()) !== undefined,
 
     /**
      * Takes a message from the box: a new waiting row by the send's id, with

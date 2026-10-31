@@ -956,41 +956,6 @@ describe("the local API", () => {
     );
   });
 
-  it(
-    "a Stop while a send goes into the reply keeps it out",
-    { timeout: 15_000 },
-    async () => {
-      const core = await start({
-        adapters: scripted({ slow: ["turn/steer"], slowMs: 600 }),
-      });
-      const page = await session(core);
-      const c = await chat(page);
-      await page.say(c.path, "hang");
-      await until(async () =>
-        (
-          (await page.api("GET", c.path)).body["turns"] as { status: string }[]
-        ).some((turn) => turn.status === "running"),
-      );
-      await page.api("PUT", c.draft, { text: "A fictional follow-up" });
-      const sending = page.say(c.path, "A fictional follow-up");
-      await sleep(200);
-      expect((await page.api("POST", `${c.path}/stop`)).status).toBe(200);
-      expect(await sending).toMatchObject({
-        status: 409,
-        body: { error: "Stopped." },
-      });
-      await sleep(500);
-      const queue = (await page.api("GET", `${c.path}/queue`)).body;
-      expect(queue).toEqual({ items: [] });
-      expect(
-        (await page.api("GET", c.path)).body["turns"] as { status: string }[],
-      ).toMatchObject([{ status: "interrupted" }]);
-      expect((await page.api("GET", c.draft)).body["text"]).toBe(
-        "A fictional follow-up",
-      );
-    },
-  );
-
   it("refuses one person's send of an id another person's send is using", async () => {
     const core = await start({
       adapters: scripted({ slow: ["turn/steer"], slowMs: 600 }),
@@ -1024,7 +989,6 @@ describe("the local API", () => {
       status: 409,
       body: { error: "That message id is already used." },
     });
-    await sleep(300);
     const lines = async (path: string) =>
       (
         (await page.api("GET", path)).body["entries"] as {
@@ -1032,6 +996,8 @@ describe("the local API", () => {
           text: string;
         }[]
       ).filter((entry) => entry.id === id);
+    // It goes into A's reply once Codex takes the steer.
+    await until(async () => (await lines(a.path)).length > 0);
     expect(await lines(a.path)).toMatchObject([
       { text: "Fictional A private text" },
     ]);
