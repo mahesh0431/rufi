@@ -171,8 +171,8 @@ test("a row's history shows a correction before and after, a time with its time"
   rufi,
 }) => {
   await rufi.family(
-    `INSERT INTO results (id, person_id, category, test_name, value_text, unit, measured_at, measured_words, entered_at)
-       VALUES ('res-bp', 'asha', 'measurement', 'Blood pressure', '128/84', 'mmHg', '2026-05-20T08:30', '8:30 that morning', '2026-05-20T10:00:00Z');`,
+    `INSERT INTO results (id, person_id, category, test_name, value_text, unit, measured_at, measured_words, entered_at, test_id)
+       VALUES ('res-bp', 'asha', 'measurement', 'Blood pressure', '128/84', 'mmHg', '2026-05-20T08:30', '8:30 that morning', '2026-05-20T10:00:00Z', 'tst-bp');`,
   );
   await rufi.start({
     scenario: {
@@ -225,9 +225,12 @@ test("the Lab results page shows lab results as the lab printed them, by report,
   const reports = Array.from({ length: 12 }, (_, n) => {
     const month = String(n + 1).padStart(2, "0");
     return `INSERT INTO reports (id, person_id, document_id, issuer, collected) VALUES ('rep-${month}', 'asha', 'doc-asha-aug', 'Lakeside Clinic', '2025-${month}-05');
-      INSERT INTO results (id, person_id, report_id, category, test_name, value_text, measured_at, entered_at) VALUES ('res-${month}', 'asha', 'rep-${month}', 'lab', 'Ferritin', '${String(30 + n)}', '2025-${month}-05', '2026-10-01T10:00:00Z');`;
+      INSERT INTO results (id, person_id, report_id, category, test_name, value_text, measured_at, entered_at, test_id) VALUES ('res-${month}', 'asha', 'rep-${month}', 'lab', 'Ferritin', '${String(30 + n)}', '2025-${month}-05', '2026-10-01T10:00:00Z', 'tst-ferritin');`;
   });
-  await rufi.family(...reports);
+  await rufi.family(
+    "INSERT INTO tests (id, person_id, name) VALUES ('tst-ferritin', 'asha', 'Ferritin');",
+    ...reports,
+  );
   await rufi.start();
   await page.goto(rufi.link());
   await sidebar(page)
@@ -272,10 +275,11 @@ test("a result's values over time: a small trend on its row, and the large one w
   rufi,
 }) => {
   await rufi.family(
-    `INSERT INTO results (id, person_id, category, test_name, value_text, value_number, unit, reference_range, flag_text, measured_at, entered_at) VALUES
-       ('fer-1', 'asha', 'lab', 'Ferritin', '31', 31, 'µg/L', '30 - 400', NULL, '2025-10-12', '2026-10-01T10:00:00Z'),
-       ('fer-2', 'asha', 'lab', 'Ferritin', '18', 18, 'µg/L', '30 - 400', 'Low', '2026-03-04', '2026-10-01T10:00:00Z'),
-       ('fer-3', 'asha', 'lab', 'Ferritin', '26', 26, 'µg/L', '30 - 400', 'Low', '2026-09-01', '2026-10-01T10:00:00Z');`,
+    `INSERT INTO tests (id, person_id, name, unit) VALUES ('tst-ferritin', 'asha', 'Ferritin', 'µg/L');
+     INSERT INTO results (id, person_id, category, test_name, value_text, value_number, unit, reference_range, flag_text, measured_at, entered_at, test_id, test_number) VALUES
+       ('fer-1', 'asha', 'lab', 'Ferritin', '31', 31, 'µg/L', '30 - 400', NULL, '2025-10-12', '2026-10-01T10:00:00Z', 'tst-ferritin', 31),
+       ('fer-2', 'asha', 'lab', 'Ferritin', '18', 18, 'µg/L', '30 - 400', 'Low', '2026-03-04', '2026-10-01T10:00:00Z', 'tst-ferritin', 18),
+       ('fer-3', 'asha', 'lab', 'Ferritin', '26', 26, 'µg/L', '30 - 400', 'Low', '2026-09-01', '2026-10-01T10:00:00Z', 'tst-ferritin', 26);`,
   );
   await rufi.start();
   await page.goto(rufi.link());

@@ -179,6 +179,7 @@ What Rufi does when it saves:
 - **One medicine, one use.** When you take a medicine in two ways, such as a morning and a night dose, stopping one doesn't stop the other.
 - **A visit's medicines become yours only when you say you take them.** The AI asks "Are you taking these?" before it saves any of them as a medicine you take. One you already have gets the visit as one more source, and its details stay. When the doctor changed a dose, the old one is stopped and the new one added, so your history shows both.
 - **A lab result or a measurement.** The AI says which each new result is, and asks when it isn't sure. To move a result to the other page, say so, for example "this weight is a measurement": its value, date and sources stay, and the receipt shows the change (see [Lab results and Measurements](record.md#lab-results-and-measurements)).
+- **One of your tests.** Each result is in one of your tests, such as Creatinine, and the AI says which, and asks when it isn't sure. To join two tests, split one or rename one, say so, for example "these two are the same test" (see [Your tests](record.md#your-tests)).
 - **"No known allergies" has a date.** It can't stay in your health record beside an allergy that is active or whose status is unknown. When you tell the AI about such an allergy, it asks you to remove "no known allergies" in the same save.
 
 To see your health record, open Overview or one of its pages (see [Your health record](record.md)). To change a record from there, click **Ask Rufi** on its row.

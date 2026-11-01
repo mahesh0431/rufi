@@ -130,11 +130,13 @@ describe("what is current", () => {
     const ferritin = ["asha", "ravi"].flatMap((person) =>
       [1, 2, 3, 4].map(
         (month) =>
-          `('${person}-fer-${String(month)}', '${person}', 'lab', 'Ferritin', '${String(20 + month)}', ${String(20 + month)}, 'µg/L', '2026-0${String(month)}-15', '2026-10-01T10:00:00Z', NULL)`,
+          `('${person}-fer-${String(month)}', '${person}', 'lab', 'Ferritin', '${String(20 + month)}', ${String(20 + month)}, 'µg/L', '2026-0${String(month)}-15', '2026-10-01T10:00:00Z', NULL, 'tst-fer-${person}')`,
       ),
     );
     store.db.exec(`
-      INSERT INTO results (id, person_id, category, test_name, value_text, value_number, unit, measured_at, entered_at, replaces_id) VALUES
+      INSERT INTO tests (id, person_id, name) VALUES
+        ('tst-fer-asha', 'asha', 'Ferritin'), ('tst-fer-ravi', 'ravi', 'Ferritin');
+      INSERT INTO results (id, person_id, category, test_name, value_text, value_number, unit, measured_at, entered_at, replaces_id, test_id) VALUES
         ${ferritin.join(",\n")};`);
     const trend = async (person: string, id: string) => {
       const pages =
@@ -159,8 +161,8 @@ describe("what is current", () => {
       { kind: "result", action: "remove", id: "asha-fer-2" },
     ]);
     store.db.exec(`
-      INSERT INTO results (id, person_id, category, test_name, value_text, value_number, unit, measured_at, entered_at, replaces_id) VALUES
-        ('asha-fer-3b', 'asha', 'lab', 'Ferritin', '24', 24, 'µg/L', '2026-03-15', '2026-10-02T10:00:00Z', 'asha-fer-3');`);
+      INSERT INTO results (id, person_id, category, test_name, value_text, value_number, unit, measured_at, entered_at, replaces_id, test_id) VALUES
+        ('asha-fer-3b', 'asha', 'lab', 'Ferritin', '24', 24, 'µg/L', '2026-03-15', '2026-10-02T10:00:00Z', 'asha-fer-3', 'tst-fer-asha');`);
     expect(await trend("asha", "asha-fer-4")).toEqual([
       "asha-fer-1",
       "asha-fer-3b",
@@ -191,7 +193,7 @@ describe("groups and paging", () => {
       "INSERT INTO reports (id, person_id, document_id, issuer, collected) VALUES (?, 'asha', 'doc-asha-aug', 'Sunrise Labs', ?)",
     );
     const insertResult = store.db.prepare(
-      "INSERT INTO results (id, person_id, report_id, category, test_name, value_text, measured_at, entered_at) VALUES (?, 'asha', ?, 'lab', ?, '1', ?, '2026-10-01T10:00:00Z')",
+      "INSERT INTO results (id, person_id, report_id, category, test_name, value_text, measured_at, entered_at, test_id) VALUES (?, 'asha', ?, 'lab', ?, '1', ?, '2026-10-01T10:00:00Z', 'tst-hba1c')",
     );
     for (const report of reports) {
       insertReport.run(report.id, report.collected);
@@ -402,7 +404,7 @@ describe("a row opened", () => {
 
   it("shows a stored row that doesn't fit as can't-show, and the page and tiles still answer", async () => {
     store.db.exec(
-      "INSERT INTO results (id, person_id, category, test_name, value_text, measured_at, entered_at) VALUES ('res-bad', 'asha', 'lab', 'Iron', '80', 'last week', '2026-10-01T10:00:00Z')",
+      "INSERT INTO results (id, person_id, category, test_name, value_text, measured_at, entered_at, test_id) VALUES ('res-bad', 'asha', 'lab', 'Iron', '80', 'last week', '2026-10-01T10:00:00Z', 'tst-hba1c')",
     );
     const page = await views.page("asha", "lab_result");
     expect(page.groups.at(-1)?.rows).toEqual([
@@ -546,11 +548,11 @@ describe("a visit", () => {
 describe("series", () => {
   it("lists a test's current values in one unit and category, dated oldest first, undated last", async () => {
     store.db.exec(`
-      INSERT INTO results (id, person_id, category, test_name, value_text, unit, measured_at, entered_at) VALUES
-        ('tsh-mar', 'asha', 'lab', 'TSH', '1.9', 'mIU/L', '2026-03', '2026-10-01T10:00:00Z'),
-        ('tsh-none', 'asha', 'lab', 'TSH', '3.0', 'mIU/L', NULL, '2026-10-01T10:00:00Z'),
-        ('tsh-other', 'asha', 'lab', 'TSH', '1900', 'µIU/mL', '2026-04-01', '2026-10-01T10:00:00Z'),
-        ('tsh-moved', 'asha', 'measurement', 'TSH', '2.5', 'mIU/L', '2026-04-01', '2026-10-01T10:00:00Z');`);
+      INSERT INTO results (id, person_id, category, test_name, value_text, unit, measured_at, entered_at, test_id) VALUES
+        ('tsh-mar', 'asha', 'lab', 'TSH', '1.9', 'mIU/L', '2026-03', '2026-10-01T10:00:00Z', 'tst-tsh'),
+        ('tsh-none', 'asha', 'lab', 'TSH', '3.0', 'mIU/L', NULL, '2026-10-01T10:00:00Z', 'tst-tsh'),
+        ('tsh-other', 'asha', 'lab', 'TSH', '1900', 'µIU/mL', '2026-04-01', '2026-10-01T10:00:00Z', 'tst-tsh'),
+        ('tsh-moved', 'asha', 'measurement', 'TSH', '2.5', 'mIU/L', '2026-04-01', '2026-10-01T10:00:00Z', 'tst-tsh');`);
     const series = await views.series("asha", "TSH", "mIU/L", "lab");
     // The replaced 2.1 isn't a point: the amended 4.6 is.
     expect(series.values.map((value) => value.id)).toEqual([
@@ -569,14 +571,15 @@ describe("a row's small trend", () => {
     // one in another unit, and one on the other page.
     const months = Array.from({ length: 8 }, (_, i) => {
       const month = String(i + 1).padStart(2, "0");
-      return `('fer-${month}', 'asha', 'lab', 'Ferritin', '${String(20 + i)}', ${String(20 + i)}, 'µg/L', '30 - 400', '2025-${month}-15', '2025-12-01T10:00:00Z')`;
+      return `('fer-${month}', 'asha', 'lab', 'Ferritin', '${String(20 + i)}', ${String(20 + i)}, 'µg/L', '30 - 400', '2025-${month}-15', '2025-12-01T10:00:00Z', 'tst-fer')`;
     });
     store.db.exec(`
-      INSERT INTO results (id, person_id, category, test_name, value_text, value_number, unit, reference_range, measured_at, entered_at) VALUES
+      INSERT INTO tests (id, person_id, name) VALUES ('tst-fer', 'asha', 'Ferritin');
+      INSERT INTO results (id, person_id, category, test_name, value_text, value_number, unit, reference_range, measured_at, entered_at, test_id) VALUES
         ${months.join(",\n")},
-        ('fer-word', 'asha', 'lab', 'Ferritin', 'Haemolysed', NULL, 'µg/L', NULL, '2025-09-15', '2025-12-01T10:00:00Z'),
-        ('fer-unit', 'asha', 'lab', 'Ferritin', '2.6', 2.6, 'nmol/L', NULL, '2025-10-15', '2025-12-01T10:00:00Z'),
-        ('fer-meas', 'asha', 'measurement', 'Ferritin', '25', 25, 'µg/L', NULL, '2025-11-15', '2025-12-01T10:00:00Z');`);
+        ('fer-word', 'asha', 'lab', 'Ferritin', 'Haemolysed', NULL, 'µg/L', NULL, '2025-09-15', '2025-12-01T10:00:00Z', 'tst-fer'),
+        ('fer-unit', 'asha', 'lab', 'Ferritin', '2.6', 2.6, 'nmol/L', NULL, '2025-10-15', '2025-12-01T10:00:00Z', 'tst-fer'),
+        ('fer-meas', 'asha', 'measurement', 'Ferritin', '25', 25, 'µg/L', NULL, '2025-11-15', '2025-12-01T10:00:00Z', 'tst-fer');`);
     const trends = Object.assign(
       {},
       ...(await allPages("lab_result")).map((page) => page.trends),
@@ -617,11 +620,11 @@ describe("lab results and measurements", () => {
     store.db.exec(`
       INSERT INTO reports (id, person_id, document_id, issuer, collected) VALUES
         ('rep-visit', 'asha', 'doc-asha-sep', 'Lakeview Clinic', NULL);
-      INSERT INTO results (id, person_id, report_id, category, test_name, value_text, unit, measured_at, entered_at) VALUES
-        ('bp-sep', 'asha', 'rep-asha-sep', 'measurement', 'Blood pressure', '130/85', 'mmHg', '2026-09-01', '2026-10-01T10:00:00Z'),
-        ('lab-visit', 'asha', 'rep-visit', 'lab', 'Ferritin', '35', 'ng/mL', '2025-07-20', '2026-10-01T10:00:00Z'),
-        ('pulse-visit', 'asha', 'rep-visit', 'measurement', 'Pulse', '72', '/min', '2025-09-03T10:15', '2026-10-01T10:00:00Z'),
-        ('height-when', 'asha', NULL, 'measurement', 'Height', '160', 'cm', NULL, '2026-10-01T10:00:00Z');`);
+      INSERT INTO results (id, person_id, report_id, category, test_name, value_text, unit, measured_at, entered_at, test_id) VALUES
+        ('bp-sep', 'asha', 'rep-asha-sep', 'measurement', 'Blood pressure', '130/85', 'mmHg', '2026-09-01', '2026-10-01T10:00:00Z', 'tst-bp'),
+        ('lab-visit', 'asha', 'rep-visit', 'lab', 'Ferritin', '35', 'ng/mL', '2025-07-20', '2026-10-01T10:00:00Z', 'tst-hba1c'),
+        ('pulse-visit', 'asha', 'rep-visit', 'measurement', 'Pulse', '72', '/min', '2025-09-03T10:15', '2026-10-01T10:00:00Z', 'tst-bp'),
+        ('height-when', 'asha', NULL, 'measurement', 'Height', '160', 'cm', NULL, '2026-10-01T10:00:00Z', 'tst-weight');`);
     const groupsOf = async (kind: "lab_result" | "measurement") =>
       (await allPages(kind)).flatMap((page) =>
         page.groups.map((group) => ({

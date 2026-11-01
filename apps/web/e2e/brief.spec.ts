@@ -218,7 +218,7 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
   await message.press("Enter");
   await expect(page.locator(".receipt").getByRole("listitem")).toHaveText([
     "Changed medicine use Metformin 500 mg: status current → stopped",
-    "Added result Vitamin D 24 ng/mL: category lab, replaces Vitamin D 22 ng/mL",
+    "Added result Vitamin D 24 ng/mL: category lab, replaces Vitamin D 22 ng/mL, in test Vitamin D",
   ]);
   await page.getByRole("link", { name: /^Open Visit brief/ }).click();
   await page.reload();

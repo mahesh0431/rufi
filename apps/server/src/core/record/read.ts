@@ -38,6 +38,8 @@ function given(field: Field, row: Row): unknown {
       return { kind: row["linked_kind"], id: value };
     case "amount":
       return { value, unit: row[unitColumn(field)] ?? undefined };
+    case "test":
+      return value;
   }
 }
 
@@ -85,12 +87,16 @@ export function fieldsOf(
 
 /**
  * The person's records that aren't removed, by kind; results are in the
- * overview's latest_results, the profile in its own part.
+ * overview's latest_results, the profile in its own part, and tests only
+ * counted.
  */
 export async function currentRecords(store: Store, personId: string) {
   const record: Record<string, unknown> = {};
   for (const kind of KINDS) {
-    if (kind.name === "result" || kind.single) continue;
+    // Results are in latest_results, the tests in get_records.
+    if (kind.name === "result" || kind.name === "test" || kind.single) {
+      continue;
+    }
     const { rows } =
       await sql<Row>`SELECT * FROM ${sql.table(kind.table)} r WHERE person_id = ${personId} AND ${isCurrent(kind, "r")} ORDER BY rowid DESC LIMIT ${RECORDS_SHOWN + 1}`.execute(
         store.query,
