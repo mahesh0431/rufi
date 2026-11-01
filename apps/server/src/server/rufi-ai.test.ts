@@ -233,6 +233,7 @@ it("puts each turn, and its whole answer on its reply row, from the package's ev
     onEvent: () => undefined,
     saved: () => Promise.resolve(),
     opening: () => Promise.reject(new Error("It is open already.")),
+    version: () => Promise.resolve("rules-1"),
     claim: () => Promise.resolve(undefined),
     changed: () => undefined,
   });

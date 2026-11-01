@@ -90,6 +90,13 @@ export interface Host {
   /** What an agent's conversation opens with: resumed, or new. */
   opening: (agent: Agent, kind: "resume" | "new") => Promise<Opening>;
   /**
+   * Whether what the agent's open conversation opened with is no longer
+   * what the host gives; asked as each new turn starts. Outdated, it is let
+   * go, and the turn opens it again with what the host gives now. A running
+   * turn keeps what it opened with.
+   */
+  outdated?: (agent: Agent) => Promise<boolean>;
+  /**
    * Keeps a new conversation's reference (the host's ledger), before any of
    * the host's content goes into it; resolves once it is saved.
    */
@@ -685,6 +692,15 @@ export function createAgents(options: {
       lives.set(agent.id, live);
     }
     return live;
+  }
+
+  /** Lets go of an open conversation the host says is outdated (Host.outdated). */
+  async function refresh(live: Live, agent: Agent): Promise<void> {
+    if (!live.conversation || live.provider !== agent.provider) return;
+    if (!(await host.outdated?.(agent))) return;
+    closing.add(live.conversation);
+    live.conversation = undefined;
+    await letGo();
   }
 
   /** The agent's conversation, opened now if it isn't. */
@@ -1465,6 +1481,7 @@ export function createAgents(options: {
     try {
       let conversation: Conversation;
       try {
+        await refresh(live, agent);
         conversation = await conversationOf(live, agent);
       } catch (error) {
         if (lives.get(live.id) !== live) return;

@@ -1007,6 +1007,14 @@ test("Settings keeps how Rufi AI's replies look and your own words for them", as
   await expect(words).toHaveValue(
     "Explain medical words simply.\nUse kg and cm.",
   );
+
+  // Esc while still in the box saves them too, before Settings closes.
+  await words.fill("Use kg and cm.");
+  await words.press("Escape");
+  await expect(settings).toBeHidden();
+  await page.reload();
+  await openSettings(page, "Chat");
+  await expect(words).toHaveValue("Use kg and cm.");
 });
 
 test("Settings › Advanced shows what Rufi AI is told; an edited part is marked and kept, and Reset to default puts Rufi's own back", async ({

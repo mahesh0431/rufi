@@ -140,6 +140,7 @@ export function chat(deps: ChatDeps) {
   const host: RufiAiHost = {
     saved: () => saving,
     opening: (chat, agent) => openingOf(chat, agent),
+    version: async (agent) => rulesOf(await toldNow(), agent).version,
     // Rufi's queue decides: the row's words as they are now, or that it
     // doesn't go. Its files not read yet are named as they go.
     claim: async (chat, input, sentAs) => {
@@ -412,8 +413,7 @@ export function chat(deps: ChatDeps) {
    * Puts the chat's waiting rows in Rufi AI's queue, in the chat's lane, in
    * Rufi's order: what Rufi keeps decides what goes, and the package hands
    * them over, each as the person sent it: into the running reply (steer)
-   * or after it (queue). A conversation told older rules opens again
-   * first, once Rufi AI is idle. Signed out, nothing goes: what waits is
+   * or after it (queue). Signed out, nothing goes: what waits is
    * held with the line on how to sign in.
    */
   const carry = (chat: ChatRow) =>
@@ -436,23 +436,6 @@ export function chat(deps: ChatDeps) {
       const rows = (await queue.waiting(fresh)).filter(
         (row) => row.held === null,
       );
-      const ahead = rows.filter((row) => {
-        const there = agent.input(row.id);
-        return there?.state === "waiting" && there.held === null;
-      });
-      const idle =
-        ahead.length === 0 &&
-        !(await agent.busy(fresh)) &&
-        (await queue.list(fresh)).items.every(
-          (item) => item.state !== "handing_over",
-        );
-      // A conversation told older rules is told again, once nothing runs.
-      const { version } = deps.rules(await toldNow());
-      const told = await agent.rules(fresh);
-      if (told !== undefined && told !== version) {
-        if (!idle) return;
-        await agent.reopen(fresh, false);
-      }
       const first = rows[0];
       if (!first) return;
       try {
@@ -541,6 +524,12 @@ export function chat(deps: ChatDeps) {
     return toldOf(transcripts.setting);
   }
 
+  /** Rufi's rules for one of the chat's agents, as `told` says. */
+  const rulesOf = (told: Told, own: OpeningAgent) =>
+    own.parent
+      ? deps.rules(told, { title: own.title, parent: own.parent })
+      : deps.rules(told);
+
   /**
    * What a conversation of one of the chat's agents opens with now: the
    * current rules, its tools with the agent's key, and for a new one the
@@ -551,10 +540,7 @@ export function chat(deps: ChatDeps) {
     chat: ChatRow,
     own: OpeningAgent,
   ): Promise<ChatOpening> {
-    const told = await toldNow();
-    const { instructions, version } = own.parent
-      ? deps.rules(told, { title: own.title, parent: own.parent })
-      : deps.rules(told);
+    const { instructions, version } = rulesOf(await toldNow(), own);
     return {
       instructions,
       version,
