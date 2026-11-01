@@ -224,7 +224,7 @@ const KIND_CASES: KindCase[] = [
       stored: { setting: "Clinic", place: "Lakeview Family Clinic" },
       receipt: [
         "Saved",
-        "Changed visit Dr Rao · Lakeview Family Clinic: setting Urgent care → Clinic; place not given → Lakeview Family Clinic",
+        "Changed visit Dr Rao · Lakeview Family Clinic: setting Urgent care → Clinic; place Not set → Lakeview Family Clinic",
       ],
     },
     removed: ["Saved", "Removed visit Dr Rao · Lakeview Family Clinic"],
@@ -431,7 +431,7 @@ const KIND_CASES: KindCase[] = [
       stored: { status: "done", outcome: "HbA1c 6.5%" },
       receipt: [
         "Saved",
-        "Changed follow-up Recheck HbA1c: status open → done; outcome not given → HbA1c 6.5%",
+        "Changed follow-up Recheck HbA1c: status open → done; outcome Not set → HbA1c 6.5%",
       ],
     },
     removed: ["Saved", "Removed follow-up Recheck HbA1c"],
@@ -1598,7 +1598,7 @@ describe("the profile", () => {
     ]);
     expect(lines(saved.body.result.receipt)).toEqual([
       "Saved",
-      "Changed your profile: name Asha Fictional → Asha F.; blood group not given → B+; height not given → 162 cm",
+      "Changed your profile: name Asha Fictional → Asha F.; blood group Not set → B+; height Not set → 162 cm",
     ]);
     expect(row("profiles", "asha")).toMatchObject({
       blood_group: "B+",
@@ -1635,7 +1635,7 @@ describe("the profile", () => {
     expect(again).toMatchObject({ id: first.id, fresh: false });
     expect(lines(again.receipt)).toEqual([
       "Saved",
-      "Changed your profile: blood group not given → O+",
+      "Changed your profile: blood group Not set → O+",
     ]);
     expect(rows("SELECT origin, chat_id, receipt FROM operations")).toEqual([
       { origin: "settings", chat_id: null, receipt: first.receipt },
@@ -1835,7 +1835,7 @@ describe("a visit and the records saved from it", () => {
       "Added medicine use Ferrous sulfate 200 mg: current · from visit Dr A. Fictional · Lakeview Family Clinic · 2 Oct 2026",
       "Added a source to medicine use Creatine 5 g: visit Dr A. Fictional · Lakeview Family Clinic · 2 Oct 2026 (its values stay as they are)",
       "Added a source to medicine use Creatine 5 g: Sunrise Labs August.pdf, page 2 (its values stay as they are)",
-      'Changed medicine use Metformin 500 mg: status current → stopped; end not given → 2 Oct 2026 ("02/10/2026") · from Sunrise Labs August.pdf, page 1, visit Dr A. Fictional · Lakeview Family Clinic · 2 Oct 2026',
+      'Changed medicine use Metformin 500 mg: status current → stopped; end Not set → 2 Oct 2026 ("02/10/2026") · from Sunrise Labs August.pdf, page 1, visit Dr A. Fictional · Lakeview Family Clinic · 2 Oct 2026',
       "Added medicine use Metformin 1000 mg: current · from visit Dr A. Fictional · Lakeview Family Clinic · 2 Oct 2026",
     ]);
     // The visit rests on its page; the records from it on the visit. The

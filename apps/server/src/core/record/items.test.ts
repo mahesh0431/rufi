@@ -735,7 +735,7 @@ describe("saving draft items", () => {
     });
   });
 
-  it("links a page again after an undo took it off the result, in a save of its own with a receipt and history", async () => {
+  it("saves a result printed on two pages in one save, one page another source of the other; links a page again after an undo took it off, in a save of its own with a receipt and history", async () => {
     // The same result printed on both pages of the report.
     const haemoglobin = {
       test_name: "Haemoglobin",
@@ -768,14 +768,46 @@ describe("saving draft items", () => {
     });
 
     await say("Save it; page 2 is the same result");
+    // One save, one receipt: page 2 is another source for page 1's new result.
     const saved = await call("save_changes", {
-      items: [{ item: first, version: 1, as: "new", category: "lab" }],
+      items: [
+        {
+          item: second,
+          version: 1,
+          as: "another_source",
+          record: { item: first },
+        },
+        { item: first, version: 1, as: "new", category: "lab" },
+      ],
     });
+    expect(lines(saved.result.receipt)).toEqual([
+      "Saved 2 results from Sunrise Labs August.pdf · 1 new · 1 more source",
+      'Added result Haemoglobin 13.4 g/dL: category lab, measured 12 Aug 2026 ("Collected 12/08/2026") · page 1',
+      "Added a source to result Haemoglobin 13.4 g/dL: Sunrise Labs August.pdf, page 2 (its values stay as they are)",
+    ]);
     const id = saved.result.changes[0]?.id ?? "";
     const firstSave = (one("SELECT id FROM operations") as { id: string }).id;
-    expect((await call("save_changes", { items: [await relink(id)] })).ok).toBe(
-      true,
-    );
+    expect(saved.result.changes).toEqual([
+      { kind: "result", action: "add", id },
+      { kind: "result", action: "link", id },
+    ]);
+    // What an undo reads: the link added page 2 alone; page 1 came with the add.
+    const { latest_saves } = (await call("get_overview", {}))
+      .result as unknown as { latest_saves: { changes: unknown[] }[] };
+    expect(latest_saves[0]?.changes).toEqual([
+      {
+        kind: "result",
+        id,
+        action: "add",
+        fields: expect.any(Object) as unknown,
+      },
+      {
+        kind: "result",
+        id,
+        action: "link",
+        from: [{ document: "doc-asha-aug", page: 2 }],
+      },
+    ]);
     await say("Undo both");
     for (const change of [
       {

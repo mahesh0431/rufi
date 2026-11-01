@@ -1,6 +1,7 @@
 // Saving a document's draft items into the record (docs/adr/0005). The AI
 // names each item, the version it read, how it goes in (a new result,
-// another source for a result the person has, or a correction of one) and
+// another source for a result the person has or one this save adds, or a
+// correction of one) and
 // any fix the user gave in the chat; Rufi takes the values from the stored
 // item, never retyped by the AI, but for the number of a value the user
 // fixed on the document's page, which the AI reads from their words. Code
@@ -73,19 +74,27 @@ export const ItemSave = Schema.Struct({
   }),
   as: Schema.Literals(["new", "another_source", "correction"]).annotate({
     description:
-      "new: a result the user doesn't have yet. another_source: the same result is already saved (from the user's message or another document): its values stay, and this document's page becomes another source. correction: the item corrects a saved result: a new result replaces it.",
+      "new: a result the user doesn't have yet. another_source: the same result is already saved (from the user's message or another document), or saved new from another item of this save: its values stay, and this document's page becomes another source. correction: the item corrects a saved result: a new result replaces it.",
   }),
   record: Schema.optionalKey(
-    Schema.Struct({
-      id: Id.annotate({
-        description: "The saved result's id, from get_records.",
+    Schema.Union([
+      Schema.Struct({
+        id: Id.annotate({
+          description: "The saved result's id, from get_records.",
+        }),
+        version: Schema.NullOr(Id).annotate({
+          description: "The saved result's version, as get_records gave it.",
+        }),
       }),
-      version: Schema.NullOr(Id).annotate({
-        description: "The saved result's version, as get_records gave it.",
+      Schema.Struct({
+        item: Id.annotate({
+          description:
+            "Another item of this save, saved as new in it: the same result printed twice (on two pages, or in two documents). Only for another_source.",
+        }),
       }),
-    }).annotate({
+    ]).annotate({
       description:
-        "For another_source and correction: the saved result it is another source for, or corrects.",
+        "For another_source and correction: the saved result it is another source for, or corrects. Another source can name instead an item this save adds as new.",
     }),
   ),
   category: Schema.optionalKey(
@@ -226,10 +235,17 @@ export async function planItems(
       ?.file_name ?? "a document";
 
   const targets = items.flatMap((i) =>
-    i.record ? [{ kind: "result", id: i.record.id }] : [],
+    i.record && "id" in i.record ? [{ kind: "result", id: i.record.id }] : [],
   );
   const versions = await recordVersions(trx, personId, targets);
   const seen = new Map<string, number>();
+  /** Items that are another source for another item of this save. */
+  const ofItems: {
+    at: string;
+    item: string;
+    target: string;
+    page: Planned["page"];
+  }[] = [];
   const asked = (type: Ref["type"], id: string) =>
     context.refs.filter((ref) => ref.type === type && ref.id === id);
 
@@ -358,6 +374,23 @@ export async function planItems(
           undefined,
           `Name the saved result this item is ${save.as === "correction" ? "a correction of" : "another source for"}, with its id and version from get_records.`,
         );
+        continue;
+      }
+      if ("item" in save.record) {
+        const target = save.record.item;
+        const wrong =
+          save.as !== "another_source"
+            ? "Only another_source can name an item of this save. A correction names the saved result it corrects, with its id and version from get_records."
+            : save.category !== undefined
+              ? "Another source keeps the result as it is, its category too: leave category out."
+              : save.fix !== undefined
+                ? "Another source keeps the result's values. If the user corrected a value, save the item as new or as a correction instead."
+                : undefined;
+        if (wrong) {
+          problem(`${at}.record`, save.record, wrong);
+          continue;
+        }
+        ofItems.push({ at, item: row.id, target, page });
         continue;
       }
       const target = save.record;
@@ -496,6 +529,33 @@ export async function planItems(
         number: own?.report_number ?? null,
         collected: own?.date ?? null,
       },
+    });
+  }
+  // Another source for an item this save adds as new: linked once its
+  // result is written, in the same save.
+  for (const { at, item, target, page } of ofItems) {
+    const added = planned.find(
+      (p) => p.action === "add" && p.item?.id === target && p.item.as === "new",
+    );
+    if (!added) {
+      problem(
+        `${at}.record`,
+        { item: target },
+        "No item of this save is saved as new with this id. Name an item this save adds as new, or a saved result by its id and version from get_records.",
+      );
+      continue;
+    }
+    added.ref = `item:${target}`;
+    planned.push({
+      kind: result,
+      action: "link",
+      id: undefined,
+      of: added.ref,
+      source: undefined,
+      page,
+      columns: {},
+      before: undefined,
+      item: { id: item, as: "another_source" },
     });
   }
   return { planned, earlier };

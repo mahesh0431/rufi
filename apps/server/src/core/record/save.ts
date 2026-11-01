@@ -674,8 +674,15 @@ export async function saveChanges(
   const added = new Map<string, string>();
   let seq = 0;
   for (const planning of planned) {
+    // A link to a record added earlier in this save: its id, and the
+    // record as added.
+    const of = planning.of === undefined ? undefined : added.get(planning.of);
     const change: Planned = {
       ...planning,
+      ...(of !== undefined && {
+        id: of,
+        before: await recordOf(trx, planning.kind, where.personId, of),
+      }),
       cites: planning.cites?.map((cite) =>
         cite.type === "visit" && cite.ref !== undefined
           ? { ...cite, id: added.get(cite.ref) }
@@ -825,6 +832,8 @@ export interface Planned {
   cites?: Cite[] | undefined;
   /** The name an added record has in this save. */
   ref?: string;
+  /** The ref of a record this save adds, that a link with no id is for. */
+  of?: string;
   columns: Row;
   before: Row | undefined;
   /** The draft item it saves. */
@@ -1394,7 +1403,7 @@ const plural = (n: number, one: string, many = `${one}s`) =>
  */
 function receiptText(written: readonly Written[], links: Links): string {
   const value = (text: string) =>
-    text === "not given" ? text : `*${literal(text)}*`;
+    text === "Not set" ? text : `*${literal(text)}*`;
   const documents = [
     ...new Map(
       written.flatMap((w) => (w.page ? [[w.page.document, w.page.name]] : [])),
@@ -1460,8 +1469,8 @@ function receiptText(written: readonly Written[], links: Links): string {
       if (before && storedOf(field, before) === storedOf(field, after)) {
         continue;
       }
-      let then = (before && shownField(field, before, links)) ?? "not given";
-      let now = shownField(field, after, links) ?? "not given";
+      let then = (before && shownField(field, before, links)) ?? "Not set";
+      let now = shownField(field, after, links) ?? "Not set";
       // Two linked records of the same name are told apart by their ids.
       if (then === now && field.type === "link") {
         then = `${then} (${String(before?.["linked_id"])})`;
