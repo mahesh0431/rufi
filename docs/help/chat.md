@@ -118,6 +118,18 @@ The AI's reply is drawn as it writes it: headings, text, lists and tables, chart
 - **When a reply can't be drawn**, Rufi doesn't show part of it, since a value could be missing. The reply shows what the AI wrote and "This reply couldn't be drawn. Ask again to have it drawn." A reply the AI wrote as plain words shows as words.
 - Nothing in a reply runs or loads from the internet, and nothing in it can reach your record: Rufi draws it from what the AI wrote. Check the values against your record, as with anything the AI says.
 
+### Choose how replies look
+
+In [Settings › Chat](rufi:/settings/chat) › **Replies**, choose how Rufi AI's replies look:
+
+- **Visual** (the start): replies built from OpenUI's parts, with cards, charts, tables and sections where they fit.
+- **Balanced:** text first, with a table or chart where it helps.
+- **Simple:** short text.
+
+Under **Your own words**, you can tell Rufi AI in your own words how you like replies, for example "Explain medical words simply. Use kg and cm." It saves when you leave the box, and Rufi AI reads it with every reply, whichever of the three you chose. Your words change how a reply looks and reads; Rufi's own rules still come first: your values exactly as your record keeps them, where they come from, and asking before it saves.
+
+A new choice or new words reach the AI with your next message, in the chat you have. For one reply only, ask in the chat, for example "show this more simply".
+
 When the AI makes a picture in its folder to show you (see [What the AI can do in its folder](your-data-and-the-ai.md#what-the-ai-can-do-in-its-folder)), the reply shows it:
 
 - **A picture**, such as one you asked the AI for, shows in the reply at its own size, up to the reply's width, with the AI's caption under it. Click it to see it full size; press Esc or click again to go back. Rufi shows PNG, JPEG, GIF and WebP pictures.

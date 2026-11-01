@@ -4,11 +4,12 @@
 // gives), Appearance (light or dark, the colour theme, and how a reply
 // sits in the chat), Chat (when a reply's Activity opens,
 // what a message sent while a reply runs does, how often Rufi carries on
-// after a restart) and Data (device data, backups, the export of your data,
+// after a restart, how Rufi AI's replies look and your own words for them)
+// and Data (device data, backups, the export of your data,
 // and where Rufi keeps it). A change takes effect at once; there is no Save.
 import { Dialog } from "@base-ui/react/dialog";
 import { Tabs } from "@base-ui/react/tabs";
-import { Backups, DataFolder } from "@rufi/contracts";
+import { Backups, DataFolder, MAX_REPLY_WORDS } from "@rufi/contracts";
 import { useMutation } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
@@ -22,6 +23,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
+import { useState } from "react";
 import { download, read } from "./api.ts";
 import { AppearanceChoice, ColourChoice } from "./appearance.tsx";
 import { DeviceDataSection } from "./devices.tsx";
@@ -217,6 +219,25 @@ function GroupOptions({ group }: { group: Group }) {
     case "chat":
       return (
         <>
+          <Section title="Replies" id="reply-style">
+            <SettingChoice
+              setting="replyStyle"
+              label="Replies"
+              labelledBy="reply-style"
+              choices={[
+                { value: "visual", label: "Visual" },
+                { value: "balanced", label: "Balanced" },
+                { value: "simple", label: "Simple" },
+              ]}
+            />
+            <p className="text-muted">
+              How Rufi AI's replies look. Visual: cards, charts and sections.
+              Balanced: text first, with a table or chart where it helps.
+              Simple: short text. You can still ask for another way in the chat,
+              for one reply.
+            </p>
+          </Section>
+          <ReplyWordsSection />
           <Section title="Activity" id="activity">
             <SettingChoice
               setting="activity"
@@ -265,6 +286,55 @@ function GroupOptions({ group }: { group: Group }) {
         </>
       );
   }
+}
+
+/**
+ * The user's own words for how replies look and read, saved when they
+ * leave the box. Rufi AI reads them with every reply, after Rufi's rules.
+ */
+function ReplyWordsSection() {
+  const kept = useSettings().data?.replyWords;
+  return (
+    <Section title="Your own words">
+      {kept !== undefined && <ReplyWords kept={kept} />}
+    </Section>
+  );
+}
+
+function ReplyWords({ kept }: { kept: string }) {
+  const [words, setWords] = useState(kept);
+  const save = useMutation({
+    mutationFn: (replyWords: string) => saveSettings({ replyWords }),
+  });
+  return (
+    <>
+      <textarea
+        aria-label="Your own words"
+        value={words}
+        maxLength={MAX_REPLY_WORDS}
+        rows={3}
+        placeholder="For example: Explain medical words simply. Use kg and cm."
+        onChange={(event) => {
+          setWords(event.target.value);
+        }}
+        onBlur={() => {
+          if (words !== (save.variables ?? kept)) save.mutate(words);
+        }}
+        className="w-full resize-y rounded-lg border border-line bg-surface px-2.5 py-2"
+      />
+      <p className="text-muted">
+        Rufi AI reads these with every reply, whichever way replies look. They
+        change how a reply looks and reads; Rufi's own rules still come first:
+        your values exactly as kept, where they come from, and asking before it
+        saves.
+      </p>
+      {save.error && (
+        <p role="alert" className="text-muted">
+          {save.error.message}
+        </p>
+      )}
+    </>
+  );
 }
 
 /** The region whose emergency number the AI gives. */

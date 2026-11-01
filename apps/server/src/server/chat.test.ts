@@ -920,6 +920,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
         false,
         false,
         false,
+        false,
       ]);
       expect(entries.filter(([kind]) => kind === "reply")).toEqual([
         ["reply", "ok:first"],
@@ -4250,7 +4251,7 @@ describe("the chat, on the scripted Codex", () => {
       },
     ]);
     expect((await transcript(c.id)).turns).toHaveLength(1);
-    expect((await chatRow(c.id)).threadTools).toBe("rules-1-");
+    expect((await chatRow(c.id)).threadTools).toBe("rules-1--visual");
     const started = (await readFile(join(home, "fake.jsonl"), "utf8"))
       .split("\n")
       .filter((line) => line.includes('"method":"thread/start"'));
