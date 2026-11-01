@@ -6,8 +6,8 @@
    applies on screen when <html data-theme="dark">, which each page sets
    before it paints. To add a theme, add a block like the dark one.
 
-   The agreed look: calm greys, the blue accent only for selection and the
-   one main action. No clinical colour (no red, amber or green that means
+   The agreed look: calm, neutral greys with no tint, the blue accent only
+   for selection and the one main action. No clinical colour (no red, amber or green that means
    something about a health value). The one red is a UI colour: "this
    removes data", on the last step of a delete that can't be undone. Text
    keeps WCAG AA contrast in every theme. Apricot belongs to Rufi itself. */
@@ -15,12 +15,12 @@
 /* Light: a light page, a light grey sidebar, white rounded groups. */
 :root {
   color-scheme: light;
-  --page: #f5f7fa; /* the page behind everything */
-  --side: #eef1f5; /* the sidebar, and soft fills: code, activity, hover */
+  --page: #f7f7f7; /* the page behind everything */
+  --side: #f1f1f1; /* the sidebar, and soft fills: code, activity, hover */
   --surface: #ffffff; /* groups, fields and floating panels on the page */
-  --line: #e3e6eb; /* borders and dividers */
-  --ink: #1d2329; /* text */
-  --muted: #5f6873; /* quieter text and icons */
+  --line: #e6e6e6; /* borders and dividers */
+  --ink: #222222; /* text */
+  --muted: #676767; /* quieter text and icons */
   --accent: #2563eb; /* the one main action, and selection marks */
   --accent-hover: #1d4ed8; /* the main action under the pointer */
   --on-accent: #ffffff; /* text and icons on the accent */
@@ -57,12 +57,12 @@
 @media screen {
   :root[data-theme="dark"] {
     color-scheme: dark;
-    --page: #191c20;
-    --side: #22262b;
-    --surface: #262a30;
-    --line: #363c43;
-    --ink: #e4e8ec;
-    --muted: #9ba4ae;
+    --page: #1c1c1c;
+    --side: #262626;
+    --surface: #2a2a2a;
+    --line: #3b3b3b;
+    --ink: #e7e7e7;
+    --muted: #a3a3a3;
     --accent: #2f6fe6;
     --accent-hover: #2459c4;
     --on-accent: #ffffff;
