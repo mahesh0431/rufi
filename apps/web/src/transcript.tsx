@@ -1,7 +1,7 @@
 // The chat's transcript as the core stored it: your messages, the AI's
-// replies in OpenUI Lang (openui/reply.tsx), with the pictures, pages and
-// diagrams they show (files.tsx), each picture the AI generated, and under each answer its
-// Activity; Rufi's receipt for
+// replies in OpenUI Lang (openui/reply.tsx), with the pictures and pages
+// they show (files.tsx), each picture the AI generated, and under each
+// answer its Activity; Rufi's receipt for
 // each save to the record, Rufi's own event lines (never your words), the
 // line of each visit brief, which opens it, and how a reply ended when it
 // didn't finish. A line between days, and a quiet line where a new AI thread
@@ -67,7 +67,7 @@ import { useShallow } from "zustand/shallow";
 import { MiddleCut, StepDetails, took } from "./activity.tsx";
 import { boxFor } from "./boxes.ts";
 import { ChipView } from "./chips.tsx";
-import { Diagram, fileIn, NativePicture, Page, Picture } from "./files.tsx";
+import { fileIn, NativePicture, Page, Picture } from "./files.tsx";
 import { OpenUIReply, picturesShownBy } from "./openui/reply.tsx";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
 import {
@@ -97,8 +97,8 @@ import { Button, buttonLook, ICON, Problem } from "./ui.tsx";
 // images, and links only to http(s) pages, opened outside Rufi with no opener
 // or referrer. A reply also shows a picture or a page in a file the AI made
 // (an image or a link to its path), links a page of Rufi for the person
-// whose chat it is (rufi:/documents/<id>), which opens in place, and draws a
-// Mermaid diagram once it has ended. Anything else shows as its text.
+// whose chat it is (rufi:/documents/<id>), which opens in place. Anything
+// else shows as its text.
 const WEB = /^https?:\/\//i;
 const webLink: Components["a"] = ({ href, children }) =>
   href !== undefined && WEB.test(href) ? (
@@ -170,8 +170,8 @@ function RufiLink({ path, children }: { path: string; children: ReactNode }) {
   );
 }
 
-/** A reply's parts; `streaming`: it is still being written. */
-const replyComponents = (streaming: boolean): Components => ({
+/** A reply's parts: its links and the files it names. */
+const REPLY: Components = {
   a: ({ href, children, node, ...rest }) => {
     const page = href === undefined ? null : RUFI.exec(href);
     if (page?.[1] !== undefined) {
@@ -195,41 +195,19 @@ const replyComponents = (streaming: boolean): Components => ({
       <Picture path={file.path} caption={alt ?? ""} />
     );
   },
-  pre: ({ node, children }) => {
-    const first = node?.children[0];
-    const code =
-      first?.type === "element" && first.tagName === "code" ? first : null;
-    const classes = code?.properties["className"];
-    const language = (name: string) =>
-      Array.isArray(classes) && classes.includes(`language-${name}`);
-    // Half-written, a diagram stays its code until the reply ends.
-    return code && language("mermaid") && !streaming ? (
-      <Diagram source={textOf(code)}>
-        <pre>{children}</pre>
-      </Diagram>
-    ) : (
-      <pre>{children}</pre>
-    );
-  },
-});
-
-/** Made once each, so a reply's pictures don't draw again as it grows. */
-const WRITING = replyComponents(true);
-const ENDED = replyComponents(false);
+};
 
 /** A file's path or a page of Rufi, kept as written; the parts above check it. */
 const keepFiles = (url: string) =>
   /^(file|rufi):/i.test(url) ? url : defaultUrlTransform(url);
 
 /** An OpenUI reply's Markdown text: its links and files, as above. */
-const textOptions = (parts: Components): Options => ({
+const REPLY_TEXT: Options = {
   remarkPlugins: REMARK,
-  components: { a: parts.a, img: parts.img },
+  components: REPLY,
   urlTransform: keepFiles,
   skipHtml: true,
-});
-const WRITING_TEXT = textOptions(WRITING);
-const ENDED_TEXT = textOptions(ENDED);
+};
 
 /** The same Markdown tree and file rules as the reply renderer above. */
 const parser = unified()
@@ -271,14 +249,14 @@ export function Marked({
 }: {
   text: string;
   links?: boolean;
-  /** A reply: it shows the files it names; `streaming` while it is written. */
-  reply?: { streaming: boolean };
+  /** A reply: it shows the files it names. */
+  reply?: boolean;
 }) {
   if (reply) {
     return (
       <Markdown
         remarkPlugins={REMARK}
-        components={reply.streaming ? WRITING : ENDED}
+        components={REPLY}
         urlTransform={keepFiles}
         skipHtml
       >
@@ -327,13 +305,13 @@ function Reply({
         text={text}
         streaming={streaming}
         personId={personId}
-        markdown={streaming ? WRITING_TEXT : ENDED_TEXT}
+        markdown={REPLY_TEXT}
         openLink={openLink}
       >
         {/* A reply with no OpenUI in it. While it streams, half-written
             Markdown is closed so it reads right; a half-written link shows
             as its text. */}
-        <Marked text={readableReply(text, streaming)} reply={{ streaming }} />
+        <Marked text={readableReply(text, streaming)} reply />
       </OpenUIReply>
     </div>
   );

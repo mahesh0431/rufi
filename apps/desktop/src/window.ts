@@ -131,15 +131,13 @@ export function openWindow(
   // itself never leaves Rufi, and opens no other window.
   //
   // A popup's opener isn't told, so one goes to the browser only while the
-  // page has no frame but Rufi's locked ones: a page the AI made, or a
-  // diagram, served from Rufi under policies that sandbox them without
-  // popups, so a popup never comes from them. Rufi's pages refuse to be
+  // page has no frame but Rufi's locked ones: a page the AI made, served
+  // from Rufi under a policy that sandboxes it without popups, so a popup
+  // never comes from it. Rufi's pages refuse to be
   // framed, and its CSP blocks frames from elsewhere, but script can still
   // make a blank or srcdoc frame, which takes the page's CSP.
   const locked = (frame: WebFrameMain) =>
-    frame.origin === "null" &&
-    (frame.url.startsWith(`${link.origin}/files/`) ||
-      frame.url.startsWith(`${link.origin}/diagram.html#`));
+    frame.origin === "null" && frame.url.startsWith(`${link.origin}/files/`);
   contents.setWindowOpenHandler(({ url }) => {
     const frames = contents.mainFrame.framesInSubtree;
     if (

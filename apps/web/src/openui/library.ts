@@ -5,7 +5,6 @@
 //   LineChart spaces its points evenly), with a table of every value;
 // - Page: an HTML page the AI made in its folder, shown whole in a locked
 //   frame (OpenUI's open-ended HTML pattern: one component, a sandboxed frame);
-// - Diagram: Mermaid text, drawn in Rufi's diagram frame;
 // - TextContent, MarkDownRenderer, Callout, Steps and Card, OpenUI's own
 //   with the same props, drawn so every link opens by Rufi's rule (parts.tsx),
 //   and Image, for the AI's picture files.
@@ -59,7 +58,6 @@ export type TrendProps = z.infer<typeof trendProps>;
 export interface Renderers {
   Trend: ComponentRenderer<TrendProps>;
   Page: ComponentRenderer<{ path: string; title: string }>;
-  Diagram: ComponentRenderer<{ source: string }>;
   TextContent: ComponentRenderer;
   MarkDownRenderer: ComponentRenderer;
   Image: ComponentRenderer;
@@ -72,7 +70,6 @@ const nothing = () => null;
 const NONE: Renderers = {
   Trend: nothing,
   Page: nothing,
-  Diagram: nothing,
   TextContent: nothing,
   MarkDownRenderer: nothing,
   Image: nothing,
@@ -113,20 +110,12 @@ export function replyLibrary(draw: Renderers = NONE) {
       "An HTML page you made in your folder, shown whole in the reply, with Open to show it large. path: its path in your folder, such as reports/results-2026.html. title: a noun that names it.",
     component: draw.Page,
   });
-  const Diagram = defineComponent({
-    name: "Diagram",
-    props: z.object({ source: z.string() }),
-    description:
-      "A diagram Rufi draws from Mermaid text (a flowchart, a sequence, a timeline), in Rufi's colours. source: the Mermaid text, its lines joined with \\n.",
-    component: draw.Diagram,
-  });
   return openuiChatLibrary.extend({
     components: {
       add: [
         { component: Trend, slots: ["Card.children"] },
         TrendPoint,
         { component: Page, slots: ["Card.children"] },
-        { component: Diagram, slots: ["Card.children"] },
       ],
       override: [
         ownPart("TextContent", draw.TextContent),

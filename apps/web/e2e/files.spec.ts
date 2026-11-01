@@ -1,8 +1,7 @@
 // What a reply shows besides its text, on the real core with its real
 // headers: a picture the AI made, one it generated (once, also when the reply
 // links it, also after a reload), a page it made (drawn whole in the reply
-// in a locked frame, and opened large), a Mermaid diagram (drawn styled, in
-// its own frame), a reply in OpenUI Lang (drawn by OpenUI with Rufi's trend,
+// in a locked frame, and opened large), a reply in OpenUI Lang (drawn by OpenUI with Rufi's trend,
 // or shown as its text when it isn't whole), and a file that is gone. A page's script runs, but can't read Rufi's page or an
 // API answer or the network. Standalone requests receive an inert page.
 // The screens' strict CSP refuses nothing.
@@ -628,49 +627,6 @@ test("a file that is gone keeps its card and says so", async ({
     reply.getByText("This file is no longer in the AI's folder."),
   ).toHaveCount(2);
   await accessible(page);
-  expect(await refusedIn(page)).toEqual([]);
-});
-
-/** The diagram's frame, once drawn. */
-async function diagramFrame(page: Page): Promise<Frame> {
-  const element = log(page).getByTitle("Diagram");
-  await expect(element).toBeVisible();
-  const frame = await (await element.elementHandle()).contentFrame();
-  if (!frame) throw new Error("No diagram frame");
-  return frame;
-}
-
-test("a Mermaid diagram draws in place of its code block, with its labelled edge; a broken one stays readable", async ({
-  page,
-  rufi,
-}) => {
-  await opened(page, rufi);
-  await send(
-    page,
-    [
-      "In two steps:",
-      "",
-      "```mermaid",
-      "flowchart LR",
-      "  A[You add a report] -->|then| B[Rufi reads it]",
-      "```",
-    ].join("\n"),
-  );
-  const frame = await diagramFrame(page);
-  await expect(frame.getByText("then", { exact: true })).toBeVisible();
-  // Not the code block: the diagram replaced it.
-  await expect(log(page).locator(".reply pre")).toHaveCount(0);
-  await accessible(page);
-
-  await send(
-    page,
-    ["Broken:", "", "```mermaid", "flowchart LR", "  A -->", "```"].join("\n"),
-  );
-  const broken = log(page).locator(".reply").last();
-  await expect(broken.locator("pre")).toContainText("A -->");
-  await expect(broken.getByTitle("Diagram")).toHaveCount(0, {
-    timeout: 20_000,
-  });
   expect(await refusedIn(page)).toEqual([]);
 });
 

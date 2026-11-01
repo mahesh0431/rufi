@@ -10,7 +10,6 @@
 import {
   BuiltinActionType,
   Renderer,
-  useIsStreaming,
   type ActionEvent,
   type ComponentRenderProps,
   type ElementNode,
@@ -18,7 +17,7 @@ import {
 import { useMemo, type ReactNode } from "react";
 import type { Options } from "react-markdown";
 import { boxFor } from "../boxes.ts";
-import { Diagram, fileIn, Page, Picture } from "../files.tsx";
+import { fileIn, Page, Picture } from "../files.tsx";
 import { replyLibrary, replyReader, shapeOf } from "./library.ts";
 import {
   CalloutView,
@@ -30,17 +29,6 @@ import {
   TextParts,
 } from "./parts.tsx";
 import { TrendView } from "./trend-view.tsx";
-
-/** Mermaid text, drawn once the reply ended; its text until then. */
-function DiagramView({ props }: ComponentRenderProps<{ source: string }>) {
-  const streaming = useIsStreaming();
-  const code = (
-    <pre>
-      <code>{props.source}</code>
-    </pre>
-  );
-  return streaming ? code : <Diagram source={props.source}>{code}</Diagram>;
-}
 
 /**
  * A picture or a page the AI made, by its path in its folder. Rufi's
@@ -61,7 +49,6 @@ function ImageView({ props }: ComponentRenderProps) {
 const library = replyLibrary({
   Trend: TrendView,
   Page: ({ props }) => <Page path={props.path} title={props.title} />,
-  Diagram: DiagramView,
   TextContent: TextContentView,
   MarkDownRenderer: MarkDownRendererView,
   Image: ImageView,

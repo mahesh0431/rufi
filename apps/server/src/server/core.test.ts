@@ -2220,9 +2220,7 @@ describe("the files a reply shows", () => {
     const screens = (await page.api("GET", "/api/people")).headers[
       "content-security-policy"
     ];
-    expect(screens).toContain(
-      `frame-src blob: ${origin}/files/ ${origin}/diagram.html;`,
-    );
+    expect(screens).toContain(`frame-src blob: ${origin}/files/;`);
   });
 });
 

@@ -1,8 +1,8 @@
 // What a reply shows besides its text: a picture or a page the AI made, by
-// the path the reply holds, and a Mermaid diagram. A file comes from the core
-// by a short-lived address for that one file (/api/files); a page draws in the
-// reply in a locked frame and opens large over the chat in another, and a
-// diagram draws in one (diagram/frame.ts). A file that is gone says so.
+// the path the reply holds. A file comes from the core by a short-lived
+// address for that one file (/api/files); a page draws in the reply in a
+// locked frame and opens large over the chat in another. A file that is gone
+// says so.
 import { Dialog } from "@base-ui/react/dialog";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PAGE_ESCAPE, PAGE_SIZE_CHANGED, ShownFile } from "@rufi/contracts";
@@ -22,14 +22,8 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  type ReactNode,
 } from "react";
 import { ApiError, read } from "./api.ts";
-import {
-  DIAGRAM_COLOURS,
-  type DiagramAnswer,
-  type DiagramAsk,
-} from "./diagram/message.ts";
 import { Button } from "./ui.tsx";
 import { Menus } from "./model-menu.tsx";
 
@@ -484,11 +478,8 @@ function Failed({ retry }: { retry: () => void }) {
   );
 }
 
-/**
- * A value on <html>, as it changes: the theme in use (`data-theme`, named by
- * public/theme.js) or the appearance chosen (`data-appearance`).
- */
-function useRootData(name: "theme" | "appearance", otherwise: string): string {
+/** A value on <html>, as it changes: the appearance chosen (`data-appearance`). */
+function useRootData(name: "appearance", otherwise: string): string {
   return useSyncExternalStore(
     (changed) => {
       const watch = new MutationObserver(changed);
@@ -500,94 +491,5 @@ function useRootData(name: "theme" | "appearance", otherwise: string): string {
       };
     },
     () => document.documentElement.dataset[name] ?? otherwise,
-  );
-}
-
-/** How long a diagram may take to draw before its source stays shown. */
-const DRAW_MS = 15_000;
-/** Each diagram's height when it last drew, for its place while it draws again. */
-const drawnHeights = new Map<string, number>();
-
-/**
- * A Mermaid diagram, drawn in its locked frame in the theme's colours. Until
- * it is drawn, and when it can't be, its source shows as the code block.
- */
-export function Diagram({
-  source,
-  children,
-}: {
-  source: string;
-  /** The code block, shown when the diagram can't be drawn. */
-  children: ReactNode;
-}) {
-  const theme = useRootData("theme", "light");
-  const frame = useRef<HTMLIFrameElement>(null);
-  const [drawn, setDrawn] = useState<
-    { src: string; height: number } | "failed" | null
-  >(null);
-  const style = getComputedStyle(document.documentElement);
-  const ask: DiagramAsk = {
-    source,
-    colours: Object.fromEntries(
-      DIAGRAM_COLOURS.map((name) => [
-        name,
-        style.getPropertyValue(`--${name}`).trim(),
-      ]),
-    ) as DiagramAsk["colours"],
-    font: style.fontFamily,
-    dark: theme === "dark",
-  };
-  // The theme is part of the address: a new theme draws it again.
-  const src = `/diagram.html#${encodeURIComponent(JSON.stringify(ask))}`;
-  useEffect(() => {
-    const heard = (event: MessageEvent) => {
-      if (event.source !== frame.current?.contentWindow) return;
-      const answer = event.data as Partial<DiagramAnswer> | null;
-      if (answer?.type !== "rufi-diagram") return;
-      setDrawn(
-        answer.drawn === true && typeof answer.height === "number"
-          ? { src, height: answer.height }
-          : "failed",
-      );
-    };
-    globalThis.addEventListener("message", heard);
-    const late = setTimeout(() => {
-      setDrawn((now) => now ?? "failed");
-    }, DRAW_MS);
-    return () => {
-      globalThis.removeEventListener("message", heard);
-      clearTimeout(late);
-    };
-  }, [src]);
-  if (drawn === "failed") return children;
-  const height = drawn?.src === src ? drawn.height : undefined;
-  const shown = height !== undefined;
-  if (shown) drawnHeights.set(source, height);
-  return (
-    <>
-      {/* While it draws, its place, never its code: at the height it drew
-          at before (back in the chat), or about a diagram's. */}
-      {!shown && (
-        <div
-          aria-hidden
-          className="mb-2 rounded-[10px] border border-line bg-surface"
-          style={{ height: (drawnHeights.get(source) ?? 140) + 22 }}
-        />
-      )}
-      <iframe
-        key={src}
-        ref={frame}
-        src={src}
-        title="Diagram"
-        sandbox="allow-scripts"
-        className={
-          shown
-            ? "mb-2 block w-full rounded-[10px] border border-line bg-surface p-2.5"
-            : "invisible absolute size-0"
-        }
-        // Its padding and border around the diagram's own height.
-        style={shown ? { height: height + 22 } : undefined}
-      />
-    </>
   );
 }

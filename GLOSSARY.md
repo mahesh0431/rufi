@@ -176,11 +176,11 @@ What the AI writes while it works, before its answer, such as "I'll check your r
 _Avoid_: commentary, progress message, interim reply
 
 **Reply (Rufi AI's)**:
-Rufi AI's answer in the chat, which it writes in OpenUI Lang and Rufi draws with OpenUI's chat parts and a few of Rufi's own (a trend, a page, a diagram), as it is written. Once it ended, a reply that isn't whole shows as its text, never in part; one with no OpenUI shows as Markdown. A follow-up or button in it sends its words, with what it is about, as the person's message. Its links open by Rufi's rule, wherever they are in it. An agent's message, a note, a receipt and a visit brief are Markdown.
+Rufi AI's answer in the chat, which it writes in OpenUI Lang and Rufi draws with OpenUI's chat parts and a few of Rufi's own (a trend, a page), as it is written. Once it ended, a reply that isn't whole shows as its text, never in part; one with no OpenUI shows as Markdown. A follow-up or button in it sends its words, with what it is about, as the person's message. Its links open by Rufi's rule, wherever they are in it. An agent's message, a note, a receipt and a visit brief are Markdown.
 _Avoid_: answer card, widget, generated UI
 
-**Picture, page, diagram (in a reply)**:
-What a reply shows besides its text, tables and charts. A page is an HTML file the AI made when the person asked for a page, such as a page of results, drawn whole in the reply in a locked frame at its own height and opened large over the chat, self-contained (it loads nothing from the internet and can't reach Rufi); a picture is one the AI made because the person asked for a picture, or one it generated; a diagram is drawn from the AI's Mermaid text. Pictures and pages are files in the AI's folder (or where it keeps the pictures it generates), shown as they are now: Rufi keeps no copy, and a file that is gone shows as such.
+**Picture, page (in a reply)**:
+What a reply shows besides its text, tables and charts. A page is an HTML file the AI made when the person asked for a page, such as a page of results, drawn whole in the reply in a locked frame at its own height and opened large over the chat, self-contained (it loads nothing from the internet and can't reach Rufi); a picture is one the AI made because the person asked for a picture, or one it generated. Pictures and pages are files in the AI's folder (or where it keeps the pictures it generates), shown as they are now: Rufi keeps no copy, and a file that is gone shows as such.
 _Avoid_: artifact, attachment, image (say picture), HTML (say page)
 
 **Trend (in a reply)**:

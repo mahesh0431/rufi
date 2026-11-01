@@ -187,11 +187,11 @@ const BEHIND_MAX = 1_000;
 
 /**
  * The screens' policy: only Rufi's own code and styles. Frames: a document's
- * original (a blob the page made), a page the AI made and a diagram, both
- * from this origin and locked by their own policies below.
+ * original (a blob the page made) and a page the AI made, from this origin
+ * and locked by its own policy below.
  */
 const appCsp = (origin: string) =>
-  `default-src 'self'; img-src 'self' data: blob:; frame-src blob: ${origin}/files/ ${origin}${DIAGRAM}; connect-src 'self'; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`;
+  `default-src 'self'; img-src 'self' data: blob:; frame-src blob: ${origin}/files/; connect-src 'self'; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`;
 
 /**
  * A page the AI made, in place of the screens' policy (two policies would
@@ -204,17 +204,6 @@ const appCsp = (origin: string) =>
  */
 const pageCsp = (origin: string) =>
   `sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors ${origin}`;
-
-/**
- * The diagram frame: Mermaid lays a diagram out with inline styles, which
- * the screens' policy refuses, so it draws in a locked frame of its own
- * that runs only Rufi's diagram script.
- */
-const diagramCsp = (origin: string) =>
-  `sandbox allow-scripts; default-src 'none'; script-src ${origin}/assets/diagram/; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors ${origin}`;
-
-/** The diagram frame's page, among the built screens. */
-const DIAGRAM = "/diagram.html";
 
 /** What a page that is gone says, in its frame. */
 const GONE_PAGE = `<!doctype html><html lang="en"><meta charset="utf-8"><title>File not found</title><body style="font:14px/1.5 -apple-system,sans-serif;margin:24px"><p>This file is no longer in the AI's folder.</p></body></html>`;
@@ -1249,9 +1238,6 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     const found = await screen(deps.screens, c.req.path);
     if (!found) throw new HttpError(404, "Not found.");
     c.header("Content-Type", found.type);
-    if (c.req.path === DIAGRAM) {
-      c.header("Content-Security-Policy", diagramCsp(origin()));
-    }
     c.header(
       "Cache-Control",
       found.immutable ? "public, max-age=31536000, immutable" : "no-cache",

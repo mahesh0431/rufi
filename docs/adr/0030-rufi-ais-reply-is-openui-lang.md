@@ -6,7 +6,7 @@ Every reply of Rufi AI is OpenUI Lang, drawn by OpenUI's renderer in place of th
 
 **The library is OpenUI's chat library, extended.** `openuiChatLibrary` from `@openuidev/react-ui` 0.18.1 (pinned, with `@openuidev/react-lang` 1.0.2), with `library.extend` (`apps/web/src/openui/library.ts`):
 
-- **added:** Rufi's `Trend` and `TrendPoint`, `Page` and `Diagram`;
+- **added:** Rufi's `Trend` and `TrendPoint`, and `Page`;
 - **overridden** (same names and props): `TextContent`, `MarkDownRenderer`, `Callout`, `Steps` and `Card`, so every link opens by Rufi's rule, and `Image`.
   OpenUI's own parts are drawn as OpenUI draws them.
 
@@ -14,6 +14,7 @@ Every reply of Rufi AI is OpenUI Lang, drawn by OpenUI's renderer in place of th
 
 - The options are the chat library's, with a Rufi preamble in place of OpenUI's default, and Rufi's rules added: values only from the record as it keeps them, a `Trend` for one test over time, pages and pictures as files in the AI's folder.
 - OpenUI's chat rule "When asked about data, generate realistic/plausible data" is left out: Rufi never invents health data. The script stops if that rule is gone, so an OpenUI upgrade is checked.
+- Rufi's core instruction asks only that each reply is easy and pleasant to read, with the parts that fit it, and leaves the how to OpenUI's guide. So Rufi has no diagram part: a process shows with OpenUI's `Steps`, as its guide says, and a drawing goes in a `Page`. An old reply with a `Diagram` in it shows as its text, as any part the library doesn't know does.
 - No inline or edit mode, and no tools: a reply is a whole program each time, with no `Query`, `Mutation` or bindings.
 - OpenUI's CLI would write the same prompt, but it bundles with esbuild and sends telemetry. The library is written without JSX, so Node loads it directly.
 
@@ -31,7 +32,6 @@ Every reply of Rufi AI is OpenUI Lang, drawn by OpenUI's renderer in place of th
 
 - **Trend.** OpenUI's `LineChart` spaces its points evenly (`scalePoint`), smooths its line by default and draws a missing value at 0. So one test over time is Rufi's trend: spaced by date, the record page's drawing, with a table of every value and "Not drawn" for a value it can't place.
 - **Page.** This is OpenUI's open-ended HTML pattern: one component, a sandboxed frame. It shows an HTML file from the AI's folder in the locked frame of ADR 0017, whole. The served page's appended script fits html and body to their content and tells the frame its height (`ui/notifications/size-changed`, as T3's `html_render` and MCP Apps do), and the frame takes it, from 80 to 20,000 px as T3 does, with nothing scrolling inside. A page made for a window (`min-height: 100vh`) would otherwise grow with the frame that fits it; the analysis skill's tips say to let content set the height.
-- **Diagram.** Mermaid text, drawn in Rufi's diagram frame once the reply ended.
 - **TextContent, MarkDownRenderer, Callout and Steps.** OpenUI's Markdown component, given Rufi's reply link parts through its `options`; `TextContent` keeps OpenUI's `[n]` citations of the Card's sources. OpenUI's Markdown component opens every link in a new tab, and OpenUI's `Callout` and `Steps` use it directly, so they are drawn as OpenUI draws them with Rufi's Markdown.
 - **Card.** OpenUI's chat Card, whose sources and citations open by Rufi's rule: OpenUI's own call `window.open`. Their favicons aren't fetched; Rufi's screens load nothing from the web.
 - **Other links OpenUI draws itself**, such as an `EditableTable`'s address cells, keep their raw address and stop their click. The reply catches such a click first (a capture handler) and opens it by the rule: a `rufi:/…` address in place; anything that isn't a web page or Rufi's own does nothing.
