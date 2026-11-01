@@ -42,7 +42,8 @@ Rules:
 
 - **Blue is for doing; apricot is Rufi.** The blue accent is for the main action and for what is selected, in the app and on the website. Apricot is only for Rufi itself: the dog's folds, and on the website the accent words in large headings, the dots and the pale icon squares. Never an apricot button.
 - **No clinical colour.** No red, amber or green that could read as a health status (good, borderline, bad). A brand colour must never look like a result.
-- **One red, for one job:** the last step of a delete that can't be undone. Nowhere else.
+- **One red, for one job:** the last step of a delete that can't be undone. Nowhere else on Rufi's own screens.
+- **Rufi AI's replies are drawn by OpenUI as it draws them.** Rufi gives OpenUI only its theme's roles (surfaces, primary and secondary text, the accent in its states, text on the accent, borders, the user's bubble) and its font, and never restyles OpenUI's parts. So replies show OpenUI's own colours by meaning (info, success, warning, danger) on Rufi's theme. Rufi AI never colours a health value good or bad by its own judgement; for a result it shows the lab's own flag as printed. Rufi's own screens keep no clinical colour and the one red for deleting.
 - **Calm greys, less black.** Pure ink is for the dog's dark ground only.
 - **Contrast:** text keeps WCAG AA in every theme. Check a new pair before you use it.
 

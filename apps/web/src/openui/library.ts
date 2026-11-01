@@ -210,6 +210,7 @@ const RULES = [
   "A picture you made is a file in your folder: show it with Image(alt, path).",
   "Buttons and follow-ups send their words to you as the user's message, and a form sends its values. Offer only what you can do for the user in Rufi.",
   "Build a reply from OpenUI's parts, as its examples do: a section under an InlineHeader, with a Separator between sections; a list of points as a ListBlock, each ListItem a short title with its detail as the subtitle; a sequence as Steps. Markdown in TextContent is for running text.",
+  "Colours carry meaning: never colour a health value good or bad by your own judgement; for a result, show the lab's own flag as printed.",
 ];
 
 const EXAMPLE = `Example — One test over time, from the user's record (fictional values):
