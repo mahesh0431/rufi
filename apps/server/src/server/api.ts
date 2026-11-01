@@ -5,9 +5,13 @@ import {
   AddPerson,
   ActivityShown,
   Appearance,
+  Colour,
+  ReplyShape,
+  TextSize,
   FinishStep,
   MessageText,
   MAX_MESSAGE_CHARS,
+  MAX_REPLY_WORDS,
   RecoverMessage,
   ReorderQueue,
   SaveDraft,
@@ -25,6 +29,10 @@ import {
   type StreamLine,
 } from "@rufi/contracts";
 import { APPEARANCE_HEADER } from "@rufi/contracts/app";
+import {
+  EditInstruction,
+  type Instructions,
+} from "@rufi/contracts/instructions";
 import type { Brief } from "@rufi/contracts/briefs";
 import { KeepValues, type DeviceData } from "@rufi/contracts/devices";
 import {
@@ -51,6 +59,12 @@ import {
 } from "../core/chat/continues.ts";
 import { RefRefusal } from "../core/chat/refs.ts";
 import { emergencyFor, emergencyRegions } from "../core/chat/safety.ts";
+import {
+  editSetting,
+  instructionParts,
+  REPLY_SETTINGS,
+  toldOf,
+} from "../core/chat/instructions.ts";
 import {
   NoChoice,
   StalePreview,
@@ -362,12 +376,33 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     Schema.decodeUnknownOption(Appearance)(
       await transcripts.setting("appearance"),
     ).pipe(Option.getOrElse(() => "system" as const));
+  /** The chosen colour theme; White until one is chosen. */
+  const colour = async (): Promise<Colour> =>
+    Schema.decodeUnknownOption(Colour)(
+      await transcripts.setting("colour"),
+    ).pipe(Option.getOrElse(() => "white" as const));
+  /** How a reply sits in the chat; flat until another is chosen. */
+  const replyShape = async (): Promise<ReplyShape> =>
+    Schema.decodeUnknownOption(ReplyShape)(
+      await transcripts.setting("reply_shape"),
+    ).pipe(Option.getOrElse(() => "flat" as const));
+  /** The size of Rufi's text; default until another is chosen. */
+  const textSize = async (): Promise<TextSize> =>
+    Schema.decodeUnknownOption(TextSize)(
+      await transcripts.setting("text_size"),
+    ).pipe(Option.getOrElse(() => "default" as const));
   const settings = async (c: Context): Promise<Settings> => {
     const known = emergencyFor(await transcripts.setting("emergency_region"));
     const chosen = await appearance();
+    const { replies } = await toldOf(transcripts.setting);
     c.header(APPEARANCE_HEADER, chosen);
     return {
       appearance: chosen,
+      colour: await colour(),
+      replyShape: await replyShape(),
+      textSize: await textSize(),
+      replyStyle: replies.style,
+      replyWords: replies.words,
       // Open while the AI works, until another is chosen.
       activity: Schema.decodeUnknownOption(ActivityShown)(
         await transcripts.setting("activity"),
@@ -450,6 +485,22 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     if (changed.appearance !== undefined) {
       await transcripts.saveSetting("appearance", changed.appearance);
     }
+    if (changed.colour !== undefined) {
+      await transcripts.saveSetting("colour", changed.colour);
+    }
+    if (changed.replyStyle !== undefined) {
+      await transcripts.saveSetting(REPLY_SETTINGS.style, changed.replyStyle);
+    }
+    if (changed.replyWords !== undefined) {
+      // As they wrote it; the chat's next reply reads it with Rufi's rules.
+      await transcripts.saveSetting(REPLY_SETTINGS.words, changed.replyWords);
+    }
+    if (changed.textSize !== undefined) {
+      await transcripts.saveSetting("text_size", changed.textSize);
+    }
+    if (changed.replyShape !== undefined) {
+      await transcripts.saveSetting("reply_shape", changed.replyShape);
+    }
     if (changed.activity !== undefined) {
       await transcripts.saveSetting("activity", changed.activity);
     }
@@ -469,6 +520,29 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       deps.devices.cleanSoon();
     }
     return c.json(await settings(c));
+  });
+
+  // What Rufi AI is told, in its parts (Settings › Advanced): each the
+  // user's edit or Rufi's own. An edit is used from the next reply on.
+  const instructions = async (): Promise<Instructions> => ({
+    parts: instructionParts(await toldOf(transcripts.setting)),
+  });
+  app.get("/api/instructions", async (c) => c.json(await instructions()));
+  app.put("/api/instructions", async (c) => {
+    const { part, text } = await body(c, EditInstruction);
+    if (part === "words") {
+      if (text !== null && text.length > MAX_REPLY_WORDS) {
+        throw new HttpError(
+          400,
+          `Your own words can be ${String(MAX_REPLY_WORDS)} characters at most.`,
+        );
+      }
+      await transcripts.saveSetting(REPLY_SETTINGS.words, text);
+    } else {
+      const { replies } = await toldOf(transcripts.setting);
+      await transcripts.saveSetting(editSetting(part, replies.style), text);
+    }
+    return c.json(await instructions());
   });
 
   app.get("/api/status", async (c) => c.json(await deps.account()));
@@ -1108,14 +1182,19 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       found.immutable ? "public, max-age=31536000, immutable" : "no-cache",
     );
     if (found.type.startsWith("text/html")) {
-      // The page carries the chosen appearance, so public/theme.js paints it
-      // first time, and the app's window takes it from the header.
+      // The page carries the chosen appearance, colour, text size and reply
+      // shape, so
+      // public/theme.js and the tokens paint them first time, and the app's
+      // window takes the appearance from the header.
       const chosen = await appearance();
       c.header(APPEARANCE_HEADER, chosen);
       return c.body(
         found.body
           .toString("utf8")
-          .replace("<html", `<html data-appearance="${chosen}"`),
+          .replace(
+            "<html",
+            `<html data-appearance="${chosen}" data-colour="${await colour()}" data-reply-shape="${await replyShape()}" data-text-size="${await textSize()}"`,
+          ),
       );
     }
     return c.body(new Uint8Array(found.body));

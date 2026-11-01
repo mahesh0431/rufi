@@ -2,7 +2,12 @@
 import { Tooltip } from "@base-ui/react/tooltip";
 import { cva, type VariantProps } from "class-variance-authority";
 import { LoaderCircle, type LucideProps, RotateCw } from "lucide-react";
-import type { ComponentProps, ComponentType, ReactNode } from "react";
+import {
+  type ComponentProps,
+  type ComponentType,
+  type ReactNode,
+  useId,
+} from "react";
 import { twMerge } from "tailwind-merge";
 import { LiveDog } from "./dog.tsx";
 
@@ -18,7 +23,7 @@ export type Icon = ComponentType<LucideProps>;
  * like a button takes the same look.
  */
 export const buttonLook = cva(
-  "inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg text-[13px] font-medium whitespace-nowrap disabled:opacity-50",
+  "inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg text-[0.8125rem] font-medium whitespace-nowrap disabled:opacity-50",
   {
     variants: {
       look: {
@@ -124,6 +129,34 @@ export function IconButton({
   );
 }
 
+/**
+ * One part of Settings, named by its heading: its options. `id` names the
+ * heading, for a choice it labels too.
+ */
+export function Section({
+  title,
+  id,
+  children,
+}: {
+  title: string;
+  id?: string;
+  children: ReactNode;
+}) {
+  const own = useId();
+  const heading = id ?? own;
+  return (
+    <section
+      aria-labelledby={heading}
+      className="flex flex-col gap-2 border-t border-line pt-5 first:border-t-0 first:pt-0"
+    >
+      <h4 id={heading} className="font-semibold">
+        {title}
+      </h4>
+      {children}
+    </section>
+  );
+}
+
 /** What went wrong with a read, in the core's words, and Retry. */
 export function Problem({
   error,
@@ -161,7 +194,7 @@ export function EmptyState({
     <div className="flex flex-col items-center gap-1 rounded-xl border-[1.5px] border-dashed border-line bg-surface px-6 py-14 text-center">
       <LiveDog size={64} />
       {title !== undefined && (
-        <h2 className="mt-3 text-[15px] font-semibold">{title}</h2>
+        <h2 className="mt-3 text-[0.9375rem] font-semibold">{title}</h2>
       )}
       {children !== undefined && (
         <p

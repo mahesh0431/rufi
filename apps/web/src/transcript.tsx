@@ -91,13 +91,19 @@ import {
 } from "./transcript-state.ts";
 import { Dog, LiveDog } from "./dog.tsx";
 import { effortName } from "./model-menu.tsx";
+import {
+  settingsGroupOf,
+  SettingsLink,
+  useOpenSettings,
+} from "./settings-link.tsx";
 import { Button, buttonLook, ICON, Problem } from "./ui.tsx";
 
 // The AI's text is shown as Markdown, never as HTML: no raw HTML, no remote
 // images, and links only to http(s) pages, opened outside Rufi with no opener
 // or referrer. A reply also shows a picture the AI made (an image or a link
 // to its path), links a page of Rufi for the person
-// whose chat it is (rufi:/documents/<id>), which opens in place. Anything
+// whose chat it is (rufi:/documents/<id>), which opens in place, and a
+// group of Settings (rufi:/settings/<group>), which opens over it. Anything
 // else shows as its text.
 const WEB = /^https?:\/\//i;
 const webLink: Components["a"] = ({ href, children }) =>
@@ -173,6 +179,10 @@ function RufiLink({ path, children }: { path: string; children: ReactNode }) {
 /** A reply's parts: its links and the files it names. */
 const REPLY: Components = {
   a: ({ href, children, node, ...rest }) => {
+    const group = href === undefined ? undefined : settingsGroupOf(href);
+    if (group !== undefined) {
+      return <SettingsLink group={group}>{children}</SettingsLink>;
+    }
     const page = href === undefined ? null : RUFI.exec(href);
     if (page?.[1] !== undefined) {
       return <RufiLink path={page[1]}>{children}</RufiLink>;
@@ -279,9 +289,16 @@ function Reply({
 }) {
   const personId = use(Whose);
   const navigate = useNavigate();
-  // A button's link, as the reply's links: a page of Rufi in place, a web
-  // page outside Rufi; anything else does nothing.
+  const openSettings = useOpenSettings();
+  // A button's link, as the reply's links: a group of Settings over the
+  // page, a page of Rufi in place, a web page outside Rufi; anything else
+  // does nothing.
   const openLink = (url: string) => {
+    const group = settingsGroupOf(url);
+    if (group !== undefined) {
+      openSettings(group);
+      return;
+    }
     const path = RUFI.exec(url)?.[1];
     const href =
       path === undefined || personId === ""
@@ -291,7 +308,9 @@ function Reply({
     else if (WEB.test(url)) open(url, "_blank", "noopener,noreferrer");
   };
   return (
-    <div className="reply" data-entry={id}>
+    // data-reply: Rufi's own container around the reply, shaped as Settings
+    // chose (styles.css); OpenUI's parts inside are never restyled.
+    <div className="reply" data-entry={id} data-reply="">
       <OpenUIReply
         text={text}
         streaming={streaming}
@@ -1043,7 +1062,7 @@ function StepView({ entry, details: path }: { entry: Shown; details: string }) {
             aria-hidden
           />
         </summary>
-        <div className="thought mt-1 text-[13px] break-words text-ink">
+        <div className="thought mt-1 text-[0.8125rem] break-words text-ink">
           <Marked text={entry.text} />
         </div>
       </details>
@@ -1386,7 +1405,7 @@ export function Receipt({ text }: { text: string }) {
         <>
           <Marked text={head} links={false} />
           <details>
-            <summary className="w-fit cursor-pointer text-[13px] text-accent-ink">
+            <summary className="w-fit cursor-pointer text-[0.8125rem] text-accent-ink">
               {/* A set-aside's receipt; an older one says Dismissed. */}
               {/^\*\*(Set aside|Dismissed)\*\*/.test(head)
                 ? "Show the items"

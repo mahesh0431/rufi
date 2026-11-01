@@ -83,7 +83,7 @@ export function ModelMenu({
     <Menu.Root modal={false}>
       <Menu.Trigger
         aria-label={`Model and effort: ${name}, ${shownEffort}`}
-        className="flex h-8 shrink-0 items-center gap-1 rounded-lg px-2 text-[13px] whitespace-nowrap hover:bg-side data-[popup-open]:bg-side"
+        className="flex h-8 shrink-0 items-center gap-1 rounded-lg px-2 text-[0.8125rem] whitespace-nowrap hover:bg-side data-[popup-open]:bg-side"
       >
         {name}
         {/* A space between the two, so the menu's name holds what it shows. */}{" "}

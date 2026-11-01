@@ -27,7 +27,7 @@ export function OverviewPage({ person }: { person: Person }) {
   return (
     <div className="mx-auto max-w-[790px] px-6 py-8">
       <p className="text-muted">{today(now)}</p>
-      <h1 className="mb-6 text-[22px] font-bold">
+      <h1 className="mb-6 text-[1.375rem] font-bold">
         {greeting(now)}, {person.displayName}
       </h1>
       {data === undefined ? (
@@ -283,7 +283,7 @@ function TileView({ personId, tile }: { personId: string; tile: Tile }) {
         {!empty && <span className="tabular-nums">{tile.count}</span>}
       </span>
       {tileLines(tile).map((line) => (
-        <span key={line} className="mt-0.5 block text-[12.5px] text-muted">
+        <span key={line} className="mt-0.5 block text-[0.78125rem] text-muted">
           {line}
         </span>
       ))}

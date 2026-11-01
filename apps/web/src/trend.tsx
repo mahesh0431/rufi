@@ -112,7 +112,7 @@ function Drawing({ drawing, mini }: { drawing: TrendDrawing; mini: boolean }) {
               />
               {point.labelled && (
                 <text
-                  className="fill-ink text-[11.5px] font-semibold tabular-nums"
+                  className="fill-ink text-[0.71875rem] font-semibold tabular-nums"
                   x={point.x}
                   y={point.y - (point.flagged ? 11 : 8)}
                   textAnchor="middle"
@@ -145,7 +145,12 @@ function Label({
   children: string;
 }) {
   return (
-    <text className="fill-muted text-[11px]" x={x} y={y} textAnchor={anchor}>
+    <text
+      className="fill-muted text-[0.6875rem]"
+      x={x}
+      y={y}
+      textAnchor={anchor}
+    >
       {children}
     </text>
   );

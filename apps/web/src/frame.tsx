@@ -39,11 +39,12 @@ import { retain } from "./live.ts";
 import { resetPanel } from "./panel.ts";
 import { SidebarDog } from "./sidebar-dog.tsx";
 import { isPageKind, KIND_TITLES } from "./record.tsx";
+import { SettingsDialog } from "./settings.tsx";
+import { SettingsLink, useSettingsGroup } from "./settings-link.tsx";
 import { useFirstRun, useOverview, usePeople, useStatus } from "./reads.ts";
 import { ICON, type Icon } from "./ui.tsx";
 
 const TITLES: Record<string, string> = {
-  settings: "Settings",
   help: "Help",
   "sign-in": "Sign in",
 };
@@ -76,10 +77,6 @@ const personAt = (pathname: string) => {
   return id === undefined ? undefined : decodeURIComponent(id);
 };
 
-/** Whether the address is a person's profile. */
-const isProfilePage = (pathname: string) =>
-  /^\/people\/[^/]+\/profile$/.test(pathname);
-
 /** Whether the address is a person's Follow-ups. */
 const isFollowUpsPage = (pathname: string) =>
   /^\/people\/[^/]+\/follow-ups$/.test(pathname);
@@ -90,7 +87,7 @@ const isDocumentsPage = (pathname: string) =>
 
 /**
  * Whether the page has the chat bar: the pages where you read your health.
- * Not the chat's page (it has its own box), Help, Settings or Sign in.
+ * Not the chat's page (it has its own box), Help or Sign in.
  */
 const hasBar = (pathname: string) =>
   pathname === "/" ||
@@ -115,6 +112,8 @@ export function Frame() {
   const person =
     people?.find((p) => p.id === personAt(pathname)) ?? people?.[0];
   const onChat = isChatPage(pathname);
+  const settingsGroup = useSettingsGroup();
+  const settingsOpen = settingsGroup !== undefined;
   const bar =
     person !== undefined && connection !== "ended" && hasBar(pathname);
   const kind = recordKind(pathname);
@@ -161,23 +160,21 @@ export function Frame() {
             <Dog size={36} />
           )}
           {person ? (
-            // Your name opens your profile.
-            <Link
-              to="/people/$personId/profile"
-              params={{ personId: person.id }}
-              title="Profile"
-              className="min-w-0 truncate rounded-md px-1 font-semibold hover:bg-surface/60"
-              activeProps={{ className: "bg-accent-soft text-accent-ink" }}
+            // Your name opens your profile: Settings › Profile.
+            <SettingsLink
+              group="profile"
+              className={`min-w-0 truncate rounded-md px-1 font-semibold hover:bg-surface/60 ${settingsGroup === "profile" ? "bg-accent-soft text-accent-ink" : ""}`}
             >
-              {person.displayName}
-            </Link>
+              <span title="Profile">{person.displayName}</span>
+            </SettingsLink>
           ) : (
             <p className="truncate font-semibold">Rufi</p>
           )}
         </div>
         <nav
           aria-label="Pages"
-          className="mt-2 flex min-h-0 flex-1 flex-col gap-0.5"
+          // Scrolls within its height when the text is large.
+          className="-mx-1 mt-2 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1 pb-1"
         >
           {person && (
             <Link
@@ -210,9 +207,13 @@ export function Frame() {
           <Place to="/help" icon={<CircleHelp size={ICON} aria-hidden />}>
             Help
           </Place>
-          <Place to="/settings" icon={<Settings size={ICON} aria-hidden />}>
+          <SettingsLink
+            group="sign-in"
+            className={`flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-surface/60 ${settingsOpen ? "bg-accent-soft text-accent-ink" : ""}`}
+          >
+            <Settings size={ICON} aria-hidden />
             Settings
-          </Place>
+          </SettingsLink>
         </nav>
         <Account />
       </aside>
@@ -221,7 +222,7 @@ export function Frame() {
           data-toolbar=""
           className="flex h-[52px] shrink-0 items-center border-b border-line bg-page/80 px-5 backdrop-blur"
         >
-          <h1 className="truncate text-[15px] font-semibold">
+          <h1 className="truncate text-[0.9375rem] font-semibold">
             {onChat
               ? CHAT_TITLE
               : kind !== undefined
@@ -236,10 +237,8 @@ export function Frame() {
                         ? "Visit"
                         : isTestPage(pathname)
                           ? "Test"
-                          : isProfilePage(pathname)
-                            ? "Profile"
-                            : (TITLES[pathname.split("/")[1] ?? ""] ??
-                              "Overview")}
+                          : (TITLES[pathname.split("/")[1] ?? ""] ??
+                            "Overview")}
           </h1>
         </header>
         <Offline shown={connection === "offline"} />
@@ -252,6 +251,7 @@ export function Frame() {
         </main>
       </div>
       {bar && <ChatDock person={person} />}
+      <SettingsDialog />
       <ReadingSheet />
       <AgentSheet />
     </div>
@@ -294,7 +294,9 @@ function RecordNav({ person }: { person: Person }) {
   const tiles = useOverview(person.id).data?.tiles;
   return (
     <>
-      <p className="px-2 pt-3 pb-0.5 text-[11px] text-muted">Health record</p>
+      <p className="px-2 pt-3 pb-0.5 text-[0.6875rem] text-muted">
+        Health record
+      </p>
       {(Object.keys(KIND_TITLES) as (keyof typeof KIND_TITLES)[]).map(
         (kind) => {
           const count = tiles?.find((tile) => tile.kind === kind)?.count ?? 0;
@@ -350,7 +352,7 @@ function Place({
   icon,
   children,
 }: {
-  to: "/" | "/help" | "/settings";
+  to: "/" | "/help";
   icon: ReactNode;
   children: ReactNode;
 }) {

@@ -212,9 +212,8 @@ test.describe("starting", () => {
     const app = await desktop.launch();
     const page = await app.electron.firstWindow();
     await page.getByRole("link", { name: "Settings" }).click();
-    const section = page
-      .getByRole("heading", { name: "Data folder" })
-      .locator("+ div");
+    await page.getByRole("tab", { name: "Data" }).click();
+    const section = page.getByRole("region", { name: "Data folder" });
     await expect(section).toContainText(desktop.home);
     await expect(section).toContainText(
       "Rufi made this folder for your data on its first start.",
@@ -661,6 +660,7 @@ test.describe("the page", () => {
       );
     });
     await page.getByRole("link", { name: "Settings" }).click();
+    await page.getByRole("tab", { name: "Data" }).click();
     await page.getByRole("button", { name: "Export" }).click();
     await expect(page.getByRole("status")).toContainText("Exported");
     await expect.poll(() => app.told.map((t) => t.kind)).toEqual(["save"]);

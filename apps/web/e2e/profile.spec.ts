@@ -1,8 +1,8 @@
-// Your profile on the real core: your name opens it, Settings has the same
-// form, a change saves only the field changed, and the history says where
-// each change was made.
+// Your profile on the real core: your name opens it in Settings, a change
+// saves only the field changed, and the history says where each change was
+// made.
 import { AxeBuilder } from "@axe-core/playwright";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "./rufi.ts";
 
 /** Asha's profile as a save in the chat left it: her blood group O+. */
@@ -31,84 +31,92 @@ async function accessible(page: Page) {
   expect(violations.map((violation) => violation.id)).toEqual([]);
 }
 
-/** The profile's value of a field, as its page shows it. */
-const value = (page: Page, name: string) =>
-  page
-    .getByRole("main")
-    .getByRole("term")
-    .filter({ hasText: new RegExp(`^${name}$`) })
-    .locator("xpath=following-sibling::dd");
+/** Your name in the sidebar: it opens Settings at Profile. */
+async function openProfile(page: Page, name = "Asha Fictional") {
+  await page.getByRole("complementary").getByRole("link", { name }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await expect(
+    settings.getByRole("tab", { name: "Profile", selected: true }),
+  ).toBeVisible();
+  return settings;
+}
 
-test("your name opens your profile; a change in Settings or on the page saves only that field, your name too, and the history says where each was made", async ({
+/** The profile's history, newest first. */
+const historyOf = (settings: Locator) =>
+  settings.getByRole("region", { name: "History" }).getByRole("listitem");
+
+test("your name opens your profile in Settings; a change saves only that field, your name too, and the history says where each was made", async ({
   page,
   rufi,
 }) => {
   await rufi.family(BLOOD_GROUP_IN_THE_CHAT);
   await rufi.start();
   await page.goto(rufi.link());
-  await page
-    .getByRole("complementary")
-    .getByRole("link", { name: "Asha Fictional" })
-    .click();
-  await expect(page.getByRole("heading", { name: "Profile" })).toBeVisible();
-  await expect(value(page, "Birth date")).toHaveText(
-    /^Mar 1990 · \d+ years old today$/,
-  );
-  await expect(value(page, "Blood group")).toHaveText("O+");
-  await expect(value(page, "Height")).toHaveText("Not set");
-  const history = page.getByRole("main").getByRole("listitem");
+  const settings = await openProfile(page);
+  await expect(settings.getByLabel("Blood group")).toHaveValue("O+");
+  await expect(settings.getByLabel("Year")).toHaveValue("1990");
+  const history = historyOf(settings);
   await expect(history).toHaveText([
     /Blood group Not set → O\+ · in the chat$/,
   ]);
   await accessible(page);
 
-  // In Settings, only the blood group changes.
-  await page.getByRole("link", { name: "Settings" }).click();
-  await page.getByLabel("Blood group").selectOption("B+");
-  await expect(page.getByLabel("Blood group")).toHaveValue("B+");
-  await page
-    .getByRole("complementary")
-    .getByRole("link", { name: "Asha Fictional" })
-    .click();
-  await expect(value(page, "Blood group")).toHaveText("B+");
+  // Only the blood group changes. A refused save keeps the choice and
+  // Retry, also after a look at another group, and keeps Settings open at it.
+  await page.route("**/api/people/asha/profile", (route) =>
+    route.request().method() === "PUT"
+      ? route.fulfill({ status: 500, json: { error: "Rufi couldn't save." } })
+      : route.continue(),
+  );
+  await settings.getByLabel("Blood group").selectOption("B+");
+  const retry = settings.getByRole("button", { name: "Retry" });
+  await expect(retry).toBeVisible();
+  await settings.getByRole("tab", { name: "Appearance" }).click();
+  await page.keyboard.press("Escape");
+  await expect(settings.getByRole("tab", { name: "Profile" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(settings.getByLabel("Blood group")).toHaveValue("B+");
+  await page.unroute("**/api/people/asha/profile");
+  await retry.click();
+  await expect(retry).toHaveCount(0);
+  await expect(settings.getByLabel("Blood group")).toHaveValue("B+");
+  // A height typed and closed with Esc, still in the field, is saved.
+  await settings.getByLabel("Height", { exact: true }).fill("162");
+  await page.keyboard.press("Escape");
+  await expect(settings).toBeHidden();
+  await openProfile(page);
+  await expect(settings.getByLabel("Height", { exact: true })).toHaveValue(
+    "162",
+  );
   await expect(history).toHaveText([
+    /Height Not set → 162 cm · in Settings$/,
     /Blood group O\+ → B\+ · in Settings$/,
     /Blood group Not set → O\+ · in the chat$/,
   ]);
 
-  // On the page: a height, saved when you leave it.
-  await page.getByRole("button", { name: "Edit" }).click();
-  await accessible(page);
-  await page.getByLabel("Height", { exact: true }).fill("162");
-  await page.getByRole("button", { name: "Done" }).click();
-  await expect(value(page, "Height")).toHaveText("162 cm");
-  await expect(history.first()).toHaveText(
-    /Height Not set → 162 cm · on this page$/,
-  );
-  await expect(value(page, "Birth date")).toHaveText(/^Mar 1990/);
-
   // The name too: never left empty, and the sidebar shows the new one.
-  await page.getByRole("button", { name: "Edit" }).click();
-  const name = page.getByLabel("Name", { exact: true });
+  const name = settings.getByLabel("Name", { exact: true });
   await name.fill("");
   await name.blur();
-  await expect(page.getByText("Give a name: it can't be empty.")).toBeVisible();
+  await expect(
+    settings.getByText("Give a name: it can't be empty."),
+  ).toBeVisible();
   await expect(name).toHaveValue("");
-  // Put back as it was: Done closes, and nothing is saved.
+  // Put back as it was: nothing is saved.
   await name.fill("Asha Fictional");
-  await page.getByRole("button", { name: "Done" }).click();
-  await expect(value(page, "Name")).toHaveText("Asha Fictional");
+  await name.blur();
   await expect(history).toHaveCount(3);
-  await page.getByRole("button", { name: "Edit" }).click();
   await name.fill("Asha F.");
-  await page.getByRole("button", { name: "Done" }).click();
-  await expect(value(page, "Name")).toHaveText("Asha F.");
+  await name.blur();
+  await expect(history.first()).toHaveText(
+    /Name Asha Fictional → Asha F\. · in Settings$/,
+  );
+  await page.keyboard.press("Escape");
   await expect(
     page.getByRole("complementary").getByRole("link", { name: "Asha F." }),
   ).toBeVisible();
-  await expect(history.first()).toHaveText(
-    /Name Asha Fictional → Asha F\. · on this page$/,
-  );
 });
 
 test("a field you only pass through takes a change made elsewhere and saves nothing over it", async ({
@@ -119,55 +127,51 @@ test("a field you only pass through takes a change made elsewhere and saves noth
   await rufi.family();
   await rufi.start();
   await page.goto(rufi.link());
-  await page.getByRole("link", { name: "Settings" }).click();
-  const settingsHeight = page.getByLabel("Height", { exact: true });
-  await settingsHeight.fill("162");
-  await settingsHeight.blur();
+  const settings = await openProfile(page);
+  const height = settings.getByLabel("Height", { exact: true });
+  await height.fill("162");
+  await height.blur();
 
-  // In another tab, the profile page corrects the height and the birth date.
+  // In another tab, Settings corrects the height and the birth date.
   const other = await context.newPage();
   await other.goto(rufi.link());
-  await other
-    .getByRole("complementary")
-    .getByRole("link", { name: "Asha Fictional" })
-    .click();
-  await other.getByRole("button", { name: "Edit" }).click();
-  await other.getByLabel("Height", { exact: true }).fill("163");
-  await other.getByLabel("Year").fill("1991");
-  await other.getByRole("button", { name: "Done" }).click();
-  await expect(value(other, "Height")).toHaveText("163 cm");
+  const elsewhere = await openProfile(other);
+  await elsewhere.getByLabel("Height", { exact: true }).fill("163");
+  await elsewhere.getByLabel("Year").fill("1991");
+  await elsewhere.getByLabel("Blood group").focus();
+  await expect(historyOf(elsewhere)).toHaveCount(3);
 
-  // Settings shows them; passing through its fields saves nothing.
-  await expect(settingsHeight).toHaveValue("163");
-  await expect(page.getByLabel("Year")).toHaveValue("1991");
-  await settingsHeight.focus();
-  await page.getByLabel("Year").focus();
-  await page.getByLabel("Blood group").focus();
+  // This tab shows them; passing through its fields saves nothing.
+  await expect(height).toHaveValue("163");
+  await expect(settings.getByLabel("Year")).toHaveValue("1991");
+  await height.focus();
+  await settings.getByLabel("Year").focus();
+  await settings.getByLabel("Blood group").focus();
   await other.reload();
-  await expect(value(other, "Height")).toHaveText("163 cm");
-  await expect(value(other, "Birth date")).toHaveText(/^Mar 1991/);
-  await expect(other.getByRole("main").getByRole("listitem")).toHaveCount(3);
+  await expect(elsewhere.getByLabel("Height", { exact: true })).toHaveValue(
+    "163",
+  );
+  await expect(elsewhere.getByLabel("Year")).toHaveValue("1991");
+  await expect(historyOf(elsewhere)).toHaveCount(3);
 });
 
-test("an entry or choice that isn't saved stays, with what to do, and Done closes once it is saved", async ({
+test("an entry or choice that isn't saved stays, with what to do, and Settings closes once it is saved", async ({
   page,
   rufi,
 }) => {
   await rufi.family();
   await rufi.start();
   await page.goto(rufi.link());
-  await page
-    .getByRole("complementary")
-    .getByRole("link", { name: "Asha Fictional" })
-    .click();
-  await page.getByRole("button", { name: "Edit" }).click();
-  const height = page.getByLabel("Height", { exact: true });
+  const settings = await openProfile(page);
+  const height = settings.getByLabel("Height", { exact: true });
 
-  // Not a number: nothing is sent, and the page stays open with the entry.
+  // Not a number: nothing is sent, and Settings stays open with the entry.
   await height.fill("tall");
-  await page.getByRole("button", { name: "Done" }).click();
+  await page.keyboard.press("Escape");
   await expect(height).toHaveValue("tall");
-  await expect(page.getByText("Give your height as a number.")).toBeVisible();
+  await expect(
+    settings.getByText("Give your height as a number."),
+  ).toBeVisible();
 
   // The core refuses the save: the entry and the reason stay.
   await page.route("**/api/people/asha/profile", (route) =>
@@ -176,16 +180,18 @@ test("an entry or choice that isn't saved stays, with what to do, and Done close
       : route.continue(),
   );
   await height.fill("162");
-  await page.getByRole("button", { name: "Done" }).click();
-  await expect(page.getByRole("alert")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(settings.getByRole("alert")).toBeVisible();
   await expect(height).toHaveValue("162");
   // A choice refused stays chosen too.
-  await page.getByLabel("Blood group").selectOption("B+");
-  await expect(page.getByLabel("Blood group")).toHaveValue("B+");
+  await settings.getByLabel("Blood group").selectOption("B+");
+  await expect(settings.getByLabel("Blood group")).toHaveValue("B+");
 
-  // Once the core takes them, Done saves them and closes.
+  // Once the core takes them, closing saves them and closes.
   await page.unroute("**/api/people/asha/profile");
-  await page.getByRole("button", { name: "Done" }).click();
-  await expect(value(page, "Height")).toHaveText("162 cm");
-  await expect(value(page, "Blood group")).toHaveText("B+");
+  await page.keyboard.press("Escape");
+  await expect(settings).toBeHidden();
+  await openProfile(page);
+  await expect(height).toHaveValue("162");
+  await expect(settings.getByLabel("Blood group")).toHaveValue("B+");
 });

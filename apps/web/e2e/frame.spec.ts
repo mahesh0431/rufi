@@ -6,7 +6,7 @@ import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { type ExpressionKey, svg } from "@rufi/brand/mark";
 import { runningLink } from "../../server/src/server/core.ts";
-import { expect, SIGNED_OUT, signedIn, test } from "./rufi.ts";
+import { expect, openSettings, SIGNED_OUT, signedIn, test } from "./rufi.ts";
 
 /** No accessibility rule broken on what the page shows now. */
 async function accessible(page: Page) {
@@ -33,6 +33,10 @@ const face = (page: Page) => () => dog(page).getAttribute("class");
 /** The moves of the brand's own drawing of a face. */
 const drawn = (expression: ExpressionKey) =>
   /class="([^"]+)"/.exec(svg({ expression, size: 36 }))?.[1];
+
+/** The colour theme the page shows now, such as white or plum. */
+const colour = (page: Page) => () =>
+  page.evaluate(() => document.documentElement.dataset["colour"]);
 
 /** The theme the page shows now: light or dark. */
 const theme = (page: Page) => () =>
@@ -118,7 +122,7 @@ test.describe("opening Rufi", () => {
     ).toBeVisible();
 
     await rufi.stop();
-    await sidebar(page).getByRole("link", { name: "Settings" }).click();
+    await sidebar(page).getByRole("link", { name: "Help" }).click();
     await expect(page.getByRole("status")).toContainText(
       "Rufi can't be reached. If you stopped it, run pnpm start",
     );
@@ -301,18 +305,21 @@ test("under reduced motion the dog is still, and its face still changes", async 
   expect(await moving(dog(page))).toBe(0);
 });
 
-test("Settings chooses light, dark or the Mac's; every open tab changes at once, and a new tab or a restart starts in it", async ({
+test("Settings chooses light, dark or the Mac's, a colour and a text size; every open tab changes at once, and a new tab or a restart starts in them", async ({
   context,
   page,
   rufi,
 }) => {
-  // The theme each page shows in its first frame, before anything paints.
+  // The theme and colour each page shows in its first frame, before
+  // anything paints.
   await context.addInitScript(() => {
     requestAnimationFrame(() => {
-      sessionStorage.setItem(
-        "first-frame",
-        document.documentElement.dataset["theme"] ?? "",
-      );
+      const {
+        theme = "",
+        colour = "",
+        textSize = "",
+      } = document.documentElement.dataset;
+      sessionStorage.setItem("first-frame", `${theme} ${colour} ${textSize}`);
     });
   });
   const firstFrame = (tab: Page) =>
@@ -320,9 +327,11 @@ test("Settings chooses light, dark or the Mac's; every open tab changes at once,
   await rufi.family();
   const { port } = await rufi.start();
   await page.goto(rufi.link());
-  await sidebar(page).getByRole("link", { name: "Settings" }).click();
-  const appearance = page.getByRole("radiogroup", { name: "Appearance" });
+  const settings = await openSettings(page, "Appearance");
+  const appearance = settings.getByRole("radiogroup", { name: "Mode" });
+  const colours = settings.getByRole("radiogroup", { name: "Colour" });
   await expect(appearance.getByRole("radio", { name: "System" })).toBeChecked();
+  await expect(colours.getByRole("radio", { name: "White" })).toBeChecked();
   expect(await theme(page)()).toBe("light");
   const other = await context.newPage();
   await other.goto((await runningLink(rufi.home)) ?? "");
@@ -331,15 +340,26 @@ test("Settings chooses light, dark or the Mac's; every open tab changes at once,
   ).toBeVisible();
 
   await appearance.getByRole("radio", { name: "Dark" }).check();
+  await colours.getByRole("radio", { name: "Plum" }).check();
+  await settings
+    .getByRole("radiogroup", { name: "Text size" })
+    .getByRole("radio", { name: "Larger" })
+    .check();
   await expect.poll(theme(page)).toBe("dark");
   await expect.poll(theme(other)).toBe("dark");
+  await expect.poll(colour(other)).toBe("plum");
+  await expect
+    .poll(() =>
+      other.evaluate(() => document.documentElement.dataset["textSize"]),
+    )
+    .toBe("larger");
   await accessible(page);
   const fresh = await context.newPage();
   await fresh.goto((await runningLink(rufi.home)) ?? "");
   await expect(
     fresh.getByRole("heading", { name: "Health record" }),
   ).toBeVisible();
-  expect(await firstFrame(fresh)).toBe("dark");
+  expect(await firstFrame(fresh)).toBe("dark plum larger");
 
   await rufi.stop();
   await rufi.start({ port });
@@ -347,11 +367,11 @@ test("Settings chooses light, dark or the Mac's; every open tab changes at once,
   await expect(
     page.getByRole("heading", { name: "Health record" }),
   ).toBeVisible();
-  expect(await firstFrame(page)).toBe("dark");
+  expect(await firstFrame(page)).toBe("dark plum larger");
 
   // Light stays light on a dark Mac; System follows the Mac again.
   await page.emulateMedia({ colorScheme: "dark" });
-  await sidebar(page).getByRole("link", { name: "Settings" }).click();
+  await openSettings(page, "Appearance");
   await expect(appearance.getByRole("radio", { name: "Dark" })).toBeChecked();
   await appearance.getByRole("radio", { name: "Light" }).check();
   await expect.poll(theme(page)).toBe("light");
@@ -362,6 +382,79 @@ test("Settings chooses light, dark or the Mac's; every open tab changes at once,
   await expect.poll(theme(page)).toBe("light");
 });
 
+test("Settings opens over the page at a group, from the sidebar, a reply's button or a help page's link; Esc, Close or a click beside it shuts it, and the page keeps what you were typing", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family();
+  await rufi.start();
+  await page.goto(rufi.link());
+  await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
+  const box = page.getByRole("textbox", { name: "Message to Rufi" });
+  // A reply's button to a group of Settings opens it there, over the chat.
+  await box.fill(
+    [
+      "A stored reply:",
+      "root = Card([buttons])",
+      'buttons = Buttons([Button("Data settings", @OpenUrl("rufi:/settings/data"))])',
+    ].join("\n"),
+  );
+  await box.press("Enter");
+  await page.getByRole("button", { name: "Data settings" }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await expect(
+    settings.getByRole("tab", { name: "Data", selected: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page).toHaveURL(/\/people\/asha\/chat$/);
+  await box.fill("A message I'm still writing");
+
+  await sidebar(page).getByRole("link", { name: "Settings" }).click();
+  await expect(
+    settings.getByRole("tab", { name: "Sign-in", selected: true }),
+  ).toBeVisible();
+  await settings.getByRole("tab", { name: "Data" }).click();
+  await expect(settings.getByRole("region", { name: "Backups" })).toBeVisible();
+  await expect(page).toHaveURL(/\/people\/asha\/chat\?settings=data$/);
+  await accessible(page);
+  await page.keyboard.press("Escape");
+  await expect(settings).toHaveCount(0);
+  await expect(page).toHaveURL(/\/people\/asha\/chat$/);
+  await expect(box).toHaveValue("A message I'm still writing");
+
+  // Over Overview with the chat panel open, the panel stays open.
+  await sidebar(page).getByRole("link", { name: "Overview" }).click();
+  const dock = page.getByRole("region", { name: "Chat" });
+  await dock.getByRole("button", { name: "Open the chat" }).click();
+  const minimise = dock.getByRole("button", { name: "Minimise" });
+  await expect(minimise).toBeVisible();
+  await sidebar(page).getByRole("link", { name: "Settings" }).click();
+  await expect(settings).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(settings).toHaveCount(0);
+  await expect(minimise).toBeVisible();
+  await expect(
+    dock.getByRole("textbox", { name: "Message to Rufi" }),
+  ).toHaveValue("A message I'm still writing");
+
+  // A help page's link opens it at its group, over the help page.
+  await sidebar(page).getByRole("link", { name: "Help" }).click();
+  await page.getByRole("link", { name: "Backups and export" }).first().click();
+  const link = page.getByRole("link", { name: "Settings › Data" }).first();
+  await link.click();
+  await expect(
+    settings.getByRole("tab", { name: "Data", selected: true }),
+  ).toBeVisible();
+  await settings.getByRole("button", { name: "Close" }).click();
+  await expect(settings).toHaveCount(0);
+  await link.click();
+  await page.mouse.click(8, 8);
+  await expect(settings).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Backups and export", level: 1 }),
+  ).toBeVisible();
+});
+
 test("Settings shows the data folder, how it was chosen, and shows it in Finder", async ({
   page,
   rufi,
@@ -369,10 +462,9 @@ test("Settings shows the data folder, how it was chosen, and shows it in Finder"
   await rufi.family();
   await rufi.start({ source: "moved" });
   await page.goto(rufi.link());
-  await sidebar(page).getByRole("link", { name: "Settings" }).click();
-  const section = page
-    .getByRole("heading", { name: "Data folder" })
-    .locator("+ div");
+  const section = (await openSettings(page, "Data")).getByRole("region", {
+    name: "Data folder",
+  });
 
   await expect(section).toContainText(rufi.home);
   await expect(section).toContainText("You moved your data to this folder.");
@@ -393,8 +485,10 @@ test("a settings read from before a save never undoes the look just chosen", asy
   await rufi.family();
   await rufi.start();
   await page.goto(rufi.link());
-  await sidebar(page).getByRole("link", { name: "Settings" }).click();
-  const appearance = page.getByRole("radiogroup", { name: "Appearance" });
+  const appearance = (await openSettings(page, "Appearance")).getByRole(
+    "radiogroup",
+    { name: "Mode" },
+  );
   await appearance.getByRole("radio", { name: "Dark" }).check();
   await expect.poll(theme(page)).toBe("dark");
 
@@ -527,7 +621,7 @@ test.describe("first run", () => {
     await welcoming();
     await accessible(page);
     // Another page's address shows the step too.
-    await page.goto(new URL("/settings", page.url()).href);
+    await page.goto(new URL("/help", page.url()).href);
     await expect(
       page.getByRole("heading", { name: "Sign in with ChatGPT", level: 1 }),
     ).toBeVisible();
@@ -560,15 +654,15 @@ test.describe("first run", () => {
     await expect(title).toHaveText("Overview");
     // Her profile has what the welcome asked, and says where it came from.
     await sidebar(page).getByRole("link", { name: "Mira Fictional" }).click();
-    await expect(title).toHaveText("Profile");
-    await expect(page.getByRole("main")).toContainText(
-      /Birth dateMar 1990 · \d+ years old today/,
-    );
-    await expect(page.getByRole("main")).toContainText("Blood groupNot set");
-    await expect(page.getByRole("main").getByRole("listitem")).toHaveText([
+    const profile = page.getByRole("dialog", { name: "Settings" });
+    await expect(profile.getByLabel("Year")).toHaveValue("1990");
+    await expect(profile.getByLabel("Blood group")).toHaveValue("");
+    await expect(
+      profile.getByRole("region", { name: "History" }).getByRole("listitem"),
+    ).toHaveText([
       /Birth date Not set → Mar 1990; Sex for lab ranges Not set → Female · in the welcome$/,
     ]);
-    await page.goBack();
+    await page.keyboard.press("Escape");
     await expect(title).toHaveText("Overview");
     // The person's chat was made with them: the bar works at once.
     const bar = page.getByRole("region", { name: "Chat" });
@@ -603,11 +697,12 @@ test.describe("first run", () => {
     await expect(page.locator(".reply")).toHaveText(
       "ok:Hello from the first page",
     );
-    await sidebar(page).getByRole("link", { name: "Settings" }).click();
+    const settings = await openSettings(page, "Profile");
     await expect(
-      page.getByRole("combobox", { name: "Emergency region" }),
+      settings.getByRole("combobox", { name: "Emergency region" }),
     ).toHaveValue("IN");
-    await expect(page.getByRole("radio", { name: "Dark" })).toBeChecked();
+    await settings.getByRole("tab", { name: "Appearance" }).click();
+    await expect(settings.getByRole("radio", { name: "Dark" })).toBeChecked();
   });
 
   test("signs in with ChatGPT from the app", async ({ page, rufi }) => {
@@ -718,16 +813,15 @@ test.describe("sign-in status", () => {
     // Settings says how each provider is signed in, first, with Codex's
     // usage page.
     await sidebar(page).getByRole("link", { name: "Settings" }).click();
-    await expect(page.getByRole("heading", { level: 2 }).first()).toHaveText(
-      "Sign-in",
-    );
-    await expect(page.getByRole("main")).toContainText(
+    const settings = page.getByRole("dialog", { name: "Settings" });
+    await expect(
+      settings.getByRole("tab", { name: "Sign-in", selected: true }),
+    ).toBeVisible();
+    await expect(settings).toContainText(
       "Codex is signed in with ChatGPT (asha@example.com). Rufi's AI uses your ChatGPT plan. Manage usage",
     );
-    await expect(page.getByRole("main")).toContainText(
-      "Claude isn't signed in. Sign in",
-    );
-    const usage = page.getByRole("link", { name: "Manage usage" });
+    await expect(settings).toContainText("Claude isn't signed in. Sign in");
+    const usage = settings.getByRole("link", { name: "Manage usage" });
     await expect(usage).toHaveAttribute(
       "href",
       "https://chatgpt.com/codex/settings/usage",
@@ -750,14 +844,13 @@ test.describe("sign-in status", () => {
     await accessible(page);
 
     // Settings says so too, and signs in the same way.
-    await sidebar(page).getByRole("link", { name: "Settings" }).click();
-    await expect(page.getByRole("main")).toContainText(
+    const settings = await openSettings(page, "Sign-in");
+    await expect(settings).toContainText(
       "Codex isn't signed in. Rufi's AI needs it to answer. Sign in",
     );
-    await expect(page.getByRole("main")).not.toContainText("Manage usage");
+    await expect(settings).not.toContainText("Manage usage");
     await accessible(page);
-    await page
-      .getByRole("main")
+    await settings
       .getByRole("link", { name: "Sign in", exact: true })
       .first()
       .click();
@@ -866,21 +959,104 @@ test.describe("when Rufi is slow or away", () => {
     ).toBeVisible();
 
     await page.route("**/api/**", (route) => route.abort());
-    await sidebar(page).getByRole("link", { name: "Settings" }).click();
-    await expect(page.getByRole("status")).toContainText(
-      "Rufi can't be reached.",
-    );
+    const settings = await openSettings(page, "Profile");
+    // The line is on the page, behind Settings.
+    const offline = page.getByRole("status", { includeHidden: true });
+    await expect(offline).toContainText("Rufi can't be reached.");
     // Two checks fail while it is away.
     await page.clock.runFor(7_000);
-    await expect(page.getByRole("status")).toBeVisible();
+    await expect(offline).toBeVisible();
 
     await page.unroute("**/api/**");
     await page.clock.runFor(3_000);
-    await expect(page.getByRole("status")).toHaveCount(0);
+    await expect(offline).toHaveCount(0);
     await expect(
-      page.getByRole("combobox", { name: "Emergency region" }),
+      settings.getByRole("combobox", { name: "Emergency region" }),
     ).toBeVisible();
   });
+});
+
+test("Settings keeps how Rufi AI's replies look and your own words for them", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family();
+  await rufi.start();
+  await page.goto(rufi.link());
+  const settings = await openSettings(page, "Chat");
+  const style = settings.getByRole("radiogroup", { name: "Replies" });
+  const words = settings.getByRole("textbox", { name: "Your own words" });
+  await expect(style.getByRole("radio", { name: "Visual" })).toBeChecked();
+  await style.getByRole("radio", { name: "Simple" }).check();
+  await words.fill("Explain medical words simply.\nUse kg and cm.");
+  // Leaving the box saves it.
+  const saved = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/settings") &&
+      response.request().method() === "PUT" &&
+      response.request().postData()?.includes("replyWords") === true,
+  );
+  await settings.getByRole("tab", { name: "Data" }).focus();
+  expect((await saved).ok()).toBe(true);
+  await accessible(page);
+
+  // The address keeps Settings open at its group after a reload.
+  await page.reload();
+  await settings.getByRole("tab", { name: "Chat" }).click();
+  await expect(style.getByRole("radio", { name: "Simple" })).toBeChecked();
+  await expect(words).toHaveValue(
+    "Explain medical words simply.\nUse kg and cm.",
+  );
+
+  // Esc while still in the box saves them too, before Settings closes.
+  await words.fill("Use kg and cm.");
+  await words.press("Escape");
+  await expect(settings).toBeHidden();
+  await page.reload();
+  await openSettings(page, "Chat");
+  await expect(words).toHaveValue("Use kg and cm.");
+});
+
+test("Settings › Advanced shows what Rufi AI is told; an edited part is marked and kept, and Reset to default puts Rufi's own back", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family();
+  await rufi.start();
+  await page.goto(rufi.link());
+  const settings = await openSettings(page, "Advanced");
+  const rules = settings.getByRole("region", {
+    name: "Reply instructions: rules",
+  });
+  const box = rules.getByRole("textbox");
+  const own = await box.inputValue();
+  expect(own).not.toBe("");
+  await expect(rules.getByText("Edited", { exact: true })).toHaveCount(0);
+
+  // What you type while a save runs stays, and is saved as Settings closes.
+  const answered = Promise.withResolvers<undefined>();
+  await page.route("**/api/instructions", async (route) => {
+    if (route.request().method() === "PUT") await answered.promise;
+    await route.continue();
+  });
+  await box.fill("- Answer in French.");
+  await settings.getByRole("tab", { name: "Advanced" }).focus();
+  await box.press("End");
+  await box.pressSequentially(" Briefly.");
+  answered.resolve(undefined);
+  await expect(rules.getByText("Edited", { exact: true })).toBeVisible();
+  await expect(box).toHaveValue("- Answer in French. Briefly.");
+  await expect(box).toBeFocused();
+  await accessible(page);
+  await page.keyboard.press("Escape");
+  await expect(settings).toBeHidden();
+  await page.reload();
+  await openSettings(page, "Advanced");
+  await expect(box).toHaveValue("- Answer in French. Briefly.");
+
+  await rules.getByRole("button", { name: "Reset to default" }).click();
+  await expect(box).toHaveValue(own);
+  await expect(rules.getByText("Edited", { exact: true })).toHaveCount(0);
 });
 
 test("Settings keeps the emergency region the AI uses, and clears it", async ({
@@ -890,8 +1066,9 @@ test("Settings keeps the emergency region the AI uses, and clears it", async ({
   await rufi.family();
   await rufi.start();
   await page.goto(rufi.link());
-  await sidebar(page).getByRole("link", { name: "Settings" }).click();
-  const region = page.getByRole("combobox", { name: "Emergency region" });
+  const region = (await openSettings(page, "Profile")).getByRole("combobox", {
+    name: "Emergency region",
+  });
   await expect(region).toHaveValue("");
   await expect(region.getByRole("option", { name: "India (112)" })).toHaveCount(
     1,
@@ -929,7 +1106,7 @@ test("Settings backs up, says when a backup failed, and exports your data", asyn
       json: { last: null, failed: null, running: true },
     });
   });
-  await sidebar(page).getByRole("link", { name: "Settings" }).click();
+  await openSettings(page, "Data");
   await expect(
     page.getByRole("button", { name: "Backing up…" }),
   ).toBeDisabled();
@@ -971,7 +1148,7 @@ test("an export that doesn't come in time says so, and can be tried again", asyn
   await rufi.start();
   await page.clock.install();
   await page.goto(rufi.link());
-  await sidebar(page).getByRole("link", { name: "Settings" }).click();
+  await openSettings(page, "Data");
   // Rufi takes the request and never answers.
   await page.route("**/api/export", () => undefined);
   await page.getByRole("button", { name: "Export" }).click();

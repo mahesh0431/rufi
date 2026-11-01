@@ -44,7 +44,7 @@ export async function startAgents(options: {
   record: Store;
   adapters: readonly ProviderAdapter[];
   /** What a conversation opens with, and Rufi's claim of each hand-over. */
-  host: Pick<Host, "opening" | "claim">;
+  host: Pick<Host, "opening" | "outdated" | "claim">;
   /** What the package shows of each open conversation as it comes. */
   live?: (agent: string, conversation: string, event: ProviderEvent) => void;
   /**

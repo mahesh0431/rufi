@@ -1,3 +1,5 @@
+import { type Group, settingsGroupOf } from "./settings-link.tsx";
+
 // The help pages, bundled from docs/help/ and GLOSSARY.md as they are. A page
 // is named by its file name without ".md"; the glossary is "glossary".
 const files = import.meta.glob<string>("../../../docs/help/*.md", {
@@ -24,17 +26,21 @@ export const HELP: Record<string, string> = {
 };
 
 /**
- * Where a link in a help page goes: another help page (with its anchor), an
+ * Where a link in a help page goes: a group of Settings
+ * (rufi:/settings/<group>), another help page (with its anchor), an
  * anchor on this page, or a web page outside Rufi. Undefined when it points
  * to nothing Rufi has.
  */
 export function helpLink(
   href: string,
 ):
+  | { kind: "settings"; group: Group }
   | { kind: "page"; page: string; anchor: string | undefined }
   | { kind: "anchor"; anchor: string }
   | { kind: "web"; url: string }
   | undefined {
+  const group = settingsGroupOf(href);
+  if (group !== undefined) return { kind: "settings", group };
   if (href.startsWith("#")) return { kind: "anchor", anchor: href.slice(1) };
   if (/^https?:\/\//.test(href)) return { kind: "web", url: href };
   const [path = "", anchor] = href.split("#");

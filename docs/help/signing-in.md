@@ -6,7 +6,7 @@ You can sign in in Rufi, or with terminal commands.
 
 ## Sign in in Rufi
 
-1. In the first run, click **Sign in with ChatGPT** to sign Codex in. Later, click "Not signed in" at the bottom of the sidebar, **Sign in** in **Settings** › **Sign-in**, or **Sign in** by the chat's box after you sent while signed out: the **Sign in** page has Codex and Claude, each with its own button.
+1. In the first run, click **Sign in with ChatGPT** to sign Codex in. Later, click "Not signed in" at the bottom of the sidebar, **Sign in** in [Settings › Sign-in](rufi:/settings/sign-in), or **Sign in** by the chat's box after you sent while signed out: the **Sign in** page has Codex and Claude, each with its own button.
 2. Your browser opens on the sign-in page: ChatGPT's for Codex, Claude's for Claude. If it doesn't open, click **open the sign-in page** in Rufi.
 3. Sign in there.
 4. Go back to Rufi. It goes on by itself when you are signed in.
@@ -15,7 +15,7 @@ Rufi waits up to 5 minutes for you, for one sign-in at a time. If the sign-in do
 
 ## Your sign-in in Settings
 
-**Settings** › **Sign-in**, at the top of Settings, shows Codex and Claude as each reports itself:
+[Settings › Sign-in](rufi:/settings/sign-in), the first group of Settings, shows Codex and Claude as each reports itself:
 
 - Codex signed in: with your ChatGPT account's email. **Manage usage** opens your ChatGPT plan's usage page in your browser.
 - Claude signed in: Rufi shows that it is, not as whom.

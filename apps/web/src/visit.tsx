@@ -8,6 +8,7 @@ import { ArrowUpRight } from "lucide-react";
 import { AskRufi } from "./ask.tsx";
 import { askRufi } from "./panel.ts";
 import { useRecordDetail } from "./reads.ts";
+import { SettingsLink } from "./settings-link.tsx";
 import {
   cellsOf,
   chipOf,
@@ -48,7 +49,7 @@ export function VisitPage({
   return (
     <div className="mx-auto max-w-[790px] px-6 py-8">
       <div className="mb-3.5">
-        <h2 className="flex items-start gap-3 text-[22px] font-bold">
+        <h2 className="flex items-start gap-3 text-[1.375rem] font-bold">
           <span className="min-w-0 flex-1">{visitTitle(row)}</span>
           <AskRufi
             onClick={() => {
@@ -125,13 +126,9 @@ function OpenRow({ personId, row }: { personId: string; row: RecordRow }) {
   );
   if (row.kind === "profile") {
     return (
-      <Link
-        to="/people/$personId/profile"
-        params={{ personId }}
-        className={look}
-      >
+      <SettingsLink group="profile" className={look}>
         {label}
-      </Link>
+      </SettingsLink>
     );
   }
   if (row.kind === "follow_up") {

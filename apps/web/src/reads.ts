@@ -11,6 +11,10 @@ import {
 } from "@rufi/contracts";
 import { BriefPage } from "@rufi/contracts/briefs";
 import { DeviceData } from "@rufi/contracts/devices";
+import {
+  type InstructionPartId,
+  Instructions,
+} from "@rufi/contracts/instructions";
 import { DocumentItems, Documents } from "@rufi/contracts/documents";
 import {
   FollowUps,
@@ -61,6 +65,7 @@ export const useSettings = () =>
 const settingsChanged = new BroadcastChannel("rufi.settings");
 settingsChanged.addEventListener("message", () => {
   void queries.invalidateQueries({ queryKey: ["settings"] });
+  void queries.invalidateQueries({ queryKey: ["instructions"] });
 });
 
 /** Changes settings: this page and every other open one show the change. */
@@ -71,8 +76,36 @@ export async function saveSettings(
   // A read sent before this save would answer with older settings: dropped.
   await queries.cancelQueries({ queryKey: ["settings"] });
   queries.setQueryData(["settings"], saved);
+  // What Rufi AI is told follows the settings (the reply style, your words).
+  void queries.invalidateQueries({ queryKey: ["instructions"] });
   settingsChanged.postMessage("changed");
   return saved;
+}
+
+/** What Rufi AI is told, in its parts: Settings › Advanced. */
+export const useInstructions = () =>
+  useQuery({
+    queryKey: ["instructions"],
+    queryFn: async () =>
+      (await read(Instructions, "GET", "/api/instructions")).parts,
+  });
+
+/** Edits one part of what Rufi AI is told; null puts Rufi's own back. */
+export async function editInstruction(
+  part: InstructionPartId,
+  text: string | null,
+): Promise<void> {
+  const { parts } = await read(Instructions, "PUT", "/api/instructions", {
+    part,
+    text,
+  });
+  await queries.cancelQueries({ queryKey: ["instructions"] });
+  queries.setQueryData(["instructions"], parts);
+  // Your own words are a setting of Settings › Chat too.
+  if (part === "words") {
+    void queries.invalidateQueries({ queryKey: ["settings"] });
+  }
+  settingsChanged.postMessage("changed");
 }
 
 export const useStatus = () =>

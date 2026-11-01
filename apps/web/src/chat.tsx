@@ -262,7 +262,7 @@ export function ChatPage({ person }: { person: Person }) {
 /** Under the box: a reminder to check what the AI says. */
 function AiCanMakeMistakes() {
   return (
-    <p className="pt-1 pb-2 text-center text-[11.5px] text-muted">
+    <p className="pt-1 pb-2 text-center text-[0.71875rem] text-muted">
       AI can make mistakes. Check important health decisions with your doctor.
     </p>
   );

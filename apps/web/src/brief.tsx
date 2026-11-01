@@ -12,6 +12,7 @@ import { printedTime } from "./dates.ts";
 import { Dog } from "./dog.tsx";
 import { useBrief } from "./reads.ts";
 import { isPageKind } from "./record.tsx";
+import { SettingsLink } from "./settings-link.tsx";
 import { Marked } from "./transcript.tsx";
 import { Button, Problem } from "./ui.tsx";
 
@@ -45,7 +46,7 @@ function Shown({ brief, person }: { brief: Brief; person: Person }) {
           <Dog size={24} />
         </span>
         <div className="flex-1">
-          <h2 className="text-[22px] font-bold">Visit brief</h2>
+          <h2 className="text-[1.375rem] font-bold">Visit brief</h2>
           <p className="text-muted">{made}</p>
         </div>
         <div className="flex items-start gap-3 print:hidden">
@@ -113,7 +114,7 @@ function Shown({ brief, person }: { brief: Brief; person: Person }) {
 /**
  * A source's record, as a link that opens it on its page (a result on the
  * page of its category, a "no known allergies" statement on Allergies, the
- * profile on its page); as
+ * profile in Settings › Profile); as
  * words alone when it is no longer in the record.
  */
 function Cited({
@@ -150,13 +151,9 @@ function Cited({
   }
   if (record && page === "profile") {
     return (
-      <Link
-        to="/people/$personId/profile"
-        params={{ personId }}
-        className={look}
-      >
+      <SettingsLink group="profile" className={look}>
         {what}
-      </Link>
+      </SettingsLink>
     );
   }
   if (record && page && (page === "result" || isPageKind(page))) {

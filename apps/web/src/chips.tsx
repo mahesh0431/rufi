@@ -38,7 +38,7 @@ export function ChipView({
       title={
         chip.detail === "" || chip.deleted ? named : `${named}\n${chip.detail}`
       }
-      className={`inline-flex max-w-full items-center gap-1.5 rounded-lg border border-line bg-side py-px pr-1 pl-2 text-[12.5px] ${chip.deleted ? "text-muted" : ""}`}
+      className={`inline-flex max-w-full items-center gap-1.5 rounded-lg border border-line bg-side py-px pr-1 pl-2 text-[0.78125rem] ${chip.deleted ? "text-muted" : ""}`}
     >
       <Icon size={13} className="shrink-0 text-muted" aria-hidden />
       <span className="max-w-[220px] truncate">{label}</span>

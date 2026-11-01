@@ -16,7 +16,14 @@ import {
   openWritable,
 } from "../../server/src/core/store/database.ts";
 import { runningLink } from "../../server/src/server/core.ts";
-import { expect, SIGNED_OUT, signedIn, test, type Rufi } from "./rufi.ts";
+import {
+  expect,
+  openSettings,
+  SIGNED_OUT,
+  signedIn,
+  test,
+  type Rufi,
+} from "./rufi.ts";
 
 async function accessible(page: Page) {
   const { violations } = await new AxeBuilder({ page }).analyze();
@@ -234,9 +241,8 @@ test("the bar, the panel and Chat with Rufi are one chat: the reply streams in, 
   await chat(page).getByRole("button", { name: "Open as page" }).click();
   await expect(page).toHaveURL(/\/people\/asha\/chat$/);
 
-  // The bar is on the pages where you read your health, not Help or
-  // Settings; Chat with Rufi opens the chat from any page, as a page of its
-  // own.
+  // The bar is on the pages where you read your health, not Help; Chat with
+  // Rufi opens the chat from any page, as a page of its own.
   for (const name of [
     "Lab results",
     "Measurements",
@@ -249,11 +255,9 @@ test("the bar, the panel and Chat with Rufi are one chat: the reply streams in, 
     await expect(toolbar(page)).toHaveText(name);
     await expect(opener(chat(page))).toBeVisible();
   }
-  for (const name of ["Help", "Settings"]) {
-    await sidebar(page).getByRole("link", { name }).click();
-    await expect(toolbar(page)).toHaveText(name);
-    await expect(chat(page)).toHaveCount(0);
-  }
+  await sidebar(page).getByRole("link", { name: "Help" }).click();
+  await expect(toolbar(page)).toHaveText("Help");
+  await expect(chat(page)).toHaveCount(0);
   await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
   await expect(page).toHaveURL(/\/people\/asha\/chat$/);
   await expect(box(page)).toBeFocused();
@@ -473,9 +477,10 @@ test("while a reply runs, the box's one button is Stop until you type; then Ente
   await page.keyboard.up("ControlOrMeta");
   await expect(waiting).toContainText("Then my ferritin");
 
-  await sidebar(page).getByRole("link", { name: "Settings" }).click();
-  await page.getByRole("radio", { name: "Queue" }).check();
-  await expect(page.getByRole("radio", { name: "Queue" })).toBeChecked();
+  const settings = await openSettings(page, "Chat");
+  await settings.getByRole("radio", { name: "Queue" }).check();
+  await expect(settings.getByRole("radio", { name: "Queue" })).toBeChecked();
+  await page.keyboard.press("Escape");
   await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
   await box(page).fill("And after that, my iron");
   await expect(page.getByRole("button", { name: "Queue" })).toBeVisible();
@@ -1023,7 +1028,7 @@ test("Markdown in a reply: tables and web links work, Rufi's own links open in p
   await box(chat(page)).fill(
     [
       "![pixel](http://127.0.0.1:9/pixel.png) <img src=http://127.0.0.1:9/x.png>",
-      "[run](javascript:alert(1)) [inside](/settings) [web](https://example.com/page) [your profile](rufi:/profile) [up](rufi:/../ravi/profile) [encoded](rufi:/%2e%2e/ravi/profile) [deeper](rufi:/documents/%2e%2e%2f..%2fravi)",
+      "[run](javascript:alert(1)) [inside](/settings) [web](https://example.com/page) [your follow-ups](rufi:/follow-ups) [data settings](rufi:/settings/data) [up](rufi:/../ravi/profile) [encoded](rufi:/%2e%2e/ravi/profile) [deeper](rufi:/documents/%2e%2e%2f..%2fravi)",
       "",
       "| Test | Value |",
       "|---|---|",
@@ -1039,11 +1044,11 @@ test("Markdown in a reply: tables and web links work, Rufi's own links open in p
     "https://example.com/page",
   );
   // Every other link goes to a web page, outside Rufi; none other is a link.
-  const own = reply.getByRole("link", { name: "your profile" });
+  const own = reply.getByRole("link", { name: "your follow-ups" });
   await expect(own).not.toHaveAttribute("target");
   for (const link of await reply
     .getByRole("link")
-    .filter({ hasNotText: "your profile" })
+    .filter({ hasNotText: /^(your follow-ups|data settings)$/ })
     .all()) {
     await expect(link).toHaveAttribute("href", /^https?:\/\//);
     await expect(link).toHaveAttribute("target", "_blank");
@@ -1051,11 +1056,11 @@ test("Markdown in a reply: tables and web links work, Rufi's own links open in p
   }
   await expect(reply.locator("img")).toHaveCount(0);
   await expect(reply).toContainText(
-    "run inside web your profile up encoded deeper",
+    "run inside web your follow-ups data settings up encoded deeper",
   );
   // A Rufi link that would leave this person's pages is its words only.
   for (const name of ["up", "encoded", "deeper"]) {
-    await expect(reply.getByRole("link", { name })).toHaveCount(0);
+    await expect(reply.getByRole("link", { name, exact: true })).toHaveCount(0);
   }
 
   const at = page.url();
@@ -1064,10 +1069,18 @@ test("Markdown in a reply: tables and web links work, Rufi's own links open in p
   expect(page.url()).toBe(at);
   expect(requests.filter((url) => url.includes("127.0.0.1:9"))).toEqual([]);
 
+  // A link to Settings opens it at its group, over the chat.
+  await reply.getByRole("link", { name: "data settings" }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await expect(
+    settings.getByRole("tab", { name: "Data", selected: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  expect(page.url()).toBe(at);
   // Rufi's own link opens the person's page in this window.
   await own.click();
-  await expect(page).toHaveURL(/\/people\/[^/]+\/profile$/);
-  await expect(page.getByRole("heading", { name: "Profile" })).toBeVisible();
+  await expect(page).toHaveURL(/\/people\/[^/]+\/follow-ups$/);
+  await expect(page.getByRole("heading", { name: "Follow-ups" })).toBeVisible();
   expect(page.context().pages()).toHaveLength(1);
 });
 
@@ -1468,7 +1481,7 @@ test("from Enter, one working line shows while the AI's thread opens and until t
       reasoningMs: 1_500,
     },
   });
-  await page.goto(`${new URL(page.url()).origin}/settings`);
+  await page.goto(`${new URL(page.url()).origin}/?settings=chat`);
   const hide = page
     .getByRole("radiogroup", { name: "Activity" })
     .getByRole("radio", { name: "Always hide" });
@@ -1569,7 +1582,7 @@ test("the Activity setting: show while working folds at the end; always show sta
     },
   });
   const choose = async (name: string) => {
-    await page.goto(`${new URL(page.url()).origin}/settings`);
+    await page.goto(`${new URL(page.url()).origin}/?settings=chat`);
     const group = page.getByRole("radiogroup", { name: "Activity" });
     await group.getByRole("radio", { name }).check();
     await expect(group.getByRole("radio", { name })).toBeChecked();
@@ -1610,7 +1623,7 @@ test("the Activity setting: show while working folds at the end; always show sta
     scenario: { reasoning: ["**Reading the record**"], reasoningMs: 1_500 },
   });
   await page.goto(rufi.link());
-  await page.goto(`${new URL(page.url()).origin}/settings`);
+  await page.goto(`${new URL(page.url()).origin}/?settings=chat`);
   await expect(
     page
       .getByRole("radiogroup", { name: "Activity" })

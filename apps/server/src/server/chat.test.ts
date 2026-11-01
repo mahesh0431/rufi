@@ -209,10 +209,16 @@ async function startChat(
       ),
     agent: ai.agent,
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp`, keys },
-    rules: (region) => ({
-      instructions: `Rufi's rules ${options.rules ?? "1"}, for ${region ?? "no region"}.`,
-      version: `rules-${options.rules ?? "1"}-${region ?? ""}`,
-    }),
+    rules: ({ region, replies }, helper) =>
+      helper
+        ? {
+            instructions: `Rufi's rules ${options.rules ?? "1"} for ${helper.title}, for ${region ?? "no region"}.`,
+            version: `rules-${options.rules ?? "1"}-${region ?? ""}-${helper.title}`,
+          }
+        : {
+            instructions: `Rufi's rules ${options.rules ?? "1"}, for ${region ?? "no region"}, ${replies.style} replies${replies.words === "" ? "" : `, ${replies.words}`}.`,
+            version: `rules-${options.rules ?? "1"}-${region ?? ""}-${replies.style}${replies.words === "" ? "" : `-${replies.words}`}`,
+          },
     tools: {
       specs: tools.specs,
       caller: (scope) => {
@@ -897,7 +903,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
   );
 
   it(
-    "tells the thread Rufi's new rules (a new emergency region, an update after a restart) and goes on in it",
+    "tells the thread Rufi's new rules (a new emergency region, a reply style, an update after a restart) and goes on in it",
     timeout,
     async () => {
       await startChat(name);
@@ -910,10 +916,14 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       await startChat(name, { rules: "2" }); // Rufi updated.
       await say(await chatRow(c.id), "third");
       await ended(c.id, 3);
+      await transcripts.saveSetting("reply_style", "simple");
+      await say(await chatRow(c.id), "fourth");
+      await ended(c.id, 4);
       const { turns, entries } = await transcript(c.id);
       // One thread, and Rufi's summaries aren't replies.
       expect(threadsUsed()).toBe(1);
       expect(turns.map((turn) => turn.newThread)).toEqual([
+        false,
         false,
         false,
         false,
@@ -922,14 +932,23 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
         ["reply", "ok:first"],
         ["reply", "ok:second"],
         ["reply", "ok:third"],
+        ["reply", "ok:fourth"],
       ]);
       // Each reply after a change had the new rules whole, as the last word.
       const rules = await backend.rules();
-      expect(rules).toHaveLength(3);
-      const regionNote = instructionsNote("Rufi's rules 1, for IN.");
-      const updateNote = instructionsNote("Rufi's rules 2, for IN.");
+      expect(rules).toHaveLength(4);
+      const regionNote = instructionsNote(
+        "Rufi's rules 1, for IN, visual replies.",
+      );
+      const updateNote = instructionsNote(
+        "Rufi's rules 2, for IN, visual replies.",
+      );
+      const styleNote = instructionsNote(
+        "Rufi's rules 2, for IN, simple replies.",
+      );
       expect(rules[1]?.slice(-regionNote.length)).toBe(regionNote);
       expect(rules[2]?.slice(-updateNote.length)).toBe(updateNote);
+      expect(rules[3]?.slice(-styleNote.length)).toBe(styleNote);
     },
   );
 
@@ -2005,6 +2024,43 @@ describe("the chat, on the scripted Codex", () => {
       ["receipt", "**Saved** · Helper\n\n- Added symptom **Headache**"],
     ]);
     expect(all.find((entry) => entry.kind === "receipt")?.turnId).toBeNull();
+  });
+
+  it("starts the reply a helper's done message wakes with the reply style and words chosen while the helper ran; the helper's turn keeps its own", async () => {
+    const changed = Promise.withResolvers<undefined>();
+    await startChat("fake", {
+      scenario: {
+        callsByText: {
+          "Ask a helper": [
+            {
+              tool: "start_agent",
+              arguments: { title: "Helper", task: "helper: look" },
+            },
+          ],
+          "helper:": [{ tool: "get_overview", arguments: {} }],
+        },
+      },
+      waitFor: (tool) =>
+        tool === "get_overview" ? changed.promise : undefined,
+    });
+    const c = await newChat();
+    await say(c, "Ask a helper");
+    await ended(c.id);
+    await transcripts.saveSetting("reply_style", "simple");
+    await transcripts.saveSetting(
+      "reply_words",
+      "Explain medical words simply.",
+    );
+    changed.resolve(undefined);
+    await until(async () => (await turnsRun()).length === 3);
+    await settled(c.id);
+    expect((await turnsRun()).map((turn) => turn.told ?? "")).toEqual([
+      "Rufi's rules 1, for no region, visual replies.",
+      "Rufi's rules 1 for Helper, for no region.",
+      expect.stringContaining(
+        "Rufi's rules 1, for no region, simple replies, Explain medical words simply.",
+      ),
+    ]);
   });
 
   it("writes a sub-agent's message into the chat once, in its own words, where Rufi AI takes it: steered into the reply that runs", async () => {
@@ -4238,7 +4294,7 @@ describe("the chat, on the scripted Codex", () => {
       ?.received?.params;
     expect(start).toMatchObject({
       model: "gpt-6-astra",
-      developerInstructions: "Rufi's rules 1, for IN.",
+      developerInstructions: "Rufi's rules 1, for IN, visual replies.",
       cwd: join(home, "ai"),
       permissions: "rufi-ai",
       approvalPolicy: "never",
@@ -4263,7 +4319,7 @@ describe("the chat, on the scripted Codex", () => {
       },
     ]);
     expect((await transcript(c.id)).turns).toHaveLength(1);
-    expect((await chatRow(c.id)).threadTools).toBe("rules-1-");
+    expect((await chatRow(c.id)).threadTools).toBe("rules-1--visual");
     const started = (await readFile(join(home, "fake.jsonl"), "utf8"))
       .split("\n")
       .filter((line) => line.includes('"method":"thread/start"'));

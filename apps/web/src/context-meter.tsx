@@ -30,7 +30,7 @@ export function ContextMeter({ live }: { live: StoreApi<Live> }) {
           <button
             type="button"
             aria-label={title}
-            className="flex h-8 shrink-0 items-center gap-1 rounded-lg px-1.5 text-[13px] text-muted hover:bg-side hover:text-ink data-[popup-open]:bg-side data-[popup-open]:text-ink"
+            className="flex h-8 shrink-0 items-center gap-1 rounded-lg px-1.5 text-[0.8125rem] text-muted hover:bg-side hover:text-ink data-[popup-open]:bg-side data-[popup-open]:text-ink"
           />
         }
       >

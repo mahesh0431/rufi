@@ -47,7 +47,7 @@ An export you saved before the delete keeps the document too.
 
 ### See your backups
 
-Open **Settings**. Under **Backups**, Rufi shows when it made the last good backup. If the last try failed, or a backup in the folder is damaged, Rufi says when and why, and when your last good backup is from. After Rufi starts again, Settings shows the backup Rufi makes as it starts: while it runs, and then whether it worked. An older failure isn't shown again.
+Open [Settings › Data](rufi:/settings/data). Under **Backups**, Rufi shows when it made the last good backup. If the last try failed, or a backup in the folder is damaged, Rufi says when and why, and when your last good backup is from. After Rufi starts again, Settings shows the backup Rufi makes as it starts: while it runs, and then whether it worked. An older failure isn't shown again.
 
 To make a backup now, click **Back up**. When it is done, Settings says **Backed up just now**.
 
@@ -57,7 +57,7 @@ A restore puts a backup into a new folder. Your current data folder doesn't chan
 
 A restore brings back your record as it was when the backup was made, signed out. To put your data on another disk as it is now, with all your backups, move it instead (see [Move your data](your-data-and-the-ai.md#move-your-data)).
 
-1. Find the backup you want: open the `backups` folder in your data folder (**Settings** › **Data folder** › **Show in Finder**). For example, in the terminal, for the data folder that Rufi made:
+1. Find the backup you want: open the `backups` folder in your data folder ([Settings › Data](rufi:/settings/data) › **Data folder** › **Show in Finder**). For example, in the terminal, for the data folder that Rufi made:
 
    ```
    ls ~/.rufi/data/backups
@@ -111,7 +111,7 @@ If `rufi.sqlite` is gone from a data folder that had a record, Rufi doesn't star
 
 An export is one zip file with everything in your record, your chat, your documents and Rufi's settings, so that your data is never locked in Rufi.
 
-1. Open **Settings**.
+1. Open [Settings › Data](rufi:/settings/data).
 2. Under **Export**, click **Export**.
 3. In the Rufi app, choose where to save the file. In a browser, it goes to your downloads.
 

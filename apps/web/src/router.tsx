@@ -20,16 +20,19 @@ import { FollowUpsPage } from "./follow-ups.tsx";
 import { Frame } from "./frame.tsx";
 import { HelpPage } from "./help-page.tsx";
 import { OverviewPage } from "./overview.tsx";
-import { ProfilePage } from "./profile.tsx";
 import { isPageKind, pageOf, RecordPage } from "./record.tsx";
 import { usePeople, useRecordDetail } from "./reads.ts";
-import { SettingsPage } from "./settings.tsx";
+import { settingsSearch } from "./settings-link.tsx";
 import { SignIn } from "./signin.tsx";
 import { LabResultsPage, TestPage } from "./tests.tsx";
 import { VisitPage } from "./visit.tsx";
 import { buttonLook, ICON, Problem } from "./ui.tsx";
 
-const root = createRootRoute({ component: Frame });
+// `?settings=<group>`, on any page: Settings open over it (settings-link.tsx).
+const root = createRootRoute({
+  component: Frame,
+  validateSearch: settingsSearch,
+});
 
 const home = createRoute({
   getParentRoute: () => root,
@@ -357,31 +360,18 @@ const conversation = createRoute({
   },
 });
 
-const profile = createRoute({
-  getParentRoute: () => root,
-  path: "/people/$personId/profile",
-  component: function Profile() {
-    const { personId } = profile.useParams();
-    const people = usePeople();
-    if (people.data === undefined) {
-      return people.error ? (
-        <div className="px-6 py-8">
-          <Problem error={people.error} retry={() => void people.refetch()} />
-        </div>
-      ) : null;
-    }
-    const person = people.data.find((p) => p.id === personId);
-    if (!person) {
-      return <div className="px-6 py-8 text-muted">There is no page here.</div>;
-    }
-    return <ProfilePage key={personId} person={person} />;
-  },
-});
-
+// Settings' address before it was a pop-up: Overview, with Settings open.
 const settings = createRoute({
   getParentRoute: () => root,
   path: "/settings",
-  component: SettingsPage,
+  beforeLoad: () => {
+    redirect({
+      to: "/",
+      search: { settings: "sign-in" },
+      replace: true,
+      throw: true,
+    });
+  },
 });
 
 const signIn = createRoute({
@@ -435,7 +425,6 @@ export const router = createRouter({
     test,
     followUps,
     brief,
-    profile,
     conversation,
     settings,
     signIn,

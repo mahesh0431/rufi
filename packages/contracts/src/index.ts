@@ -440,6 +440,45 @@ export const Appearance = Schema.Literals(["system", "light", "dark"]);
 export type Appearance = typeof Appearance.Type;
 
 /**
+ * Rufi's colour theme: the background greys and the colour of what you do
+ * and what is selected (packages/brand/tokens.css). White until chosen.
+ */
+export const Colour = Schema.Literals([
+  "white",
+  "blue",
+  "periwinkle",
+  "plum",
+  "ocean",
+  "graphite",
+  "sand",
+]);
+export type Colour = typeof Colour.Type;
+
+/**
+ * How Rufi AI's reply sits in the chat: on the chat's background (flat), on
+ * its own soft surface (panel), or the same with a thin border (card).
+ */
+export const ReplyShape = Schema.Literals(["flat", "panel", "card"]);
+export type ReplyShape = typeof ReplyShape.Type;
+
+/**
+ * The size of all of Rufi's text, replies too: default (13 px), large (about
+ * 15 px) or larger (about 17 px).
+ */
+export const TextSize = Schema.Literals(["default", "large", "larger"]);
+export type TextSize = typeof TextSize.Type;
+
+/**
+ * How Rufi AI's replies look, as the user chose: visual (built from OpenUI's
+ * parts), balanced (text first) or simple (short text). Visual until chosen.
+ */
+export const ReplyStyle = Schema.Literals(["visual", "balanced", "simple"]);
+export type ReplyStyle = typeof ReplyStyle.Type;
+
+/** The user's own words for how replies look and read; empty for none. */
+export const MAX_REPLY_WORDS = 1000;
+
+/**
  * When a reply's Activity is open by itself: while the AI works (working),
  * always (shown), or never (hidden). It folds or opens by hand in each.
  */
@@ -452,6 +491,12 @@ export type WhileReplying = typeof WhileReplying.Type;
 
 export const Settings = Schema.Struct({
   appearance: Appearance,
+  colour: Colour,
+  replyShape: ReplyShape,
+  textSize: TextSize,
+  replyStyle: ReplyStyle,
+  /** The user's own words for replies, as they wrote them; "" for none. */
+  replyWords: Schema.String,
   activity: ActivityShown,
   /** What Enter does while a reply runs. */
   whileReplying: WhileReplying,
@@ -646,6 +691,13 @@ export const AddPerson = Schema.Struct({
 /** The settings to change; the others stay as they are. */
 export const SaveSettings = Schema.Struct({
   appearance: Schema.optionalKey(Appearance),
+  colour: Schema.optionalKey(Colour),
+  replyShape: Schema.optionalKey(ReplyShape),
+  textSize: Schema.optionalKey(TextSize),
+  replyStyle: Schema.optionalKey(ReplyStyle),
+  replyWords: Schema.optionalKey(
+    Schema.String.check(Schema.isMaxLength(MAX_REPLY_WORDS)),
+  ),
   activity: Schema.optionalKey(ActivityShown),
   whileReplying: Schema.optionalKey(WhileReplying),
   /** A region code Rufi knows, such as "IN"; null clears it. */
