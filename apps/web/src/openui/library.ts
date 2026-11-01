@@ -194,13 +194,12 @@ const NUMBER = 15;
 function allRead(text: string, root: ElementNode): boolean {
   const tokens = tokenize(text);
   const statements = split(tokens);
+  const types: number[] = tokens.map((token) => token.t);
   const read = statements.reduce(
     (count, statement) => count + 2 + statement.tokens.length,
     0,
   );
-  const found = tokens.filter(
-    (token) => token.t !== NEWLINE && token.t !== END,
-  ).length;
+  const found = types.filter((type) => type !== NEWLINE && type !== END).length;
   if (read !== found) return false;
   const names = new Set(statements.map((statement) => statement.id));
   if (names.size !== statements.length || hasComment(text)) return false;
@@ -214,8 +213,9 @@ function allRead(text: string, root: ElementNode): boolean {
   };
   collect(root);
   return tokens.every(
-    (token) =>
-      (token.t !== STRING && token.t !== NUMBER) || values.has(String(token.v)),
+    (token, i) =>
+      (types[i] !== STRING && types[i] !== NUMBER) ||
+      values.has(String(token.v)),
   );
 }
 
