@@ -73,7 +73,7 @@ A result of the category lab: a test of a sample, such as blood or urine, from a
 _Avoid_: lab value, test result
 
 **Measurement**:
-A result of the category measurement: a reading of the body, such as blood pressure, pulse, weight, height, temperature or SpO2, typed in or read from a document. The **Measurements** page groups them by the day they were taken, at the precision known; each is in a test, whose line it is on. Its date is when it was taken, never a lab's collection date.
+A result of the category measurement: a reading of the body, such as blood pressure, pulse, weight, height, temperature or SpO2, typed in or read from a document. The **Measurements** page groups them by the day they were taken, at the precision known; each is in a test, and drawn on that test's chart. Its date is when it was taken, never a lab's collection date.
 _Avoid_: vital, vitals, reading
 
 **As printed**:
