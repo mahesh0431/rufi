@@ -87,7 +87,6 @@ import {
 import { Dog, LiveDog } from "./dog.tsx";
 import { effortName } from "./model-menu.tsx";
 import { Button, buttonLook, ICON, Problem } from "./ui.tsx";
-import { anyWaiting, WaitingView } from "./waiting.tsx";
 
 // The AI's text is shown as Markdown, never as HTML: no raw HTML, no remote
 // images, and links only to http(s) pages, opened outside Rufi with no opener
@@ -292,11 +291,8 @@ export function TranscriptView({
 }) {
   const shown = useStore(live, useShallow(lines));
   const status = useStore(live, (state) => state.status);
-  // Nothing in the chat yet, and nothing waits.
-  const empty = useStore(
-    live,
-    (state) => state.order.length === 0 && !anyWaiting(state),
-  );
+  // Nothing in the chat yet.
+  const empty = useStore(live, (state) => state.order.length === 0);
   const before = useStore(live, (state) => state.before);
   const older = useStore(live, (state) => state.older);
   const clock = useWorkingClock(live, personId);
@@ -478,9 +474,6 @@ export function TranscriptView({
               <ThinkingLine since={clock.since} />
             )}
           </div>
-        )}
-        {status === "open" && !blank && (
-          <WaitingView live={live} personId={personId} />
         )}
       </div>
     </div>
