@@ -14,6 +14,7 @@ import { DeviceData } from "@rufi/contracts/devices";
 import { DocumentItems, Documents } from "@rufi/contracts/documents";
 import {
   FollowUps,
+  LabResults,
   type PageKind,
   Overview,
   Profile,
@@ -22,6 +23,7 @@ import {
   RecordPage,
   type ResultCategory,
   Series,
+  TestPage,
 } from "@rufi/contracts/record";
 import { Schema } from "effect";
 import {
@@ -189,7 +191,26 @@ export const useRecordPages = (personId: string, kind: PageKind) =>
       ),
   });
 
-/** One record opened: its sources, its history and its versions. */
+/** Lab results: the person's tests by section, each with its latest value. */
+export const useLabResults = (personId: string) =>
+  useQuery({
+    queryKey: ["record", personId, "tests"],
+    queryFn: () =>
+      read(LabResults, "GET", `${personPath(personId)}/lab-results`),
+  });
+
+/** A test's page: the test and its current values, newest first. */
+export const useTestPage = (personId: string, testId: string) =>
+  useQuery({
+    queryKey: ["record", personId, "tests", testId],
+    queryFn: () =>
+      read(
+        TestPage,
+        "GET",
+        `${personPath(personId)}/tests/${encodeURIComponent(testId)}`,
+      ),
+  });
+
 /** The person's profile, with its history; a save in the chat refreshes it. */
 export const useProfile = (personId: string) =>
   useQuery({
@@ -233,6 +254,7 @@ export async function saveProfile(
   return saved;
 }
 
+/** One record opened: its sources, its history and its versions. */
 export const useRecordDetail = (personId: string, kind: string, id: string) =>
   useQuery({
     queryKey: ["record", personId, kind, id],

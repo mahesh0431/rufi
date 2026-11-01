@@ -1,15 +1,17 @@
 // The record as its screens show it: Overview's tiles and latest saves, a
-// page per kind in groups (a report's lab results whole, a day of results,
-// or one row; a result row with its small trend), a row with its sources and
-// history, and a test's series.
+// page per kind in groups (a day of measurements, or one row; a result row
+// with its small trend), Lab results by test and a test's page, a row with
+// its sources and history, and a series.
 // Results have two pages, Lab results and Measurements, by their category
-// (docs/adr/0013). Read only, for one person, each answer from one read
-// transaction so it is consistent. "Current" is read.ts's isCurrent, as
-// everywhere else.
+// (docs/adr/0013); Lab results lists the person's tests (docs/adr/0028).
+// Read only, for one person, each answer from one read transaction so it is
+// consistent. "Current" is read.ts's isCurrent, as everywhere else.
 import type {
   BadRow,
   FollowUpNeed,
   FollowUps,
+  LabResults,
+  LabTest,
   Overview,
   PageKind,
   RecentChange,
@@ -22,6 +24,7 @@ import type {
   ResultRow,
   Series,
   ShownRow,
+  TestPage,
   Tile,
   WaitingDocument,
 } from "@rufi/contracts/record";
@@ -645,6 +648,95 @@ async function trends(
   return found;
 }
 
+/**
+ * Results newest first: by sample date, a day before its month, then the
+ * undated ones; on the same date, the later saved first.
+ */
+const NEWEST = sql`${calendar(sql`r.measured_at`)} DESC, r.measured_at DESC, r.entered_at DESC, r.rowid DESC`;
+
+/**
+ * Lab results: each of the person's tests with a current lab result, its
+ * latest by sample date (so an older report saved later isn't latest) and
+ * how many there are; by section, then name, no section last.
+ */
+async function labResults(db: Db, personId: string): Promise<LabResults> {
+  const result = kindOf("result");
+  const { rows: results } = await sql<Row>`
+    SELECT r.* FROM results r
+    WHERE r.person_id = ${personId} AND r.category = 'lab' AND ${isCurrent(result, "r")}
+    ORDER BY ${NEWEST}`.execute(db);
+  const found = new Map<string, { latest: Row; count: number }>();
+  for (const row of results) {
+    const id = String(row["test_id"]);
+    const seen = found.get(id);
+    if (seen) seen.count += 1;
+    else found.set(id, { latest: row, count: 1 });
+  }
+  const { rows: tests } = await sql<Row>`
+    SELECT * FROM tests
+    WHERE person_id = ${personId}
+    ORDER BY section IS NULL, section COLLATE NOCASE, section, name COLLATE NOCASE, name, rowid`.execute(
+    db,
+  );
+  const sections: { section: string | null; tests: LabTest[] }[] = [];
+  for (const test of tests) {
+    const mine = found.get(String(test["id"]));
+    if (!mine) continue;
+    const section =
+      typeof test["section"] === "string" ? test["section"] : null;
+    let last = sections.at(-1);
+    if (last?.section !== section) {
+      last = { section, tests: [] };
+      sections.push(last);
+    }
+    last.tests.push({
+      test: shown(kindOf("test"), test),
+      latest: shown(result, mine.latest),
+      count: mine.count,
+    });
+  }
+  return {
+    sections,
+    trends: await trends(
+      db,
+      personId,
+      "lab",
+      sections.flatMap((s) => s.tests.map((t) => t.latest)),
+    ),
+  };
+}
+
+/**
+ * A test's page: the test, and its current values newest first, each with
+ * its report's lab; undefined when the person has no such test.
+ */
+async function testPage(
+  db: Db,
+  personId: string,
+  testId: string,
+): Promise<TestPage | undefined> {
+  const test = await stored(db, personId, kindOf("test"), testId);
+  if (!test) return undefined;
+  const result = kindOf("result");
+  const { rows } = await sql<Row>`
+    SELECT r.*, p.issuer AS report_issuer FROM results r
+    LEFT JOIN reports p ON p.person_id = r.person_id AND p.id = r.report_id
+    WHERE r.person_id = ${personId} AND r.test_id = ${testId} AND ${isCurrent(result, "r")}
+    ORDER BY ${NEWEST}`.execute(db);
+  return {
+    test: shown(kindOf("test"), test),
+    values: rows.map((row) => ({
+      row: shown(result, row),
+      report:
+        row["report_id"] === null
+          ? null
+          : typeof row["report_issuer"] === "string"
+            ? { issuer: row["report_issuer"] }
+            : {},
+    })),
+  };
+}
+
 /** A page's tile: its count and what it counts. */
 async function tile(
   db: Db,
@@ -654,9 +746,12 @@ async function tile(
   const { kinds, category } = PAGES[pageKind];
   const kind = kindOf(kinds[0] ?? "");
   const current = sql`FROM ${sql.table(kind.table)} r WHERE ${grouped(kind, personId, category).mine}`;
+  // Lab results lists tests.
   const { rows: counted } = await sql<{
     n: number;
-  }>`SELECT count(*) AS n ${current}`.execute(db);
+  }>`SELECT ${category === "lab" ? sql`count(DISTINCT r.test_id)` : sql`count(*)`} AS n ${current}`.execute(
+    db,
+  );
   const count = counted[0]?.n ?? 0;
   const base: Tile = { kind: pageKind, count, names: [] };
   // The status that means it applies now.
@@ -904,6 +999,9 @@ export function recordViews(store: Store, now: () => Date = () => new Date()) {
       }),
     page: (personId: string, kind: PageKind, after?: string) =>
       read((db) => page(db, personId, kind, after)),
+    labResults: (personId: string) => read((db) => labResults(db, personId)),
+    test: (personId: string, testId: string) =>
+      read((db) => testPage(db, personId, testId)),
     detail: (personId: string, kind: string, id: string) =>
       read((db) => detail(db, personId, kind, id)),
     series: (

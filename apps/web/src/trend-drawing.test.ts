@@ -19,6 +19,7 @@ const result = (
   ...(Number.isFinite(Number(value)) && { number: Number(value) }),
   unit: "µg/L",
   ...(date !== undefined && { measured: { date } }),
+  in_test: "tst-ferritin",
   ...more,
 });
 

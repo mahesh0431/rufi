@@ -1,12 +1,11 @@
-// A page of the person's health record: newest first, in groups as the
-// paper has them (on Lab results, a report's lab results whole or a day of
-// lab results typed in the chat; on Measurements, the day they were taken;
-// one row each for the other kinds), more as the person scrolls. A row opens in
-// place to its sources, its history and, for a result, its values over
-// time, drawn and as a table; a result row has a small trend after its
-// value. The page only shows: changes start in the chat, with Ask Rufi on a
-// row (or a report's heading): its chip goes in the chat box, and the page
-// stays.
+// A page of the person's health record: newest first, in groups (on
+// Measurements, the day they were taken; one row each for the other
+// kinds), more as the person scrolls. Lab results lists tests instead
+// (./tests.tsx). A row opens in place to its sources, its history and, for
+// a measurement, its values over time, drawn and as a table; a result row
+// has a small trend after its value. The page only shows: changes start in
+// the chat, with Ask Rufi on a row: its chip goes in the chat box, and the
+// page stays.
 import type { Person } from "@rufi/contracts";
 import type {
   PageKind,
@@ -46,6 +45,7 @@ export const isPageKind = (kind: string): kind is PageKind =>
 
 const NOUNS: Record<RecordRow["kind"], string> = {
   result: "Result",
+  test: "Test",
   medicine_use: "Medicine",
   visit: "Visit",
   condition: "Condition",
@@ -60,11 +60,11 @@ const NOUNS: Record<RecordRow["kind"], string> = {
 const isBad = (row: ShownRow): row is Exclude<ShownRow, RecordRow> =>
   "problem" in row;
 
-const join = (...parts: (string | undefined | false)[]) =>
+export const join = (...parts: (string | undefined | false)[]) =>
   parts.filter((part) => typeof part === "string" && part !== "").join(" ");
 
 /** A stored date at its own precision, with its time when it has one. */
-const dated = (when?: { date: string }) =>
+export const dated = (when?: { date: string }) =>
   when === undefined ? undefined : printedDate(when.date);
 
 /** From one date to another, as known. */
@@ -137,6 +137,11 @@ export function cellsOf(row: RecordRow, groupDate?: string): Cells {
           }),
       };
     }
+    case "test":
+      return {
+        title: row.name,
+        detail: [row.section, row.unit].filter(Boolean).join(" · "),
+      };
     case "medicine_use":
       return {
         title: join(row.name, row.strength),
@@ -248,39 +253,13 @@ export const chipOf = (row: RecordRow): BoxChip => ({
   detail: `${nounOf(row)} in your health record`,
 });
 
-/**
- * A report's group as one chip: the report, whose results the AI reads.
- * The group's id is "report:" and the report's id; the core names the chip.
- */
-const reportChip = (group: RecordGroup): BoxChip => {
-  const heading = groupHeading(group);
-  return {
-    pointer: { type: "report", id: group.id.slice("report:".length) },
-    label: `${heading.name} · ${heading.detail}`,
-    detail: "",
-  };
-};
-
-/**
- * A group's heading: a report, lab results typed in the chat, the day
- * measurements were taken, or no date.
- */
-function groupHeading(group: RecordGroup) {
-  const when = group.date === undefined ? undefined : printedDate(group.date);
+/** A day's heading on Measurements: the day they were taken, or no date. */
+function dayHeading(group: RecordGroup) {
   const n = group.rows.length;
-  if (group.type === "day") {
-    const count = `${String(n)} ${n === 1 ? "measurement" : "measurements"}`;
-    return { name: when ?? "No date", detail: count };
-  }
-  const count = `${String(n)} ${n === 1 ? "result" : "results"}`;
-  if (group.type === "report") {
-    return {
-      name: group.issuer ?? "Report",
-      detail: [when ?? "no date", count].join(" · "),
-    };
-  }
-  if (when === undefined) return { name: "No date", detail: count };
-  return { name: "Typed in the chat", detail: `${when} · ${count}` };
+  return {
+    name: group.date === undefined ? "No date" : printedDate(group.date),
+    detail: `${String(n)} ${n === 1 ? "measurement" : "measurements"}`,
+  };
 }
 
 /** A row's element id, to bring it into view. */
@@ -359,7 +338,7 @@ export function RecordPage({
     Object.fromEntries(
       pages.data.pages.flatMap((page) => Object.entries(page.trends ?? {})),
     );
-  const results = kind === "lab_result" || kind === "measurement";
+  const days = kind === "measurement";
   const row = (shown: ShownRow, groupDate?: string) => (
     <RowView
       key={`${shown.kind}:${shown.id}`}
@@ -379,43 +358,30 @@ export function RecordPage({
   );
   return (
     <div className="mx-auto max-w-[790px] px-6 py-8">
-      {results && (
+      {days && (
         <p className="mb-3 text-muted">
-          {kind === "measurement"
-            ? "By the day they were taken, newest first."
-            : "As printed, newest first."}{" "}
-          Changes start in the chat: <b className="font-semibold">Ask Rufi</b>{" "}
-          on a row.
+          By the day they were taken, newest first. Changes start in the chat:{" "}
+          <b className="font-semibold">Ask Rufi</b> on a row.
         </p>
       )}
       {groups.length === 0 ? (
         <EmptyState action={<AskRufiEmpty personId={person.id} />}>
           Nothing here yet.
         </EmptyState>
-      ) : results ? (
+      ) : days ? (
         groups.map((group) => {
-          const heading = groupHeading(group);
+          const heading = dayHeading(group);
           return (
             <section
               key={group.id}
               aria-label={`${heading.name} · ${heading.detail}`}
               className="mb-3 rounded-xl border border-line bg-surface"
             >
-              <h2 className="group flex items-center gap-1 border-b border-line px-3 py-2 font-semibold">
-                <span className="min-w-0 flex-1">
-                  {heading.name}{" "}
-                  <span className="font-normal text-muted">
-                    · {heading.detail}
-                  </span>
+              <h2 className="border-b border-line px-3 py-2 font-semibold">
+                {heading.name}{" "}
+                <span className="font-normal text-muted">
+                  · {heading.detail}
                 </span>
-                {group.type === "report" && (
-                  <AskRufi
-                    aria-label={`Ask Rufi about this report: ${heading.name} · ${heading.detail}`}
-                    onClick={() => {
-                      askRufi(person.id, [reportChip(group)]);
-                    }}
-                  />
-                )}
               </h2>
               <ul>{group.rows.map((shown) => row(shown, group.date))}</ul>
             </section>
@@ -556,9 +522,12 @@ const ACTIONS: Record<RecordChange["action"], string> = {
 export function RowDetail({
   personId,
   row,
+  overTime = true,
 }: {
   personId: string;
   row: RecordRow;
+  /** For a result: its values over time too (not on its test's page). */
+  overTime?: boolean;
 }) {
   const detail = useRecordDetail(personId, row.kind, row.id);
   if (detail.data === undefined) {
@@ -692,7 +661,7 @@ export function RowDetail({
           <p>{versionLabel(replacedBy)}</p>
         </>
       )}
-      {row.kind === "result" && (
+      {row.kind === "result" && overTime && (
         <SeriesTable
           personId={personId}
           test={row.test}

@@ -1,6 +1,6 @@
 # 0013 · Results have a category: lab or measurement
 
-**Date:** 11 Oct 2026 · **Status:** accepted
+**Date:** 11 Oct 2026 · **Status:** accepted; Lab results lists tests, not reports, since ADR 0028 (1 Nov 2026)
 
 A lab test and a measurement are different things to read: a lab test comes from a report and is read report by report; a measurement (blood pressure, pulse, weight, height, temperature, SpO2) is taken often and read day by day, and Apple Health will bring many. So the record has two pages for results, **Lab results** and **Measurements**, but one kind of record: every result stays a `result` in the one `results` table, with a required `category` column, `lab` or `measurement` (migration 4, `CHECK` and `NOT NULL`). The two pages are page ids, `lab_result` and `measurement`, that the read model (`core/record/views.ts`) filters by category; tiles, sidebar counts and a test's series are per category, so a lab test and a measurement of the same name are two series. Lab results group by report, and a report's lab results come whole; a report's measurements go to Measurements, under the day each was taken, at the precision known. Pointers, sources, history, chips and follow-up links keep `{kind: result, id}`, so nothing that points at a result changes, and `isCurrent` doesn't look at the category: an amended result in the other category still hides the one it replaces.
 
