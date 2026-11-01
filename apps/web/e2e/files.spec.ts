@@ -671,23 +671,28 @@ test("a Mermaid diagram draws in place of its code block, with its labelled edge
 /**
  * A stored reply in OpenUI Lang (openui/library.ts): keep it as written when
  * Rufi's parts or OpenUI change, so an old reply still draws. A header, text
- * with a web link and a link to a page of Rufi, Rufi's trend (its points out of order, one with no date,
- * "<5" kept with its number), OpenUI's table and follow-ups.
+ * with a web link, a link to a page of Rufi and a citation of the Card's
+ * source (a page of Rufi), Rufi's trend (its points out of order, one with no
+ * date, "<5" kept with its number), OpenUI's table, a callout with a link, a
+ * button whose action names the test, and follow-ups.
  */
 const STORED_REPLY = [
-  "root = Card([header, intro, trend, table, followUps])",
+  "root = Card([header, intro, trend, table, note, explain, followUps], [src])",
   'header = CardHeader("CRP", "Your last four results")',
-  'intro = TextContent("Your CRP was **high** in March and August. [What CRP measures](https://example.com/crp) · [Your profile](rufi:/profile)")',
+  'intro = TextContent("Your CRP was **high** in March and August. [What CRP measures](https://example.com/crp) · [Your profile](rufi:/profile) [1]")',
+  'src = {title: "Your birth date and sex", sourceName: "Your profile", url: "rufi:/profile"}',
   'trend = Trend("CRP", [c3, c1, c2, c0], "mg/L")',
   'c1 = TrendPoint("2025-12-01", "<5", 5, null, "<5")',
   'c2 = TrendPoint("2026-03-04", "8.2", 8.2, "H", "<5")',
   'c3 = TrendPoint("2026-08-12", "6.0", 6.0, "H", "<5")',
   'c0 = TrendPoint("", "<5")',
   'table = Table([Col("Lab", ["Sunrise Labs", "Northgate"]), Col("Results", [3, 1])])',
+  'note = Callout("info", "Lab ranges", "Your ranges depend on [your sex](rufi:/profile).")',
+  'explain = Buttons([Button("Explain", @ToAssistant("Explain this result", {test: "CRP"}))])',
   'followUps = FollowUpBlock([FollowUpItem("Show my ferritin too")])',
 ].join("\n");
 
-test("a reply the AI wrote in OpenUI draws in the chat under Rufi's strict CSP: its trend oldest first with every value in a table, and a follow-up sends its words and Rufi's own link opens in place", async ({
+test("a reply the AI wrote in OpenUI draws in the chat under Rufi's strict CSP: its trend oldest first with every value in a table, and a follow-up or button sends its words and context, and every link of Rufi's opens in place", async ({
   page,
   rufi,
 }) => {
@@ -699,9 +704,14 @@ test("a reply the AI wrote in OpenUI draws in the chat under Rufi's strict CSP: 
   await expect(
     reply.getByRole("link", { name: "What CRP measures" }),
   ).toHaveAttribute("href", "https://example.com/crp");
-  await expect(
-    reply.getByRole("link", { name: "Your profile" }),
-  ).toHaveAttribute("href", /^\/people\/[^/]+\/profile$/);
+  // Every link opens by Rufi's rule, wherever OpenUI draws it.
+  for (const name of ["Your profile", "your sex"]) {
+    await expect(reply.getByRole("link", { name })).toHaveAttribute(
+      "href",
+      /^\/people\/[^/]+\/profile$/,
+    );
+  }
+  await expect(reply.getByRole("button", { name: "Citations" })).toBeVisible();
   await expect(
     reply.getByRole("heading", { name: "CRP (mg/L) over time" }),
   ).toBeVisible();
@@ -725,8 +735,13 @@ test("a reply the AI wrote in OpenUI draws in the chat under Rufi's strict CSP: 
   await expect(log(page).locator(".reply").last()).toContainText(
     "ok:Show my ferritin too",
   );
-  // Rufi's own link opens the person's page in this window.
-  await reply.getByRole("link", { name: "Your profile" }).click();
+  // A button's action says which test it is about, as OpenUI gives it.
+  await reply.getByRole("button", { name: "Explain" }).click();
+  await expect(log(page).locator(".reply").last()).toContainText(
+    /ok:Explain this result\s+Context: \{"test":"CRP"\}/,
+  );
+  // A source of Rufi's opens the person's page in this window.
+  await reply.getByRole("button", { name: /Your birth date and sex/ }).click();
   await expect(page).toHaveURL(/\/people\/[^/]+\/profile$/);
   expect(page.context().pages()).toHaveLength(1);
 });
@@ -757,21 +772,17 @@ test("a finished reply that names a value it never gives, or puts another part w
   await send(
     page,
     [
-      "Not a Trend of TrendPoints:",
-      "root = Card([t])",
-      't = Trend("Haemoglobin", [p1, more], "g/dL")',
-      'p1 = TrendPoint("2026-02-10", "11.2", 11.2)',
-      'more = Trend("Haemoglobin", [TrendPoint("2026-05-20", "11.9", 11.9)], "g/dL")',
+      "Text where a table column goes:",
+      'root = Card([TextContent("Your results"), Table([TextContent("Haemoglobin: 11.2 g/dL")])])',
     ].join("\n"),
   );
   const second = log(page).locator(".reply").last();
-  await expect(second.locator("pre")).toContainText(
-    'TrendPoint("2026-05-20", "11.9", 11.9)',
-  );
+  await expect(second.locator("pre")).toContainText("Haemoglobin: 11.2 g/dL");
   await expect(
     second.getByText(
       "This reply couldn't be drawn. Ask again to have it drawn.",
     ),
   ).toBeVisible();
   await expect(log(page).getByRole("img")).toHaveCount(0);
+  await expect(log(page).getByRole("table")).toHaveCount(0);
 });

@@ -6,8 +6,9 @@
 // - Page: an HTML page the AI made in its folder, shown whole in a locked
 //   frame (OpenUI's open-ended HTML pattern: one component, a sandboxed frame);
 // - Diagram: Mermaid text, drawn in Rufi's diagram frame;
-// - TextContent, MarkDownRenderer and Image, OpenUI's own with the same
-//   props, drawn with Rufi's links and the AI's picture files.
+// - TextContent, MarkDownRenderer, Callout, Steps and Card, OpenUI's own
+//   with the same props, drawn so every link opens by Rufi's rule (parts.tsx),
+//   and Image, for the AI's picture files.
 // Without JSX, so `pnpm openui:md` can load it in Node and write the prompt
 // Rufi AI is told (apps/server/src/core/chat/openui.md); the screens give
 // the renderers (reply.tsx).
@@ -62,6 +63,9 @@ export interface Renderers {
   TextContent: ComponentRenderer;
   MarkDownRenderer: ComponentRenderer;
   Image: ComponentRenderer;
+  Card: ComponentRenderer;
+  Callout: ComponentRenderer;
+  Steps: ComponentRenderer;
 }
 
 const nothing = () => null;
@@ -72,11 +76,20 @@ const NONE: Renderers = {
   TextContent: nothing,
   MarkDownRenderer: nothing,
   Image: nothing,
+  Card: nothing,
+  Callout: nothing,
+  Steps: nothing,
 };
 
 /** OpenUI's part of this name in its chat library, drawn by Rufi. */
 function ownPart(
-  name: "TextContent" | "MarkDownRenderer" | "Image",
+  name:
+    | "TextContent"
+    | "MarkDownRenderer"
+    | "Image"
+    | "Card"
+    | "Callout"
+    | "Steps",
   component: ComponentRenderer,
 ) {
   const part = openuiChatLibrary.components[name];
@@ -119,6 +132,9 @@ export function replyLibrary(draw: Renderers = NONE) {
         ownPart("TextContent", draw.TextContent),
         ownPart("MarkDownRenderer", draw.MarkDownRenderer),
         ownPart("Image", draw.Image),
+        ownPart("Card", draw.Card),
+        ownPart("Callout", draw.Callout),
+        ownPart("Steps", draw.Steps),
       ],
     },
   });
@@ -129,65 +145,108 @@ const isElement = (node: unknown): node is ElementNode =>
   node !== null &&
   (node as { type?: unknown }).type === "element";
 
-/** Every part in a parsed reply, at any depth. */
-function* partsIn(value: unknown): Generator<ElementNode> {
-  if (isElement(value)) {
-    yield value;
-    yield* partsIn(value.props);
-  } else if (Array.isArray(value)) {
-    for (const item of value) yield* partsIn(item);
-  } else if (typeof value === "object" && value !== null) {
-    for (const item of Object.values(value)) yield* partsIn(item);
-  }
+/** A part of the JSON schema OpenUI makes of the library. */
+interface Schema {
+  type?: string | string[];
+  enum?: unknown[];
+  items?: Schema;
+  properties?: Record<string, Schema>;
+  anyOf?: Schema[];
+  oneOf?: Schema[];
+  $ref?: string;
 }
 
-const trendFields = trendProps.omit({ points: true });
+/** The parts a place in the schema takes, by name; none when it names none. */
+const partsTaken = (schema: Schema): string[] =>
+  (schema.anyOf ?? schema.oneOf ?? [schema]).flatMap((option) =>
+    option.$ref?.startsWith("#/$defs/")
+      ? [option.$ref.slice("#/$defs/".length)]
+      : [],
+  );
+
+const TYPES: Record<string, (value: unknown) => boolean> = {
+  string: (value) => typeof value === "string",
+  number: (value) => typeof value === "number",
+  integer: (value) => Number.isInteger(value),
+  boolean: (value) => typeof value === "boolean",
+  null: (value) => value === null,
+  array: Array.isArray,
+  object: (value) =>
+    typeof value === "object" && value !== null && !Array.isArray(value),
+};
 
 /**
- * A Trend as its schema has it: TrendPoints only, each prop by its schema
- * (null as left out, nothing coerced). OpenUI's parse doesn't check which
- * part sits in a point's place, or a number in a prop that may be null.
+ * Whether a value fits its place in the library's schema: a part only where
+ * that part may go, each part's props by its schema, plain values by their
+ * type, nothing coerced. An expression (a variable, an action) is OpenUI's
+ * to read, and null is a prop left out.
  */
-function fitsTrend(trend: ElementNode): boolean {
-  const points = trend.props["points"];
-  return (
-    trendFields.safeParse(trend.props).success &&
-    Array.isArray(points) &&
-    points.every(
-      (point) =>
-        isElement(point) &&
-        point.typeName === "TrendPoint" &&
-        pointProps.safeParse(point.props).success,
-    )
-  );
+function fits(
+  value: unknown,
+  schema: Schema | undefined,
+  defs: Record<string, Schema>,
+): boolean {
+  if (schema === undefined || value === null) return true;
+  if (isElement(value)) {
+    const def = defs[value.typeName];
+    return (
+      def !== undefined &&
+      partsTaken(schema).includes(value.typeName) &&
+      Object.entries(value.props).every(([name, prop]) =>
+        fits(prop, def.properties?.[name], defs),
+      )
+    );
+  }
+  if (typeof value === "object" && "k" in value) return true;
+  const options = schema.anyOf ?? schema.oneOf;
+  if (options) return options.some((option) => fits(value, option, defs));
+  if (schema.$ref) return false;
+  if (schema.enum && !schema.enum.includes(value)) return false;
+  const types = schema.type === undefined ? [] : [schema.type].flat();
+  if (types.length > 0 && !types.some((type) => TYPES[type]?.(value))) {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    return value.every((item) => fits(item, schema.items, defs));
+  }
+  if (typeof value === "object" && schema.properties) {
+    return Object.entries(value).every(([name, item]) =>
+      fits(item, schema.properties?.[name], defs),
+    );
+  }
+  return true;
 }
 
 /** Reads a reply as OpenUI parses it with the library it was made for. */
-export const replyParser = (library: ReturnType<typeof replyLibrary>) =>
-  createParser(library.toJSONSchema(), "Card");
+export function replyReader(library: ReturnType<typeof replyLibrary>) {
+  const schema = library.toJSONSchema();
+  return {
+    parser: createParser(schema, "Card"),
+    defs: (schema as { $defs?: Record<string, Schema> }).$defs ?? {},
+  };
+}
 
 /**
  * A finished reply: `drawn` when OpenUI's parse is whole (nothing cut off,
  * every name used is defined and every name defined is used, no errors)
- * and every Trend fits its schema; `words` when it has no OpenUI at all;
- * otherwise `broken`, never drawn in part (a value could go missing).
+ * and its tree fits the library's schema, from its Card down; `words` when
+ * it has no OpenUI at all; otherwise `broken`, never drawn in part (a value
+ * could go missing: OpenUI doesn't check which part sits in a part's place).
  */
 export function shapeOf(
-  parser: ReturnType<typeof replyParser>,
+  reader: ReturnType<typeof replyReader>,
   text: string,
 ): "drawn" | "words" | "broken" {
-  const { root, meta } = parser.parse(text);
+  const { root, meta } = reader.parser.parse(text);
   if (root === null) return "words";
   const whole =
     !meta.incomplete &&
     meta.unresolved.length === 0 &&
     meta.orphaned.length === 0 &&
     meta.errors.every((error) => error.severity === "warning");
-  if (!whole) return "broken";
-  for (const part of partsIn(root)) {
-    if (part.typeName === "Trend" && !fitsTrend(part)) return "broken";
-  }
-  return "drawn";
+  return whole && fits(root, { $ref: "#/$defs/Card" }, reader.defs)
+    ? "drawn"
+    : "broken";
 }
 
 /** OpenUI's chat rule Rufi leaves out: Rufi never makes up health data. */
@@ -200,7 +259,7 @@ Rufi's chat draws your answer with OpenUI. Write your whole final answer in open
 const RULES = [
   "Every value, date and range you show comes from the user's health record, a document in this chat or a source you cite, as it is kept there. Never invent, round off or fill in a value, not even as an example.",
   "For one test's values over time, use Trend with a TrendPoint per value, taken from the record: its date, its value as printed, the number the record keeps for it, and its flag and range as printed. Use the other charts for other comparisons.",
-  "Links go in TextContent as Markdown links, [words](address): a web page by its https address, and a page of Rufi by its rufi:/ address as your instructions say.",
+  "Links go in TextContent as Markdown links, [words](address): a web page by its https address, and a page of Rufi by its rufi:/ address as your instructions say. A Card's sources and @OpenUrl take the same addresses.",
   "A page or a picture you made is a file in your folder: show a page with Page(path, title) and a picture with Image(alt, path).",
   "Buttons and follow-ups send their words to you as the user's message, and a form sends its values. Offer only what you can do for the user in Rufi.",
 ];

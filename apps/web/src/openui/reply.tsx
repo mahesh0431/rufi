@@ -3,9 +3,10 @@
 // renderer, as OpenUI's guide for a chat of one's own says. Once the reply
 // ended it is drawn only when it is whole (shapeOf); otherwise its text shows
 // with a line, never a part of it. A reply with no OpenUI in it shows as
-// Markdown, while it is written too, so a reply is never blank. A follow-up or a button sends its words as the person's message,
-// a form its values too; a link opens as a reply's links do. Display only:
-// no tools, so nothing in a reply reaches the record.
+// Markdown, while it is written too, so a reply is never blank. A follow-up
+// or a button sends its words, a form's values and the action's context as
+// the person's message; every link opens by the reply's rule (parts.tsx).
+// Display only: no tools, so nothing in a reply reaches the record.
 import {
   BuiltinActionType,
   Renderer,
@@ -13,35 +14,21 @@ import {
   type ActionEvent,
   type ComponentRenderProps,
 } from "@openuidev/react-lang";
-import { MarkDownRenderer } from "@openuidev/react-ui";
-import { createContext, use, useMemo, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import type { Options } from "react-markdown";
 import { boxFor } from "../boxes.ts";
 import { Diagram, fileIn, Page, Picture } from "../files.tsx";
-import { replyLibrary, replyParser, shapeOf } from "./library.ts";
+import { replyLibrary, replyReader, shapeOf } from "./library.ts";
+import {
+  CalloutView,
+  CardView,
+  LinkOpener,
+  MarkDownRendererView,
+  StepsView,
+  TextContentView,
+  TextParts,
+} from "./parts.tsx";
 import { TrendView } from "./trend-view.tsx";
-
-/** How a reply's Markdown text draws: the reply's own links and files. */
-const TextParts = createContext<Options>({});
-
-const VARIANTS = ["clear", "card", "sunk"] as const;
-type Variant = (typeof VARIANTS)[number];
-const variantOf = (value: unknown): Variant | undefined =>
-  VARIANTS.find((variant) => variant === value);
-
-/** OpenUI's Markdown text, with a reply's links and files. */
-function Text({ text, variant }: { text: string; variant?: Variant }) {
-  const options = use(TextParts);
-  return (
-    <div className="openui-text-content">
-      <MarkDownRenderer
-        textMarkdown={text}
-        {...(variant && { variant })}
-        options={options}
-      />
-    </div>
-  );
-}
 
 /** Mermaid text, drawn once the reply ended; its text until then. */
 function DiagramView({ props }: ComponentRenderProps<{ source: string }>) {
@@ -74,28 +61,33 @@ const library = replyLibrary({
   Trend: TrendView,
   Page: ({ props }) => <Page path={props.path} title={props.title} />,
   Diagram: DiagramView,
-  TextContent: ({ props }) => (
-    <Text text={typeof props["text"] === "string" ? props["text"] : ""} />
-  ),
-  MarkDownRenderer: ({ props }) => (
-    <Text
-      text={
-        typeof props["textMarkdown"] === "string" ? props["textMarkdown"] : ""
-      }
-      {...(variantOf(props["variant"]) && {
-        variant: variantOf(props["variant"]),
-      })}
-    />
-  ),
+  TextContent: TextContentView,
+  MarkDownRenderer: MarkDownRendererView,
   Image: ImageView,
+  Card: CardView,
+  Callout: CalloutView,
+  Steps: StepsView,
 });
-const parser = replyParser(library);
+const reader = replyReader(library);
 
-/** What a click sends: its words, and a form's values as OpenUI gives them. */
-const messageOf = (event: ActionEvent) =>
-  event.formState
-    ? `${event.humanFriendlyMessage}\nForm values: ${JSON.stringify(event.formState)}`
-    : event.humanFriendlyMessage;
+/**
+ * What a click sends, as OpenUI's guide to user actions writes it: its
+ * words, a form's values, and the context the action carries (which card or
+ * item was clicked), as OpenUI's own chat keeps it.
+ */
+function messageOf(event: ActionEvent) {
+  const lines = [event.humanFriendlyMessage];
+  if (event.formState && Object.keys(event.formState).length > 0) {
+    lines.push(`Form values: ${JSON.stringify(event.formState)}`);
+  }
+  const context: unknown = event.params["context"];
+  if (context !== undefined && context !== null && context !== "") {
+    lines.push(
+      `Context: ${typeof context === "string" ? context : JSON.stringify(context)}`,
+    );
+  }
+  return lines.join("\n");
+}
 
 /**
  * Sends a click's message as the person's. Sending empties the box, so
@@ -117,7 +109,7 @@ const STATEMENT_START = /^\s*[A-Za-z_]\w*(?:\s*=[^\n]*)?$/;
 
 /** While written: OpenUI once it parses or may still, else words. */
 const writtenShape = (text: string) =>
-  parser.parse(text).root !== null || STATEMENT_START.test(text)
+  reader.parser.parse(text).root !== null || STATEMENT_START.test(text)
     ? "drawn"
     : "words";
 
@@ -141,7 +133,7 @@ export function OpenUIReply({
   children: ReactNode;
 }) {
   const shape = useMemo(
-    () => (streaming ? writtenShape(text) : shapeOf(parser, text)),
+    () => (streaming ? writtenShape(text) : shapeOf(reader, text)),
     [text, streaming],
   );
   if (shape === "words") return children;
@@ -165,13 +157,15 @@ export function OpenUIReply({
   };
   return (
     <TextParts value={markdown}>
-      <Renderer
-        response={text}
-        library={library}
-        isStreaming={streaming}
-        onAction={onAction}
-        publishObservability={false}
-      />
+      <LinkOpener value={openLink}>
+        <Renderer
+          response={text}
+          library={library}
+          isStreaming={streaming}
+          onAction={onAction}
+          publishObservability={false}
+        />
+      </LinkOpener>
     </TextParts>
   );
 }

@@ -9,6 +9,15 @@
 /* The dog's motion (src/dog.tsx); it stops under reduced motion. */
 @import "@rufi/brand/mark/motion.css";
 
+/* A reply's Card sources open by Rufi's rule (src/openui/parts.tsx), so
+   OpenUI doesn't mark them as links itself. */
+@layer components {
+  .openui-listed-source-item,
+  .openui-citation-item {
+    cursor: pointer;
+  }
+}
+
 /* The UI font role, from the brand tokens (packages/brand/tokens.css). */
 @theme {
   --font-sans: var(--font-ui);
