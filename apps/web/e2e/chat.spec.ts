@@ -296,7 +296,7 @@ const WAITING = `
     ('q-2', 'asha', 'c-asha', 'person', 'Second', 2, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z'),
     ('q-3', 'asha', 'c-asha', 'person', 'Third', 3, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z');`;
 
-test("waiting messages show in the chat: edit, reorder, steer, queue and remove; after a Stop, the next one goes", async ({
+test("waiting messages float just above the box: edit, reorder, steer, queue and remove; after a Stop, the next one goes", async ({
   page,
   rufi,
 }) => {
@@ -304,14 +304,12 @@ test("waiting messages show in the chat: edit, reorder, steer, queue and remove;
   await rufi.start();
   await page.goto(rufi.link());
   await opener(chat(page)).click();
-  // In the transcript's scrolling area, after the chat's last message, in
-  // the order they go.
-  const waiting = log(chat(page)).locator(
-    "xpath=following-sibling::section[@aria-label='Waiting messages']",
-  );
+  // Just above the box, out of the chat's messages, in the order they go.
+  const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
   const items = waiting.getByRole("listitem");
   await expect(items).toHaveText([/^Second/, /^Third/]);
   await expect(log(chat(page))).toContainText("hang");
+  await expect(log(chat(page))).not.toContainText("Second");
   await accessible(page);
 
   // Each moves by its handle: dragged, or by keyboard (Space, the arrows,
@@ -1010,7 +1008,7 @@ test("two tabs: the reply streams in both; the last save wins", async ({
   );
 });
 
-test("Markdown in a reply: tables and web links work; HTML, images and other links do nothing", async ({
+test("Markdown in a reply: tables and web links work, Rufi's own links open in place; HTML, images and other links do nothing", async ({
   page,
   rufi,
 }) => {
@@ -1021,7 +1019,7 @@ test("Markdown in a reply: tables and web links work; HTML, images and other lin
   await box(chat(page)).fill(
     [
       "![pixel](http://127.0.0.1:9/pixel.png) <img src=http://127.0.0.1:9/x.png>",
-      "[run](javascript:alert(1)) [inside](/settings) [web](https://example.com/page)",
+      "[run](javascript:alert(1)) [inside](/settings) [web](https://example.com/page) [your profile](rufi:/profile) [up](rufi:/../ravi/profile) [encoded](rufi:/%2e%2e/ravi/profile) [deeper](rufi:/documents/%2e%2e%2f..%2fravi)",
       "",
       "| Test | Value |",
       "|---|---|",
@@ -1036,20 +1034,37 @@ test("Markdown in a reply: tables and web links work; HTML, images and other lin
     "href",
     "https://example.com/page",
   );
-  // Every link goes to a web page, outside Rufi; none other is a link.
-  for (const link of await reply.getByRole("link").all()) {
+  // Every other link goes to a web page, outside Rufi; none other is a link.
+  const own = reply.getByRole("link", { name: "your profile" });
+  await expect(own).not.toHaveAttribute("target");
+  for (const link of await reply
+    .getByRole("link")
+    .filter({ hasNotText: "your profile" })
+    .all()) {
     await expect(link).toHaveAttribute("href", /^https?:\/\//);
     await expect(link).toHaveAttribute("target", "_blank");
     await expect(link).toHaveAttribute("rel", "noopener noreferrer");
   }
   await expect(reply.locator("img")).toHaveCount(0);
-  await expect(reply).toContainText("run inside web");
+  await expect(reply).toContainText(
+    "run inside web your profile up encoded deeper",
+  );
+  // A Rufi link that would leave this person's pages is its words only.
+  for (const name of ["up", "encoded", "deeper"]) {
+    await expect(reply.getByRole("link", { name })).toHaveCount(0);
+  }
 
   const at = page.url();
   await reply.getByText("inside").click();
   await reply.getByText("run").click();
   expect(page.url()).toBe(at);
   expect(requests.filter((url) => url.includes("127.0.0.1:9"))).toEqual([]);
+
+  // Rufi's own link opens the person's page in this window.
+  await own.click();
+  await expect(page).toHaveURL(/\/people\/[^/]+\/profile$/);
+  await expect(page.getByRole("heading", { name: "Profile" })).toBeVisible();
+  expect(page.context().pages()).toHaveLength(1);
 });
 
 test("⌘J opens the panel; Esc steps back and returns focus; another page closes it", async ({

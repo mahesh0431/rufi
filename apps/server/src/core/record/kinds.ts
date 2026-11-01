@@ -294,7 +294,7 @@ export const KINDS: readonly Kind[] = [
         ...number("test_number", "in the test's unit"),
         input: Schema.Finite.annotate({
           description:
-            "The result's number in its test's unit, as you work it out: the same number when its unit means the test's unit (mg/dl is mg/dL), converted when it doesn't and you know how for that substance, left out when you aren't sure or it has no number. Its test's line is drawn from it; the printed value stays as it came.",
+            "The result's number in its test's unit, as you work it out: the same number when its unit means the test's unit (mg/dl is mg/dL), converted when it doesn't and you know how for that substance, left out when you aren't sure or it has no number. Rufi's chart of the test's results uses it; the printed value stays as it came.",
         }),
       },
       test_second_number: {
