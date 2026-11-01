@@ -1009,6 +1009,34 @@ test("Settings keeps how Rufi AI's replies look and your own words for them", as
   );
 });
 
+test("Settings › Advanced shows what Rufi AI is told; an edited part is marked and kept, and Reset to default puts Rufi's own back", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family();
+  await rufi.start();
+  await page.goto(rufi.link());
+  const settings = await openSettings(page, "Advanced");
+  const rules = settings.getByRole("region", {
+    name: "Reply instructions: rules",
+  });
+  const box = rules.getByRole("textbox");
+  const own = await box.inputValue();
+  expect(own).not.toBe("");
+  await expect(rules.getByText("Edited", { exact: true })).toHaveCount(0);
+
+  await box.fill("- Answer in French.");
+  await settings.getByRole("tab", { name: "Advanced" }).focus();
+  await expect(rules.getByText("Edited", { exact: true })).toBeVisible();
+  await accessible(page);
+  await page.reload();
+  await expect(box).toHaveValue("- Answer in French.");
+
+  await rules.getByRole("button", { name: "Reset to default" }).click();
+  await expect(box).toHaveValue(own);
+  await expect(rules.getByText("Edited", { exact: true })).toHaveCount(0);
+});
+
 test("Settings keeps the emergency region the AI uses, and clears it", async ({
   page,
   rufi,

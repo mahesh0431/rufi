@@ -130,6 +130,19 @@ Under **Your own words**, you can tell Rufi AI in your own words how you like re
 
 A new choice or new words reach the AI with your next message, in the chat you have. For one reply only, ask in the chat, for example "show this more simply".
 
+### Rufi AI's instructions
+
+[Settings › Advanced](rufi:/settings/advanced) shows exactly what Rufi AI is told with every reply, in its parts as they are put together:
+
+- **Safety and emergencies:** what it does when a message may describe an emergency, with your emergency region's number.
+- **Rufi's core instructions:** how it reads and changes your health record, asks before it saves, and uses its tools and skills.
+- **Reply instructions:** the preamble, the rules and the example for a reply. They go into OpenUI's guide where it marks them.
+- **OpenUI's guide:** made by OpenUI, the parts Rufi AI can build a reply from.
+- **Reply style in use:** the line for the style you chose in [Settings › Chat](rufi:/settings/chat). Each style keeps its own edit.
+- **Your own words:** the same as in Settings › Chat.
+
+You can edit every part. Edits change how Rufi AI answers, handles your health record and responds to an emergency, so change them with care. A part saves when you leave its box, shows **Edited**, and is used from your next reply on, with Codex and Claude alike, in the chat you have. **Reset to default** puts Rufi's own back. A part you haven't edited follows Rufi's updates; an edited part stays as you wrote it, also after Rufi changes its own. Your edits are kept with Rufi's settings, and the agents Rufi AI starts keep Rufi's own instructions.
+
 When the AI makes a picture in its folder to show you (see [What the AI can do in its folder](your-data-and-the-ai.md#what-the-ai-can-do-in-its-folder)), the reply shows it:
 
 - **A picture**, such as one you asked the AI for, shows in the reply at its own size, up to the reply's width, with the AI's caption under it. Click it to see it full size; press Esc or click again to go back. Rufi shows PNG, JPEG, GIF and WebP pictures.

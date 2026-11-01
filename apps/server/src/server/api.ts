@@ -11,6 +11,7 @@ import {
   FinishStep,
   MessageText,
   MAX_MESSAGE_CHARS,
+  MAX_REPLY_WORDS,
   RecoverMessage,
   ReorderQueue,
   SaveDraft,
@@ -28,6 +29,10 @@ import {
   type StreamLine,
 } from "@rufi/contracts";
 import { APPEARANCE_HEADER } from "@rufi/contracts/app";
+import {
+  EditInstruction,
+  type Instructions,
+} from "@rufi/contracts/instructions";
 import type { Brief } from "@rufi/contracts/briefs";
 import { KeepValues, type DeviceData } from "@rufi/contracts/devices";
 import {
@@ -54,7 +59,12 @@ import {
 } from "../core/chat/continues.ts";
 import { RefRefusal } from "../core/chat/refs.ts";
 import { emergencyFor, emergencyRegions } from "../core/chat/safety.ts";
-import { REPLY_SETTINGS, repliesOf } from "../core/chat/instructions.ts";
+import {
+  editSetting,
+  instructionParts,
+  REPLY_SETTINGS,
+  toldOf,
+} from "../core/chat/instructions.ts";
 import {
   NoChoice,
   StalePreview,
@@ -384,7 +394,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   const settings = async (c: Context): Promise<Settings> => {
     const known = emergencyFor(await transcripts.setting("emergency_region"));
     const chosen = await appearance();
-    const replies = await repliesOf(transcripts.setting);
+    const { replies } = await toldOf(transcripts.setting);
     c.header(APPEARANCE_HEADER, chosen);
     return {
       appearance: chosen,
@@ -510,6 +520,29 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       deps.devices.cleanSoon();
     }
     return c.json(await settings(c));
+  });
+
+  // What Rufi AI is told, in its parts (Settings › Advanced): each the
+  // user's edit or Rufi's own. An edit is used from the next reply on.
+  const instructions = async (): Promise<Instructions> => ({
+    parts: instructionParts(await toldOf(transcripts.setting)),
+  });
+  app.get("/api/instructions", async (c) => c.json(await instructions()));
+  app.put("/api/instructions", async (c) => {
+    const { part, text } = await body(c, EditInstruction);
+    if (part === "words") {
+      if (text !== null && text.length > MAX_REPLY_WORDS) {
+        throw new HttpError(
+          400,
+          `Your own words can be ${String(MAX_REPLY_WORDS)} characters at most.`,
+        );
+      }
+      await transcripts.saveSetting(REPLY_SETTINGS.words, text);
+    } else {
+      const { replies } = await toldOf(transcripts.setting);
+      await transcripts.saveSetting(editSetting(part, replies.style), text);
+    }
+    return c.json(await instructions());
   });
 
   app.get("/api/status", async (c) => c.json(await deps.account()));

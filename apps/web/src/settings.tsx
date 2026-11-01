@@ -1,12 +1,13 @@
 // Settings, a pop-up over the page you are on (settings-link.tsx says how it
 // opens), its options in groups: Sign-in (how Codex and Claude are signed
 // in), Profile (about you, and the region whose emergency number the AI
-// gives), Appearance (light or dark, the colour theme, and how a reply
-// sits in the chat), Chat (when a reply's Activity opens,
-// what a message sent while a reply runs does, how often Rufi carries on
-// after a restart, how Rufi AI's replies look and your own words for them)
-// and Data (device data, backups, the export of your data,
-// and where Rufi keeps it). A change takes effect at once; there is no Save.
+// gives), Appearance (light or dark, the colour theme, the text size and how
+// a reply sits in the chat), Chat (how Rufi AI's replies look and your own
+// words for them, when a reply's Activity opens, what a message sent while a
+// reply runs does, how often Rufi carries on after a restart), Data (device
+// data, backups, the export of your data and where Rufi keeps it) and
+// Advanced (what Rufi AI is told, to read and edit). A change takes effect
+// at once; there is no Save.
 import { Dialog } from "@base-ui/react/dialog";
 import { Tabs } from "@base-ui/react/tabs";
 import { Backups, DataFolder, MAX_REPLY_WORDS } from "@rufi/contracts";
@@ -20,11 +21,13 @@ import {
   KeyRound,
   MessageCircle,
   Palette,
+  SlidersHorizontal,
   UserRound,
   X,
 } from "lucide-react";
 import { useState } from "react";
 import { download, read } from "./api.ts";
+import { AdvancedOptions } from "./advanced.tsx";
 import { AppearanceChoice, ColourChoice } from "./appearance.tsx";
 import { DeviceDataSection } from "./devices.tsx";
 import { ProfileSection } from "./profile.tsx";
@@ -55,6 +58,7 @@ const NAMES: Record<Group, { name: string; icon: Icon }> = {
   appearance: { name: "Appearance", icon: Palette },
   chat: { name: "Chat", icon: MessageCircle },
   data: { name: "Data", icon: Database },
+  advanced: { name: "Advanced", icon: SlidersHorizontal },
 };
 
 /**
@@ -285,6 +289,8 @@ function GroupOptions({ group }: { group: Group }) {
           <DataFolderSection />
         </>
       );
+    case "advanced":
+      return <AdvancedOptions />;
   }
 }
 
@@ -296,7 +302,8 @@ function ReplyWordsSection() {
   const kept = useSettings().data?.replyWords;
   return (
     <Section title="Your own words">
-      {kept !== undefined && <ReplyWords kept={kept} />}
+      {/* Your words changed elsewhere (Advanced, another tab): shown anew. */}
+      {kept !== undefined && <ReplyWords key={kept} kept={kept} />}
     </Section>
   );
 }

@@ -363,10 +363,10 @@ export const startCore = (options: CoreOptions) =>
               : Promise.resolve(signedOut),
           agent: agentSystem.rufiAi,
           mcp: { url: () => mcpUrl(MCP_CHAT), keys: chatKeys },
-          rules: ({ region, replies }, agent) => {
+          rules: ({ region, replies, edits }, agent) => {
             const instructions = agent
               ? subAgentInstructions(region, agent)
-              : coreInstructions(region, replies);
+              : coreInstructions(region, replies, edits);
             return {
               instructions,
               version: rulesVersion(region, instructions),
