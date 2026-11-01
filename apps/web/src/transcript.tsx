@@ -91,7 +91,11 @@ import {
 } from "./transcript-state.ts";
 import { Dog, LiveDog } from "./dog.tsx";
 import { effortName } from "./model-menu.tsx";
-import { settingsGroupOf, SettingsLink } from "./settings-link.tsx";
+import {
+  settingsGroupOf,
+  SettingsLink,
+  useOpenSettings,
+} from "./settings-link.tsx";
 import { Button, buttonLook, ICON, Problem } from "./ui.tsx";
 
 // The AI's text is shown as Markdown, never as HTML: no raw HTML, no remote
@@ -285,9 +289,16 @@ function Reply({
 }) {
   const personId = use(Whose);
   const navigate = useNavigate();
-  // A button's link, as the reply's links: a page of Rufi in place, a web
-  // page outside Rufi; anything else does nothing.
+  const openSettings = useOpenSettings();
+  // A button's link, as the reply's links: a group of Settings over the
+  // page, a page of Rufi in place, a web page outside Rufi; anything else
+  // does nothing.
   const openLink = (url: string) => {
+    const group = settingsGroupOf(url);
+    if (group !== undefined) {
+      openSettings(group);
+      return;
+    }
     const path = RUFI.exec(url)?.[1];
     const href =
       path === undefined || personId === ""

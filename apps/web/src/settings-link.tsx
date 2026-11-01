@@ -3,7 +3,7 @@
 // sidebar, a help page or Rufi AI opens it at its group, and closing it leaves
 // the page as it was. Rufi AI and the help pages write such a link as
 // rufi:/settings/<group>.
-import { Link, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 /** Settings' groups, in their order; the first is where Settings opens. */
@@ -41,7 +41,20 @@ export function settingsGroupOf(href: string): Group | undefined {
 export const useSettingsGroup = (): Group | undefined =>
   useSearch({ strict: false, select: (search) => search.settings });
 
-/** A link that opens Settings at `group` over the page you are on. */
+/** Opens Settings at a group over the page you are on, as SettingsLink does. */
+export function useOpenSettings(): (group: Group) => void {
+  const navigate = useNavigate();
+  return (group) =>
+    void navigate({
+      to: ".",
+      search: (previous) => ({ ...previous, settings: group }),
+    });
+}
+
+/**
+ * A link that opens Settings at `group` over the page you are on. Over the
+ * chat panel too: a click on it doesn't fold the panel.
+ */
 export function SettingsLink({
   group,
   className,
@@ -56,6 +69,7 @@ export function SettingsLink({
       to="."
       search={(previous) => ({ ...previous, settings: group })}
       className={className}
+      data-over-chat=""
     >
       {children}
     </Link>

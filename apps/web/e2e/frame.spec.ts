@@ -364,7 +364,7 @@ test("Settings chooses light, dark or the Mac's; every open tab changes at once,
   await expect.poll(theme(page)).toBe("light");
 });
 
-test("Settings opens over the page at a group, from the sidebar or a help page's link; Esc, Close or a click beside it shuts it, and the page keeps what you were typing", async ({
+test("Settings opens over the page at a group, from the sidebar, a reply's button or a help page's link; Esc, Close or a click beside it shuts it, and the page keeps what you were typing", async ({
   page,
   rufi,
 }) => {
@@ -373,10 +373,25 @@ test("Settings opens over the page at a group, from the sidebar or a help page's
   await page.goto(rufi.link());
   await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
   const box = page.getByRole("textbox", { name: "Message to Rufi" });
+  // A reply's button to a group of Settings opens it there, over the chat.
+  await box.fill(
+    [
+      "A stored reply:",
+      "root = Card([buttons])",
+      'buttons = Buttons([Button("Data settings", @OpenUrl("rufi:/settings/data"))])',
+    ].join("\n"),
+  );
+  await box.press("Enter");
+  await page.getByRole("button", { name: "Data settings" }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await expect(
+    settings.getByRole("tab", { name: "Data", selected: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page).toHaveURL(/\/people\/asha\/chat$/);
   await box.fill("A message I'm still writing");
 
   await sidebar(page).getByRole("link", { name: "Settings" }).click();
-  const settings = page.getByRole("dialog", { name: "Settings" });
   await expect(
     settings.getByRole("tab", { name: "Sign-in", selected: true }),
   ).toBeVisible();
@@ -388,6 +403,21 @@ test("Settings opens over the page at a group, from the sidebar or a help page's
   await expect(settings).toHaveCount(0);
   await expect(page).toHaveURL(/\/people\/asha\/chat$/);
   await expect(box).toHaveValue("A message I'm still writing");
+
+  // Over Overview with the chat panel open, the panel stays open.
+  await sidebar(page).getByRole("link", { name: "Overview" }).click();
+  const dock = page.getByRole("region", { name: "Chat" });
+  await dock.getByRole("button", { name: "Open the chat" }).click();
+  const minimise = dock.getByRole("button", { name: "Minimise" });
+  await expect(minimise).toBeVisible();
+  await sidebar(page).getByRole("link", { name: "Settings" }).click();
+  await expect(settings).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(settings).toHaveCount(0);
+  await expect(minimise).toBeVisible();
+  await expect(
+    dock.getByRole("textbox", { name: "Message to Rufi" }),
+  ).toHaveValue("A message I'm still writing");
 
   // A help page's link opens it at its group, over the help page.
   await sidebar(page).getByRole("link", { name: "Help" }).click();

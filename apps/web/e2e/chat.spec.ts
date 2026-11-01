@@ -1077,7 +1077,6 @@ test("Markdown in a reply: tables and web links work, Rufi's own links open in p
   ).toBeVisible();
   await page.keyboard.press("Escape");
   expect(page.url()).toBe(at);
-
   // Rufi's own link opens the person's page in this window.
   await own.click();
   await expect(page).toHaveURL(/\/people\/[^/]+\/profile$/);

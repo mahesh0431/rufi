@@ -62,9 +62,23 @@ test("your name opens your profile; a change in Settings or on the page saves on
   ]);
   await accessible(page);
 
-  // In Settings, only the blood group changes.
+  // In Settings, only the blood group changes. A refused save keeps the
+  // choice and Retry, also after a look at another group.
   const settings = await openSettings(page, "Profile");
+  await page.route("**/api/people/asha/profile", (route) =>
+    route.request().method() === "PUT"
+      ? route.fulfill({ status: 500, json: { error: "Rufi couldn't save." } })
+      : route.continue(),
+  );
   await settings.getByLabel("Blood group").selectOption("B+");
+  const retry = settings.getByRole("button", { name: "Retry" });
+  await expect(retry).toBeVisible();
+  await settings.getByRole("tab", { name: "Appearance" }).click();
+  await settings.getByRole("tab", { name: "Profile" }).click();
+  await expect(settings.getByLabel("Blood group")).toHaveValue("B+");
+  await page.unroute("**/api/people/asha/profile");
+  await retry.click();
+  await expect(retry).toHaveCount(0);
   await expect(settings.getByLabel("Blood group")).toHaveValue("B+");
   await page.keyboard.press("Escape");
   await page
