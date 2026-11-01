@@ -125,9 +125,12 @@ export function SettingsDialog() {
                   }
                 />
                 {GROUPS.map((id) => (
+                  // Mounted while Settings is open: a change not saved yet
+                  // stays in its group, with Retry, when you look at another.
                   <Tabs.Panel
                     key={id}
                     value={id}
+                    keepMounted
                     className="min-h-0 flex-1 overflow-auto px-6 pt-5 pb-8 outline-none"
                   >
                     <h3 className="mb-4 text-[0.9375rem] font-semibold">
