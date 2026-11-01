@@ -10,6 +10,7 @@ import { useMutation } from "@tanstack/react-query";
 import { RotateCcw } from "lucide-react";
 import { useState } from "react";
 import { editInstruction, useInstructions } from "./reads.ts";
+import { useSavedOnClose } from "./settings-link.tsx";
 import { Button, Problem, Section } from "./ui.tsx";
 
 /** Each part's name, and what the user should know about it. */
@@ -79,12 +80,16 @@ export function AdvancedOptions() {
   );
 }
 
-/** One part: its text to edit, saved when you leave it, and Reset. */
+/** One part: its text to edit, saved when you leave it or close Settings, and Reset. */
 function PartEditor({ part }: { part: InstructionPart }) {
   const [text, setText] = useState(part.text);
   const save = useMutation({
     mutationFn: (edit: string | null) => editInstruction(part.id, edit),
   });
+  const saveText = async () => {
+    if (text !== part.text) await save.mutateAsync(text);
+  };
+  useSavedOnClose(saveText);
   const { title, about } = PARTS[part.id];
   return (
     <Section title={title}>
@@ -116,7 +121,8 @@ function PartEditor({ part }: { part: InstructionPart }) {
           setText(event.target.value);
         }}
         onBlur={() => {
-          if (text !== part.text) save.mutate(text);
+          // A failed save says so below.
+          saveText().catch(() => undefined);
         }}
         className="w-full resize-y rounded-lg border border-line bg-surface px-2.5 py-2 font-mono text-xs"
       />
