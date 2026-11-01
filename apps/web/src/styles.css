@@ -347,6 +347,20 @@ body {
   box-shadow: 0 0 0 1px var(--line);
 }
 
+/* How Rufi AI's reply sits in the chat, as Settings › Appearance chose
+   (<html data-reply-shape>): flat on the chat's background; panel on its own
+   soft surface, a faint shade of the text over whatever is behind it (on
+   White, a very light grey); card the same with a thin border. Only Rufi's
+   container around the reply: OpenUI's parts inside keep their own look. */
+:root:is([data-reply-shape="panel"], [data-reply-shape="card"]) [data-reply] {
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+  padding: 12px 16px;
+}
+:root[data-reply-shape="card"] [data-reply] {
+  border: 1px solid var(--line);
+}
+
 /* In the Rufi app on the Mac: the window's own sidebar material shows
    through the sidebar (a desktop exception to "glass only on floating
    parts"), the content stays opaque, the window buttons sit in the

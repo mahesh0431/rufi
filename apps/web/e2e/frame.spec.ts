@@ -34,6 +34,10 @@ const face = (page: Page) => () => dog(page).getAttribute("class");
 const drawn = (expression: ExpressionKey) =>
   /class="([^"]+)"/.exec(svg({ expression, size: 36 }))?.[1];
 
+/** The colour theme the page shows now, such as white or plum. */
+const colour = (page: Page) => () =>
+  page.evaluate(() => document.documentElement.dataset["colour"]);
+
 /** The theme the page shows now: light or dark. */
 const theme = (page: Page) => () =>
   page.evaluate(() => document.documentElement.dataset["theme"]);
@@ -301,18 +305,17 @@ test("under reduced motion the dog is still, and its face still changes", async 
   expect(await moving(dog(page))).toBe(0);
 });
 
-test("Settings chooses light, dark or the Mac's; every open tab changes at once, and a new tab or a restart starts in it", async ({
+test("Settings chooses light, dark or the Mac's, and a colour; every open tab changes at once, and a new tab or a restart starts in them", async ({
   context,
   page,
   rufi,
 }) => {
-  // The theme each page shows in its first frame, before anything paints.
+  // The theme and colour each page shows in its first frame, before
+  // anything paints.
   await context.addInitScript(() => {
     requestAnimationFrame(() => {
-      sessionStorage.setItem(
-        "first-frame",
-        document.documentElement.dataset["theme"] ?? "",
-      );
+      const { theme = "", colour = "" } = document.documentElement.dataset;
+      sessionStorage.setItem("first-frame", `${theme} ${colour}`);
     });
   });
   const firstFrame = (tab: Page) =>
@@ -320,11 +323,11 @@ test("Settings chooses light, dark or the Mac's; every open tab changes at once,
   await rufi.family();
   const { port } = await rufi.start();
   await page.goto(rufi.link());
-  const appearance = (await openSettings(page, "Appearance")).getByRole(
-    "radiogroup",
-    { name: "Mode" },
-  );
+  const settings = await openSettings(page, "Appearance");
+  const appearance = settings.getByRole("radiogroup", { name: "Mode" });
+  const colours = settings.getByRole("radiogroup", { name: "Colour" });
   await expect(appearance.getByRole("radio", { name: "System" })).toBeChecked();
+  await expect(colours.getByRole("radio", { name: "White" })).toBeChecked();
   expect(await theme(page)()).toBe("light");
   const other = await context.newPage();
   await other.goto((await runningLink(rufi.home)) ?? "");
@@ -333,15 +336,17 @@ test("Settings chooses light, dark or the Mac's; every open tab changes at once,
   ).toBeVisible();
 
   await appearance.getByRole("radio", { name: "Dark" }).check();
+  await colours.getByRole("radio", { name: "Plum" }).check();
   await expect.poll(theme(page)).toBe("dark");
   await expect.poll(theme(other)).toBe("dark");
+  await expect.poll(colour(other)).toBe("plum");
   await accessible(page);
   const fresh = await context.newPage();
   await fresh.goto((await runningLink(rufi.home)) ?? "");
   await expect(
     fresh.getByRole("heading", { name: "Health record" }),
   ).toBeVisible();
-  expect(await firstFrame(fresh)).toBe("dark");
+  expect(await firstFrame(fresh)).toBe("dark plum");
 
   await rufi.stop();
   await rufi.start({ port });
@@ -349,7 +354,7 @@ test("Settings chooses light, dark or the Mac's; every open tab changes at once,
   await expect(
     page.getByRole("heading", { name: "Health record" }),
   ).toBeVisible();
-  expect(await firstFrame(page)).toBe("dark");
+  expect(await firstFrame(page)).toBe("dark plum");
 
   // Light stays light on a dark Mac; System follows the Mac again.
   await page.emulateMedia({ colorScheme: "dark" });

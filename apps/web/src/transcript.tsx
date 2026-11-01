@@ -297,7 +297,9 @@ function Reply({
     else if (WEB.test(url)) open(url, "_blank", "noopener,noreferrer");
   };
   return (
-    <div className="reply" data-entry={id}>
+    // data-reply: Rufi's own container around the reply, shaped as Settings
+    // chose (styles.css); OpenUI's parts inside are never restyled.
+    <div className="reply" data-entry={id} data-reply="">
       <OpenUIReply
         text={text}
         streaming={streaming}

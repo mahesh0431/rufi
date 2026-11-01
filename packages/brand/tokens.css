@@ -20,7 +20,7 @@
   --surface: #ffffff; /* groups, fields and floating panels on the page */
   --line: #e6e6e6; /* borders and dividers */
   --ink: #222222; /* text */
-  --muted: #676767; /* quieter text and icons */
+  --muted: #5f5f5f; /* quieter text and icons; AA on the Mac's sidebar material too */
   --accent: #2563eb; /* the one main action, and selection marks */
   --accent-hover: #1d4ed8; /* the main action under the pointer */
   --on-accent: #ffffff; /* text and icons on the accent */
@@ -73,5 +73,196 @@
     --edge: rgb(255 255 255 / 0.08);
     --shade: rgb(0 0 0 / 0.45);
     --shade-menu: rgb(0 0 0 / 0.5);
+  }
+}
+
+/* The colour themes. Each sets the background greys and the accent family,
+   light and dark, on <html data-colour> (the app sets it before it paints)
+   or on any element, as Settings' swatches do. Blue is the values above; the
+   website sets none. Each theme's light and dark blocks set the same
+   tokens, so a dark block always wins over its light one. Text keeps WCAG AA
+   on every surface in every theme. */
+/* White: a plain white app: black buttons, light grey for what is selected and your messages, blue links. */
+[data-colour="white"] {
+  --page: #ffffff;
+  --side: #f7f7f7;
+  --surface: #ffffff;
+  --line: #ebebeb;
+  --accent: #1f1f1f;
+  --accent-hover: #3a3a3a;
+  --on-accent: #ffffff;
+  --accent-soft: #f0f0f0;
+  --accent-ink: #1d4ed8;
+}
+
+/* Blue: plain grey, with blue for what you do (the values above, set again
+   so a swatch shows them inside another theme). */
+[data-colour="blue"] {
+  --page: #f7f7f7;
+  --side: #f1f1f1;
+  --surface: #ffffff;
+  --line: #e6e6e6;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --on-accent: #ffffff;
+  --accent-soft: #e3edfc;
+  --accent-ink: #1d4ed8;
+}
+
+/* Periwinkle: a faint lilac background, with periwinkle, a deeper shade of the ground behind the dog. */
+[data-colour="periwinkle"] {
+  --page: #f6f6fb;
+  --side: #eeeef8;
+  --surface: #ffffff;
+  --line: #e3e3f0;
+  --accent: #5b5fd0;
+  --accent-hover: #4a4fb8;
+  --on-accent: #ffffff;
+  --accent-soft: #e8e9fc;
+  --accent-ink: #4a4fb8;
+}
+
+/* Plum: a faint purple background, with plum. */
+[data-colour="plum"] {
+  --page: #f8f6f9;
+  --side: #f1edf3;
+  --surface: #ffffff;
+  --line: #e7e1ea;
+  --accent: #8a3ea6;
+  --accent-hover: #7a3394;
+  --on-accent: #ffffff;
+  --accent-soft: #f3e8f8;
+  --accent-ink: #7a3394;
+}
+
+/* Ocean: a faint sea-blue background, with deep teal blue. */
+[data-colour="ocean"] {
+  --page: #f5f8f8;
+  --side: #edf2f3;
+  --surface: #ffffff;
+  --line: #e0e8ea;
+  --accent: #0e7490;
+  --accent-hover: #0b6177;
+  --on-accent: #ffffff;
+  --accent-soft: #e0f2f6;
+  --accent-ink: #0b6177;
+}
+
+/* Graphite: plain grey, with dark grey for what you do: almost no colour. */
+[data-colour="graphite"] {
+  --page: #f7f7f7;
+  --side: #f1f1f1;
+  --surface: #ffffff;
+  --line: #e6e6e6;
+  --accent: #3f4651;
+  --accent-hover: #2f3640;
+  --on-accent: #ffffff;
+  --accent-soft: #e6e8eb;
+  --accent-ink: #2f3640;
+}
+
+/* Sand: a warm background, like paper, with a deep brown. */
+[data-colour="sand"] {
+  --page: #f7f4ef;
+  --side: #f0ebe3;
+  --surface: #ffffff;
+  --line: #e6dfd3;
+  --accent: #6b4f3a;
+  --accent-hover: #5e4532;
+  --on-accent: #ffffff;
+  --accent-soft: #efe6dc;
+  --accent-ink: #5e4532;
+}
+
+@media screen {
+  [data-theme="dark"][data-colour="white"],
+  [data-theme="dark"] [data-colour="white"] {
+    --page: #161616;
+    --side: #1f1f1f;
+    --surface: #242424;
+    --line: #333333;
+    --accent: #f2f2f2;
+    --accent-hover: #d4d4d4;
+    --on-accent: #161616;
+    --accent-soft: #2e2e2e;
+    --accent-ink: #adc9fc;
+  }
+
+  [data-theme="dark"][data-colour="blue"],
+  [data-theme="dark"] [data-colour="blue"] {
+    --page: #1c1c1c;
+    --side: #262626;
+    --surface: #2a2a2a;
+    --line: #3b3b3b;
+    --accent: #2f6fe6;
+    --accent-hover: #2459c4;
+    --on-accent: #ffffff;
+    --accent-soft: #1e3250;
+    --accent-ink: #adc9fc;
+  }
+
+  [data-theme="dark"][data-colour="periwinkle"],
+  [data-theme="dark"] [data-colour="periwinkle"] {
+    --page: #1c1c24;
+    --side: #25252f;
+    --surface: #2b2b36;
+    --line: #3b3b4a;
+    --accent: #8083db;
+    --accent-hover: #8f92e0;
+    --on-accent: #1c1c24;
+    --accent-soft: #2a2c4f;
+    --accent-ink: #b9bdfc;
+  }
+
+  [data-theme="dark"][data-colour="plum"],
+  [data-theme="dark"] [data-colour="plum"] {
+    --page: #1e1b20;
+    --side: #27232a;
+    --surface: #2d2930;
+    --line: #3e3842;
+    --accent: #b372ca;
+    --accent-hover: #bd83d1;
+    --on-accent: #1e1b20;
+    --accent-soft: #3a2a44;
+    --accent-ink: #dcb6ec;
+  }
+
+  [data-theme="dark"][data-colour="ocean"],
+  [data-theme="dark"] [data-colour="ocean"] {
+    --page: #1a1e1f;
+    --side: #222829;
+    --surface: #283031;
+    --line: #37403f;
+    --accent: #139abf;
+    --accent-hover: #1fa8cd;
+    --on-accent: #1a1e1f;
+    --accent-soft: #173840;
+    --accent-ink: #8fd3e6;
+  }
+
+  [data-theme="dark"][data-colour="graphite"],
+  [data-theme="dark"] [data-colour="graphite"] {
+    --page: #1c1c1c;
+    --side: #262626;
+    --surface: #2a2a2a;
+    --line: #3b3b3b;
+    --accent: #dfe2e7;
+    --accent-hover: #c5c9d0;
+    --on-accent: #191c20;
+    --accent-soft: #33383f;
+    --accent-ink: #dfe2e7;
+  }
+
+  [data-theme="dark"][data-colour="sand"],
+  [data-theme="dark"] [data-colour="sand"] {
+    --page: #1f1c19;
+    --side: #282420;
+    --surface: #2e2a25;
+    --line: #403a33;
+    --accent: #e3d3c3;
+    --accent-hover: #cbb8a5;
+    --on-accent: #1f1c19;
+    --accent-soft: #3a322a;
+    --accent-ink: #e3d3c3;
   }
 }

@@ -1,7 +1,8 @@
 // Settings, a pop-up over the page you are on (settings-link.tsx says how it
 // opens), its options in groups: Sign-in (how Codex and Claude are signed
 // in), Profile (about you, and the region whose emergency number the AI
-// gives), Appearance (how Rufi looks), Chat (when a reply's Activity opens,
+// gives), Appearance (light or dark, the colour theme, and how a reply
+// sits in the chat), Chat (when a reply's Activity opens,
 // what a message sent while a reply runs does, how often Rufi carries on
 // after a restart) and Data (device data, backups, the export of your data,
 // and where Rufi keeps it). A change takes effect at once; there is no Save.
@@ -22,7 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { download, read } from "./api.ts";
-import { AppearanceChoice } from "./appearance.tsx";
+import { AppearanceChoice, ColourChoice } from "./appearance.tsx";
 import { DeviceDataSection } from "./devices.tsx";
 import { ProfileSection } from "./profile.tsx";
 import { SettingChoice } from "./choice.tsx";
@@ -161,12 +162,38 @@ function GroupOptions({ group }: { group: Group }) {
       );
     case "appearance":
       return (
-        <Section title="Mode" id="appearance-mode">
-          <AppearanceChoice labelledBy="appearance-mode" />
-          <p className="text-muted">
-            System follows your Mac's light or dark appearance.
-          </p>
-        </Section>
+        <>
+          <Section title="Mode" id="appearance-mode">
+            <AppearanceChoice labelledBy="appearance-mode" />
+            <p className="text-muted">
+              System follows your Mac's light or dark appearance.
+            </p>
+          </Section>
+          <Section title="Colour" id="appearance-colour">
+            <ColourChoice labelledBy="appearance-colour" />
+            <p className="text-muted">
+              Changes at once when you pick it: the background, and the colour
+              of buttons, links, what is selected and your own messages.
+            </p>
+          </Section>
+          <Section title="Rufi's replies" id="reply-shape">
+            <SettingChoice
+              setting="replyShape"
+              label="Rufi's replies"
+              labelledBy="reply-shape"
+              choices={[
+                { value: "flat", label: "Flat" },
+                { value: "panel", label: "Panel" },
+                { value: "card", label: "Card" },
+              ]}
+            />
+            <p className="text-muted">
+              How Rufi AI's reply sits in the chat. Flat: on the chat's
+              background. Panel: on its own soft surface. Card: the same, with a
+              thin border.
+            </p>
+          </Section>
+        </>
       );
     case "chat":
       return (

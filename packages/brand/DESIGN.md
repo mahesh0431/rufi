@@ -8,7 +8,13 @@ The Rufi name and the dog, with everything in `mark/` (its code too), are not un
 
 Every colour comes from a token in `tokens.css`. Never write a colour value in a screen or a page; if no token fits, add one here first, with its job. In the app, Tailwind's own palette is off and lint refuses raw colours: the tokens are named for Tailwind in `apps/web/src/themes.css` (`bg-surface`, `text-ink`, …).
 
-A theme is one block of values: light in `:root`, dark when `<html data-theme="dark">`, on screens only: paper is light, so a printed page keeps the light values in every theme. Each page sets `data-theme` before it paints, so it never shows the wrong theme first. The website is light only and never sets a theme.
+Light or dark is one block of values: light in `:root`, dark when `<html data-theme="dark">`, on screens only: paper is light, so a printed page keeps the light values in every theme. Each page sets `data-theme` before it paints, so it never shows the wrong theme first. The website is light only and never sets a theme.
+
+### Colour themes
+
+In the app, the person picks a colour theme in Settings › Appearance: White (the start), Blue, Periwinkle, Plum, Ocean, Graphite or Sand. A colour theme is a block in `tokens.css` on `[data-colour="…"]`, light and dark, which sets only the background greys (`--page`, `--side`, `--surface`, `--line`) and the accent family (`--accent`, `--accent-hover`, `--on-accent`, `--accent-soft`, `--accent-ink`). Text (`--ink`, `--muted`) and `--danger` are the same in every theme. The core serves each page with `<html data-colour>`, so it paints in its colour first time. The selector also works on any element: Settings draws each swatch in its own theme that way, with no colour written in the screen. Blue is the values in `:root`, the website's.
+
+To add a theme, add its light and dark blocks with the same tokens in both, so the dark one always wins over its light one, and check every text pair (ink and muted on the page, the sidebar, a surface and the accent's soft fill; the accent's ink on the same; text on the accent and on its hover; the accent as a focus ring, 3:1) for WCAG AA in light and dark, and against the Mac's sidebar material. Replies follow by themselves: OpenUI takes its roles from these tokens.
 
 | Token                               | Its job                                                              |
 | ----------------------------------- | -------------------------------------------------------------------- |
@@ -40,8 +46,8 @@ Rufi's own colours, for light pages (the website); they have no dark values and 
 
 Rules:
 
-- **Blue is for doing; apricot is Rufi.** The blue accent is for the main action and for what is selected, in the app and on the website. Apricot is only for Rufi itself: the dog's folds, and on the website the accent words in large headings, the dots and the pale icon squares. Never an apricot button.
-- **No clinical colour.** No red, amber or green that could read as a health status (good, borderline, bad). A brand colour must never look like a result.
+- **The accent is for doing; apricot is Rufi.** The theme's accent (blue on the website and in Blue, black in White, plum in Plum, …) is for the main action and for what is selected. Apricot is only for Rufi itself: the dog's folds, and on the website the accent words in large headings, the dots and the pale icon squares. Never an apricot button.
+- **No clinical colour.** No red, amber, orange, green or pink that could read as a health status (good, borderline, bad), in any theme: a theme's accent must never look like a result.
 - **One red, for one job:** the last step of a delete that can't be undone. Nowhere else on Rufi's own screens.
 - **Rufi AI's replies are drawn by OpenUI as it draws them.** Rufi gives OpenUI only its theme's roles (surfaces, primary and secondary text, the accent in its states, text on the accent, borders, the user's bubble) and its font, and never restyles OpenUI's parts. So replies show OpenUI's own colours by meaning (info, success, warning, danger) on Rufi's theme. Rufi AI never colours a health value good or bad by its own judgement; for a result it shows the lab's own flag as printed. Rufi's own screens keep no clinical colour and the one red for deleting.
 - **Calm greys, less black.** Pure ink is for the dog's dark ground only.
@@ -144,8 +150,8 @@ So nobody tries these again without a new reason:
 - Triangle `^` eyes and zigzag `w` mouths.
 - A flat cartoon dog head with ears stuck on, a full-body dog, and per-facet rounded corners (the folds look cut apart).
 - A check mark sign when Rufi is clicked on the website.
-- Ink main buttons: the blue accent stays the action colour.
-- Warm cream backgrounds, and dark bands or a dark mode on the website.
+- Ink main buttons on the website and in Blue: the blue accent stays the action colour there. (White, a theme the person picks, has black ones.)
+- Warm cream backgrounds, and dark bands or a dark mode on the website. (Sand, a theme the person picks in the app, is warm on purpose.)
 
 ## Later
 

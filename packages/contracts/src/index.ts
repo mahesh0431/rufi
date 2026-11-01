@@ -440,6 +440,28 @@ export const Appearance = Schema.Literals(["system", "light", "dark"]);
 export type Appearance = typeof Appearance.Type;
 
 /**
+ * Rufi's colour theme: the background greys and the colour of what you do
+ * and what is selected (packages/brand/tokens.css). White until chosen.
+ */
+export const Colour = Schema.Literals([
+  "white",
+  "blue",
+  "periwinkle",
+  "plum",
+  "ocean",
+  "graphite",
+  "sand",
+]);
+export type Colour = typeof Colour.Type;
+
+/**
+ * How Rufi AI's reply sits in the chat: on the chat's background (flat), on
+ * its own soft surface (panel), or the same with a thin border (card).
+ */
+export const ReplyShape = Schema.Literals(["flat", "panel", "card"]);
+export type ReplyShape = typeof ReplyShape.Type;
+
+/**
  * When a reply's Activity is open by itself: while the AI works (working),
  * always (shown), or never (hidden). It folds or opens by hand in each.
  */
@@ -452,6 +474,8 @@ export type WhileReplying = typeof WhileReplying.Type;
 
 export const Settings = Schema.Struct({
   appearance: Appearance,
+  colour: Colour,
+  replyShape: ReplyShape,
   activity: ActivityShown,
   /** What Enter does while a reply runs. */
   whileReplying: WhileReplying,
@@ -646,6 +670,8 @@ export const AddPerson = Schema.Struct({
 /** The settings to change; the others stay as they are. */
 export const SaveSettings = Schema.Struct({
   appearance: Schema.optionalKey(Appearance),
+  colour: Schema.optionalKey(Colour),
+  replyShape: Schema.optionalKey(ReplyShape),
   activity: Schema.optionalKey(ActivityShown),
   whileReplying: Schema.optionalKey(WhileReplying),
   /** A region code Rufi knows, such as "IN"; null clears it. */
