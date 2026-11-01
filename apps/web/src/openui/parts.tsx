@@ -9,6 +9,7 @@
 import {
   useStateField,
   type ComponentRenderProps,
+  type ElementNode,
 } from "@openuidev/react-lang";
 import {
   Callout as OpenUICallout,
@@ -204,8 +205,15 @@ export function MarkDownRendererView({ props }: ComponentRenderProps) {
 /** OpenUI's chat Card; its sources open by the reply's rule. */
 export function CardView({ props, renderNode }: ComponentRenderProps) {
   const open = use(LinkOpener);
-  const given = Array.isArray(props["sources"]) ? props["sources"] : [];
-  const sources: Source[] = given.map((source: Record<string, unknown>) => {
+  // Only sources it can draw: the rest are left out, so the Card still
+  // draws, and the reply says part of it isn't shown (shapeOf).
+  const given = (
+    Array.isArray(props["sources"]) ? props["sources"] : []
+  ).filter(
+    (source: unknown): source is Record<string, unknown> =>
+      typeof source === "object" && source !== null,
+  );
+  const sources: Source[] = given.map((source) => {
     const link = textOf(source["url"]).trim();
     return {
       title: textOf(source["title"]),
@@ -276,10 +284,15 @@ export function CalloutView({ props }: ComponentRenderProps) {
 
 /** OpenUI's Steps; a step's details are a reply's Markdown text. */
 export function StepsView({ props, renderNode }: ComponentRenderProps) {
-  const items = Array.isArray(props["items"]) ? props["items"] : [];
+  // Only its steps: another part in their place is left out, as OpenUI
+  // leaves out a broken piece.
+  const items = (Array.isArray(props["items"]) ? props["items"] : []).filter(
+    (item: unknown): item is { props: Record<string, unknown> } =>
+      (item as Partial<ElementNode> | null)?.typeName === "StepsItem",
+  );
   return (
     <OpenUISteps>
-      {items.map((item: { props: Record<string, unknown> }, index: number) => {
+      {items.map((item, index) => {
         const details = item.props["details"];
         return (
           <OpenUIStepsItem

@@ -302,6 +302,9 @@ importers:
       '@dnd-kit/utilities':
         specifier: 3.2.2
         version: 3.2.2(react@19.3.1)
+      '@openuidev/lang-core':
+        specifier: 1.0.2
+        version: 1.0.2(zod@4.6.7)
       '@openuidev/react-headless':
         specifier: 0.18.1
         version: 0.18.1(react@19.3.1)(zustand@5.0.16(@types/react@19.3.0)(react@19.3.1)(use-sync-external-store@1.7.0(react@19.3.1)))

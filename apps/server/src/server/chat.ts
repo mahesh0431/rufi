@@ -563,9 +563,10 @@ export function chat(deps: ChatDeps) {
     text: string,
     refs: readonly Pointer[],
     kind: "steer" | "queue",
+    aiText?: string,
   ): Promise<void> {
     try {
-      await queue.accept(chat, id, text, refs, kind);
+      await queue.accept(chat, id, text, refs, kind, aiText);
     } catch (error) {
       if (error instanceof QueueRefusal) throw new ChatRefusal(error.message);
       throw error;
@@ -602,7 +603,8 @@ export function chat(deps: ChatDeps) {
      */
     /**
      * Takes the person's message: while a reply runs, it goes into it
-     * (steer) or after it (queue), as they chose.
+     * (steer) or after it (queue), as they chose. A click on a reply shows
+     * its words and Rufi AI gets `aiText`.
      */
     send: async (
       chat: ChatRow,
@@ -610,9 +612,10 @@ export function chat(deps: ChatDeps) {
       text: string,
       refs: readonly Pointer[] = [],
       kind: "steer" | "queue" = "steer",
+      aiText?: string,
     ) => {
       await mustBeSignedIn(chat);
-      await accept(chat, id, text, refs, kind);
+      await accept(chat, id, text, refs, kind, aiText);
       return { id };
     },
 

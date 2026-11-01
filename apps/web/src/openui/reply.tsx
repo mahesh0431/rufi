@@ -1,11 +1,13 @@
 // A reply of Rufi AI: OpenUI Lang, drawn as it is written by OpenUI's
 // renderer with Rufi's reply library (library.ts), in place of a Markdown
 // renderer, as OpenUI's guide for a chat of one's own says. Once the reply
-// ended it is drawn only when it is whole (shapeOf); otherwise its text shows
-// with a line, never a part of it. A reply with no OpenUI in it shows as
-// Markdown, while it is written too, so a reply is never blank. A follow-up
-// or a button sends its words, a form's values and the action's context as
-// the person's message; every link opens by the reply's rule (parts.tsx).
+// ended, a piece of it that's broken (shapeOf) is left out as OpenUI leaves
+// it out, with a line that says so and the whole text a click away. A reply
+// with no OpenUI in it shows as Markdown, while it is written too, so a
+// reply is never blank. A follow-up or a button sends its words as the
+// person's message, and Rufi AI gets them as a click with a form's values
+// and the action's context; every link opens by the reply's rule
+// (parts.tsx).
 // Display only: no tools, so nothing in a reply reaches the record.
 import {
   BuiltinActionType,
@@ -14,7 +16,8 @@ import {
   type ComponentRenderProps,
   type ElementNode,
 } from "@openuidev/react-lang";
-import { useMemo, type ReactNode } from "react";
+import { ChevronRight } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { Options } from "react-markdown";
 import { boxFor } from "../boxes.ts";
 import { fileIn, Picture } from "../files.tsx";
@@ -52,12 +55,12 @@ const library = replyLibrary({
 const reader = replyReader(library);
 
 /**
- * What a click sends, as OpenUI's guide to user actions writes it: its
- * words, a form's values, and the context the action carries (which card or
- * item was clicked), as OpenUI's own chat keeps it.
+ * What a click tells Rufi AI, as OpenUI's guide to user actions writes it:
+ * that it was clicked, a form's values, and the context the action carries
+ * (which card or item was clicked). The chat shows only its words.
  */
-function messageOf(event: ActionEvent) {
-  const lines = [event.humanFriendlyMessage];
+function forAi(event: ActionEvent) {
+  const lines = [`User clicked: ${event.humanFriendlyMessage.trim()}`];
   if (event.formState && Object.keys(event.formState).length > 0) {
     lines.push(`Form values: ${JSON.stringify(event.formState)}`);
   }
@@ -68,18 +71,6 @@ function messageOf(event: ActionEvent) {
     );
   }
   return lines.join("\n");
-}
-
-/**
- * Sends a click's message as the person's. Sending empties the box, so
- * when they have something in it not yet sent, the message joins it
- * instead, after theirs, and they send it.
- */
-function send(personId: string, message: string) {
-  const box = boxFor(personId);
-  const { text, refs } = box.store.getState();
-  const empty = text.trim() === "" && refs.length === 0;
-  if (box.append(message) && empty) void box.submit();
 }
 
 /**
@@ -114,7 +105,8 @@ export function picturesShownBy(
 ): string[] {
   const shape = streaming ? writtenShape(text) : shapeOf(reader, text);
   if (shape === "words") return inMarkdown(text);
-  if (shape === "broken") return [];
+  // A piece left out may be a picture: the AI's own shows anyway.
+  if (shape === "partial") return [];
   const shown: string[] = [];
   const visit = (value: unknown): void => {
     if (Array.isArray(value)) {
@@ -163,20 +155,16 @@ export function OpenUIReply({
     () => (streaming ? writtenShape(text) : shapeOf(reader, text)),
     [text, streaming],
   );
+  // What OpenUI couldn't draw, once the reply ended: a part that failed.
+  const [failed, setFailed] = useState(false);
   if (shape === "words") return children;
-  if (shape === "broken") {
-    return (
-      <>
-        <pre>{text}</pre>
-        <p className="text-muted">
-          This reply couldn't be drawn. Ask again to have it drawn.
-        </p>
-      </>
-    );
-  }
+  const partial = shape === "partial" || (!streaming && failed);
   const onAction = (event: ActionEvent) => {
     if (event.type === BuiltinActionType.ContinueConversation) {
-      send(personId, messageOf(event));
+      void boxFor(personId).click(
+        event.humanFriendlyMessage.trim(),
+        forAi(event),
+      );
     } else if (event.type === BuiltinActionType.OpenUrl) {
       const url = event.params["url"];
       if (typeof url === "string") openLink(url);
@@ -207,7 +195,24 @@ export function OpenUIReply({
             isStreaming={streaming}
             onAction={onAction}
             publishObservability={false}
+            onError={(errors) => {
+              setFailed(errors.length > 0);
+            }}
           />
+          {partial && (
+            <details className="group text-muted">
+              <summary className="flex w-fit max-w-full cursor-pointer list-none items-center gap-1.5 hover:text-ink [&::-webkit-details-marker]:hidden">
+                Part of this reply couldn't be shown.
+                <span className="text-ink">Show text</span>
+                <ChevronRight
+                  size={13}
+                  className="shrink-0 transition-transform group-open:rotate-90"
+                  aria-hidden
+                />
+              </summary>
+              <pre className="whitespace-pre-wrap break-words">{text}</pre>
+            </details>
+          )}
         </div>
       </LinkOpener>
     </TextParts>

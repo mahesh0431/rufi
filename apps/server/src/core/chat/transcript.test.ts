@@ -231,6 +231,22 @@ describe("the chat's pages", () => {
     });
   });
 
+  it("say a reply the agent gave whole is done while its turn goes on, so the screens judge it finished", async () => {
+    await transcripts.startTurn(chat, "turn-1", {
+      id: "thread-1",
+      model: "gpt-6-astra",
+    });
+    await transcripts.appendReply(chat, "turn-1", "first", "Your results.");
+    await transcripts.appendReply(chat, "turn-1", "first", "", true);
+    await transcripts.appendReply(chat, "turn-1", "second", "More");
+    const { entries, turns } = await transcripts.page(chat);
+    expect(turns.map((turn) => turn.status)).toEqual(["running"]);
+    expect(entries.map((entry) => [entry.text, entry.status])).toEqual([
+      ["Your results.", "done"],
+      ["More", null],
+    ]);
+  });
+
   it("are empty for a new chat", async () => {
     expect(await transcripts.page(chat)).toEqual({
       revision: 0,

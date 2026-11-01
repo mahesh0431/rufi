@@ -628,7 +628,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
           .map((e) => [e.kind, e.activity, e.text, e.status]),
       ).toEqual([
         ["activity", "note", NOTE, "done"],
-        ["reply", null, `ok:${text}`, null],
+        ["reply", null, `ok:${text}`, "done"],
       ]);
       // Never a reply, not even while it streamed; it grew as it came.
       expect(
@@ -654,7 +654,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
           .map((e) => [e.kind, e.activity, e.text, e.status]),
       ).toEqual([
         ["activity", "note", NOTE, "done"],
-        ["reply", null, "ok:whole commentary", null],
+        ["reply", null, "ok:whole commentary", "done"],
       ]);
     },
   );
@@ -1484,6 +1484,31 @@ describe("the chat, on the scripted Codex", () => {
       expect((await inputs()).at(-1)).toEqual(["quiet And what else?"]);
     },
   );
+
+  it("shows a click on a reply as its words while Rufi AI gets the click, keeps both, and leaves the box's draft", async () => {
+    await startChat("fake");
+    const c = await newChat();
+    store.db.exec(`
+      INSERT INTO drafts (person_id, chat_id, text, refs, updated_at)
+        VALUES ('asha', '${c.id}', 'And my iron?', '[]', '2026-10-01T09:00:00Z');
+    `);
+    const id = uuid();
+    const click = 'User clicked: Explain this result\nContext: {"test":"CRP"}';
+    await chat?.send(c, id, "Explain this result", [], "steer", click);
+    await ended(c.id);
+    expect((await inputs()).at(-1)).toEqual([click]);
+    expect((await transcript(c.id)).all.find((e) => e.id === id)).toMatchObject(
+      { text: "Explain this result" },
+    );
+    expect(
+      store.db
+        .prepare("SELECT ai_text FROM transcript_entries WHERE id = ?")
+        .get(id),
+    ).toEqual({ ai_text: click });
+    expect(
+      store.db.prepare("SELECT text FROM drafts WHERE chat_id = ?").get(c.id),
+    ).toEqual({ text: "And my iron?" });
+  });
 
   it("takes nothing the person sends while signed out", async () => {
     await startChat("fake");

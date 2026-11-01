@@ -10,8 +10,9 @@
 //
 // Replies keep their text as the AI wrote it, and props are positional: a
 // part Rufi draws keeps OpenUI's name and props, and an old reply that no
-// longer fits the library shows as its text.
+// longer fits the library draws what works and says part isn't shown.
 import "@rufi/contracts/jitless";
+import { split, tokenize } from "@openuidev/lang-core";
 import { REPLY_MARKS } from "@rufi/contracts/instructions";
 import {
   createParser,
@@ -122,12 +123,43 @@ const isFree = (schema: Schema) =>
   !schema.items &&
   !schema.properties;
 
+/** The kinds of OpenUI's expressions (lang-core's `ASTNode`). */
+const EXPRESSIONS = new Set([
+  "Comp",
+  "Str",
+  "Num",
+  "Bool",
+  "Null",
+  "Arr",
+  "Obj",
+  "Ref",
+  "Ph",
+  "StateRef",
+  "RuntimeRef",
+  "BinOp",
+  "UnaryOp",
+  "Ternary",
+  "Member",
+  "Index",
+  "Assign",
+]);
+
+/** An expression OpenUI keeps in the tree to read later, such as an action. */
+const isExpression = (value: unknown) =>
+  typeof value === "object" &&
+  value !== null &&
+  "k" in value &&
+  typeof value.k === "string" &&
+  EXPRESSIONS.has(value.k);
+
 /**
  * Whether a value fits its place in the library's schema: a part only where
  * that part may go (anywhere in a free place), each part's props by its own
  * schema wherever it sits, plain values by their type, nothing coerced. An
  * expression (a variable, an action) is OpenUI's to read, and null is a prop
- * left out.
+ * left out. A free place draws a value, a part or a list of them: OpenUI
+ * draws nothing for an object there, such as `{value: "18 ng/mL"}` in a
+ * table cell.
  */
 function fits(
   value: unknown,
@@ -145,7 +177,7 @@ function fits(
       )
     );
   }
-  if (typeof value === "object" && "k" in value) return true;
+  if (isExpression(value)) return true;
   const options = schema.anyOf ?? schema.oneOf;
   if (options) return options.some((option) => fits(value, option, defs));
   if (schema.$ref) return false;
@@ -157,6 +189,7 @@ function fits(
   if (Array.isArray(value)) {
     return value.every((item) => fits(item, schema.items, defs));
   }
+  if (typeof value === "object" && isFree(schema)) return false;
   if (typeof value === "object") {
     return Object.entries(value).every(([name, item]) =>
       fits(item, schema.properties?.[name], defs),
@@ -174,27 +207,55 @@ export function replyReader(library: ReturnType<typeof replyLibrary>) {
   };
 }
 
+/** OpenUI's token types (lang-core's `T`) that `allRead` passes over. */
+const NEWLINE = 0;
+const END = 13;
+
 /**
- * A finished reply: `drawn` when OpenUI's parse is whole (nothing cut off,
- * every name used is defined and every name defined is used, no errors)
- * and its tree fits the library's schema, from its Card down; `words` when
- * it has no OpenUI at all; otherwise `broken`, never drawn in part (a value
- * could go missing: OpenUI doesn't check which part sits in a part's place).
+ * Whether each piece of a reply's text is in a statement, as OpenUI's own
+ * tokenizer and splitter read it: words outside its statements OpenUI
+ * passes over without a word.
+ */
+function allRead(text: string): boolean {
+  const tokens = tokenize(text);
+  const read = split(tokens).reduce(
+    (count, statement) => count + 2 + statement.tokens.length,
+    0,
+  );
+  const found = tokens.filter((token) => {
+    const type: number = token.t;
+    return type !== NEWLINE && type !== END;
+  }).length;
+  return read === found;
+}
+
+/**
+ * A finished reply: `drawn` when OpenUI's parse reports no problem (nothing
+ * cut off, every name used is defined and every name defined is used, no
+ * errors), no text is outside its statements (allRead) and its tree fits
+ * the library's schema, from its Card down; `words` when it has no OpenUI
+ * at all; otherwise `partial`: OpenUI draws what works and leaves out what
+ * it can't, so the reply says part of it isn't shown and keeps its whole
+ * text a click away. The screens also mark it partial when drawing it fails
+ * (reply.tsx). Rufi doesn't account for every character: other text OpenUI
+ * passes over is OpenUI's to handle.
  */
 export function shapeOf(
   reader: ReturnType<typeof replyReader>,
   text: string,
-): "drawn" | "words" | "broken" {
+): "drawn" | "words" | "partial" {
   const { root, meta } = reader.parser.parse(text);
   if (root === null) return "words";
   const whole =
     !meta.incomplete &&
     meta.unresolved.length === 0 &&
     meta.orphaned.length === 0 &&
-    meta.errors.every((error) => error.severity === "warning");
-  return whole && fits(root, { $ref: "#/$defs/Card" }, reader.defs)
+    meta.errors.length === 0;
+  return whole &&
+    allRead(text) &&
+    fits(root, { $ref: "#/$defs/Card" }, reader.defs)
     ? "drawn"
-    : "broken";
+    : "partial";
 }
 
 /** OpenUI's chat rule Rufi leaves out: Rufi never makes up health data. */
