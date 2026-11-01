@@ -545,7 +545,7 @@ test.describe("notices", () => {
       ]);
     await click(app);
 
-    await expect(page).toHaveURL(/\/people\/asha\/record\/medicine_use#today$/);
+    await expect(page).toHaveURL(/\/people\/asha\/record\/medicine_use$/);
     await expect(page.getByRole("region", { name: /^Today/ })).toContainText(
       "Levothyroxine 25 mcg",
     );

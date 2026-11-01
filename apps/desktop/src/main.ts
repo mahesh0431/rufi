@@ -109,8 +109,8 @@ if (!app.requestSingleInstanceLock()) {
 
 /**
  * Neutral Mac notices for a person: one for follow-ups, which opens their
- * Follow-ups, and one for medicines, which opens Today on their Medicines
- * page. Counts and a time only, no name or title.
+ * Follow-ups, and one for medicines, which opens their Medicines page, with
+ * Today at its top. Counts and a time only, no name or title.
  */
 function tell(person: PersonNotices): void {
   const page = `/people/${encodeURIComponent(person.personId)}`;
@@ -118,7 +118,8 @@ function tell(person: PersonNotices): void {
     notify(noticeText(person), `${page}/follow-ups`);
   }
   if (person.medicines > 0) {
-    notify(medicinesText(person), `${page}/record/medicine_use#today`);
+    // Today is the top of the Medicines page.
+    notify(medicinesText(person), `${page}/record/medicine_use`);
   }
 }
 

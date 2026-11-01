@@ -372,7 +372,7 @@ it("upgrades a record of version 2 to keep follow-up notices, and a backup keeps
   const store = await openRecord(home);
   try {
     expect(await claimNotices(store.query, now)).toEqual([
-      { personId: "asha", due: 0, overdue: 1 },
+      { personId: "asha", due: 0, overdue: 1, medicines: 0 },
     ]);
   } finally {
     store.close();

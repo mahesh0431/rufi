@@ -5,7 +5,6 @@
 // Reminders are a status here: they change in the chat, with Ask Rufi.
 import type { MedicineUseRow, Today } from "@rufi/contracts/record";
 import { Bell, BellOff } from "lucide-react";
-import { useEffect, useRef } from "react";
 import { AskRufi } from "./ask.tsx";
 import { printedDate, today as longDay } from "./dates.ts";
 import { useToday } from "./reads.ts";
@@ -47,22 +46,12 @@ export function MedicinesToday({
 }) {
   const read = useToday(personId);
   const today = read.data;
-  // A reminder's click opens the page at Today: once it is there, into view.
-  const section = useRef<HTMLElement | null>(null);
-  const shown = today !== undefined;
-  useEffect(() => {
-    if (shown && window.location.hash === "#today") {
-      section.current?.scrollIntoView({ block: "start" });
-    }
-  }, [shown]);
   if (today === undefined) return null;
   if (today.doses.length === 0 && !today.upcoming) return null;
   return (
     <section
-      id="today"
-      ref={section}
       aria-labelledby="today-heading"
-      className="mb-4 scroll-mt-4 rounded-xl border border-line bg-surface"
+      className="mb-4 rounded-xl border border-line bg-surface"
     >
       <h2
         id="today-heading"
