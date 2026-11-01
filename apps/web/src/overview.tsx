@@ -292,9 +292,8 @@ function TileView({ personId, tile }: { personId: string; tile: Tile }) {
 }
 
 /**
- * A receipt's first line as plain words: its summary ("Saved 7 results
- * from …"), which already counts the changes under it, or its first change
- * and how many more.
+ * A receipt's first line as plain words: where a save from a document
+ * came from ("Saved from …"), or its first change and how many more.
  */
 function summaryOf(receipt: string): string {
   const plain = (line: string) =>
