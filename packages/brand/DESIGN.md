@@ -49,7 +49,7 @@ Rules:
 - **The accent is for doing; apricot is Rufi.** The theme's accent (blue on the website and in Blue, black in White, plum in Plum, …) is for the main action and for what is selected. Apricot is only for Rufi itself: the dog's folds, and on the website the accent words in large headings, the dots and the pale icon squares. Never an apricot button.
 - **No clinical colour.** No red, amber, orange, green or pink that could read as a health status (good, borderline, bad), in any theme: a theme's accent must never look like a result.
 - **One red, for one job:** the last step of a delete that can't be undone. Nowhere else on Rufi's own screens.
-- **Rufi AI's replies are drawn by OpenUI as it draws them.** Rufi gives OpenUI only its theme's roles (surfaces, primary and secondary text, the accent in its states, text on the accent, borders, the user's bubble) and its font, and never restyles OpenUI's parts. So replies show OpenUI's own colours by meaning (info, success, warning, danger) on Rufi's theme. Rufi AI never colours a health value good or bad by its own judgement; for a result it shows the lab's own flag as printed. Rufi's own screens keep no clinical colour and the one red for deleting.
+- **Rufi AI's replies are drawn by OpenUI as it draws them.** Rufi gives OpenUI only its theme's roles (surfaces, primary and secondary text, the accent in its states, text on the accent, borders, the user's bubble) and its type (font and scale), and never restyles OpenUI's parts. So replies show OpenUI's own colours by meaning (info, success, warning, danger) on Rufi's theme. Rufi AI never colours a health value good or bad by its own judgement; for a result it shows the lab's own flag as printed. Rufi's own screens keep no clinical colour and the one red for deleting.
 - **Calm greys, less black.** Pure ink is for the dog's dark ground only.
 - **Contrast:** text keeps WCAG AA in every theme. Check a new pair before you use it.
 
@@ -58,7 +58,7 @@ Rules:
 Two font roles, as family stacks in the tokens; sizes and weights stay with each medium.
 
 - `--font-ui`: the Mac's system font, for the app. The app is a 13 px desktop UI.
-- Rufi AI's replies drawn by OpenUI use OpenUI's own type scale and spacing (16 px body text), in `--font-ui`; the app around them stays 13 px.
+- Rufi AI's replies drawn by OpenUI use Rufi's 13 px scale and `--font-ui`, given to OpenUI as its typography tokens, so a reply reads like the messages around it.
 - `--font-brand`: Inter (variable), for the website. The website is a 16 px reading page; headings heavy (about 750–780) with tight letter spacing, body text regular.
 
 ## Icons
