@@ -440,9 +440,7 @@ header = CardHeader("Haemoglobin", "Your last three results")
 intro = TextContent("Your haemoglobin went up this year and reached the lab's range (12.0-15.5 g/dL) in August. The values are from [your Sunrise Labs report](rufi:/documents/doc-1).")
 chart = LineChart(["10 Feb 2026", "20 May 2026", "12 Aug 2026"], [Series("Haemoglobin (g/dL)", [11.2, 11.9, 12.6])])
 values = Table([Col("Date", ["10 Feb 2026", "20 May 2026", "12 Aug 2026"]), Col("Haemoglobin", ["11.2 g/dL", "11.9 g/dL", "12.6 g/dL"]), Col("Lab range", ["12.0-15.5", "12.0-15.5", "12.0-15.5"]), Col("Flag", ["L", "L", ""])])
-followUps = FollowUpBlock([f1, f2])
-f1 = FollowUpItem("What can raise my haemoglobin?")
-f2 = FollowUpItem("Show my ferritin too")
+followUps = Buttons([Button("What can raise my haemoglobin?", @ToAssistant("What can raise my haemoglobin?"), "secondary"), Button("Show my ferritin too", @ToAssistant("Show my ferritin too"), "secondary")], "row")
 
 ## Important Rules
 - Choose components that best represent the content (tables for comparisons, charts for trends, forms for input, etc.)
