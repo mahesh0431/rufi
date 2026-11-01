@@ -226,7 +226,7 @@ export function CardView({ props, renderNode }: ComponentRenderProps) {
         style={{
           display: "flex",
           flexDirection: "column",
-          gap: "var(--openui-space-m-l)",
+          gap: "var(--openui-space-m)",
         }}
       >
         {renderNode(props["children"])}

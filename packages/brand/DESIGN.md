@@ -51,6 +51,7 @@ Rules:
 Two font roles, as family stacks in the tokens; sizes and weights stay with each medium.
 
 - `--font-ui`: the Mac's system font, for the app. The app is a 13 px desktop UI.
+- Rufi AI's replies drawn by OpenUI use OpenUI's own type scale and spacing (16 px body text), in `--font-ui`; the app around them stays 13 px.
 - `--font-brand`: Inter (variable), for the website. The website is a 16 px reading page; headings heavy (about 750–780) with tight letter spacing, body text regular.
 
 ## Icons
