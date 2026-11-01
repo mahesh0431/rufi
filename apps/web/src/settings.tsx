@@ -126,7 +126,7 @@ export function SettingsDialog() {
                     <IconButton
                       label="Close"
                       icon={X}
-                      className="absolute top-3 right-3 z-10"
+                      className="absolute top-3 right-3 z-10 bg-surface"
                     />
                   }
                 />
