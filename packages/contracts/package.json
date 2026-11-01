@@ -10,6 +10,7 @@
     "./briefs": "./src/briefs.ts",
     "./record": "./src/record.ts",
     "./devices": "./src/devices.ts",
+    "./instructions": "./src/instructions.ts",
     "./jitless": "./src/jitless.ts"
   },
   "dependencies": {

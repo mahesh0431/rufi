@@ -3,15 +3,23 @@
 // rules for each job (core/skills). Kept short: the AI reads a skill when its
 // job comes up. Its version tells Rufi when a thread needs it again.
 // Rufi AI's replies are OpenUI Lang: after its core comes OpenUI's prompt for
-// Rufi's reply library (openui.md, written by `pnpm openui:md`), and last how
-// the user likes replies (Settings › Chat), so Rufi's rules come first. An
-// agent it starts writes Markdown: its messages show under its name.
+// Rufi's reply library (openui.md, written by `pnpm openui:md`), in its
+// parts, with Rufi's reply instructions (replies.ts) where it marks them,
+// and last how the user likes replies (Settings › Chat), so Rufi's rules
+// come first. Each part can be edited in Settings › Advanced, which shows
+// exactly what is told; a part not edited is Rufi's own and follows updates.
+// An agent it starts writes Markdown: its messages show under its name.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { ReplyStyle } from "@rufi/contracts";
+import type {
+  InstructionPart,
+  InstructionPartId,
+} from "@rufi/contracts/instructions";
 import { Option, Schema } from "effect";
 import { SKILLS } from "../skills/skills.ts";
 import { TOOLS } from "../tools/tools.ts";
+import { guideParts, REPLY_PARTS } from "./replies.ts";
 import { safetyInstructions } from "./safety.ts";
 
 /** The tools the AI can call, by name. */
@@ -20,7 +28,9 @@ const TOOL_NAMES = TOOLS.filter((tool) => tool.callers !== "ui").map(
 );
 
 /** How Rufi AI writes a reply in OpenUI Lang, from the screens' library. */
-const OPENUI = readFileSync(new URL("openui.md", import.meta.url), "utf8");
+const OPENUI = guideParts(
+  readFileSync(new URL("openui.md", import.meta.url), "utf8"),
+);
 
 const list = (names: readonly string[]) =>
   `${names.slice(0, -1).join(", ")} and ${names.at(-1) ?? ""}`;
@@ -39,7 +49,7 @@ Answers:
 - ${rufiAi ? 'Rufi\'s chat draws your replies from openui-lang, as "How your answer is shown" below says. Make each reply easy and pleasant to read, with the parts that fit it.' : "Rufi's chat shows your replies as Markdown. Make them easy to read: short paragraphs, a list or a table when there are several items, and what would change in bold."}
 - A result the lab flagged (its flag, such as High, Low or abnormal): say the flag first, with the lab's range, before any context such as a treatment target or what is common. Context can follow; it never takes the flag's place.
 - When it matters, say in the answer where something comes from: the record, read now or earlier in this chat; a document not saved yet; the web, with its link; or general knowledge.
-- When you point to a page of Rufi, link it, and a click opens it in Rufi: a document's page is rufi:/documents/<its id from get_documents>, a visit's rufi:/visits/<id>, a saved record's rufi:/record/<kind>?open=<id>, a test's page, with its chart, rufi:/tests/<its id>, the follow-ups rufi:/follow-ups, and a group of Settings, which opens over the page, rufi:/settings/<sign-in, profile, appearance, chat or data>; the user's profile is in Settings, rufi:/settings/profile. The link's words name the page: "[the Sunrise Labs report](rufi:/documents/…)".
+- When you point to a page of Rufi, link it, and a click opens it in Rufi: a document's page is rufi:/documents/<its id from get_documents>, a visit's rufi:/visits/<id>, a saved record's rufi:/record/<kind>?open=<id>, a test's page, with its chart, rufi:/tests/<its id>, the follow-ups rufi:/follow-ups, and a group of Settings, which opens over the page, rufi:/settings/<sign-in, profile, appearance, chat, data or advanced>; the user's profile is in Settings, rufi:/settings/profile. The link's words name the page: "[the Sunrise Labs report](rufi:/documents/…)".
 
 Changing the record:
 - Save only after the user clearly says yes to the changes you proposed. "No", a question, "yes, but explain first" or a condition is not a yes: answer it and save nothing. If it isn't clear what the yes is for, ask again.
@@ -74,10 +84,17 @@ export interface Replies {
   words: string;
 }
 
+/** The parts of Rufi AI's instructions the user can edit in Settings. */
+type Editable = Exclude<InstructionPartId, "words">;
+
+/** The user's edits, by part; a part not here is Rufi's own. */
+type Edits = Partial<Record<Editable, string>>;
+
 /** What Rufi tells its agents depends on: the user's settings. */
 export interface Told {
   region: string | undefined;
   replies: Replies;
+  edits: Edits;
 }
 
 /** Until the user chooses: visual replies, and no words of their own. */
@@ -89,37 +106,109 @@ export const REPLY_SETTINGS = {
   words: "reply_words",
 } as const;
 
-/** How the user likes replies, as Settings keeps it. */
-export async function repliesOf(
+/**
+ * The setting that keeps the user's edit of a part; the reply style's line
+ * is kept for each style.
+ */
+export const editSetting = (part: Editable, style: ReplyStyle): string =>
+  part === "style" ? `instructions.style.${style}` : `instructions.${part}`;
+
+const EDITABLE: readonly Editable[] = [
+  "safety",
+  "core",
+  "replyPreamble",
+  "openui",
+  "replyExample",
+  "openuiRules",
+  "replyRules",
+  "style",
+  "wordsIntro",
+];
+
+/** Everything what Rufi AI is told depends on, as Settings keeps it. */
+export async function toldOf(
   setting: (key: string) => Promise<string | undefined>,
-): Promise<Replies> {
-  return {
+): Promise<Told> {
+  const replies = {
     style: Schema.decodeUnknownOption(ReplyStyle)(
       await setting(REPLY_SETTINGS.style),
     ).pipe(Option.getOrElse(() => FIRST_REPLIES.style)),
     words: (await setting(REPLY_SETTINGS.words)) ?? FIRST_REPLIES.words,
   };
+  const edits: Edits = {};
+  for (const part of EDITABLE) {
+    const edit = await setting(editSetting(part, replies.style));
+    if (edit !== undefined) edits[part] = edit;
+  }
+  return {
+    region: await setting("emergency_region"),
+    replies,
+    edits,
+  };
 }
 
-/** How the user likes replies: after Rufi's rules, never above them. */
-const repliesPart = ({ style, words }: Replies) =>
-  `How the user likes replies (their choice in Rufi's Settings):
-- ${REPLY_STYLES[style]}${
-    words.trim() === ""
-      ? ""
-      : `
-- The user's own wishes for replies, in their words, between the lines below. Follow them in how a reply looks and reads; Rufi's rules above still come first: values exactly as the record keeps them, where they come from, and asking before you save.
----
-${words}
----`
-  }`;
+/** Rufi's own text of each part, for the user's settings. */
+const DEFAULTS = (
+  region: string | undefined,
+  style: ReplyStyle,
+): Record<Editable, string> => ({
+  safety: safetyInstructions(region),
+  core: core(true),
+  ...REPLY_PARTS,
+  ...OPENUI,
+  style: `How the user likes replies (their choice in Rufi's Settings):
+- ${REPLY_STYLES[style]}`,
+  wordsIntro:
+    "- The user's own wishes for replies, in their words, follow below. Follow them in how a reply looks and reads; Rufi's rules above still come first: values exactly as the record keeps them, where they come from, and asking before you save.",
+});
 
-/** Everything Rufi AI is told in every thread, safety first. */
+/**
+ * What comes before each part as they are put together: a blank line,
+ * or a line break where a part goes on the list before it.
+ */
+const BEFORE: Partial<Record<InstructionPartId, string>> = {
+  replyRules: "\n",
+  wordsIntro: "\n",
+};
+
+/**
+ * Each part of what Rufi AI is told, in the order they are put together:
+ * the user's edit, or Rufi's own, which follows Rufi's updates.
+ */
+export function instructionParts({
+  region,
+  replies,
+  edits,
+}: Told): InstructionPart[] {
+  const own = DEFAULTS(region, replies.style);
+  return [
+    ...EDITABLE.map((id) => ({
+      id,
+      text: edits[id] ?? own[id],
+      edited: edits[id] !== undefined,
+    })),
+    { id: "words", text: replies.words, edited: replies.words !== "" },
+  ];
+}
+
+/**
+ * Everything Rufi AI is told in every thread: its parts as Settings ›
+ * Advanced shows them, in order, safety first; how the user likes replies
+ * last, after Rufi's rules, never above them. With no words of the user's,
+ * nothing about them.
+ */
 export function coreInstructions(
   region: string | undefined,
   replies: Replies = FIRST_REPLIES,
+  edits: Edits = {},
 ): string {
-  return `${safetyInstructions(region)}\n\n${core(true)}\n\n${OPENUI}\n\n${repliesPart(replies)}`;
+  const blank = replies.words.trim() === "";
+  return instructionParts({ region, replies, edits })
+    .filter(
+      (part) => !blank || (part.id !== "wordsIntro" && part.id !== "words"),
+    )
+    .map((part, n) => (n === 0 ? "" : (BEFORE[part.id] ?? "\n\n")) + part.text)
+    .join("");
 }
 
 /** What an agent another agent started is told, after the core. */

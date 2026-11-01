@@ -292,7 +292,7 @@ The pages that say what works in Rufi today and how to use it: in Rufi under Hel
 _Avoid_: manual, documentation
 
 **Settings**:
-Rufi's choices, in a pop-up over the page you are on, in five groups: Sign-in, Profile, Appearance, Chat and Data. A change takes effect at once. A link to a group (rufi:/settings/<group>, in a help page or a reply) opens it there; closing it leaves the page as it was.
+Rufi's choices, in a pop-up over the page you are on, in six groups: Sign-in, Profile, Appearance, Chat, Data and Advanced. A change takes effect at once. A link to a group (rufi:/settings/<group>, in a help page or a reply) opens it there; closing it leaves the page as it was.
 _Avoid_: preferences, options page
 
 **Sign in with ChatGPT**:

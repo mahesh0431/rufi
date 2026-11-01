@@ -21,6 +21,7 @@ export const GROUPS = [
   "appearance",
   "chat",
   "data",
+  "advanced",
 ] as const;
 export type Group = (typeof GROUPS)[number];
 

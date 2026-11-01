@@ -79,6 +79,7 @@ Rufi keeps each step you finished. If you reload the page, close it or open Rufi
   - **Appearance:** light or dark, the colour, and how Rufi AI's replies sit in the chat (see [How Rufi looks](#how-rufi-looks)).
   - **Chat:** how Rufi AI's replies look and your own words for them (see [Choose how replies look](chat.md#choose-how-replies-look)), how a reply's Activity opens (see [Activity](chat.md#activity)), what sending does while Rufi replies, and how often Rufi carries on after a restart.
   - **Data:** device data (see [Device data](device-data.md)), your backups and the export of your data (see [Backups and export](backups-and-export.md)), and where your data folder is (see [Your data and the AI](your-data-and-the-ai.md#where-your-data-lives)).
+  - **Advanced:** what Rufi AI is told, to read and edit (see [Rufi AI's instructions](chat.md#rufi-ais-instructions)).
 - **Help:** these pages.
 
 The other pages come in later steps.

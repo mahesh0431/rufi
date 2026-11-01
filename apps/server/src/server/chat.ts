@@ -20,7 +20,7 @@ import {
   type ProviderStatus,
 } from "@rufi/contracts";
 import { Stopped } from "../agent/runtime.ts";
-import { repliesOf, type Told } from "../core/chat/instructions.ts";
+import { toldOf, type Told } from "../core/chat/instructions.ts";
 import { NOT_A_MODEL, UNKNOWN_PROVIDER } from "../core/chat/models.ts";
 import {
   QueueRefusal,
@@ -57,7 +57,7 @@ export interface ChatDeps {
   mcp: { url: () => string; keys: McpKeys };
   /**
    * What the AI is told in every thread, for the user's settings (the
-   * emergency region, how they like replies), and its version: a thread told
+   * emergency region, how they like replies, their edits), and its version: a thread told
    * another version is told again. A sub-agent's names it and the agent that
    * started it.
    */
@@ -516,12 +516,12 @@ export function chat(deps: ChatDeps) {
     return run;
   }
 
-  /** The user's settings that what the agents are told depends on, now. */
-  async function toldNow(): Promise<Told> {
-    return {
-      region: await transcripts.setting("emergency_region"),
-      replies: await repliesOf(transcripts.setting),
-    };
+  /**
+   * The user's settings that what the agents are told depends on, now:
+   * the emergency region, how they like replies and their edits.
+   */
+  function toldNow(): Promise<Told> {
+    return toldOf(transcripts.setting);
   }
 
   /** Rufi's rules for one of the chat's agents, as `told` says. */
