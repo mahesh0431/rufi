@@ -228,7 +228,7 @@ const STORED_REPLY = [
   'followUps = FollowUpBlock([FollowUpItem("Show my ferritin too")])',
 ].join("\n");
 
-test("a reply the AI wrote in OpenUI draws in the chat under Rufi's strict CSP: its chart and table, and a follow-up or button sends its words and context, and every link of Rufi's opens in place", async ({
+test("a reply the AI wrote in OpenUI draws in the chat under Rufi's strict CSP: its chart and table, a follow-up or button shows its words while Rufi AI gets the click with its context, and every link of Rufi's opens in place", async ({
   page,
   rufi,
 }) => {
@@ -254,15 +254,26 @@ test("a reply the AI wrote in OpenUI draws in the chat under Rufi's strict CSP: 
   await expect(reply.locator("pre")).toHaveCount(0);
   await accessible(page);
   expect(await refusedIn(page)).toEqual([]);
+  // A click shows its words as the person's message, and Rufi AI gets it
+  // as a click; what they typed and haven't sent stays in the box.
+  const box = chat(page).getByRole("textbox", { name: "Message to Rufi" });
+  await box.fill("And my iron?");
   await reply.getByText("Show my ferritin too").click();
   await expect(log(page).locator(".reply").last()).toContainText(
-    "ok:Show my ferritin too",
+    "ok:User clicked: Show my ferritin too",
   );
+  await expect(
+    log(page).locator("p", { hasText: /^Show my ferritin too$/ }),
+  ).toBeVisible();
+  await expect(box).toHaveValue("And my iron?");
   // A button's action says which test it is about, as OpenUI gives it.
   await reply.getByRole("button", { name: "Explain" }).click();
   await expect(log(page).locator(".reply").last()).toContainText(
-    /ok:Explain this result\s+Context: \{"test":"CRP"\}/,
+    /ok:User clicked: Explain this result\s+Context: \{"test":"CRP"\}/,
   );
+  await expect(
+    log(page).locator("p", { hasText: /^Explain this result$/ }),
+  ).toBeVisible();
   // A source of Rufi's opens the person's page in this window.
   await reply.getByRole("button", { name: /Your birth date and sex/ }).click();
   await expect(page).toHaveURL(/\/people\/[^/]+\/profile$/);

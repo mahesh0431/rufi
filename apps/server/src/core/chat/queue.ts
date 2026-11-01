@@ -63,12 +63,13 @@ const handOverOf = (row: {
   id: string;
   origin: string;
   text: string;
+  ai_text: string | null;
   refs: string;
 }): HandOver => ({
   id: row.id,
   origin: row.origin as HandOver["origin"],
   notes: row.origin === "rufi" ? [row.text] : [],
-  text: row.origin === "person" ? row.text : undefined,
+  text: row.origin === "person" ? (row.ai_text ?? row.text) : undefined,
   refs: row.origin === "person" ? (JSON.parse(row.refs) as Chip[]) : [],
 });
 
@@ -84,6 +85,8 @@ export async function addRow(
     origin: "person" | "rufi";
     kind?: "steer" | "queue";
     text: string;
+    /** What Rufi AI gets, when it isn't the words shown: a click's. */
+    aiText?: string;
     eventId?: string;
     refs?: readonly Chip[];
   },
@@ -104,6 +107,7 @@ export async function addRow(
       origin: row.origin,
       kind: row.kind ?? "queue",
       text: row.text,
+      ai_text: row.aiText ?? null,
       refs: JSON.stringify(row.refs ?? []),
       event_id: row.eventId ?? null,
       position: (last ?? 0) + 1,
@@ -259,7 +263,7 @@ export function chatQueue(
         refs: JSON.parse(row.refs) as Chip[],
       })),
 
-    /** The words of these rows of the chat, by id, as they are now. */
+    /** The words of these rows of the chat as the AI gets them, by id, now. */
     words: async (
       chat: ChatOf,
       ids: readonly string[],
@@ -269,19 +273,20 @@ export function chatQueue(
         : new Map(
             (
               await rows(db, chat)
-                .select(["id", "text"])
+                .select(["id", "text", "ai_text"])
                 .where("id", "in", ids)
                 .execute()
-            ).map((row) => [row.id, row.text]),
+            ).map((row) => [row.id, row.ai_text ?? row.text]),
           ),
 
     /**
      * Takes a message from the box: a new waiting row by the send's id, with
      * how it goes while a reply runs, its references checked against the
      * person, its unsent documents sent and the draft emptied, in one
-     * transaction. The same id again finds the row it made, or the message
-     * it sent into a running reply: `fresh` is false then, and nothing
-     * changes.
+     * transaction. A click on a reply (`aiText`, what Rufi AI gets) isn't
+     * the box's: the draft stays. The same id again finds the row it made,
+     * or the message it sent into a running reply: `fresh` is false then,
+     * and nothing changes.
      */
     accept: (
       chat: ChatOf,
@@ -289,6 +294,7 @@ export function chatQueue(
       text: string,
       refs: readonly Pointer[] = [],
       kind: "steer" | "queue" = "steer",
+      aiText?: string,
     ) =>
       write(chat, async (trx) => {
         const there = await trx
@@ -336,9 +342,17 @@ export function chatQueue(
         await addRow(
           trx,
           chat,
-          { id, origin: "person", kind, text, refs: chips },
+          {
+            id,
+            origin: "person",
+            kind,
+            text,
+            ...(aiText !== undefined && { aiText }),
+            refs: chips,
+          },
           at,
         );
+        if (aiText !== undefined) return { id, fresh: true };
         await trx
           .insertInto("drafts")
           .values({
@@ -366,7 +380,8 @@ export function chatQueue(
         }
         await trx
           .updateTable("chat_queue")
-          .set({ text, updated_at: now() })
+          // Their words go as they wrote them, a click's too.
+          .set({ text, ai_text: null, updated_at: now() })
           .where("id", "=", id)
           .execute();
       }),

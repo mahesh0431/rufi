@@ -4,8 +4,8 @@
 // ended, a piece of it that's broken (shapeOf) is left out as OpenUI leaves
 // it out, with a line that says so and the whole text a click away. A reply with no OpenUI in it shows as
 // Markdown, while it is written too, so a reply is never blank. A follow-up
-// or a button sends its words, a form's values and the action's context as
-// the person's message; every link opens by the reply's rule (parts.tsx).
+// or a button sends its words as the person's message, and Rufi AI gets
+// them as a click with a form's values and the action's context; every link opens by the reply's rule (parts.tsx).
 // Display only: no tools, so nothing in a reply reaches the record.
 import {
   BuiltinActionType,
@@ -53,12 +53,12 @@ const library = replyLibrary({
 const reader = replyReader(library);
 
 /**
- * What a click sends, as OpenUI's guide to user actions writes it: its
- * words, a form's values, and the context the action carries (which card or
- * item was clicked), as OpenUI's own chat keeps it.
+ * What a click tells Rufi AI, as OpenUI's guide to user actions writes it:
+ * that it was clicked, a form's values, and the context the action carries
+ * (which card or item was clicked). The chat shows only its words.
  */
-function messageOf(event: ActionEvent) {
-  const lines = [event.humanFriendlyMessage];
+function forAi(event: ActionEvent) {
+  const lines = [`User clicked: ${event.humanFriendlyMessage.trim()}`];
   if (event.formState && Object.keys(event.formState).length > 0) {
     lines.push(`Form values: ${JSON.stringify(event.formState)}`);
   }
@@ -69,18 +69,6 @@ function messageOf(event: ActionEvent) {
     );
   }
   return lines.join("\n");
-}
-
-/**
- * Sends a click's message as the person's. Sending empties the box, so
- * when they have something in it not yet sent, the message joins it
- * instead, after theirs, and they send it.
- */
-function send(personId: string, message: string) {
-  const box = boxFor(personId);
-  const { text, refs } = box.store.getState();
-  const empty = text.trim() === "" && refs.length === 0;
-  if (box.append(message) && empty) void box.submit();
 }
 
 /**
@@ -168,7 +156,10 @@ export function OpenUIReply({
   if (shape === "words") return children;
   const onAction = (event: ActionEvent) => {
     if (event.type === BuiltinActionType.ContinueConversation) {
-      send(personId, messageOf(event));
+      void boxFor(personId).click(
+        event.humanFriendlyMessage.trim(),
+        forAi(event),
+      );
     } else if (event.type === BuiltinActionType.OpenUrl) {
       const url = event.params["url"];
       if (typeof url === "string") openLink(url);

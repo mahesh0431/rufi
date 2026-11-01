@@ -913,11 +913,15 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   // finds the message it made.
   app.post(`${one}/messages`, async (c) => {
     const found = await chatOf(c);
-    const { id, text, refs, kind } = await body(c, SendMessage, SEND_REFUSAL);
+    const { id, text, refs, kind, aiText } = await body(
+      c,
+      SendMessage,
+      SEND_REFUSAL,
+    );
     if (text === "" && (refs?.length ?? 0) === 0) {
       throw new HttpError(400, SEND_REFUSAL);
     }
-    await acting(() => chat.send(found, id, text, refs, kind));
+    await acting(() => chat.send(found, id, text, refs, kind, aiText));
     return c.json({ id, draft: await drafts.read(found) }, 202);
   });
   app.post(`${one}/stop`, async (c) => {

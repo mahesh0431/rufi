@@ -47,6 +47,7 @@ export const MIGRATIONS: readonly string[] = [
   read("migrations/0026-each-reply-keeps-its-effort.sql"),
   read("migrations/0027-profiles.sql"),
   read("migrations/0028-tests.sql"),
+  read("migrations/0029-a-click-keeps-what-the-ai-got.sql"),
 ];
 
 /** What a database file is, read without changing it. */

@@ -550,7 +550,9 @@ it("upgrades a record of version 5 so a generated picture can be a line of the c
   (await openRecord(home)).close();
 
   // Kept as they were; no reply has questions of its own yet (0019).
-  expect(lines()).toEqual(before.map((line) => ({ ...line, questions: null })));
+  expect(lines()).toEqual(
+    before.map((line) => ({ ...line, questions: null, ai_text: null })),
+  );
   const db = new DatabaseSync(path);
   try {
     const turn = db
@@ -599,7 +601,9 @@ it("upgrades a record of version 6 so the AI's notes can be steps of its Activit
   (await openRecord(home)).close();
 
   // Kept as they were; no reply has questions of its own yet (0019).
-  expect(lines()).toEqual(before.map((line) => ({ ...line, questions: null })));
+  expect(lines()).toEqual(
+    before.map((line) => ({ ...line, questions: null, ai_text: null })),
+  );
   const db = new DatabaseSync(path);
   try {
     const turn = db
@@ -727,6 +731,7 @@ it("upgrades a record of version 9 so a chat keeps the context its thread used a
         ...row,
         hold_id: null,
         kind: "queue",
+        ai_text: null,
       })),
     );
     // No meter until the thread reports again.
@@ -1175,13 +1180,14 @@ it("upgrades a record of version 15 so files start on Send: every document sent 
     before.turns.map((turn) => ({ ...turn, effort: null })),
   );
   expect(after.entries).toEqual(
-    before.entries.map((line) => ({ ...line, questions: null })),
+    before.entries.map((line) => ({ ...line, questions: null, ai_text: null })),
   );
   expect(after.queue).toEqual(
     before.queue.map((row) => ({
       ...row,
       ...(row["id"] === "queue-sort" && { state: "removed" }),
       kind: "queue",
+      ai_text: null,
     })),
   );
   const db = new DatabaseSync(path, { readOnly: true });

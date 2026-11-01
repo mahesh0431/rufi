@@ -491,6 +491,7 @@ CREATE TABLE transcript_entries (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   questions TEXT CHECK (questions IS NULL OR kind = 'reply'), -- a reply's questions, as the AI gave them (JSON), kept apart from its answer; null: none
+  ai_text TEXT,                -- a message's words as Rufi AI got them, when they differ from text: a click's "User clicked: …" with its form values and context; null: the same
   UNIQUE (person_id, id),
   UNIQUE (chat_id, seq),
   FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id),
@@ -567,6 +568,7 @@ CREATE TABLE chat_queue (
   turn_id TEXT,                -- the turn that used it
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  ai_text TEXT,                -- the person's message as Rufi AI gets it, when it differs from text: a click's "User clicked: …" with its form values and context; null: the same
   UNIQUE (person_id, id),
   FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id),
   FOREIGN KEY (person_id, event_id) REFERENCES transcript_entries (person_id, id),
@@ -809,4 +811,4 @@ CREATE TABLE agent_cursor (
 ) STRICT;
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 28;
+PRAGMA user_version = 29;
