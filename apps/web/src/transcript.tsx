@@ -745,7 +745,10 @@ function MessageView({
 function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
   const entry = useStore(live, (state) => state.entries[id]);
   const turn = useStore(live, (state) => state.turns[entry?.turnId ?? ""]);
-  const streaming = turn?.status === "running";
+  // A reply the AI gave whole is judged as finished, though its turn runs.
+  const streaming =
+    turn?.status === "running" &&
+    !(entry?.kind === "reply" && entry.status === "done");
   if (!entry) return null;
   return entry.kind === "message" || entry.kind === "steer" ? (
     <MessageView id={id} text={entry.text} refs={entry.refs} />

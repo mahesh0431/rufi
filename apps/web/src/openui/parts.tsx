@@ -205,8 +205,15 @@ export function MarkDownRendererView({ props }: ComponentRenderProps) {
 /** OpenUI's chat Card; its sources open by the reply's rule. */
 export function CardView({ props, renderNode }: ComponentRenderProps) {
   const open = use(LinkOpener);
-  const given = Array.isArray(props["sources"]) ? props["sources"] : [];
-  const sources: Source[] = given.map((source: Record<string, unknown>) => {
+  // Only sources it can draw: the rest are left out, so the Card still
+  // draws, and the reply says part of it isn't shown (shapeOf).
+  const given = (
+    Array.isArray(props["sources"]) ? props["sources"] : []
+  ).filter(
+    (source: unknown): source is Record<string, unknown> =>
+      typeof source === "object" && source !== null,
+  );
+  const sources: Source[] = given.map((source) => {
     const link = textOf(source["url"]).trim();
     return {
       title: textOf(source["title"]),

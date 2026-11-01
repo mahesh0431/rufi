@@ -17,8 +17,9 @@
 // commentary": only when it completes; "cut commentary": half of it, and
 // the turn never ends), "seeded" gives the first words of the note and the
 // answer as each starts, before their deltas, "crash" ends the fake as the
-// turn starts, and anything else answers "ok:<text>". A scenario's `words`
-// count as part of every message.
+// turn starts, and anything else answers "ok:<text>", or a message in
+// OpenUI Lang ("root = …") as it is, a reply Rufi AI wrote. A scenario's
+// `words` count as part of every message.
 // Like Codex, it calls Rufi's tools on the MCP server a thread was given
 // (its config's mcp_servers.rufi), checking it answers when the thread starts
 // or resumes. Like Codex, a thread keeps the developer instructions it was
@@ -740,7 +741,7 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
     text.includes("trickle") ||
     text.includes("long")
   ) {
-    const reply = scenario.answer ?? `ok:${text}`;
+    const reply = scenario.answer ?? said(text);
     const parts = text.includes("drip")
       ? ["ok:", "d", "r", "i", "p"]
       : text.includes("trickle")
@@ -774,7 +775,7 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
       thread,
       turnId,
       "item-1",
-      scenario.answer ?? `ok:${text}`,
+      scenario.answer ?? said(text),
       text.includes("seeded") ? 3 : 0,
     );
   }
@@ -841,6 +842,10 @@ const usageOf = (totalTokens: number) => ({
   outputTokens: 10,
   reasoningOutputTokens: 0,
 });
+
+/** The answer to a message: "ok:" and it, or OpenUI Lang as it is. */
+const said = (text: string) =>
+  text.startsWith("root = ") ? text : `ok:${text}`;
 
 function answer(
   thread: Thread,

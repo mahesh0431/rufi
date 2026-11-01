@@ -17,7 +17,7 @@ import {
   type ElementNode,
 } from "@openuidev/react-lang";
 import { ChevronRight } from "lucide-react";
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { Options } from "react-markdown";
 import { boxFor } from "../boxes.ts";
 import { fileIn, Picture } from "../files.tsx";
@@ -155,7 +155,10 @@ export function OpenUIReply({
     () => (streaming ? writtenShape(text) : shapeOf(reader, text)),
     [text, streaming],
   );
+  // What OpenUI couldn't draw, once the reply ended: a part that failed.
+  const [failed, setFailed] = useState(false);
   if (shape === "words") return children;
+  const partial = shape === "partial" || (!streaming && failed);
   const onAction = (event: ActionEvent) => {
     if (event.type === BuiltinActionType.ContinueConversation) {
       void boxFor(personId).click(
@@ -192,8 +195,11 @@ export function OpenUIReply({
             isStreaming={streaming}
             onAction={onAction}
             publishObservability={false}
+            onError={(errors) => {
+              setFailed(errors.length > 0);
+            }}
           />
-          {shape === "partial" && (
+          {partial && (
             <details className="group text-muted">
               <summary className="flex w-fit max-w-full cursor-pointer list-none items-center gap-1.5 hover:text-ink [&::-webkit-details-marker]:hidden">
                 Part of this reply couldn't be shown.

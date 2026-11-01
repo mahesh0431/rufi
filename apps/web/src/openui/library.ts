@@ -10,8 +10,9 @@
 //
 // Replies keep their text as the AI wrote it, and props are positional: a
 // part Rufi draws keeps OpenUI's name and props, and an old reply that no
-// longer fits the library shows as its text.
+// longer fits the library draws what works and says part isn't shown.
 import "@rufi/contracts/jitless";
+import { split, tokenize } from "@openuidev/lang-core";
 import {
   createParser,
   type ComponentRenderer,
@@ -126,7 +127,9 @@ const isFree = (schema: Schema) =>
  * that part may go (anywhere in a free place), each part's props by its own
  * schema wherever it sits, plain values by their type, nothing coerced. An
  * expression (a variable, an action) is OpenUI's to read, and null is a prop
- * left out.
+ * left out. A free place draws a value, a part or a list of them: OpenUI
+ * draws nothing for an object there, such as `{value: "18 ng/mL"}` in a
+ * table cell.
  */
 function fits(
   value: unknown,
@@ -156,6 +159,7 @@ function fits(
   if (Array.isArray(value)) {
     return value.every((item) => fits(item, schema.items, defs));
   }
+  if (typeof value === "object" && isFree(schema)) return false;
   if (typeof value === "object") {
     return Object.entries(value).every(([name, item]) =>
       fits(item, schema.properties?.[name], defs),
@@ -173,14 +177,75 @@ export function replyReader(library: ReturnType<typeof replyLibrary>) {
   };
 }
 
+/** OpenUI's token types (lang-core's `T`) that `allRead` counts. */
+const NEWLINE = 0;
+const END = 13;
+const STRING = 14;
+const NUMBER = 15;
+
 /**
- * A finished reply: `drawn` when OpenUI's parse is whole (nothing cut off,
- * every name used is defined and every name defined is used, no errors)
- * and its tree fits the library's schema, from its Card down; `words` when
- * it has no OpenUI at all; otherwise `partial`: OpenUI draws what works and
- * drops the smallest broken piece, so the reply says part of it isn't shown
- * and keeps its whole text a click away. The schema check catches what
- * OpenUI's parser lets through, such as another part where a value goes.
+ * Whether OpenUI's parse took in all of a reply's text: each piece OpenUI's
+ * tokenizer finds is in a statement it reads, no statement's name comes
+ * twice (the last wins), no comment (OpenUI drops `//` and `#` outside a
+ * string), and each string and number in the text is in the tree OpenUI
+ * made. So words OpenUI passes over, outside a statement or after its
+ * expression, count as left out.
+ */
+function allRead(text: string, root: ElementNode): boolean {
+  const tokens = tokenize(text);
+  const statements = split(tokens);
+  const read = statements.reduce(
+    (count, statement) => count + 2 + statement.tokens.length,
+    0,
+  );
+  const found = tokens.filter(
+    (token) => token.t !== NEWLINE && token.t !== END,
+  ).length;
+  if (read !== found) return false;
+  const names = new Set(statements.map((statement) => statement.id));
+  if (names.size !== statements.length || hasComment(text)) return false;
+  const values = new Set<string>();
+  const collect = (value: unknown): void => {
+    if (typeof value === "string" || typeof value === "number") {
+      values.add(String(value));
+    } else if (typeof value === "object" && value !== null) {
+      Object.values(value).forEach(collect);
+    }
+  };
+  collect(root);
+  return tokens.every(
+    (token) =>
+      (token.t !== STRING && token.t !== NUMBER) || values.has(String(token.v)),
+  );
+}
+
+/** Whether the text has a comment OpenUI drops: `//` or `#` outside a string. */
+function hasComment(text: string): boolean {
+  let quote = "";
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quote !== "") {
+      if (c === "\\") i++;
+      else if (c === quote) quote = "";
+    } else if (c === '"' || c === "'") {
+      quote = c;
+    } else if (c === "#" || (c === "/" && text[i + 1] === "/")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * A finished reply: `drawn` when OpenUI took in all of its text (allRead),
+ * its parse is whole (nothing cut off, every name used is defined and every
+ * name defined is used, no errors) and its tree fits the library's schema,
+ * from its Card down; `words` when it has no OpenUI at all; otherwise
+ * `partial`: OpenUI draws what works and leaves out what it can't, so the
+ * reply says part of it isn't shown and keeps its whole text a click away.
+ * Whatever is in doubt is partial: a notice too many is fine, a value left
+ * out without one isn't. The screens also mark it partial when drawing it
+ * fails (reply.tsx).
  */
 export function shapeOf(
   reader: ReturnType<typeof replyReader>,
@@ -192,8 +257,10 @@ export function shapeOf(
     !meta.incomplete &&
     meta.unresolved.length === 0 &&
     meta.orphaned.length === 0 &&
-    meta.errors.every((error) => error.severity === "warning");
-  return whole && fits(root, { $ref: "#/$defs/Card" }, reader.defs)
+    meta.errors.length === 0;
+  return whole &&
+    allRead(text, root) &&
+    fits(root, { $ref: "#/$defs/Card" }, reader.defs)
     ? "drawn"
     : "partial";
 }
