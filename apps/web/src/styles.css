@@ -299,8 +299,7 @@
   .openui-follow-up-block__header {
     display: none;
   }
-  .openui-follow-up-item,
-  .openui-follow-up-item:last-child {
+  .openui-follow-up-item {
     width: auto;
     max-width: 100%;
     justify-content: flex-start;
