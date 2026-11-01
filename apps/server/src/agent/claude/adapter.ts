@@ -251,8 +251,7 @@ const thinkingItem = (message: string, n: number) =>
   `${message}:thinking:${String(n)}`;
 
 /** The item of a message's `n`th text block. */
-const textItem = (message: string, n: number) =>
-  `${message}:text:${String(n)}`;
+const textItem = (message: string, n: number) => `${message}:text:${String(n)}`;
 
 /** What the adapter's conversations share: Claude's latest limits. */
 interface Shared {

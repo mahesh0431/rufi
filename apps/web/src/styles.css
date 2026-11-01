@@ -9,6 +9,108 @@
 /* The dog's motion (src/dog.tsx); it stops under reduced motion. */
 @import "@rufi/brand/mark/motion.css";
 
+/* OpenUI's text in Rufi's: its typography tokens, as OpenUI's theme sets
+   them (its ThemeProvider can't run under the screens' CSP), at the chat's
+   size and in its font, so a reply reads like the messages and Activity
+   around it. One scale for light and dark; headings and bold stay where
+   OpenUI puts them. Unlayered, so it wins over OpenUI's own layer. */
+:root {
+  --openui-font-body: var(--font-ui);
+  --openui-font-heading: var(--font-ui);
+  --openui-font-label: var(--font-ui);
+  --openui-font-numbers: var(--font-ui);
+  --openui-font-code: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --openui-font-size-2xs: 10px;
+  --openui-font-size-xs: 11px;
+  --openui-font-size-sm: 12px;
+  --openui-font-size-md: 13px;
+  --openui-font-size-lg: 14px;
+  --openui-font-size-xl: 16px;
+  --openui-font-size-2xl: 18px;
+  --openui-font-size-3xl: 20px;
+  --openui-font-size-4xl: 24px;
+  --openui-font-size-5xl: 28px;
+  --openui-font-weight-regular: 400;
+  --openui-font-weight-medium: 500;
+  --openui-font-weight-bold: 600;
+  --openui-font-weight-heavy: 700;
+  --openui-font-variation-regular: normal;
+  --openui-font-variation-medium: normal;
+  --openui-letter-spacing-normal: normal;
+  --openui-letter-spacing-tight: normal;
+  --openui-letter-spacing-tighter: normal;
+  --openui-text-body-xs: 400 11px/1.5 var(--openui-font-body);
+  --openui-text-body-xs-letter-spacing: normal;
+  --openui-text-body-xs-heavy: 500 11px/1.5 var(--openui-font-body);
+  --openui-text-body-xs-heavy-letter-spacing: normal;
+  --openui-text-body-sm: 400 12px/1.5 var(--openui-font-body);
+  --openui-text-body-sm-letter-spacing: normal;
+  --openui-text-body-sm-heavy: 500 12px/1.5 var(--openui-font-body);
+  --openui-text-body-sm-heavy-letter-spacing: normal;
+  --openui-text-body-default: 400 13px/1.5 var(--openui-font-body);
+  --openui-text-body-default-letter-spacing: normal;
+  --openui-text-body-default-heavy: 500 13px/1.5 var(--openui-font-body);
+  --openui-text-body-default-heavy-letter-spacing: normal;
+  --openui-text-body-lg: 400 14px/1.5 var(--openui-font-body);
+  --openui-text-body-lg-letter-spacing: normal;
+  --openui-text-body-lg-heavy: 500 14px/1.5 var(--openui-font-body);
+  --openui-text-body-lg-heavy-letter-spacing: normal;
+  --openui-text-label-xs: 400 11px/1.25 var(--openui-font-label);
+  --openui-text-label-xs-letter-spacing: normal;
+  --openui-text-label-xs-heavy: 500 11px/1.25 var(--openui-font-label);
+  --openui-text-label-xs-heavy-letter-spacing: normal;
+  --openui-text-label-sm: 400 12px/1.25 var(--openui-font-label);
+  --openui-text-label-sm-letter-spacing: normal;
+  --openui-text-label-sm-heavy: 500 12px/1.25 var(--openui-font-label);
+  --openui-text-label-sm-heavy-letter-spacing: normal;
+  --openui-text-label-default: 400 13px/1.25 var(--openui-font-label);
+  --openui-text-label-default-letter-spacing: normal;
+  --openui-text-label-default-heavy: 500 13px/1.25 var(--openui-font-label);
+  --openui-text-label-default-heavy-letter-spacing: normal;
+  --openui-text-label-lg: 400 14px/1.25 var(--openui-font-label);
+  --openui-text-label-lg-letter-spacing: normal;
+  --openui-text-label-lg-heavy: 500 14px/1.25 var(--openui-font-label);
+  --openui-text-label-lg-heavy-letter-spacing: normal;
+  --openui-text-numbers-xs: 400 11px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-xs-letter-spacing: normal;
+  --openui-text-numbers-xs-heavy: 500 11px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-xs-heavy-letter-spacing: normal;
+  --openui-text-numbers-sm: 400 12px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-sm-letter-spacing: normal;
+  --openui-text-numbers-sm-heavy: 500 12px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-sm-heavy-letter-spacing: normal;
+  --openui-text-numbers-default: 400 13px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-default-letter-spacing: normal;
+  --openui-text-numbers-default-heavy: 500 13px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-default-heavy-letter-spacing: normal;
+  --openui-text-numbers-lg: 400 14px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-lg-letter-spacing: normal;
+  --openui-text-numbers-lg-heavy: 500 14px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-lg-heavy-letter-spacing: normal;
+  --openui-text-heading-xs: 600 13px/1.25 var(--openui-font-heading);
+  --openui-text-heading-xs-letter-spacing: normal;
+  --openui-text-heading-sm: 600 14px/1.25 var(--openui-font-heading);
+  --openui-text-heading-sm-letter-spacing: normal;
+  --openui-text-heading-md: 600 16px/1.25 var(--openui-font-heading);
+  --openui-text-heading-md-letter-spacing: normal;
+  --openui-text-heading-lg: 600 18px/1.2 var(--openui-font-heading);
+  --openui-text-heading-lg-letter-spacing: normal;
+  --openui-text-heading-xl: 600 20px/1.2 var(--openui-font-heading);
+  --openui-text-heading-xl-letter-spacing: normal;
+  --openui-text-numbers-heading-sm: 600 14px/1.25 var(--openui-font-numbers);
+  --openui-text-numbers-heading-sm-letter-spacing: normal;
+  --openui-text-numbers-heading-md: 600 16px/1.25 var(--openui-font-numbers);
+  --openui-text-numbers-heading-md-letter-spacing: normal;
+  --openui-text-numbers-heading-lg: 600 18px/1.2 var(--openui-font-numbers);
+  --openui-text-numbers-heading-lg-letter-spacing: normal;
+  --openui-text-numbers-heading-xl: 600 20px/1.2 var(--openui-font-numbers);
+  --openui-text-numbers-heading-xl-letter-spacing: normal;
+  --openui-text-code-sm: 400 11px/1.5 var(--openui-font-code);
+  --openui-text-code-sm-heavy: 600 11px/1.5 var(--openui-font-code);
+  --openui-text-code-default: 400 12px/1.5 var(--openui-font-code);
+  --openui-text-code-default-heavy: 600 12px/1.5 var(--openui-font-code);
+}
+
 /* A reply's Card sources open by Rufi's rule (src/openui/parts.tsx), so
    OpenUI doesn't mark them as links itself. */
 @layer components {
