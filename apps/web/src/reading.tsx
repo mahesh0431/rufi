@@ -219,7 +219,7 @@ function Sheet({
     <>
       <div className="flex items-center gap-2.5 border-b border-line px-4 py-2.5">
         <Dialog.Title className="min-w-0 flex-1 truncate">
-          <b className="text-[14px]">
+          <b className="text-[0.875rem]">
             {reading?.name ?? document?.files[0]?.name ?? "Reading"}
           </b>
           {status && <span className="text-muted"> · {status}</span>}
@@ -289,7 +289,7 @@ function Sheet({
                 <h3 className="mb-1 text-xs font-semibold text-muted">
                   AI usage
                 </h3>
-                <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[12.5px]">
+                <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[0.78125rem]">
                   <dt className="text-muted">Model</dt>
                   <dd>
                     {reading.model ?? "—"}
@@ -388,7 +388,7 @@ function PageWork({
       </h4>
       {rows.length > 0 && <ItemTable rows={rows} />}
       {page.copy !== null && (
-        <pre className="border-t border-line px-2.5 py-1.5 font-sans text-[12.5px] wrap-anywhere whitespace-pre-wrap">
+        <pre className="border-t border-line px-2.5 py-1.5 font-sans text-[0.78125rem] wrap-anywhere whitespace-pre-wrap">
           {page.copy}
         </pre>
       )}
@@ -429,7 +429,7 @@ type Row = {
  */
 function ItemTable({ rows }: { rows: readonly Row[] }) {
   return (
-    <table className="w-full border-collapse text-[12.5px]">
+    <table className="w-full border-collapse text-[0.78125rem]">
       <thead>
         <tr className="text-left text-muted">
           <th className="border-t border-line px-2.5 py-1 font-medium">Test</th>
@@ -483,7 +483,7 @@ export function Tag({
 }) {
   return (
     <span
-      className={`ml-1 rounded-full border px-1.5 text-[11px] whitespace-nowrap ${strong ? "border-transparent bg-accent-soft text-accent-ink" : "border-line text-muted"}`}
+      className={`ml-1 rounded-full border px-1.5 text-[0.6875rem] whitespace-nowrap ${strong ? "border-transparent bg-accent-soft text-accent-ink" : "border-line text-muted"}`}
     >
       {children}
     </span>

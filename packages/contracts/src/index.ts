@@ -462,6 +462,13 @@ export const ReplyShape = Schema.Literals(["flat", "panel", "card"]);
 export type ReplyShape = typeof ReplyShape.Type;
 
 /**
+ * The size of all of Rufi's text, replies too: default (13 px), large (about
+ * 15 px) or larger (about 17 px).
+ */
+export const TextSize = Schema.Literals(["default", "large", "larger"]);
+export type TextSize = typeof TextSize.Type;
+
+/**
  * When a reply's Activity is open by itself: while the AI works (working),
  * always (shown), or never (hidden). It folds or opens by hand in each.
  */
@@ -476,6 +483,7 @@ export const Settings = Schema.Struct({
   appearance: Appearance,
   colour: Colour,
   replyShape: ReplyShape,
+  textSize: TextSize,
   activity: ActivityShown,
   /** What Enter does while a reply runs. */
   whileReplying: WhileReplying,
@@ -672,6 +680,7 @@ export const SaveSettings = Schema.Struct({
   appearance: Schema.optionalKey(Appearance),
   colour: Schema.optionalKey(Colour),
   replyShape: Schema.optionalKey(ReplyShape),
+  textSize: Schema.optionalKey(TextSize),
   activity: Schema.optionalKey(ActivityShown),
   whileReplying: Schema.optionalKey(WhileReplying),
   /** A region code Rufi knows, such as "IN"; null clears it. */

@@ -9,6 +9,7 @@ type Chosen =
   | "appearance"
   | "colour"
   | "replyShape"
+  | "textSize"
   | "activity"
   | "whileReplying";
 

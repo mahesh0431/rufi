@@ -95,7 +95,7 @@ export function SettingsDialog() {
               className="flex min-w-0 flex-1"
             >
               <div className="flex w-48 shrink-0 flex-col border-r border-line bg-side p-2.5">
-                <Dialog.Title className="px-2 pt-1 pb-3 text-[15px] font-semibold">
+                <Dialog.Title className="px-2 pt-1 pb-3 text-[0.9375rem] font-semibold">
                   Settings
                 </Dialog.Title>
                 <Tabs.List activateOnFocus className="flex flex-col gap-0.5">
@@ -130,7 +130,7 @@ export function SettingsDialog() {
                     value={id}
                     className="min-h-0 flex-1 overflow-auto px-6 pt-5 pb-8 outline-none"
                   >
-                    <h3 className="mb-4 text-[15px] font-semibold">
+                    <h3 className="mb-4 text-[0.9375rem] font-semibold">
                       {NAMES[id].name}
                     </h3>
                     <div className="flex flex-col gap-6">
@@ -174,6 +174,22 @@ function GroupOptions({ group }: { group: Group }) {
             <p className="text-muted">
               Changes at once when you pick it: the background, and the colour
               of buttons, links, what is selected and your own messages.
+            </p>
+          </Section>
+          <Section title="Text size" id="text-size">
+            <SettingChoice
+              setting="textSize"
+              label="Text size"
+              labelledBy="text-size"
+              choices={[
+                { value: "default", label: "Default" },
+                { value: "large", label: "Large" },
+                { value: "larger", label: "Larger" },
+              ]}
+            />
+            <p className="text-muted">
+              All of Rufi's text, Rufi AI's replies too. In the Rufi app, ⌘+ and
+              ⌘− zoom the whole window, and ⌘0 puts it back.
             </p>
           </Section>
           <Section title="Rufi's replies" id="reply-shape">

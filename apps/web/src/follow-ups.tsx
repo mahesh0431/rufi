@@ -234,7 +234,7 @@ function FollowUpView({
             />
           )}
           {closed && row.outcome !== undefined && (
-            <span className="block text-[12.5px] text-muted">
+            <span className="block text-[0.78125rem] text-muted">
               Outcome: {row.outcome}
             </span>
           )}
@@ -278,7 +278,7 @@ function About({
   const page = row === undefined || "problem" in row ? undefined : pageOf(row);
   if (row === undefined || "problem" in row || page === undefined) {
     return detail.error ? (
-      <span className="block text-[12.5px] text-muted">
+      <span className="block text-[0.78125rem] text-muted">
         About: a record Rufi can't show
       </span>
     ) : null;
@@ -301,7 +301,7 @@ function About({
       ? label
       : `${said} · amended to ${cells.value ?? cells.title}`;
   return (
-    <span className="block text-[12.5px] text-muted">
+    <span className="block text-[0.78125rem] text-muted">
       About:{" "}
       {detail.data?.removed ? (
         `${shown} (removed from your health record)`

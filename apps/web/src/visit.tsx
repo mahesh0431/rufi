@@ -48,7 +48,7 @@ export function VisitPage({
   return (
     <div className="mx-auto max-w-[790px] px-6 py-8">
       <div className="mb-3.5">
-        <h2 className="flex items-start gap-3 text-[22px] font-bold">
+        <h2 className="flex items-start gap-3 text-[1.375rem] font-bold">
           <span className="min-w-0 flex-1">{visitTitle(row)}</span>
           <AskRufi
             onClick={() => {

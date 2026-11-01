@@ -1,5 +1,6 @@
 // How Rufi looks: System (the Mac's light or dark appearance), Light or
-// Dark; its colour theme; and how Rufi AI's reply sits in the chat. The core
+// Dark; its colour theme; the size of its text; and how Rufi AI's reply sits
+// in the chat. The core
 // keeps the choices and serves every page with them, so the page paints in
 // them first time (public/theme.js, packages/brand/tokens.css); here they
 // are chosen, and every open page shows a new choice at once.
@@ -8,18 +9,23 @@ import { useEffect } from "react";
 import { SettingChoice, useChoice } from "./choice.tsx";
 import { useSettings } from "./reads.ts";
 
-/** Shows the chosen appearance, colour and reply shape on this page, as they change. */
+/**
+ * Shows the chosen appearance, colour, reply shape and text size on this
+ * page, as they change.
+ */
 export function useAppearance(): void {
   const settings = useSettings().data;
   const chosen = settings?.appearance;
   const colour = settings?.colour;
   const shape = settings?.replyShape;
+  const size = settings?.textSize;
   useEffect(() => {
     const root = document.documentElement.dataset;
     if (chosen !== undefined) root["appearance"] = chosen;
     if (colour !== undefined) root["colour"] = colour;
     if (shape !== undefined) root["replyShape"] = shape;
-  }, [chosen, colour, shape]);
+    if (size !== undefined) root["textSize"] = size;
+  }, [chosen, colour, shape, size]);
 }
 
 /**

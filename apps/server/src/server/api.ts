@@ -7,6 +7,7 @@ import {
   Appearance,
   Colour,
   ReplyShape,
+  TextSize,
   FinishStep,
   MessageText,
   MAX_MESSAGE_CHARS,
@@ -374,6 +375,11 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     Schema.decodeUnknownOption(ReplyShape)(
       await transcripts.setting("reply_shape"),
     ).pipe(Option.getOrElse(() => "flat" as const));
+  /** The size of Rufi's text; default until another is chosen. */
+  const textSize = async (): Promise<TextSize> =>
+    Schema.decodeUnknownOption(TextSize)(
+      await transcripts.setting("text_size"),
+    ).pipe(Option.getOrElse(() => "default" as const));
   const settings = async (c: Context): Promise<Settings> => {
     const known = emergencyFor(await transcripts.setting("emergency_region"));
     const chosen = await appearance();
@@ -382,6 +388,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       appearance: chosen,
       colour: await colour(),
       replyShape: await replyShape(),
+      textSize: await textSize(),
       // Open while the AI works, until another is chosen.
       activity: Schema.decodeUnknownOption(ActivityShown)(
         await transcripts.setting("activity"),
@@ -466,6 +473,9 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     }
     if (changed.colour !== undefined) {
       await transcripts.saveSetting("colour", changed.colour);
+    }
+    if (changed.textSize !== undefined) {
+      await transcripts.saveSetting("text_size", changed.textSize);
     }
     if (changed.replyShape !== undefined) {
       await transcripts.saveSetting("reply_shape", changed.replyShape);
@@ -1124,7 +1134,8 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       found.immutable ? "public, max-age=31536000, immutable" : "no-cache",
     );
     if (found.type.startsWith("text/html")) {
-      // The page carries the chosen appearance, colour and reply shape, so
+      // The page carries the chosen appearance, colour, text size and reply
+      // shape, so
       // public/theme.js and the tokens paint them first time, and the app's
       // window takes the appearance from the header.
       const chosen = await appearance();
@@ -1134,7 +1145,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
           .toString("utf8")
           .replace(
             "<html",
-            `<html data-appearance="${chosen}" data-colour="${await colour()}" data-reply-shape="${await replyShape()}"`,
+            `<html data-appearance="${chosen}" data-colour="${await colour()}" data-reply-shape="${await replyShape()}" data-text-size="${await textSize()}"`,
           ),
       );
     }

@@ -128,7 +128,7 @@ export function DocumentsPage({ person }: { person: Person }) {
       )}
 
       {dragging && (
-        <div className="pointer-events-none absolute inset-2 flex items-center justify-center rounded-xl border-2 border-dashed border-accent bg-accent-soft/90 text-[15px] font-semibold text-accent-ink">
+        <div className="pointer-events-none absolute inset-2 flex items-center justify-center rounded-xl border-2 border-dashed border-accent bg-accent-soft/90 text-[0.9375rem] font-semibold text-accent-ink">
           Drop to add documents
         </div>
       )}
@@ -388,7 +388,7 @@ export function Viewer({
         >
           <div className="flex items-center gap-2.5 border-b border-line px-3.5 py-2.5">
             <Dialog.Title className="min-w-0 flex-1 truncate">
-              <b className="text-[14px]">{name}</b>{" "}
+              <b className="text-[0.875rem]">{name}</b>{" "}
               <span className="text-muted">
                 · {what} · added {printedDay(document.addedAt)}
               </span>

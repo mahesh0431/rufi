@@ -227,7 +227,7 @@ export function Frame() {
           data-toolbar=""
           className="flex h-[52px] shrink-0 items-center border-b border-line bg-page/80 px-5 backdrop-blur"
         >
-          <h1 className="truncate text-[15px] font-semibold">
+          <h1 className="truncate text-[0.9375rem] font-semibold">
             {onChat
               ? CHAT_TITLE
               : kind !== undefined
@@ -301,7 +301,9 @@ function RecordNav({ person }: { person: Person }) {
   const tiles = useOverview(person.id).data?.tiles;
   return (
     <>
-      <p className="px-2 pt-3 pb-0.5 text-[11px] text-muted">Health record</p>
+      <p className="px-2 pt-3 pb-0.5 text-[0.6875rem] text-muted">
+        Health record
+      </p>
       {(Object.keys(KIND_TITLES) as (keyof typeof KIND_TITLES)[]).map(
         (kind) => {
           const count = tiles?.find((tile) => tile.kind === kind)?.count ?? 0;
