@@ -1447,15 +1447,13 @@ function apart(then: string, now: string): [string, string] {
   return [tail(then), tail(now)];
 }
 
-const plural = (n: number, one: string, many = `${one}s`) =>
-  `${String(n)} ${n === 1 ? one : many}`;
-
 /**
  * The receipt for a save, from the records as written: a "Saved" heading,
  * then one line per change in Markdown, with the record's name in bold and
  * each value in italics. Every value is literal text. A save of draft items
- * starts with a summary ("Saved 42 results from …") and each line says
- * the page it came from; the screens fold a long list under the summary.
+ * says where it came from ("Saved from Sunrise Labs August.pdf"), with no
+ * counts: the AI's reply says what it did. Each line says the page it came
+ * from; the screens fold a long list under the heading.
  */
 function receiptText(written: readonly Written[], links: Links): string {
   const value = (text: string) =>
@@ -1551,24 +1549,10 @@ function receiptText(written: readonly Written[], links: Links): string {
         : "";
     return `- ${verb} ${name}${said}${from(w)}`;
   });
-  const items = written.filter((w) => w.item);
-  if (items.length === 0) return `**Saved**\n\n${lines.join("\n")}`;
-  const count = (as: string) => items.filter((w) => w.item?.as === as).length;
-  const tests = written.filter(
-    (w) => w.kind.name === "test" && w.action === "add",
-  ).length;
-  const others = written.length - items.length - tests;
-  const parts = [
-    count("new") > 0 && `${String(count("new"))} new`,
-    count("another_source") > 0 &&
-      plural(count("another_source"), "more source", "more sources"),
-    count("correction") > 0 && plural(count("correction"), "correction"),
-    tests > 0 && plural(tests, "new test"),
-    others > 0 && plural(others, "other change"),
-  ].filter((part) => part !== false);
+  if (!written.some((w) => w.item)) return `**Saved**\n\n${lines.join("\n")}`;
   const what =
     documents.length === 1
       ? literal(documents[0] ?? "")
       : `${String(documents.length)} documents`;
-  return `**Saved ${plural(items.length, "result")}** from ${what} · ${parts.join(" · ")}\n\n${lines.join("\n")}`;
+  return `**Saved** from ${what}\n\n${lines.join("\n")}`;
 }

@@ -107,7 +107,7 @@ One change to the record that the user agreed to in the chat, or entered themsel
 _Avoid_: change set, batch, transaction, commit
 
 **Receipt**:
-What Rufi adds to the chat for each save: "Saved", then one line for each change, written from what was saved, never from the AI's words. A change the user made in their profile's form has its receipt in Overview's Recent changes, not in the chat. A save of a document's draft items starts with a summary (how many new, more sources and corrections), and its lines say each one's page. A **sub-agent**'s names it by its title after "Saved".
+What Rufi adds to the chat for each save: "Saved", then one line for each change, written from what was saved, never from the AI's words. A change the user made in their profile's form has its receipt in Overview's Recent changes, not in the chat. A save of a document's draft items starts with where it came from ("Saved from Sunrise Labs August.pdf"), with no counts, and its lines say each one's page. A **sub-agent**'s names it by its title after "Saved".
 _Avoid_: toast, success message, confirmation
 
 **Undo**:

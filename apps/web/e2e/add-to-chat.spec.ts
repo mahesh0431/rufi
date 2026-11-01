@@ -336,7 +336,7 @@ test("a save of a document's items shows its summary, with what was saved folded
   await box(chat(page)).press("Enter");
   const receipt = log(chat(page)).locator(".receipt");
   await expect(receipt.locator("p").first()).toHaveText(
-    "Saved 7 results from Sunrise Labs August.pdf · 7 new",
+    "Saved from Sunrise Labs August.pdf",
   );
   const list = receipt.getByRole("listitem");
   await expect(list.first()).toBeHidden();
@@ -346,15 +346,13 @@ test("a save of a document's items shows its summary, with what was saved folded
     'Added result Test 1 1: category lab, measured 12 Aug 2026 ("Collected 12 Aug 2026"), in test Test 1 · page 1',
   );
   await accessible(page);
-  // Overview's Recent changes names it by its summary alone.
+  // Overview's Recent changes names it by its heading alone.
   await expect(
     page
       .getByRole("region", { name: "Recent changes" })
       .locator("summary")
       .first(),
-  ).toHaveText(
-    /^Today \d\d:\d\dSaved 7 results from Sunrise Labs August\.pdf · 7 new$/,
-  );
+  ).toHaveText(/^Today \d\d:\d\dSaved from Sunrise Labs August\.pdf$/);
 });
 
 test("setting a document's items aside shows its receipt, with the items folded", async ({
