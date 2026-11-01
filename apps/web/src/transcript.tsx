@@ -87,7 +87,6 @@ import {
 import { Dog, LiveDog } from "./dog.tsx";
 import { effortName } from "./model-menu.tsx";
 import { Button, buttonLook, ICON, Problem } from "./ui.tsx";
-import { anyWaiting, WaitingView } from "./waiting.tsx";
 
 // The AI's text is shown as Markdown, never as HTML: no raw HTML, no remote
 // images, and links only to http(s) pages, opened outside Rufi with no opener
@@ -280,6 +279,7 @@ export function TranscriptView({
   onOlder,
   className,
   inner,
+  room = 0,
 }: {
   live: StoreApi<Live>;
   /** Whose chat it is, for the links its lines open. */
@@ -289,14 +289,13 @@ export function TranscriptView({
   /** The scrolling area's classes, and those of what it holds. */
   className?: string;
   inner?: string;
+  /** Room under the last message, for what floats over the chat's end. */
+  room?: number;
 }) {
   const shown = useStore(live, useShallow(lines));
   const status = useStore(live, (state) => state.status);
-  // Nothing in the chat yet, and nothing waits.
-  const empty = useStore(
-    live,
-    (state) => state.order.length === 0 && !anyWaiting(state),
-  );
+  // Nothing in the chat yet.
+  const empty = useStore(live, (state) => state.order.length === 0);
   const before = useStore(live, (state) => state.before);
   const older = useStore(live, (state) => state.older);
   const clock = useWorkingClock(live, personId);
@@ -308,6 +307,7 @@ export function TranscriptView({
 
   // Follows the reply as it streams, unless you scrolled up to read.
   const scroller = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
   const log = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   const seen = useRef<View>({ top: 0, height: 0, view: 0 });
@@ -325,7 +325,7 @@ export function TranscriptView({
       seen.current = viewOf(element);
     };
     follow();
-    // New text, and a smaller view (the box grows).
+    // New text, a smaller view (the box grows), and more room at the end.
     const changes = new MutationObserver(follow);
     changes.observe(element, {
       childList: true,
@@ -334,6 +334,7 @@ export function TranscriptView({
     });
     const resizes = new ResizeObserver(follow);
     resizes.observe(element);
+    if (content.current) resizes.observe(content.current);
     return () => {
       changes.disconnect();
       resizes.disconnect();
@@ -414,6 +415,7 @@ export function TranscriptView({
       }}
     >
       <div
+        ref={content}
         className={`${inner ?? ""} ${status === "open" && blank ? "h-full" : ""}`}
       >
         {status === "missing" ? (
@@ -479,8 +481,8 @@ export function TranscriptView({
             )}
           </div>
         )}
-        {status === "open" && !blank && (
-          <WaitingView live={live} personId={personId} />
+        {status === "open" && !blank && room > 0 && (
+          <div aria-hidden style={{ height: room }} />
         )}
       </div>
     </div>
