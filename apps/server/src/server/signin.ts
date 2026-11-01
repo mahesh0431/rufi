@@ -19,8 +19,8 @@ const KEEP_MS = 5 * 60_000;
 
 /** A provider's sign-in: how it stands, and how to start it. */
 export interface ProviderSignIn {
-  /** As the provider reports it. */
-  status: () => Promise<ProviderStatus>;
+  /** As the provider reports it; aborting `signal` ends the asking. */
+  status: (signal: AbortSignal) => Promise<ProviderStatus>;
   /**
    * Runs the provider's own sign-in: shows its link, and resolves once it
    * has finished. Aborting `signal` cancels it.
@@ -43,6 +43,9 @@ export function signInFlow(
     link: null,
     error: null,
   };
+  /** Rufi stops: the sign-in under way ends with it. */
+  const stopping = new AbortController();
+  let running: Promise<void> | undefined;
   return {
     state: (): SignInState => state,
     /** Starts a provider's sign-in, or gives the one already waiting. */
@@ -59,8 +62,11 @@ export function signInFlow(
         return state;
       }
       state = { provider, state: "waiting", link: null, error: null };
-      const signal = AbortSignal.timeout(WAIT_MS);
-      signIn
+      const signal = AbortSignal.any([
+        AbortSignal.timeout(WAIT_MS),
+        stopping.signal,
+      ]);
+      running = signIn
         .start({
           showLink: (link) => {
             state = { provider, state: "waiting", link, error: null };
@@ -88,6 +94,11 @@ export function signInFlow(
         );
       return state;
     },
+    /** Ends the sign-in under way, its provider's process too, and waits for it. */
+    close: async () => {
+      stopping.abort();
+      await running;
+    },
   };
 }
 
@@ -112,9 +123,13 @@ export function keptSignIns(
     asking?: Promise<void>;
   }
   const kept = new Map<Provider, Kept>();
+  /** Rufi stops: the asks under way end, their providers' processes too. */
+  const stopping = new AbortController();
   const ask = (provider: Provider, one: Kept): Promise<void> => {
+    if (stopping.signal.aborted) return Promise.resolve();
     one.asking ??= (
-      providers[provider]?.status() ?? Promise.resolve(SIGNED_OUT)
+      providers[provider]?.status(stopping.signal) ??
+      Promise.resolve(SIGNED_OUT)
     )
       .catch(unavailable)
       .then((status) => {
@@ -150,8 +165,13 @@ export function keptSignIns(
       await one.asking;
       await ask(provider, one);
     },
-    close: () => {
+    /** Ends the asks under way, and waits for them. */
+    close: async () => {
       clearInterval(timer);
+      stopping.abort();
+      await Promise.all(
+        [...kept.values()].map((one) => one.asking ?? Promise.resolve()),
+      );
     },
   };
 }
@@ -200,9 +220,9 @@ export const codexSignIn = (
  * Claude's folder (claudeEnvironment).
  */
 export const claudeSignIn = (env: Record<string, string>): ProviderSignIn => ({
-  status: () =>
+  status: (signal) =>
     findClaude()
-      .then((claude) => claudeSignedIn(claude, env))
+      .then((claude) => claudeSignedIn(claude, env, signal))
       .then(
         (signedIn): ProviderStatus => ({
           state: signedIn ? "signed_in" : "signed_out",
