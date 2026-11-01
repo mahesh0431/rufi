@@ -62,7 +62,7 @@ In a new data folder, Rufi takes you through four short steps:
 1. **Welcome.** Rufi says what goes to the AI: what you ask, the documents you send and the parts of your health record the AI reads go to the AI provider you sign in with. Your health record is kept on your Mac. Tick "I understand Rufi is not a doctor", then click **Continue**. Here you can also choose how Rufi looks: **System**, **Light** or **Dark** (see [How Rufi looks](#how-rufi-looks)).
 2. **About you.** Rufi uses your age and sex to choose the right lab ranges. Give your name, your birth date (the year at least; the day and month if you like) and your sex for lab ranges, Female or Male. Your blood group and height can stay empty. **Continue** works once the name, the year and the sex are filled in, and a height, if you give one, is a number. Rufi adds you, your chat and your profile together, or nothing: if it can't save, your answers stay in the form, with a line on what to do. You can change all of it later in your profile (see [Your profile](record.md#your-profile)).
 3. **Sign in with ChatGPT.** See [Signing in](signing-in.md#sign-in-in-rufi). To do it later, click **Skip for now**: your health record works without the AI.
-4. **Your emergency region,** for the number the AI gives in an emergency. Choose it and click **Save and continue**, or click **Skip for now**. You can change it in Settings.
+4. **Your emergency region,** for the number the AI gives in an emergency. Choose it and click **Save and continue**, or click **Skip for now**. You can change it in [Settings › Profile](rufi:/settings/profile).
 
 The steps fill the window. Each step shows Rufi at the top, and small dots for where you are: a screen reader reads them as "Step 1 of 4" and so on. While your browser has ChatGPT's sign-in open, Rufi thinks. The welcome step also shows what goes where in two boxes: **Your Mac** keeps your health record; **The AI provider** gets what you ask, the documents you send and the parts the AI reads. The sidebar, Help, Settings and your chat show when the first run is done.
 
@@ -70,10 +70,15 @@ Rufi keeps each step you finished. If you reload the page, close it or open Rufi
 
 ## What you see
 
-- **The sidebar:** Rufi and your name (click it to open your profile, see [Your profile](record.md#your-profile)), **Chat with Rufi**, **Overview**, **Health record** with each of its pages and its count (**Lab results**, **Measurements**, **Medicines** and the others), **Documents**, and at the bottom **Help** and **Settings**. When the AI can't be used, a line under them says why.
+- **The sidebar:** Rufi and your name (click it to open your profile in Settings, see [Your profile](record.md#your-profile)), **Chat with Rufi**, **Overview**, **Health record** with each of its pages and its count (**Lab results**, **Measurements**, **Medicines** and the others), **Documents**, and at the bottom **Help** and **Settings**. When the AI can't be used, a line under them says why.
 - **The chat bar:** the box at the bottom right of every page where you read your health (Overview, your health record's pages, Follow-ups and Documents), where you talk to Rufi. **Ask Rufi** on those pages puts things in it, and you stay on the page. It is your one chat with Rufi, the same as Chat with Rufi in the sidebar. See [Talking to Rufi](chat.md).
 - **Overview:** what needs you (documents waiting to be saved or read again), your health record as one tile for each of its pages that has something in it (the empty pages on one **Nothing yet** line), and your recent changes. Each kind of record has its own page, and results have two: Lab results and Measurements. See [Your health record](record.md).
-- **Settings:** how Codex and Claude are signed in (see [Signing in](signing-in.md#your-sign-in-in-settings)), your profile (see [Your profile](record.md#your-profile)), how Rufi looks, how a reply's Activity opens (see [Activity](chat.md#activity)), and your emergency region. When a message may describe an emergency, the AI gives this region's number; with no region, it says to call your local emergency number. See [What Rufi's AI will and won't do](safety.md#in-an-emergency-it-tells-you-to-call-for-help-first). Settings also shows your backups and exports your data (see [Backups and export](backups-and-export.md)), and shows where your data folder is (see [Your data and the AI](your-data-and-the-ai.md#where-your-data-lives)).
+- **Settings:** opens over the page you are on, the page blurred behind it, with its options in groups on the left. Pick a group to see its options; a change takes effect at once, with no Save button. Esc, **Close** (✕) or a click on the page behind closes it, and you are back where you were, with nothing lost: a message you were typing stays, and a reply that is running carries on. What you typed in Settings is saved as it closes, also when you press Esc while still typing; if it can't be saved, Settings stays open at it, with what to do. A link to a group, such as [Settings › Data](rufi:/settings/data) on a help page or in a reply, opens Settings at that group.
+  - **Sign-in:** how Codex and Claude are signed in (see [Signing in](signing-in.md#your-sign-in-in-settings)).
+  - **Profile:** about you (see [Your profile](record.md#your-profile)), your emergency region, and your profile's history. When a message may describe an emergency, the AI gives this region's number; with no region, it says to call your local emergency number. See [What Rufi's AI will and won't do](safety.md#in-an-emergency-it-tells-you-to-call-for-help-first).
+  - **Appearance:** how Rufi looks (see [How Rufi looks](#how-rufi-looks)).
+  - **Chat:** how a reply's Activity opens (see [Activity](chat.md#activity)), what sending does while Rufi replies, and how often Rufi carries on after a restart.
+  - **Data:** device data (see [Device data](device-data.md)), your backups and the export of your data (see [Backups and export](backups-and-export.md)), and where your data folder is (see [Your data and the AI](your-data-and-the-ai.md#where-your-data-lives)).
 - **Help:** these pages.
 
 The other pages come in later steps.
@@ -101,7 +106,7 @@ Rufi's face is about Rufi's own work and your conversation, never about your hea
 
 ## How Rufi looks
 
-Rufi has a light look and a dark look. Choose one in **Settings** › **Appearance**, or on the welcome step:
+Rufi has a light look and a dark look. Choose one in [Settings › Appearance](rufi:/settings/appearance) › **Mode**, or on the welcome step:
 
 - **System** (the start): Rufi follows your Mac's light or dark appearance, also when the Mac changes it.
 - **Light** or **Dark:** Rufi stays so, whatever the Mac uses.
@@ -110,4 +115,4 @@ Your choice shows at once in the Rufi windows or tabs that are open in the same 
 
 ## If you're not signed in
 
-The sidebar says "Not signed in" or "Codex can't start". Overview, your chat, Settings and Help still work; only the AI needs the sign-in to answer. Click that line, or **Sign in** in **Settings** › **Sign-in**, to sign in (see [Signing in](signing-in.md#sign-in-in-rufi)).
+The sidebar says "Not signed in" or "Codex can't start". Overview, your chat, Settings and Help still work; only the AI needs the sign-in to answer. Click that line, or **Sign in** in [Settings › Sign-in](rufi:/settings/sign-in), to sign in (see [Signing in](signing-in.md#sign-in-in-rufi)).

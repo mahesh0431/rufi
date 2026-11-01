@@ -2,7 +2,12 @@
 import { Tooltip } from "@base-ui/react/tooltip";
 import { cva, type VariantProps } from "class-variance-authority";
 import { LoaderCircle, type LucideProps, RotateCw } from "lucide-react";
-import type { ComponentProps, ComponentType, ReactNode } from "react";
+import {
+  type ComponentProps,
+  type ComponentType,
+  type ReactNode,
+  useId,
+} from "react";
 import { twMerge } from "tailwind-merge";
 import { LiveDog } from "./dog.tsx";
 
@@ -121,6 +126,34 @@ export function IconButton({
         </Tooltip.Positioner>
       </Tooltip.Portal>
     </Tooltip.Root>
+  );
+}
+
+/**
+ * One part of Settings, named by its heading: its options. `id` names the
+ * heading, for a choice it labels too.
+ */
+export function Section({
+  title,
+  id,
+  children,
+}: {
+  title: string;
+  id?: string;
+  children: ReactNode;
+}) {
+  const own = useId();
+  const heading = id ?? own;
+  return (
+    <section
+      aria-labelledby={heading}
+      className="flex flex-col gap-2 border-t border-line pt-5 first:border-t-0 first:pt-0"
+    >
+      <h4 id={heading} className="font-semibold">
+        {title}
+      </h4>
+      {children}
+    </section>
   );
 }
 

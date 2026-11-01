@@ -10,7 +10,7 @@ import { Trash2, X } from "lucide-react";
 import { read } from "./api.ts";
 import { printedDay, printedTime } from "./dates.ts";
 import { queries, saveSettings, useDevices, useSettings } from "./reads.ts";
-import { Button } from "./ui.tsx";
+import { Button, Section } from "./ui.tsx";
 
 const SYSTEMS = { apple_health: "Apple Health" } as const;
 
@@ -113,9 +113,8 @@ export function DeviceDataSection() {
     else preview.mutate(keep);
   };
   return (
-    <>
-      <h2 className="mt-8 mb-2 px-0.5 font-semibold">Device data</h2>
-      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4">
+    <Section title="Device data">
+      <div className="flex flex-col gap-3">
         {trouble !== null && (
           <p role="alert" className="text-accent-ink">
             Rufi couldn't save its work on device data
@@ -212,6 +211,6 @@ export function DeviceDataSection() {
           </p>
         )}
       </div>
-    </>
+    </Section>
   );
 }

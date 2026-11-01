@@ -283,4 +283,18 @@ export async function sendFiles(
   await chat.getByRole("button", { name: "Send" }).click();
 }
 
+/**
+ * Settings, opened from the sidebar and then at `group` (Sign-in, Profile,
+ * Appearance, Chat or Data): the pop-up.
+ */
+export async function openSettings(page: Page, group: string) {
+  await page
+    .getByRole("complementary")
+    .getByRole("link", { name: "Settings" })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Settings" });
+  await dialog.getByRole("tab", { name: group }).click();
+  return dialog;
+}
+
 export { expect };

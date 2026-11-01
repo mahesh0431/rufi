@@ -1,6 +1,6 @@
 // Settings → Device data: what Rufi has from each device, and a shorter
 // "Keep values" that deletes only once confirmed, all by keyboard.
-import { expect, test } from "./rufi.ts";
+import { expect, openSettings, test } from "./rufi.ts";
 
 const ago = (days: number) =>
   `strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-${String(days)} days')`;
@@ -20,13 +20,9 @@ test("a shorter keep says what it deletes, and deletes only once confirmed", asy
   `);
   await rufi.start();
   await page.goto(rufi.link());
-  await page
-    .getByRole("complementary")
-    .getByRole("link", { name: "Settings" })
-    .click();
-  const section = page
-    .getByRole("heading", { name: "Device data" })
-    .locator("+ div");
+  const section = (await openSettings(page, "Data")).getByRole("region", {
+    name: "Device data",
+  });
   await expect(section).toContainText(
     "Apple Health on Asha's iPhone · 3 values · last batch",
   );

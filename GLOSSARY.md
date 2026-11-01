@@ -103,7 +103,7 @@ _Avoid_: origin, provenance, attachment
 ## Changes
 
 **Save**:
-One change to the record that the user agreed to in the chat, or entered themselves in their profile (in the welcome, on the profile page or in Settings): the AI's call or the form's sending, then every record it changed, each with its before and after, and its receipt, all together or none. The same call or sending again saves nothing new.
+One change to the record that the user agreed to in the chat, or entered themselves in their profile (in the welcome or in Settings): the AI's call or the form's sending, then every record it changed, each with its before and after, and its receipt, all together or none. The same call or sending again saves nothing new.
 _Avoid_: change set, batch, transaction, commit
 
 **Receipt**:
@@ -208,7 +208,7 @@ A reply that didn't finish because you stopped it or Rufi closed. What it wrote 
 _Avoid_: cancelled, aborted
 
 **Restart**:
-Rufi starting again after it quit or stopped suddenly during the AI's work. The AI and its **sub-agents** that were working carry on by themselves, each in a new turn, before what waits. After too many restarts in a row (**Settings** › **After a restart**, 5 at the start) they stay stopped instead. A restore, or a missing `agents.sqlite`, is not one: agent work is gone, and nothing carries on.
+Rufi starting again after it quit or stopped suddenly during the AI's work. The AI and its **sub-agents** that were working carry on by themselves, each in a new turn, before what waits. After too many restarts in a row (**Settings** › **Chat** › **After a restart**, 5 at the start) they stay stopped instead. A restore, or a missing `agents.sqlite`, is not one: agent work is gone, and nothing carries on.
 _Avoid_: resume, recovery
 
 **Chip**:
@@ -246,7 +246,7 @@ A saved write-up of something the AI looked into for a person, with its sources.
 _Avoid_: note, article
 
 **Emergency region**:
-The region whose emergency number the AI gives when a message may describe an emergency. You choose it in Settings. With none chosen, the AI says to call your local emergency number and that your region isn't set; if it also gives a number, it says where the number comes from.
+The region whose emergency number the AI gives when a message may describe an emergency. You choose it in **Settings** › **Profile**. With none chosen, the AI says to call your local emergency number and that your region isn't set; if it also gives a number, it says where the number comes from.
 _Avoid_: country, locale
 
 **Emergency sheet**:
@@ -290,6 +290,10 @@ _Avoid_: dashboard, summary
 **Help**:
 The pages that say what works in Rufi today and how to use it: in Rufi under Help, and in `docs/help/`.
 _Avoid_: manual, documentation
+
+**Settings**:
+Rufi's choices, in a pop-up over the page you are on, in five groups: Sign-in, Profile, Appearance, Chat and Data. A change takes effect at once. A link to a group (rufi:/settings/<group>, in a help page or a reply) opens it there; closing it leaves the page as it was.
+_Avoid_: preferences, options page
 
 **Sign in with ChatGPT**:
 How you sign Codex in to your ChatGPT account, in your browser, so the AI runs on your ChatGPT plan. Codex keeps and renews its sign-in itself, in the data folder's `codex/`; Claude signs in the same way with your Claude account, in `claude/`. Rufi keeps no sign-in of its own.

@@ -4,11 +4,11 @@ The chat is where you talk with Rufi's AI about your health record. You have one
 
 ## The chat bar
 
-The chat bar is the box at the bottom right of the pages where you read your health: Overview, each page of your health record, Follow-ups, Documents, a document's page and a visit brief. It says "Ask or tell Rufi about" and your name, and shows the model and effort that answer, such as "GPT-6-Astra Medium". It is your chat, the same as the panel and the page, and the same in every browser tab. These pages leave room at their bottom for the bar, so it never covers a row or a button. Help and Settings have no chat bar: to talk to Rufi from there, click **Chat with Rufi** in the sidebar. The chat page has its own box.
+The chat bar is the box at the bottom right of the pages where you read your health: Overview, each page of your health record, Follow-ups, Documents, a document's page and a visit brief. It says "Ask or tell Rufi about" and your name, and shows the model and effort that answer, such as "GPT-6-Astra Medium". It is your chat, the same as the panel and the page, and the same in every browser tab. These pages leave room at their bottom for the bar, so it never covers a row or a button. Help has no chat bar: to talk to Rufi from there, click **Chat with Rufi** in the sidebar. Settings opens over the page you are on, and closing it brings you back to that page, its bar or open panel as you left them. The chat page has its own box.
 
 The bar is always the same size: one line. When you add something to your message with **Ask Rufi** (see [Adding to a message](#adding-to-a-message)), the bar shows the first one's name and how many more, such as "CRP <5 mg/L · 12 Aug 2026 +2", and lights up for a moment. After that, it shows the start of what you typed. When Rufi has something to tell you, such as why it couldn't add something, the bar shows that for the moment, in grey. Click the bar to see it all in the panel, and to write your message.
 
-Under the box, in the panel and on the chat page, "AI can make mistakes. Check important health decisions with your doctor." reminds you to check what the AI says. To see how the AI is signed in, and your ChatGPT plan's usage, open **Settings** › **Sign-in** (see [Signing in](signing-in.md#your-sign-in-in-settings)).
+Under the box, in the panel and on the chat page, "AI can make mistakes. Check important health decisions with your doctor." reminds you to check what the AI says. To see how the AI is signed in, and your ChatGPT plan's usage, open [Settings › Sign-in](rufi:/settings/sign-in) (see [Signing in](signing-in.md#your-sign-in-in-settings)).
 
 ## The chat panel
 
@@ -98,7 +98,7 @@ From the moment you send until the reply ends, one line under your message shows
 
 While the AI works, Activity is open, says "Activity · working", how many steps and the timer, such as "Activity · working · 3 steps · 0:12", and grows as the AI goes. When the answer comes, it folds into one line under the answer: how many steps, how many failed or stopped, and how long the reply took. Click the line to fold or open it at any time, also while the AI works. When you fold it while the AI works, its line says "Working", how many steps, the timer and the newest step.
 
-Choose how Activity opens in **Settings** › **Activity**:
+Choose how Activity opens in [Settings › Chat](rufi:/settings/chat) › **Activity**:
 
 - **Show while working** (the start): open while the AI works, folded when the answer comes.
 - **Always show**: open while the AI works, and still open after the answer.
@@ -191,7 +191,7 @@ To save the results Rufi read from a document, add the document to a message and
 
 ### Undo
 
-Say "undo that". The AI reads the save and your health record as it is now. A change you made to your profile on its page or in Settings is among your saves too: say "undo my last profile change". It tells you what it will change back, and anything that changed after that save, and asks you. Say yes, and the AI saves the reverse, with its own receipt: a removed record is put back ("Put back result …"). The first save stays in the history. When the save added a document page or a visit as one more source of a record, the undo takes only that source off: the record stays. Undoing a visit removes the visit and what was added from it, and sets back a medicine it changed; when a medicine needs both, set back and its source taken off, you see two receipts.
+Say "undo that". The AI reads the save and your health record as it is now. A change you made to your profile in Settings is among your saves too: say "undo my last profile change". It tells you what it will change back, and anything that changed after that save, and asks you. Say yes, and the AI saves the reverse, with its own receipt: a removed record is put back ("Put back result …"). The first save stays in the history. When the save added a document page or a visit as one more source of a record, the undo takes only that source off: the record stays. Undoing a visit removes the visit and what was added from it, and sets back a medicine it changed; when a medicine needs both, set back and its source taken off, you see two receipts.
 
 ### When a save and a stop meet
 
@@ -213,7 +213,7 @@ You can stop a sub-agent in its pop-up, or ask the AI to stop one: just that one
 
 ## While the AI replies
 
-From the moment you send until the reply ends, the round button is **Stop** (the square) while the box is empty, and the send button once you type. Enter, or a click on it, does what **Settings** › **Sending while Rufi replies** says: **Steer** (the start; two arrows that meet) or **Queue** (a list with a plus). ⌘Enter, or ⌘-click, does the other. The button's tooltip says both, such as "Click to steer, ⌘-click or ⌘Enter to queue", and while you hold ⌘ the button shows the other. Nothing appears under the box, so the box stays where it is. The chat bar also shows a turning circle before its text then, because Activity doesn't show there.
+From the moment you send until the reply ends, the round button is **Stop** (the square) while the box is empty, and the send button once you type. Enter, or a click on it, does what [Settings › Chat](rufi:/settings/chat) › **Sending while Rufi replies** says: **Steer** (the start; two arrows that meet) or **Queue** (a list with a plus). ⌘Enter, or ⌘-click, does the other. The button's tooltip says both, such as "Click to steer, ⌘-click or ⌘Enter to queue", and while you hold ⌘ the button shows the other. Nothing appears under the box, so the box stays where it is. The chat bar also shows a turning circle before its text then, because Activity doesn't show there.
 
 **What the AI does.** Activity shows the AI's notes, its thinking and its steps as they happen (see [Activity](#activity)). After a reload, or in another tab, it shows the same.
 
@@ -223,7 +223,7 @@ If you click Stop, what the AI did so far stays in Activity, and the folded line
 
 **When Rufi closes during a reply.** If you quit Rufi, or it stops suddenly, while the AI replies, the reply ends **Rufi closed before the reply finished.** When Rufi starts again, the AI carries on by itself in a new reply, before your waiting messages. Its sub-agents that were working carry on too. Rufi tells the AI and each sub-agent only that it stopped suddenly and that they can carry on. To end a reply for good, click Stop before you quit.
 
-If Rufi closes again and again while they work, they stop carrying on: after 5 restarts in a row, the AI and its sub-agents stay stopped, and your waiting messages show **Not sent · Stopped after 5 restarts in a row.** They go when you click **Send**, or with the next message you send. Choose how many times in **Settings** › **After a restart**. With 0, the AI never carries on by itself: the reply stays stopped, and your waiting messages go as usual. The count starts again when a reply finishes, or when you send a message.
+If Rufi closes again and again while they work, they stop carrying on: after 5 restarts in a row, the AI and its sub-agents stay stopped, and your waiting messages show **Not sent · Stopped after 5 restarts in a row.** They go when you click **Send**, or with the next message you send. Choose how many times in [Settings › Chat](rufi:/settings/chat) › **After a restart**. With 0, the AI never carries on by itself: the reply stays stopped, and your waiting messages go as usual. The count starts again when a reply finishes, or when you send a message.
 
 **Files.** When your message brings files that aren't read yet, Rufi tells the AI which ones. The AI has them read by readers, sub-agents it starts: each reader is a line in the reply's Activity, and a chip above the box while it works. A reader's result shows in the chat under its name, and wakes the AI, which sorts the file and tells you what it found (see [Documents](documents.md#while-a-document-is-read)). Stop ends the reply, not the readers.
 
@@ -232,7 +232,7 @@ If Rufi closes again and again while they work, they stop carrying on: after 5 r
 - **Steer** puts it into the reply. The AI carries on with it in mind: it adds your message to what it is doing, and drops its work only if it has to. The message shows as waiting until the AI takes it, then in the reply. While the reply is still starting, it goes in once the AI runs.
 - **Queue** keeps it until the reply ends. Then it goes in a reply of its own, in order with your other waiting messages.
 
-Enter, or a click on the send button, does what you chose in **Settings** › **Sending while Rufi replies**: **Steer** (the start) or **Queue**. ⌘Enter, or ⌘-click, does the other. A message with files goes the same way.
+Enter, or a click on the send button, does what you chose in [Settings › Chat](rufi:/settings/chat) › **Sending while Rufi replies**: **Steer** (the start) or **Queue**. ⌘Enter, or ⌘-click, does the other. A message with files goes the same way.
 
 If the reply ends before your steer reaches it, your message goes in a following reply.
 
