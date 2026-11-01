@@ -809,6 +809,7 @@ describe("the local API", () => {
       `${asha}/record/no_kind`,
       `${asha}/record/no_kind/res-a1`,
       `${asha}/record/none_known`,
+      `${asha}/tests/tst-ldl`,
       // Results have two pages; the screens open the right one.
       `${asha}/record/result`,
       "/api/people/nobody/record/lab_result",
@@ -820,18 +821,12 @@ describe("the local API", () => {
       (await page.api("GET", `${asha}/record/lab_result?after=nonsense`))
         .status,
     ).toBe(400);
-    expect((await page.api("GET", `${asha}/series`)).status).toBe(400);
     expect(
-      (await page.api("GET", `${asha}/series?test=Weight&unit=kg`)).status,
-    ).toBe(400);
-    expect(
-      (
-        await page.api(
-          "GET",
-          `${asha}/series?test=Weight&unit=kg&category=measurement`,
-        )
-      ).body,
-    ).toMatchObject({ values: [{ id: "res-a11" }, { id: "res-a10" }] });
+      (await page.api("GET", `${asha}/tests/tst-weight`)).body,
+    ).toMatchObject({
+      test: { kind: "test", name: "Weight" },
+      values: [{ row: { id: "res-a10" } }, { row: { id: "res-a11" } }],
+    });
     const ravis = (await page.api("GET", "/api/people/ravi/record/lab_result"))
       .body as {
       groups: { rows: { id: string }[] }[];

@@ -277,43 +277,49 @@ test("Lab results lists each test once, by section, with its latest value as pri
   await accessible(page);
 });
 
-test("a test's page lists every value newest first as printed, with its number in the test's unit where it differs; a value opens to its sources and history", async ({
+test("a test's page draws one line across labs at the numbers in its unit, then lists every value newest first as printed; a value off the line says so, and opens to its sources and history", async ({
   page,
   rufi,
 }) => {
   await rufi.family(
     `INSERT INTO tests (id, person_id, name, section, unit) VALUES ('tst-ferritin', 'asha', 'Ferritin', 'Iron', 'µg/L');
-     INSERT INTO results (id, person_id, category, test_name, value_text, comparator, value_number, unit, reference_range, flag_text, measured_at, entered_at, test_id, test_number) VALUES
-       ('fer-0', 'asha', 'lab', 'Ferritin (CLIA)', '<0.03', '<', 0.03, 'mg/L', NULL, NULL, '2024-05-01', '2026-10-01T10:00:00Z', 'tst-ferritin', 30),
-       ('fer-1', 'asha', 'lab', 'Ferritin', '31', NULL, 31, 'µg/L', '30 - 400', NULL, '2025-10-12', '2026-10-01T10:00:00Z', 'tst-ferritin', 31),
-       ('fer-2', 'asha', 'lab', 'Ferritin', '18', NULL, 18, 'µg/L', '30 - 400', 'Low', '2026-03-04', '2026-10-01T10:00:00Z', 'tst-ferritin', 18),
-       ('fer-3', 'asha', 'lab', 'Ferritin', '26', NULL, 26, 'µg/L', '30 - 400', 'Low', '2026-09-01', '2026-10-01T10:00:00Z', 'tst-ferritin', 26);`,
+     INSERT INTO results (id, person_id, report_id, category, test_name, value_text, comparator, value_number, unit, reference_range, flag_text, measured_at, entered_at, test_id, test_number) VALUES
+       ('fer-0', 'asha', NULL, 'lab', 'Ferritin (CLIA)', '<0.03', '<', 0.03, 'mg/L', NULL, NULL, '2024-05-01', '2026-10-01T10:00:00Z', 'tst-ferritin', 30),
+       ('fer-w', 'asha', NULL, 'lab', 'Ferritin', 'Haemolysed', NULL, NULL, NULL, NULL, NULL, '2025-01-10', '2026-10-01T10:00:00Z', 'tst-ferritin', NULL),
+       ('fer-1', 'asha', NULL, 'lab', 'Ferritin', '31', NULL, 31, 'µg/L', '30 - 400', NULL, '2025-10-12', '2026-10-01T10:00:00Z', 'tst-ferritin', 31),
+       ('fer-2', 'asha', NULL, 'lab', 'Ferritin', '18', NULL, 18, 'µg/L', '30 - 400', 'Low', '2026-03-04', '2026-10-01T10:00:00Z', 'tst-ferritin', 18),
+       ('fer-3', 'asha', 'rep-asha-sep', 'lab', 'Ferritin', '26', NULL, 26, 'µg/L', '30 - 400', 'Low', '2026-09-01', '2026-10-01T10:00:00Z', 'tst-ferritin', 26);`,
   );
   await rufi.start();
   await page.goto(rufi.link());
   await sidebar(page)
     .getByRole("link", { name: /^Lab results/ })
     .click();
-  // Its row's small trend: its latest values as printed.
+  // Its row's small trend: its line's latest values, the converted one too.
+  const said =
+    "Ferritin (µg/L) over time: <30 on 1 May 2024, 31 on 12 Oct 2025, 18 on 4 Mar 2026, 26 on 1 Sep 2026. Lab range 30 - 400 µg/L";
   const ferritin = page
     .getByRole("listitem")
     .filter({ has: page.getByRole("link", { name: "Ferritin" }) });
-  await expect(
-    ferritin.getByRole("img", {
-      name: "Ferritin over time: 31 on 12 Oct 2025, 18 on 4 Mar 2026, 26 on 1 Sep 2026. Lab range 30 - 400",
-    }),
-  ).toBeVisible();
+  await expect(ferritin.getByRole("img", { name: said })).toBeVisible();
 
   await ferritin.getByRole("link", { name: "Ferritin" }).click();
   await expect(page).toHaveURL(/\/people\/asha\/tests\/tst-ferritin$/);
   await expect(page.getByRole("heading", { level: 2 })).toContainText(
     "Ferritin",
   );
-  const values = page.getByRole("region", { name: "4 values" });
+  // One line across both labs, its range with its unit and lab.
+  const line = page.getByRole("img", {
+    name: `${said} · Sunrise Labs`,
+  });
+  await expect(line).toContainText("Lab range 30 - 400 µg/L · Sunrise Labs");
+  await expect(line).toContainText("<30");
+  const values = page.getByRole("region", { name: "5 values" });
   await expect(values.getByRole("button", { name: /\d{4}$/ })).toHaveText([
     "1 Sep 2026",
     "4 Mar 2026",
     "12 Oct 2025",
+    "10 Jan 2025",
     "1 May 2024",
   ]);
   const value = (date: string) =>
@@ -327,6 +333,8 @@ test("a test's page lists every value newest first as printed, with its number i
   await expect(value("1 May 2024")).toContainText(
     "<0.03 mg/L= <30 µg/LFerritin (CLIA)Typed in the chat",
   );
+  await expect(value("10 Jan 2025")).toContainText("HaemolysedNot on the line");
+  await expect(value("1 May 2024")).not.toContainText("Not on the line");
 
   await values.getByRole("button", { name: "4 Mar 2026" }).click();
   await expect(value("4 Mar 2026")).toContainText("Sources");
@@ -389,6 +397,15 @@ test("Measurements shows them by the day taken, at its precision; an older resul
     .getByRole("link", { name: "Weight 61.5 kg · 20 Sep 2026" })
     .click();
   await expect(page).toHaveURL(/\/record\/measurement\?open=res-a10$/);
+  // Open, it shows its test's line; Open goes to the test's page.
+  const over = page.getByRole("heading", { name: /^Weight \(kg\) over time/ });
+  await expect(
+    page.getByRole("img", {
+      name: "Weight (kg) over time: 62 on Aug 2026, 61.5 on 20 Sep 2026",
+    }),
+  ).toBeVisible();
+  await over.getByRole("link", { name: "Open" }).click();
+  await expect(page).toHaveURL(/\/tests\/tst-weight$/);
 });
 
 test("a reading that ends, with nothing saved, shows in Needs you on an open Overview: results to save, or pages that couldn't be read", async ({

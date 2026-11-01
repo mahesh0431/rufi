@@ -1,7 +1,7 @@
 // The record as its screens show it: Overview's tiles and latest saves, a
 // page per kind in groups (a day of measurements, or one row; a result row
-// with its small trend), Lab results by test and a test's page, a row with
-// its sources and history, and a series.
+// with its small trend), Lab results by test and a test's page, and a row
+// with its sources and history.
 // Results have two pages, Lab results and Measurements, by their category
 // (docs/adr/0013); Lab results lists the person's tests (docs/adr/0028).
 // Read only, for one person, each answer from one read transaction so it is
@@ -22,7 +22,6 @@ import type {
   RecordSource,
   ResultCategory,
   ResultRow,
-  Series,
   ShownRow,
   TestPage,
   Tile,
@@ -319,7 +318,6 @@ async function page(
       trends: await trends(
         db,
         personId,
-        category,
         found.flatMap((group) => group.rows),
       ),
     }),
@@ -549,103 +547,63 @@ async function detail(
 }
 
 /**
- * Every current value of one test in one unit and one category: dated
- * oldest first, then undated. A lab test and a measurement of the same
- * name are two series.
+ * Whether a result can be a point on its test's line: a calendar date and
+ * a number in the test's unit.
  */
-async function series(
-  db: Db,
-  personId: string,
-  test: string,
-  unit: string | null,
-  category: ResultCategory,
-): Promise<Series> {
-  const rows = await seriesRows(
-    db,
-    personId,
-    category,
-    sql`r.test_name = ${test} AND ${unit === null ? sql`r.unit IS NULL` : sql`r.unit = ${unit}`}`,
-  );
-  return {
-    test,
-    unit,
-    category,
-    values: rows.map((row) => shown(kindOf("result"), row)),
-  };
-}
-
-/** Current results of one category that match `where`, in a series' order. */
-async function seriesRows(
-  db: Db,
-  personId: string,
-  category: ResultCategory,
-  where: RawBuilder<unknown>,
-) {
-  const { rows } = await sql<Row>`
-    SELECT r.* FROM results r
-    WHERE r.person_id = ${personId} AND ${where}
-      AND r.category = ${category}
-      AND ${isCurrent(kindOf("result"), "r")}
-    ORDER BY ${calendar(sql`r.measured_at`)} DESC, r.measured_at, r.entered_at, r.rowid`.execute(
-    db,
-  );
-  return rows;
-}
-
-/** Whether a result can be a point on a trend: a calendar date and a number. */
 const placed = (row: ShownRow): row is ResultRow =>
   !("problem" in row) &&
   row.kind === "result" &&
-  row.number !== undefined &&
+  row.test_number !== undefined &&
   row.measured !== undefined &&
   /^\d{4}/.test(row.measured.date);
 
 /**
- * Each result row's small trend: the latest values of its series (its test
- * in its unit and category) up to it, a few at most, read for the whole
- * page at once. Only rows with two or more such values have one.
+ * Each result row's small trend: the latest values of its test's line up
+ * to it, a few at most, read for the whole page at once. A test's line has
+ * every current result of the test, whatever its category, at its number
+ * in the test's unit. Only rows with two or more such values have one.
  */
 async function trends(
   db: Db,
   personId: string,
-  category: ResultCategory,
   rows: readonly ShownRow[],
 ): Promise<Record<string, ResultRow[]>> {
   const shownRows = rows.filter(placed);
-  const tests = [...new Set(shownRows.map((row) => row.test))];
+  const tests = [...new Set(shownRows.map((row) => row.in_test))];
   if (tests.length === 0) return {};
-  const key = (row: ResultRow) => JSON.stringify([row.test, row.unit ?? null]);
   const wanted = new Set(shownRows.map((row) => row.id));
   const all = new Map<string, ResultRow[]>();
-  // Where each shown row is in its series, found as the series is built.
+  // Where each shown row is on its line, found as the line is built.
   const at = new Map<string, number>();
-  for (const row of await seriesRows(
+  const { rows: found } = await sql<Row>`
+    SELECT r.* FROM results r
+    WHERE r.person_id = ${personId} AND r.test_id IN (${sql.join(tests)})
+      AND ${isCurrent(kindOf("result"), "r")}
+    ORDER BY ${calendar(sql`r.measured_at`)} DESC, r.measured_at, r.entered_at, r.rowid`.execute(
     db,
-    personId,
-    category,
-    sql`r.test_name IN (${sql.join(tests)})`,
-  )) {
+  );
+  for (const row of found) {
     const value = shown(kindOf("result"), row);
     if (!placed(value)) continue;
-    let values = all.get(key(value));
+    let values = all.get(value.in_test);
     if (values === undefined) {
       values = [];
-      all.set(key(value), values);
+      all.set(value.in_test, values);
     }
     if (wanted.has(value.id)) at.set(value.id, values.length);
     values.push(value);
   }
-  const found: Record<string, ResultRow[]> = {};
+  const trended: Record<string, ResultRow[]> = {};
   for (const row of shownRows) {
     const end = at.get(row.id);
     if (end === undefined) continue;
-    const trend = (all.get(key(row)) ?? []).slice(
+    const trend = (all.get(row.in_test) ?? []).slice(
       Math.max(0, end + 1 - TREND_POINTS),
       end + 1,
     );
-    if (trend.length > 1) found[row.id] = trend;
+    if (trend.length > 1) trended[row.id] = trend;
   }
-  return found;
+  return trended;
 }
 
 /**
@@ -700,7 +658,6 @@ async function labResults(db: Db, personId: string): Promise<LabResults> {
     trends: await trends(
       db,
       personId,
-      "lab",
       sections.flatMap((s) => s.tests.map((t) => t.latest)),
     ),
   };
@@ -1004,12 +961,6 @@ export function recordViews(store: Store, now: () => Date = () => new Date()) {
       read((db) => testPage(db, personId, testId)),
     detail: (personId: string, kind: string, id: string) =>
       read((db) => detail(db, personId, kind, id)),
-    series: (
-      personId: string,
-      test: string,
-      unit: string | null,
-      category: ResultCategory,
-    ) => read((db) => series(db, personId, test, unit, category)),
   };
 }
 

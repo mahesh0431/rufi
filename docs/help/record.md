@@ -40,7 +40,7 @@ Each result is a lab result or a measurement. A **lab result** is a test of a sa
 
 To move a result to the other page, tell the AI, for example "this weight is a measurement". As for every change, it asks first, and the chat shows a receipt. The move is in the result's history, and "undo that" moves it back. A result read from a document can move too: only its page changes, not what the document printed.
 
-A lab test and a measurement of the same name are kept apart: each has its own values over time.
+Each test has one line over time, with its values from every lab, whichever page each is on (see [A test](#a-test)).
 
 Results saved before Rufi had the two pages are on Lab results. Move any measurement among them in the chat.
 
@@ -50,7 +50,7 @@ Each result is in one of your tests, such as Creatinine, Blood count items like 
 
 - **Lab results lists your tests**, each once with its latest value (see [A page](#a-page)), and each test has its own page with every value (see [A test](#a-test)).
 - **The AI chooses the test** when it saves a result, and tells you which test a result joins when the lab named it differently, and which tests are new. It asks when it isn't sure. Each test has a name and a section, such as Kidney, in the AI's words.
-- **Each test has a unit**, such as mg/dL. The AI also saves each result's number in that unit: the printed number when the units mean the same (mg/dl and mg/dL), or converted, for example 97 µmol/L as 1.1 mg/dL. When it can't compare, it saves none. What the lab printed always stays as it came.
+- **Each test has a unit**, such as mg/dL. The AI also saves each result's number in that unit: the printed number when the units mean the same (mg/dl and mg/dL), or converted, for example 97 µmol/L as 1.1 mg/dL. When it can't compare, it saves none. The test's line uses these numbers, so values from different labs and units are on one line. What the lab printed always stays as it came.
 - **To fix a test, tell the AI**, for example "these two are the same test", "the urine one isn't creatinine" or "call it Serum creatinine". As for every change, it asks first, and the chat shows a receipt. "Undo that" puts it back.
 - A test you no longer have results in isn't on Lab results. It stays, and the AI can use it again. Results saved before Rufi had tests are in one test for each name and unit the lab printed: ask the AI to join any that are the same.
 
@@ -86,7 +86,7 @@ Each page shows the records that are current, newest first. As you scroll to the
 
 - **Lab results** lists your tests, each once, under its section, such as Kidney or Thyroid, in the AI's words. Sections are in name order, and tests with no section come last, under **Other tests**. A test's row shows its name, how many values it has, and its latest value as the lab printed it. The latest is the one whose sample was taken last, so a report from an earlier year that you add today doesn't change it; a value with no date counts only when the test has no dated one. Click a test's name to open its page (see [A test](#a-test)). A report itself, whole, is on its document's page (see [Documents](documents.md)).
 - **Measurements** are grouped by the day they were taken, newest first, with how many there are that day, for example "20 Sep 2026 · 2 measurements". A measurement dated only by month or year has its own group ("Aug 2026"). The measurements of a report, such as the blood pressure from a visit, are here too, under the day each was taken, not with the report's lab results. Measurements with no date come last, under **No date**.
-- A result's row shows its value and unit (in one column, so values line up), a small line of its latest values, the lab's range, the lab's note and context, as printed, and its date. The small line shows only when there are two or more values with a date and a number, and it ends at that row's value. A date shows at the precision known, with its time when there is one. "Amended" means that the lab corrected the result.
+- A result's row shows its value and unit (in one column, so values line up), a small line of its test's latest values, the lab's range, the lab's note and context, as printed, and its date. The small line shows only when there are two or more values with a date and a number, and it ends at that row's value. A date shows at the precision known, with its time when there is one. "Amended" means that the lab corrected the result.
 - **Other kinds** show one row for each record, newest first by its date: when a medicine started, when a symptom began. Records with no date come last.
 - **Allergies** also show "No known allergies" when you said so, with the day you said it.
 - **Visits** show each visit to a doctor: its doctor and place, why you went, how many records came from it, the kind of visit in your words (for example, Clinic, Dental or Lab visit) and its date; a hospital stay shows from admission to discharge. Click a visit's name to open its page (see [A visit](#a-visit)).
@@ -113,6 +113,10 @@ A record saved from a visit shows the visit in its sources. One record can come 
 A test's page shows:
 
 - its name, its section and its unit, with **Ask Rufi**;
+- **its line**: each value at its number in the test's unit and at its date, oldest on the left; the newest value is a filled dot, and one value is a single dot. A value from another lab's unit is at the number the AI converted it to, and labelled with it. A blood pressure has two lines: the second number is dashed. The line fits your values, so a wide range doesn't flatten it.
+  - The newest value's range is written at the top right as the lab printed it, with that value's unit and its lab, for example "Lab range 0.5 - 1.0 mg/dl · Lakeview Diagnostics", so it never reads in another unit.
+  - A value the lab flagged, such as "High" or "Low", has a ring around it, on the small line too. Rufi adds no flag of its own and uses no colours for high or low: the lab's flag is in the list, in words.
+  - Values with no date, or with no number in the test's unit (such as "Negative", or one the AI couldn't convert), aren't on the line: in the list, they say **Not on the line**;
 - every current value, newest first by when its sample was taken, then those with no date: the date, the value and unit as the lab printed them, its name as the lab printed it, the lab (or **Typed in the chat**), the lab's range, and the lab's note and context. When the AI saved the value's number in the test's unit as another number, it shows under the value, for example "97 µmol/L" and "= 1.1 mg/dL";
 - **This test**: its own **Sources** and **History**, when it was added, and each time it was renamed or given another section or unit.
 
@@ -126,11 +130,7 @@ Click a record's name to open it in place. Click again to close it.
 - **History:** each save that changed it, oldest first, with its date and time. A change shows what changed, before and after, such as "value 22 → 24". A removal has its own line, and so has **Put back**, when a removed record came back. A record saved before Rufi kept its history has none.
 - **Replaces** or **Replaced by:** for an amended result, the earlier version it replaces, which is kept. For a replaced result, the result that replaced it.
 - For a result, when it was measured and when it entered Rufi. These are two different dates.
-- For a measurement, **over time:** every current value of that test in that unit on Measurements, as a line and as a table. A corrected or removed value isn't a second value here: it is in that row's history. A value in another unit has its own line and table.
-  - The line puts each value at its date, oldest on the left; the newest value is a filled dot. One value is a single dot. A blood pressure has two lines: the second number is dashed.
-  - The newest value's range is written at the top right as the lab printed it, for example "Lab range 30 - 400". The line fits your values, so a wide range doesn't flatten it.
-  - A value the lab flagged, such as "High" or "Low", has a ring around it, on the small line too. Rufi adds no flag of its own and uses no colours for high or low: the lab's flag is in the table, in words.
-  - Values with no date, or with no number (such as "Negative"), aren't on the line. The table shows every value: oldest first, then those with no date. The lab's range and note columns show only when a value has them.
+- For a measurement, **over time:** its test's line, as on the test's page (see [A test](#a-test)). Click **Open** to go to the test's page, with every value. A corrected or removed value isn't a second value on the line: it is in that row's history.
 
 ## Ask Rufi about a row
 

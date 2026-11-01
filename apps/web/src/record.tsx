@@ -2,14 +2,13 @@
 // Measurements, the day they were taken; one row each for the other
 // kinds), more as the person scrolls. Lab results lists tests instead
 // (./tests.tsx). A row opens in place to its sources, its history and, for
-// a measurement, its values over time, drawn and as a table; a result row
-// has a small trend after its value. The page only shows: changes start in
+// a measurement, its test's line; a result row has a small trend of its
+// test's line after its value. The page only shows: changes start in
 // the chat, with Ask Rufi on a row: its chip goes in the chat box, and the
 // page stays.
 import type { Person } from "@rufi/contracts";
 import type {
   PageKind,
-  ResultCategory,
   RecordChange,
   RecordGroup,
   RecordRow,
@@ -24,8 +23,9 @@ import { AskRufi, AskRufiEmpty } from "./ask.tsx";
 import { printedDate, printedTime } from "./dates.ts";
 import type { BoxChip } from "./draft.ts";
 import { askRufi } from "./panel.ts";
-import { useRecordDetail, useRecordPages, useSeries } from "./reads.ts";
+import { useRecordDetail, useRecordPages, useTestPage } from "./reads.ts";
 import { Trend } from "./trend.tsx";
+import { lineOf, lineOfPage, lineTitle } from "./trend-drawing.ts";
 import { Button, buttonLook, EmptyState, ICON, Problem } from "./ui.tsx";
 
 /** The pages, in the sidebar's order, by their title: results have two. */
@@ -474,7 +474,7 @@ function RowView({
         {result && (
           <span>
             {trend && row.kind === "result" && (
-              <Trend mini title={row.test} values={trend} />
+              <Trend mini title={row.test} values={lineOf(trend)} />
             )}
           </span>
         )}
@@ -526,7 +526,7 @@ export function RowDetail({
 }: {
   personId: string;
   row: RecordRow;
-  /** For a result: its values over time too (not on its test's page). */
+  /** For a result: its test's line too (not on its test's page). */
   overTime?: boolean;
 }) {
   const detail = useRecordDetail(personId, row.kind, row.id);
@@ -662,82 +662,40 @@ export function RowDetail({
         </>
       )}
       {row.kind === "result" && overTime && (
-        <SeriesTable
-          personId={personId}
-          test={row.test}
-          unit={row.unit}
-          category={row.category}
-        />
+        <OverTime personId={personId} testId={row.in_test} />
       )}
     </div>
   );
 }
 
-/** A test's current values in one unit over time, drawn and as a table. */
-function SeriesTable({
-  personId,
-  test,
-  unit,
-  category,
-}: {
-  personId: string;
-  test: string;
-  unit: string | undefined;
-  category: ResultCategory;
-}) {
-  const series = useSeries(personId, test, unit, category);
-  if (series.data === undefined) {
-    return series.error ? (
-      <Problem error={series.error} retry={() => void series.refetch()} />
+/**
+ * A measurement's test's line, at the numbers in the test's unit, with
+ * Open to the test's page and every value.
+ */
+function OverTime({ personId, testId }: { personId: string; testId: string }) {
+  const page = useTestPage(personId, testId);
+  if (page.data === undefined) {
+    return page.error ? (
+      <Problem error={page.error} retry={() => void page.refetch()} />
     ) : null;
   }
-  const title = unit === undefined ? test : `${test} (${unit})`;
-  // A lab's columns, unless no value has a range or a note (most
-  // measurements).
-  const lab = series.data.values.some(
-    (value) =>
-      !isBad(value) &&
-      value.kind === "result" &&
-      (value.range ?? value.flag ?? value.context) !== undefined,
-  );
+  const { test, values } = page.data;
+  if ("problem" in test || test.kind !== "test") return null;
+  const title = lineTitle(test);
   return (
     <>
-      <h3 className="mt-3 mb-1 text-xs font-semibold text-muted">
+      <h3 className="mt-3 mb-1 flex items-center gap-2 text-xs font-semibold text-muted">
         {title} over time
+        <Link
+          to="/people/$personId/tests/$testId"
+          params={{ personId, testId }}
+          className={buttonLook({ look: "quiet" })}
+        >
+          <ArrowUpRight size={ICON} aria-hidden />
+          Open
+        </Link>
       </h3>
-      <Trend title={title} values={series.data.values} />
-      <table className="w-full border-collapse">
-        <thead>
-          <tr className="text-left text-xs text-muted">
-            <th className="py-1 font-normal">Measured</th>
-            <th className="py-1 font-normal">Value</th>
-            {lab && <th className="py-1 font-normal">Lab range</th>}
-            {lab && <th className="py-1 font-normal">Lab note</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {series.data.values.map((value) =>
-            isBad(value) || value.kind !== "result" ? (
-              <tr key={value.id} className="border-t border-line">
-                <td colSpan={lab ? 4 : 2} className="py-1 text-muted italic">
-                  Can't show this row.
-                </td>
-              </tr>
-            ) : (
-              <tr key={value.id} className="border-t border-line">
-                <td className="py-1">{dated(value.measured) ?? "No date"}</td>
-                <td className="py-1">{join(value.value, value.unit)}</td>
-                {lab && <td className="py-1">{value.range}</td>}
-                {lab && (
-                  <td className="py-1">
-                    {[value.flag, value.context].filter(Boolean).join(" · ")}
-                  </td>
-                )}
-              </tr>
-            ),
-          )}
-        </tbody>
-      </table>
+      <Trend title={title} values={lineOfPage(values)} />
     </>
   );
 }
