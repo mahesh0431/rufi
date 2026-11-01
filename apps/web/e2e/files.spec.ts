@@ -275,7 +275,7 @@ test("a reply the AI wrote in OpenUI draws in the chat under Rufi's strict CSP: 
   expect(page.context().pages()).toHaveLength(1);
 });
 
-test("a finished reply that names a value it never gives, or puts another part where a value goes, shows as its text, never in part", async ({
+test("a finished reply with a broken piece draws the rest, says part isn't shown, and shows its whole text on a click", async ({
   page,
   rufi,
 }) => {
@@ -284,32 +284,37 @@ test("a finished reply that names a value it never gives, or puts another part w
     page,
     [
       "Not whole:",
-      "root = Card([t])",
+      "root = Card([intro, t])",
+      'intro = TextContent("Your iron results")',
       't = Table([Col("Test", ["Haemoglobin", "Ferritin"]), Col("Value", [v1, v2])])',
       'v1 = "11.6 g/dL"',
     ].join("\n"),
   );
   const first = log(page).locator(".reply").last();
-  await expect(first.locator("pre")).toContainText('v1 = "11.6 g/dL"');
   await expect(
-    first.getByText(
-      "This reply couldn't be drawn. Ask again to have it drawn.",
-    ),
+    first.getByText("Your iron results", { exact: true }),
   ).toBeVisible();
+  const toggle = first.getByText("Part of this reply couldn't be shown.");
+  await expect(toggle).toBeVisible();
+  await expect(first.locator("pre")).toBeHidden();
+  await toggle.click();
+  await expect(first.locator("pre")).toContainText('v1 = "11.6 g/dL"');
+  await accessible(page);
+  // Another part where a step goes: OpenUI's parser lets it through.
   await send(
     page,
     [
-      "Text where a table column goes, in a table cell:",
-      'root = Card([Table([Col("Result", [Table([TextContent("Haemoglobin: 11.2 g/dL")])])])])',
+      "Text where a step goes:",
+      'root = Card([Steps([StepsItem("Fast for 8 hours", "Water is fine."), TextContent("Ferritin: 18 ng/mL")])])',
     ].join("\n"),
   );
   const second = log(page).locator(".reply").last();
-  await expect(second.locator("pre")).toContainText("Haemoglobin: 11.2 g/dL");
   await expect(
-    second.getByText(
-      "This reply couldn't be drawn. Ask again to have it drawn.",
-    ),
+    second.getByText("Fast for 8 hours", { exact: true }),
   ).toBeVisible();
-  await expect(log(page).getByRole("img")).toHaveCount(0);
-  await expect(log(page).getByRole("table")).toHaveCount(0);
+  await expect(
+    second.getByText("Part of this reply couldn't be shown."),
+  ).toBeVisible();
+  await second.getByText("Part of this reply couldn't be shown.").click();
+  await expect(second.locator("pre")).toContainText("Ferritin: 18 ng/mL");
 });

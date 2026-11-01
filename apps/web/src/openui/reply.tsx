@@ -1,8 +1,8 @@
 // A reply of Rufi AI: OpenUI Lang, drawn as it is written by OpenUI's
 // renderer with Rufi's reply library (library.ts), in place of a Markdown
 // renderer, as OpenUI's guide for a chat of one's own says. Once the reply
-// ended it is drawn only when it is whole (shapeOf); otherwise its text shows
-// with a line, never a part of it. A reply with no OpenUI in it shows as
+// ended, a piece of it that's broken (shapeOf) is left out as OpenUI leaves
+// it out, with a line that says so and the whole text a click away. A reply with no OpenUI in it shows as
 // Markdown, while it is written too, so a reply is never blank. A follow-up
 // or a button sends its words, a form's values and the action's context as
 // the person's message; every link opens by the reply's rule (parts.tsx).
@@ -14,6 +14,7 @@ import {
   type ComponentRenderProps,
   type ElementNode,
 } from "@openuidev/react-lang";
+import { ChevronRight } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
 import type { Options } from "react-markdown";
 import { boxFor } from "../boxes.ts";
@@ -114,7 +115,8 @@ export function picturesShownBy(
 ): string[] {
   const shape = streaming ? writtenShape(text) : shapeOf(reader, text);
   if (shape === "words") return inMarkdown(text);
-  if (shape === "broken") return [];
+  // A piece left out may be a picture: the AI's own shows anyway.
+  if (shape === "partial") return [];
   const shown: string[] = [];
   const visit = (value: unknown): void => {
     if (Array.isArray(value)) {
@@ -164,16 +166,6 @@ export function OpenUIReply({
     [text, streaming],
   );
   if (shape === "words") return children;
-  if (shape === "broken") {
-    return (
-      <>
-        <pre>{text}</pre>
-        <p className="text-muted">
-          This reply couldn't be drawn. Ask again to have it drawn.
-        </p>
-      </>
-    );
-  }
   const onAction = (event: ActionEvent) => {
     if (event.type === BuiltinActionType.ContinueConversation) {
       send(personId, messageOf(event));
@@ -208,6 +200,20 @@ export function OpenUIReply({
             onAction={onAction}
             publishObservability={false}
           />
+          {shape === "partial" && (
+            <details className="group text-muted">
+              <summary className="flex w-fit max-w-full cursor-pointer list-none items-center gap-1.5 hover:text-ink [&::-webkit-details-marker]:hidden">
+                Part of this reply couldn't be shown.
+                <span className="text-ink">Show text</span>
+                <ChevronRight
+                  size={13}
+                  className="shrink-0 transition-transform group-open:rotate-90"
+                  aria-hidden
+                />
+              </summary>
+              <pre className="whitespace-pre-wrap break-words">{text}</pre>
+            </details>
+          )}
         </div>
       </LinkOpener>
     </TextParts>

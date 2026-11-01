@@ -177,13 +177,15 @@ export function replyReader(library: ReturnType<typeof replyLibrary>) {
  * A finished reply: `drawn` when OpenUI's parse is whole (nothing cut off,
  * every name used is defined and every name defined is used, no errors)
  * and its tree fits the library's schema, from its Card down; `words` when
- * it has no OpenUI at all; otherwise `broken`, never drawn in part (a value
- * could go missing: OpenUI doesn't check which part sits in a part's place).
+ * it has no OpenUI at all; otherwise `partial`: OpenUI draws what works and
+ * drops the smallest broken piece, so the reply says part of it isn't shown
+ * and keeps its whole text a click away. The schema check catches what
+ * OpenUI's parser lets through, such as another part where a value goes.
  */
 export function shapeOf(
   reader: ReturnType<typeof replyReader>,
   text: string,
-): "drawn" | "words" | "broken" {
+): "drawn" | "words" | "partial" {
   const { root, meta } = reader.parser.parse(text);
   if (root === null) return "words";
   const whole =
@@ -193,7 +195,7 @@ export function shapeOf(
     meta.errors.every((error) => error.severity === "warning");
   return whole && fits(root, { $ref: "#/$defs/Card" }, reader.defs)
     ? "drawn"
-    : "broken";
+    : "partial";
 }
 
 /** OpenUI's chat rule Rufi leaves out: Rufi never makes up health data. */

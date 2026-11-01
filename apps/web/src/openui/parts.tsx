@@ -9,6 +9,7 @@
 import {
   useStateField,
   type ComponentRenderProps,
+  type ElementNode,
 } from "@openuidev/react-lang";
 import {
   Callout as OpenUICallout,
@@ -276,10 +277,15 @@ export function CalloutView({ props }: ComponentRenderProps) {
 
 /** OpenUI's Steps; a step's details are a reply's Markdown text. */
 export function StepsView({ props, renderNode }: ComponentRenderProps) {
-  const items = Array.isArray(props["items"]) ? props["items"] : [];
+  // Only its steps: another part in their place is left out, as OpenUI
+  // leaves out a broken piece.
+  const items = (Array.isArray(props["items"]) ? props["items"] : []).filter(
+    (item: unknown): item is { props: Record<string, unknown> } =>
+      (item as Partial<ElementNode> | null)?.typeName === "StepsItem",
+  );
   return (
     <OpenUISteps>
-      {items.map((item: { props: Record<string, unknown> }, index: number) => {
+      {items.map((item, index) => {
         const details = item.props["details"];
         return (
           <OpenUIStepsItem
