@@ -207,6 +207,10 @@
   .openui-markdown-renderer-link {
     color: var(--accent-ink);
   }
+  /* Inline code keeps the code font: OpenUI sets it in the body font. */
+  .openui-markdown-renderer-code {
+    font-family: var(--openui-font-code);
+  }
 
   /* A table's header row on a soft fill, as a header. */
   .openui-table-head {
