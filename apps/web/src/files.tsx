@@ -347,15 +347,18 @@ export function Page({ path, title }: { path: string; title: string }) {
   if (src === undefined) return <Loading />;
   return (
     <span className="my-1 block">
-      {/* Locked twice: this frame's sandbox and the page's own policy. */}
-      <iframe
-        ref={inReplyRef}
-        src={inAppearance(src, lookedIn)}
-        title={name}
-        sandbox="allow-scripts"
-        style={height === undefined ? undefined : { height }}
-        className="block h-100 w-full rounded-[10px] border border-line bg-paper"
-      />
+      {/* Locked twice: this frame's sandbox and the page's own policy. Its
+          border is around it, so the frame is the page's height exactly. */}
+      <span className="block overflow-hidden rounded-[10px] border border-line bg-paper">
+        <iframe
+          ref={inReplyRef}
+          src={inAppearance(src, lookedIn)}
+          title={name}
+          sandbox="allow-scripts"
+          style={height === undefined ? undefined : { height }}
+          className="block h-100 w-full"
+        />
+      </span>
       <span className="mt-1 flex items-center gap-1.5 text-xs text-muted">
         <FileCode size={12} className="shrink-0" aria-hidden />
         <span className="min-w-0 flex-1 break-words">

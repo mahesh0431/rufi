@@ -1,9 +1,9 @@
 // What a reply shows besides its text, on the real core with its real
 // headers: a picture the AI made, one it generated (once, also when the reply
-// links it, also after a reload), a page it made (drawn in the reply in a
-// locked frame, and opened large), a Mermaid diagram (drawn styled, in its own frame), a
-// trend from the AI's openui-lang block (drawn by Rufi, with its values), and a
-// file that is gone. A page's script runs, but can't read Rufi's page or an
+// links it, also after a reload), a page it made (drawn whole in the reply
+// in a locked frame, and opened large), a Mermaid diagram (drawn styled, in
+// its own frame), a reply in OpenUI Lang (drawn by OpenUI with Rufi's trend,
+// or shown as its text when it isn't whole), and a file that is gone. A page's script runs, but can't read Rufi's page or an
 // API answer or the network. Standalone requests receive an inert page.
 // The screens' strict CSP refuses nothing.
 import { AxeBuilder } from "@axe-core/playwright";
@@ -246,7 +246,7 @@ async function relayReady(page: Page) {
     .toBe(true);
 }
 
-test("a page draws in the reply at a fixed height and opens large over the chat: its script runs, but it can't reach Rufi, its API or anything remote, and a standalone request is inert", async ({
+test("a page draws whole in the reply, at its own height with nothing scrolling inside, and opens large over the chat: its script runs, but it can't reach Rufi, its API or anything remote, and a standalone request is inert", async ({
   page,
   rufi,
 }) => {
@@ -289,12 +289,11 @@ test("a page draws in the reply at a fixed height and opens large over the chat:
   const message = chat(page).getByRole("textbox", { name: "Message to Rufi" });
   await message.fill("Next draft");
   const reply = log(page).locator(".reply");
-  // It draws in the reply without a click: the reply's width, a fixed height.
+  // It draws in the reply without a click, at the reply's width.
   const inline = reply.locator('iframe[title="Your 2026 results"]');
   await expect(inline).toBeVisible();
-  const box = await inline.boundingBox();
+  const box = await inline.locator("..").boundingBox();
   const width = await reply.evaluate((element) => element.clientWidth);
-  expect(box?.height).toBe(400);
   expect(box?.width).toBe(width);
   loading.resolve(undefined);
   const inlineFrame = await (await inline.elementHandle()).contentFrame();
@@ -302,6 +301,19 @@ test("a page draws in the reply at a fixed height and opens large over the chat:
   const out = inlineFrame.locator("#out");
   // Its script ran first, so what it couldn't do proves the locks.
   await expect(out).toContainText("script ran");
+  await expect(out).toContainText("remote script: blocked");
+  // Whole: the frame takes the page's height, so nothing scrolls inside it.
+  await expect
+    .poll(() =>
+      inlineFrame.evaluate(() => {
+        const root = document.documentElement;
+        return (
+          root.scrollHeight <= innerHeight &&
+          Math.ceil(root.getBoundingClientRect().height) === innerHeight
+        );
+      }),
+    )
+    .toBe(true);
   await expect(message).toBeFocused();
   await page.keyboard.type(" stays here");
   await expect(message).toHaveValue("Next draft stays here");
@@ -657,47 +669,62 @@ test("a Mermaid diagram draws in place of its code block, with its labelled edge
 });
 
 /**
- * A stored v1 trend block (@rufi/contracts/visuals): keep it as written when
- * the components or OpenUI change, so an old reply still draws. Its points
- * are out of order; one has no date; "<5" is kept with its number.
+ * A stored reply in OpenUI Lang (openui/library.ts): keep it as written when
+ * Rufi's parts or OpenUI change, so an old reply still draws. A header, text
+ * with a web link, Rufi's trend (its points out of order, one with no date,
+ * "<5" kept with its number), OpenUI's table and follow-ups.
  */
-const STORED_TREND = [
-  "```openui-lang",
-  'root = Trend("CRP", [c3, c1, c2, c0], "mg/L")',
-  'c1 = Point("2025-12-01", "<5", 5, null, "<5")',
-  'c2 = Point("2026-03-04", "8.2", 8.2, "H", "<5")',
-  'c3 = Point("2026-08-12", "6.0", 6.0, "H", "<5")',
-  'c0 = Point("", "<5")',
-  "```",
+const STORED_REPLY = [
+  "root = Card([header, intro, trend, table, followUps])",
+  'header = CardHeader("CRP", "Your last four results")',
+  'intro = TextContent("Your CRP was **high** in March and August. [What CRP measures](https://example.com/crp)")',
+  'trend = Trend("CRP", [c3, c1, c2, c0], "mg/L")',
+  'c1 = TrendPoint("2025-12-01", "<5", 5, null, "<5")',
+  'c2 = TrendPoint("2026-03-04", "8.2", 8.2, "H", "<5")',
+  'c3 = TrendPoint("2026-08-12", "6.0", 6.0, "H", "<5")',
+  'c0 = TrendPoint("", "<5")',
+  'table = Table([Col("Lab", ["Sunrise Labs", "Northgate"]), Col("Results", [3, 1])])',
+  'followUps = FollowUpBlock([FollowUpItem("Show my ferritin too")])',
 ].join("\n");
 
-test("a trend the AI wrote draws in the reply, oldest first, with every value in a table, under Rufi's strict CSP", async ({
+test("a reply the AI wrote in OpenUI draws in the chat under Rufi's strict CSP: its trend oldest first with every value in a table, and a follow-up sends its words", async ({
   page,
   rufi,
 }) => {
   await opened(page, rufi);
-  await send(page, `Your CRP:\n\n${STORED_TREND}`);
+  // The fake answers "ok:" and the message; OpenUI passes over that first line.
+  await send(page, `A stored reply:\n${STORED_REPLY}`);
   const reply = log(page).locator(".reply").last();
+  await expect(reply.getByText("Your last four results")).toBeVisible();
+  await expect(
+    reply.getByRole("link", { name: "What CRP measures" }),
+  ).toHaveAttribute("href", "https://example.com/crp");
   await expect(
     reply.getByRole("heading", { name: "CRP (mg/L) over time" }),
   ).toBeVisible();
-  await expect(reply.getByRole("img")).toHaveAccessibleName(
+  await expect(
+    reply.getByRole("img", { name: /^CRP \(mg\/L\) over time/ }),
+  ).toHaveAccessibleName(
     "CRP (mg/L) over time: <5 on 1 Dec 2025, 8.2 on 4 Mar 2026, 6.0 on 12 Aug 2026. Lab range <5",
   );
-  const rows = reply.locator("tbody tr");
-  await expect(rows).toHaveText([
+  await expect(reply.locator("figure tbody tr")).toHaveText([
     /1 Dec 2025\s*<5 mg\/L\s*<5/,
     /4 Mar 2026\s*8\.2 mg\/L\s*<5\s*H/,
     /12 Aug 2026\s*6\.0 mg\/L\s*<5\s*H/,
     /No date\s*<5 mg\/L · Not drawn/,
   ]);
-  // Not the code block: the trend replaced it.
+  await expect(reply.getByText("Northgate")).toBeVisible();
+  // Drawn, not shown as its text.
   await expect(reply.locator("pre")).toHaveCount(0);
   await accessible(page);
   expect(await refusedIn(page)).toEqual([]);
+  await reply.getByText("Show my ferritin too").click();
+  await expect(log(page).locator(".reply").last()).toContainText(
+    "ok:Show my ferritin too",
+  );
 });
 
-test("a finished trend block that names a value it never gives, or puts another part where a value goes, shows as its text, never as a partial trend", async ({
+test("a finished reply that names a value it never gives, or puts another part where a value goes, shows as its text, never in part", async ({
   page,
   rufi,
 }) => {
@@ -706,26 +733,38 @@ test("a finished trend block that names a value it never gives, or puts another 
     page,
     [
       "Not whole:",
-      "",
-      "```openui-lang",
-      'root = Trend("Haemoglobin", [p1, p2], "g/dL")',
-      'p1 = Point("2026-02-10", "11.6", 11.6)',
-      "```",
-      "",
-      "Not a Trend of Points:",
-      "",
-      "```openui-lang",
-      'root = Trend("Haemoglobin", [p1, more], "g/dL")',
-      'p1 = Point("2026-02-10", "11.2", 11.2)',
-      'more = Trend("Haemoglobin", [Point("2026-05-20", "11.9", 11.9)], "g/dL")',
-      "```",
+      "root = Card([t])",
+      't = Trend("Haemoglobin", [p1, p2], "g/dL")',
+      'p1 = TrendPoint("2026-02-10", "11.6", 11.6)',
     ].join("\n"),
   );
-  const reply = log(page).locator(".reply").last();
-  await expect(reply.locator("pre")).toHaveText([
-    /p1 = Point\("2026-02-10", "11\.6"/,
-    /Point\("2026-05-20", "11\.9", 11\.9\)/,
-  ]);
-  await expect(reply.getByText("This trend couldn't be drawn.")).toHaveCount(2);
-  await expect(reply.getByRole("img")).toHaveCount(0);
+  const first = log(page).locator(".reply").last();
+  await expect(first.locator("pre")).toContainText(
+    'p1 = TrendPoint("2026-02-10"',
+  );
+  await expect(
+    first.getByText(
+      "This reply couldn't be drawn. Ask again to have it drawn.",
+    ),
+  ).toBeVisible();
+  await send(
+    page,
+    [
+      "Not a Trend of TrendPoints:",
+      "root = Card([t])",
+      't = Trend("Haemoglobin", [p1, more], "g/dL")',
+      'p1 = TrendPoint("2026-02-10", "11.2", 11.2)',
+      'more = Trend("Haemoglobin", [TrendPoint("2026-05-20", "11.9", 11.9)], "g/dL")',
+    ].join("\n"),
+  );
+  const second = log(page).locator(".reply").last();
+  await expect(second.locator("pre")).toContainText(
+    'TrendPoint("2026-05-20", "11.9", 11.9)',
+  );
+  await expect(
+    second.getByText(
+      "This reply couldn't be drawn. Ask again to have it drawn.",
+    ),
+  ).toBeVisible();
+  await expect(log(page).getByRole("img")).toHaveCount(0);
 });
