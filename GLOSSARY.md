@@ -171,13 +171,17 @@ _Avoid_: trace, log, tool calls
 What the AI writes while it works, before its answer, such as "I'll check your results first": a line of **Activity**, kept in full, never an answer. The AI's agent marks it as such; Rufi doesn't guess it from the words. In replies from before Rufi kept notes, they show as replies.
 _Avoid_: commentary, progress message, interim reply
 
+**Reply (Rufi AI's)**:
+Rufi AI's answer in the chat, which it writes in OpenUI Lang and Rufi draws with OpenUI's chat parts and a few of Rufi's own (a trend, a page, a diagram), as it is written. Once it ended, a reply that isn't whole shows as its text, never in part; one with no OpenUI shows as Markdown. A follow-up or button in it sends its words as the person's message. An agent's message, a note, a receipt and a visit brief are Markdown.
+_Avoid_: answer card, widget, generated UI
+
 **Picture, page, diagram (in a reply)**:
-What a reply shows besides its words. A page is an HTML file the AI made, such as a chart or a page of results, drawn in the reply in a locked frame and opened large over the chat, self-contained (it loads nothing from the internet and can't reach Rufi); a picture is one the AI made because the person asked for a picture, or one it generated; a diagram is drawn from the AI's Mermaid text. Pictures and pages are files in the AI's folder (or where it keeps the pictures it generates), shown as they are now: Rufi keeps no copy, and a file that is gone shows as such.
+What a reply shows besides its text, tables and charts. A page is an HTML file the AI made when the person asked for a page, such as a page of results, drawn whole in the reply in a locked frame at its own height and opened large over the chat, self-contained (it loads nothing from the internet and can't reach Rufi); a picture is one the AI made because the person asked for a picture, or one it generated; a diagram is drawn from the AI's Mermaid text. Pictures and pages are files in the AI's folder (or where it keeps the pictures it generates), shown as they are now: Rufi keeps no copy, and a file that is gone shows as such.
 _Avoid_: artifact, attachment, image (say picture), HTML (say page)
 
 **Trend (in a reply)**:
-One result's values over time, which Rufi draws in a reply from a short block the AI writes (an `openui-lang` block naming `Trend` and its `Point`s), with the record page's trend drawing and a table of every value under it. The block is kept in the reply as the AI wrote it; once the reply ended, a block that isn't whole shows as its text. Nothing in it runs.
-_Avoid_: chart (a chart that isn't a trend is a page), graph, visual, widget
+One result's values over time in a reply (Rufi's `Trend` part, with a `TrendPoint` per value), drawn with the record page's trend drawing, spaced by date, and a table of every value under it. Nothing in it runs.
+_Avoid_: chart (other charts are OpenUI's), graph, visual, widget
 
 **Steer**:
 A message sent while the AI is replying, passed into that reply; the AI carries on with it in mind, told in one line that it is being steered. It waits in the **queue** like any other until the AI takes it. While a reply runs, Enter steers unless Settings says queue; **Steer** beside the box, or on a waiting message, does it too.
