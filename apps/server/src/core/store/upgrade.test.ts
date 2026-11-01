@@ -1570,3 +1570,122 @@ it("upgrades a record of version 27 to tests: each of today's lines is a test, n
     before.map(inItsTest),
   );
 });
+
+it("upgrades a record of version 29 so medicines keep their directions: each schedule kept as its directions, in history too, so an old change's reverse saves", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 29));
+  const magnesium = "01a12747-0e00-72c9-b7f1-9ea94482ba7d";
+  // As Rufi of version 29 left it: Asha's latest save moved her magnesium
+  // from "at night" to "at bedtime".
+  const old = new DatabaseSync(path);
+  try {
+    const before = {
+      ...(old
+        .prepare("SELECT * FROM medicine_uses WHERE id = ?")
+        .get(magnesium) as object),
+    };
+    const after = { ...before, schedule: "at bedtime" };
+    old
+      .prepare("UPDATE medicine_uses SET schedule = 'at bedtime' WHERE id = ?")
+      .run(magnesium);
+    old
+      .prepare(
+        `INSERT INTO operations (id, seq, person_id, chat_id, call_id, request, created_at)
+          VALUES ('op-v29', 999, 'asha', 'c-asha', 'call-v29', '{}', '2026-10-31T09:00:00Z')`,
+      )
+      .run();
+    old
+      .prepare(
+        `INSERT INTO record_changes (operation_id, seq, person_id, kind, record_id, action, before, after, source_entry_id)
+          VALUES ('op-v29', 1, 'asha', 'medicine_use', ?, 'change', ?, ?, NULL)`,
+      )
+      .run(magnesium, JSON.stringify(before), JSON.stringify(after));
+  } finally {
+    old.close();
+  }
+  const medicines = () => {
+    const db = new DatabaseSync(path, { readOnly: true });
+    try {
+      return db
+        .prepare("SELECT * FROM medicine_uses ORDER BY rowid")
+        .all()
+        .map((row) => ({ ...row }));
+    } finally {
+      db.close();
+    }
+  };
+  const stored = medicines();
+
+  const store = await openRecord(home);
+  try {
+    expect(medicines()).toEqual(
+      stored.map(({ schedule, ...row }) => ({
+        ...row,
+        directions: schedule,
+        times: null,
+        days: null,
+        until: null,
+        until_words: null,
+        remind: 0,
+      })),
+    );
+    const [latest] = await recentSaves(store, "asha");
+    expect(latest?.changes).toEqual([
+      {
+        kind: "medicine_use",
+        id: magnesium,
+        action: "change",
+        before: { directions: "at night" },
+        after: { directions: "at bedtime" },
+      },
+    ]);
+
+    // "Undo that": the AI saves the old change's before.
+    const chats = transcripts(store, () => "2026-11-01T06:00:00.000Z");
+    const chat = (await chats.chat("asha")) as ChatRow;
+    await chats.startTurn(chat, "t-undo", {
+      id: "thread-asha",
+      model: "gpt-6.1-sol",
+    });
+    await chats.addMessage(chat, {
+      id: "m-undo",
+      kind: "message",
+      text: "Undo that",
+      agentTurnId: "t-undo",
+    });
+    const reader = openReadOnly(path) as Store;
+    try {
+      const answer = await rufiCaller(
+        reader,
+        chats,
+        () => undefined,
+      )(turnScope(chat, "t-undo"))(
+        "save_changes",
+        {
+          changes: [
+            {
+              kind: "medicine_use",
+              action: "change",
+              id: magnesium,
+              fields:
+                latest?.changes[0] && "before" in latest.changes[0]
+                  ? latest.changes[0].before
+                  : {},
+            },
+          ],
+        },
+        "call-undo",
+      );
+      expect(answer.ok).toBe(true);
+    } finally {
+      reader.close();
+    }
+    expect(
+      store.db
+        .prepare("SELECT directions FROM medicine_uses WHERE id = ?")
+        .get(magnesium),
+    ).toEqual({ directions: "at night" });
+  } finally {
+    store.close();
+  }
+});

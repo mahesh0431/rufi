@@ -145,7 +145,9 @@ export function cellsOf(row: RecordRow, groupDate?: string): Cells {
     case "medicine_use":
       return {
         title: join(row.name, row.strength),
-        detail: [row.amount, row.schedule].filter(Boolean).join(" · "),
+        detail: [row.amount, row.directions, row.times?.join(", ")]
+          .filter(Boolean)
+          .join(" · "),
         status: STATUS[row.status] ?? "",
         date: span(row.started, row.ended) ?? "",
       };

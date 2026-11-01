@@ -224,7 +224,7 @@ From your message in this chat, and the record read now: magnesium isn't in it y
                 fields: {
                   name: "Magnesium",
                   strength: "200 mg",
-                  schedule: "at night",
+                  directions: "at night",
                   status: "current",
                   started: { date: localDay(started), words: "two days ago" },
                 },

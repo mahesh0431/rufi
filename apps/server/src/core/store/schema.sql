@@ -277,7 +277,7 @@ CREATE TABLE medicine_uses (
   name TEXT NOT NULL,
   strength TEXT,               -- '500 mg'
   amount TEXT,                 -- how much is taken: '1 tablet'
-  schedule TEXT,               -- 'twice a day', 'at night'
+  directions TEXT,             -- how to take it, as printed or said, whole: '1-0-1 after food × 5 days'
   route TEXT,
   purpose TEXT,
   status TEXT NOT NULL DEFAULT 'unknown' CHECK (status IN ('current', 'paused', 'stopped', 'completed', 'unknown')),
@@ -286,6 +286,13 @@ CREATE TABLE medicine_uses (
   ended TEXT,
   ended_words TEXT,
   removed INTEGER NOT NULL DEFAULT 0,
+  -- Its timing, beside the directions (docs/adr/0031). Rufi AI works it out
+  -- with the person; code never reads the directions.
+  times TEXT CHECK (times IS NULL OR json_valid(times)), -- local times of day, a JSON array of 'HH:MM', sorted and distinct; null: not known or as needed
+  days TEXT,                   -- which days, an RFC 5545 rule ('FREQ=WEEKLY;BYDAY=SU'); null: every day
+  until TEXT,                  -- the last dose, at its precision ('2026-11-06T08:00'); null: no planned end
+  until_words TEXT,
+  remind INTEGER NOT NULL DEFAULT 0 CHECK (remind IN (0, 1)), -- 1: a Mac notice at its times
   UNIQUE (person_id, id)
 ) STRICT;
 
@@ -811,4 +818,4 @@ CREATE TABLE agent_cursor (
 ) STRICT;
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 29;
+PRAGMA user_version = 30;

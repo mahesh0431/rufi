@@ -121,7 +121,7 @@ describe("create_brief", () => {
     await saveSaid("I started magnesium 200 mg at night", {
       kind: "medicine_use",
       action: "add",
-      fields: { name: "Magnesium", strength: "200 mg", schedule: "at night" },
+      fields: { name: "Magnesium", strength: "200 mg", directions: "at night" },
     });
     const magnesium = rows(
       "SELECT id FROM medicine_uses WHERE name = 'Magnesium'",
@@ -414,7 +414,7 @@ describe("create_brief", () => {
     await saveSaid("I started magnesium 200 mg at night", {
       kind: "medicine_use",
       action: "add",
-      fields: { name: "Magnesium", strength: "200 mg", schedule: "at night" },
+      fields: { name: "Magnesium", strength: "200 mg", directions: "at night" },
     });
     const records = (
       await use("get_records", { kind: "medicine_use" }, "read-1")

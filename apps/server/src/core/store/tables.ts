@@ -255,7 +255,7 @@ export interface Tables {
     name: string;
     strength: string | null;
     amount: string | null;
-    schedule: string | null;
+    directions: string | null;
     route: string | null;
     purpose: string | null;
     status: string;
@@ -264,6 +264,11 @@ export interface Tables {
     ended: string | null;
     ended_words: string | null;
     removed: number;
+    times: string | null;
+    days: string | null;
+    until: string | null;
+    until_words: string | null;
+    remind: number;
   };
   none_known: {
     id: string;

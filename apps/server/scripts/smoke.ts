@@ -341,7 +341,7 @@ function record(home: string) {
   const result = {
     saves: (all("SELECT id FROM operations") as unknown[]).length,
     medicines: all(
-      "SELECT id, name, strength, schedule, status, started, started_words FROM medicine_uses WHERE person_id = 'asha' AND removed = 0 ORDER BY name",
+      "SELECT id, name, strength, directions, times, days, until, remind, status, started, started_words FROM medicine_uses WHERE person_id = 'asha' AND removed = 0 ORDER BY name",
     ) as Record<string, unknown>[],
     symptoms: all(
       "SELECT name, status, removed FROM symptoms WHERE person_id = 'asha'",
@@ -513,7 +513,7 @@ const SEEDS: Record<string, string> = {
   // Asha told the AI she takes Levothyroxine 25 mcg.
   prescription_visit: `INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, revision, created_at, updated_at) VALUES
       ('m-levo', 'asha', 'c-asha', 1, 'message', 'I take Levothyroxine 25 mcg every morning.', 1, '2026-08-01T09:00:00Z', '2026-08-01T09:00:00Z');
-    INSERT INTO medicine_uses (id, person_id, name, strength, schedule, status) VALUES
+    INSERT INTO medicine_uses (id, person_id, name, strength, directions, status) VALUES
       ('med-levo', 'asha', 'Levothyroxine', '25 mcg', 'every morning', 'current');
     INSERT INTO record_sources (person_id, kind, record_id, type, entry_id) VALUES
       ('asha', 'medicine_use', 'med-levo', 'message', 'm-levo');`,
@@ -1262,7 +1262,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     return {
       checks: {
         strength_1000: metformin?.["strength"] === "1000 mg",
-        schedule_kept: metformin?.["schedule"] === "twice a day",
+        directions_kept: metformin?.["directions"] === "twice a day",
         status_kept: metformin?.["status"] === "current",
         started_kept: metformin?.["started"] === "2024-03",
         rests_on_the_facts_message: restsOn(home, snapshot, facts),

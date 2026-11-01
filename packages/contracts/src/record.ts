@@ -63,7 +63,12 @@ export const MedicineUseRow = Schema.Struct({
   name: Schema.String,
   strength: Text,
   amount: Text,
-  schedule: Text,
+  /** How to take it, as printed or said. */
+  directions: Text,
+  /** Local times of day, 'HH:MM', earliest first. */
+  times: Schema.optionalKey(Schema.Array(Schema.String)),
+  /** Which days, an RFC 5545 rule as saved; none: every day. */
+  days: Text,
   route: Text,
   purpose: Text,
   status: Schema.Literals([
@@ -74,8 +79,13 @@ export const MedicineUseRow = Schema.Struct({
     "unknown",
   ]),
   started: When,
+  /** The last dose of a course. */
+  until: When,
   ended: When,
+  /** A Mac notice at its times. */
+  remind: Schema.Boolean,
 });
+export type MedicineUseRow = typeof MedicineUseRow.Type;
 
 /** A visit that happened, with the doctor's words as written. */
 export const VisitRow = Schema.Struct({

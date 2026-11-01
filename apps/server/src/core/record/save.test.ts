@@ -164,36 +164,46 @@ const KIND_CASES: KindCase[] = [
   {
     kind: "medicine_use",
     table: "medicine_uses",
-    said: "I started magnesium 200 mg at night last Monday",
+    said: "Amoxicillin 1-0-1 after food × 5 days, from tonight, at 8 and 9, remind me",
     add: {
-      name: "Magnesium",
-      strength: "200 mg",
-      schedule: "at night",
+      name: "Amoxicillin",
+      strength: "500 mg",
+      amount: "1 capsule",
+      directions: "1-0-1 after food × 5 days",
+      // Kept sorted and each once, whatever order the AI gives.
+      times: ["21:00", "08:00", "21:00"],
       status: "current",
-      started: { date: "2026-09-28", words: "last Monday" },
+      started: { date: "2026-10-04T21:00", words: "tonight" },
+      until: { date: "2026-10-09T08:00", words: "for 5 days" },
+      remind: true,
     },
     stored: {
-      name: "Magnesium",
-      strength: "200 mg",
-      schedule: "at night",
+      name: "Amoxicillin",
+      strength: "500 mg",
+      amount: "1 capsule",
+      directions: "1-0-1 after food × 5 days",
+      times: '["08:00","21:00"]',
       status: "current",
-      started: "2026-09-28",
-      started_words: "last Monday",
+      started: "2026-10-04T21:00",
+      started_words: "tonight",
+      until: "2026-10-09T08:00",
+      until_words: "for 5 days",
+      remind: 1,
     },
     added: [
       "Saved",
-      'Added medicine use Magnesium 200 mg: schedule at night, current, start 28 Sep 2026 ("last Monday")',
+      'Added medicine use Amoxicillin 500 mg: amount 1 capsule, directions 1-0-1 after food × 5 days, times 08:00, 21:00, current, start 4 Oct 2026 21:00 ("tonight"), until 9 Oct 2026 08:00 ("for 5 days"), reminders on',
     ],
     change: {
-      said: "Sorry, the magnesium is 400 mg",
-      fields: { strength: "400 mg" },
-      stored: { strength: "400 mg" },
+      said: "Move the night one to 10",
+      fields: { times: ["08:00", "22:00"] },
+      stored: { times: '["08:00","22:00"]' },
       receipt: [
         "Saved",
-        "Changed medicine use Magnesium 400 mg: strength 200 mg → 400 mg",
+        "Changed medicine use Amoxicillin 500 mg: times 08:00, 21:00 → 08:00, 22:00",
       ],
     },
-    removed: ["Saved", "Removed medicine use Magnesium 400 mg"],
+    removed: ["Saved", "Removed medicine use Amoxicillin 500 mg"],
   },
   {
     kind: "visit",
@@ -466,6 +476,7 @@ describe("saving each kind of record", () => {
         c.table === "care_events"
           ? { status: "unknown" }
           : {}),
+        ...(c.table === "medicine_uses" ? { remind: 0 } : {}),
         ...(c.table === "visits" ? { setting: "unknown" } : {}),
         ...(c.table === "allergies" || c.table === "conditions"
           ? { status: "unknown", certainty: "unknown" }
@@ -749,12 +760,13 @@ describe("a save", () => {
         action: "add",
         fields: {
           name: "**Fish oil**",
-          schedule: "[daily](https://fictional.example) <b>with food</b>\nnow",
+          directions:
+            "[daily](https://fictional.example) <b>with food</b>\nnow",
         },
       },
     ]);
     expect(saved.body.result.receipt).toBe(
-      "**Saved**\n\n- Added medicine use **\\*\\*Fish oil\\*\\***: schedule *\\[daily\\](https://fictional.example) \\<b\\>with food\\</b\\> now*",
+      "**Saved**\n\n- Added medicine use **\\*\\*Fish oil\\*\\***: directions *\\[daily\\](https://fictional.example) \\<b\\>with food\\</b\\> now*",
     );
   });
 
@@ -932,7 +944,7 @@ describe("the health rules", () => {
         fields: {
           name: "Metformin",
           strength: "500 mg",
-          schedule: "at night",
+          directions: "at night",
           status: "current",
         },
       },
@@ -1568,6 +1580,81 @@ async function overview() {
     .result;
 }
 
+describe("a medicine's timing", () => {
+  it("turns reminders on by themselves once times are saved, and refuses reminders without times whole", async () => {
+    await say("Remind me about my metformin");
+    const before = written();
+    const none = await save([
+      {
+        kind: "medicine_use",
+        action: "change",
+        id: "med-a1",
+        fields: { remind: true },
+      },
+    ]);
+    expect(none.ok).toBe(false);
+    expect(none.body.issues).toEqual([
+      expect.objectContaining({
+        fix: "Reminders need times: turn reminders off too, or keep the times.",
+      }),
+    ]);
+    expect(written()).toEqual(before);
+
+    await say("I take it at 8 and 8 at night");
+    await save(
+      [
+        {
+          kind: "medicine_use",
+          action: "change",
+          id: "med-a1",
+          fields: { times: ["20:00", "08:00"] },
+        },
+      ],
+      "call-2",
+    );
+    await say("Yes, remind me");
+    const on = await save(
+      [
+        {
+          kind: "medicine_use",
+          action: "change",
+          id: "med-a1",
+          fields: { remind: true },
+        },
+      ],
+      "call-3",
+    );
+    expect(lines(on.body.result.receipt)).toEqual([
+      "Saved",
+      "Changed medicine use Metformin 500 mg: reminders off → on",
+    ]);
+    const record = (await overview())["record"] as {
+      medicine_use: { items: Record<string, unknown>[] };
+    };
+    expect(
+      record.medicine_use.items.find((item) => item["id"] === "med-a1"),
+    ).toMatchObject({ times: ["08:00", "20:00"], remind: true });
+
+    // Clearing the times with reminders on is refused, with the rest of the save.
+    await say("Forget the times, and I have a headache");
+    const kept = written();
+    const cleared = await save(
+      [
+        {
+          kind: "medicine_use",
+          action: "change",
+          id: "med-a1",
+          fields: { times: null },
+        },
+        { kind: "symptom", action: "add", fields: { name: "Headache" } },
+      ],
+      "call-4",
+    );
+    expect(cleared.ok).toBe(false);
+    expect(written()).toEqual(kept);
+  });
+});
+
 describe("the profile", () => {
   it("is read with the record: its values, the age they give, and what isn't set", async () => {
     expect((await overview())["profile"]).toMatchObject({
@@ -1889,6 +1976,7 @@ describe("a visit and the records saved from it", () => {
           name: "Ferrous sulfate",
           strength: "200 mg",
           status: "current",
+          remind: false,
         },
       },
       // One link of two sources is one entry, with both.
@@ -1913,7 +2001,12 @@ describe("a visit and the records saved from it", () => {
         kind: "medicine_use",
         id: newDoseId,
         action: "add",
-        fields: { name: "Metformin", strength: "1000 mg", status: "current" },
+        fields: {
+          name: "Metformin",
+          strength: "1000 mg",
+          status: "current",
+          remind: false,
+        },
       },
     ]);
     const undo = await say("Undo that");

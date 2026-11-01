@@ -19,6 +19,7 @@ type Json = Record<string, unknown>;
 
 /** A field's fixed values, or what kind of value it takes. */
 function valuesOf(field: Field): string {
+  if (field.takes !== undefined) return field.takes;
   switch (field.type) {
     case "date":
       return " (date)";
@@ -41,6 +42,8 @@ function valuesOf(field: Field): string {
       return ' ({"value": 162, "unit": "cm"|"in"})';
     case "test":
       return ' (a test\'s id, or {"ref": "t1"} of a test this save adds)';
+    case "times":
+      return ' (["08:00", "21:00"]: local times of day, 24 h)';
     case "value": {
       // A fixed set: an enum, or a union of them.
       const json = jsonSchemaOf(field.input);
