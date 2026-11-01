@@ -636,15 +636,15 @@ test.describe("first run", () => {
     await expect(title).toHaveText("Overview");
     // Her profile has what the welcome asked, and says where it came from.
     await sidebar(page).getByRole("link", { name: "Mira Fictional" }).click();
-    await expect(title).toHaveText("Profile");
-    await expect(page.getByRole("main")).toContainText(
-      /Birth dateMar 1990 · \d+ years old today/,
-    );
-    await expect(page.getByRole("main")).toContainText("Blood groupNot set");
-    await expect(page.getByRole("main").getByRole("listitem")).toHaveText([
+    const profile = page.getByRole("dialog", { name: "Settings" });
+    await expect(profile.getByLabel("Year")).toHaveValue("1990");
+    await expect(profile.getByLabel("Blood group")).toHaveValue("");
+    await expect(
+      profile.getByRole("region", { name: "History" }).getByRole("listitem"),
+    ).toHaveText([
       /Birth date Not set → Mar 1990; Sex for lab ranges Not set → Female · in the welcome$/,
     ]);
-    await page.goBack();
+    await page.keyboard.press("Escape");
     await expect(title).toHaveText("Overview");
     // The person's chat was made with them: the bar works at once.
     const bar = page.getByRole("region", { name: "Chat" });
