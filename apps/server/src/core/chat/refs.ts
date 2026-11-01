@@ -10,7 +10,7 @@ import type { Chip, Pointer } from "@rufi/contracts";
 import { sql, type Kysely } from "kysely";
 import { DELETED_DOCUMENT } from "../documents/naming.ts";
 import { shownDate } from "../record/dates.ts";
-import { kindNamed, type Kind, type Row } from "../record/kinds.ts";
+import { dateColumn, kindNamed, type Kind, type Row } from "../record/kinds.ts";
 import { isCurrent, recordVersions } from "../record/read.ts";
 import type { Tables } from "../store/tables.ts";
 
@@ -151,8 +151,8 @@ async function chipOf(
         );
       const row = rows[0];
       if (!row) return undefined;
-      const column = kind.fields[kind.dated]?.column ?? kind.dated;
-      const date = row[column];
+      const column = dateColumn(kind);
+      const date = column === undefined ? undefined : row[column];
       const versions = await recordVersions(db, personId, [
         { kind: kind.name, id: ref.id },
       ]);

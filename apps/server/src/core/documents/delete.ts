@@ -13,7 +13,7 @@ import { createHash } from "node:crypto";
 import type { DeleteDocument, DeletePreview } from "@rufi/contracts/documents";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { shownDate } from "../record/dates.ts";
-import { kindNamed, type Row } from "../record/kinds.ts";
+import { dateColumn, kindNamed, type Row } from "../record/kinds.ts";
 import { errorCode, type Log } from "../../platform/logs.ts";
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
@@ -85,8 +85,8 @@ async function savedFrom(db: Db, personId: string, documentId: string) {
       );
     const row = rows[0];
     if (!row || row["removed"] !== 0) continue;
-    const column = kind.fields[kind.dated]?.column ?? kind.dated;
-    const date = row[column];
+    const column = dateColumn(kind);
+    const date = column === undefined ? undefined : row[column];
     const replaced =
       kind.name === "result" &&
       (await db

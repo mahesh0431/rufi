@@ -1,4 +1,4 @@
-# 0028 · A reply's trend is drawn by Rufi from the AI's block
+# 0029 · A reply's trend is drawn by Rufi from the AI's block
 
 **Date:** 1 Nov 2026 · **Status:** accepted
 

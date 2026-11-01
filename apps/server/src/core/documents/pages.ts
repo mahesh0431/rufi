@@ -88,14 +88,18 @@ export async function displayCopy(
   return display;
 }
 
-/** A PDF page drawn and its text, from the cache or drawn now and kept. */
+/**
+ * A PDF page drawn, at full size when `full`, and its text, from the cache
+ * or drawn now and kept.
+ */
 async function drawn(
   home: string,
   fileId: string,
   page: number,
+  full: boolean,
   publish: Publish,
 ): Promise<{ png: Uint8Array; text: string | undefined } | undefined> {
-  const png = await readIfThere(pagePath(home, fileId, page));
+  const png = await readIfThere(pagePath(home, fileId, page, full));
   const meta = await readIfThere(pageTextPath(home, fileId, page));
   if (png && meta) {
     const { text } = JSON.parse(new TextDecoder().decode(meta)) as {
@@ -103,11 +107,15 @@ async function drawn(
     };
     return { png, text: text ?? undefined };
   }
-  const made = await draw(await readFile(originalPath(home, fileId)), page);
+  const made = await draw(
+    await readFile(originalPath(home, fileId)),
+    page,
+    full,
+  );
   if (!made.ok) return undefined;
   // The text last: a page counts as kept once both are there.
   await publish(fileId, async () => {
-    await keepCached(pagePath(home, fileId, page), made.png);
+    await keepCached(pagePath(home, fileId, page, full), made.png);
     await keepCached(
       pageTextPath(home, fileId, page),
       new TextEncoder().encode(JSON.stringify({ text: made.text ?? null })),
@@ -136,13 +144,58 @@ export function pages(store: Store, home: string, gate: FileGate = fileGate()) {
     },
 
     /**
-     * Page `position` of the person's document `documentId`; undefined when
+     * Which of the person's documents holds page `position` of the add
+     * `documentId` belongs to now: a sort moves a page to another document
+     * of its add, keeping its position there. Deleted when that page, or
+     * `documentId`, was deleted; undefined when the person has no such
+     * document or page.
+     */
+    holder: async (
+      personId: string,
+      documentId: string,
+      position: number,
+    ): Promise<{ document: string } | { deleted: true } | undefined> => {
+      const document = await db
+        .selectFrom("documents")
+        .select(["id", "from_document", "deleted_at"])
+        .where("person_id", "=", personId)
+        .where("id", "=", documentId)
+        .executeTakeFirst();
+      if (!document) return undefined;
+      const add = document.from_document ?? document.id;
+      const rows = await db
+        .selectFrom("document_pages as p")
+        .innerJoin("documents as d", (join) =>
+          join
+            .onRef("d.person_id", "=", "p.person_id")
+            .onRef("d.id", "=", "p.document_id"),
+        )
+        .select(["p.document_id", "p.file_id", "d.deleted_at"])
+        .where("p.person_id", "=", personId)
+        .where("p.position", "=", position)
+        .where((eb) =>
+          eb.or([eb("d.id", "=", add), eb("d.from_document", "=", add)]),
+        )
+        .execute();
+      const live = rows.find(
+        (row) => row.file_id !== null && row.deleted_at === null,
+      );
+      if (live) return { document: live.document_id };
+      return rows.length > 0 || document.deleted_at !== null
+        ? { deleted: true }
+        : undefined;
+    },
+
+    /**
+     * Page `position` of the person's document `documentId`, a PDF's drawn
+     * at full size when `full` (a photo is always whole); undefined when
      * that person has no such document or page.
      */
     page: async (
       personId: string,
       documentId: string,
       position: number,
+      full = false,
     ): Promise<PageView | undefined> => {
       const all = await db
         .selectFrom("document_pages as p")
@@ -195,6 +248,7 @@ export function pages(store: Store, home: string, gate: FileGate = fileGate()) {
             home,
             row.file_id,
             row.page_in_file,
+            full,
             publish,
           );
           if (!made) return { ...about, ok: false, reason: "couldnt_prepare" };

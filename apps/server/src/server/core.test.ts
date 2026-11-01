@@ -809,6 +809,7 @@ describe("the local API", () => {
       `${asha}/record/no_kind`,
       `${asha}/record/no_kind/res-a1`,
       `${asha}/record/none_known`,
+      `${asha}/tests/tst-ldl`,
       // Results have two pages; the screens open the right one.
       `${asha}/record/result`,
       "/api/people/nobody/record/lab_result",
@@ -820,18 +821,12 @@ describe("the local API", () => {
       (await page.api("GET", `${asha}/record/lab_result?after=nonsense`))
         .status,
     ).toBe(400);
-    expect((await page.api("GET", `${asha}/series`)).status).toBe(400);
     expect(
-      (await page.api("GET", `${asha}/series?test=Weight&unit=kg`)).status,
-    ).toBe(400);
-    expect(
-      (
-        await page.api(
-          "GET",
-          `${asha}/series?test=Weight&unit=kg&category=measurement`,
-        )
-      ).body,
-    ).toMatchObject({ values: [{ id: "res-a11" }, { id: "res-a10" }] });
+      (await page.api("GET", `${asha}/tests/tst-weight`)).body,
+    ).toMatchObject({
+      test: { kind: "test", name: "Weight" },
+      values: [{ row: { id: "res-a10" } }, { row: { id: "res-a11" } }],
+    });
     const ravis = (await page.api("GET", "/api/people/ravi/record/lab_result"))
       .body as {
       groups: { rows: { id: string }[] }[];
@@ -1026,10 +1021,11 @@ describe("the local API", () => {
     // person's is refused and the draft stays as it was.
     const writable = openWritable(databasePath(home));
     try {
-      writable.db
-        .exec(`INSERT INTO results (id, person_id, category, test_name, value_text, unit, entered_at) VALUES
-        ('res-1', '${c.person}', 'lab', 'HbA1c', '6.8', '%', '2026-10-04T09:00:00Z'),
-        ('res-r', 'ravi', 'lab', 'LDL', '162', 'mg/dL', '2026-10-04T09:00:00Z')`);
+      writable.db.exec(`INSERT INTO tests (id, person_id, name) VALUES
+        ('t-1', '${c.person}', 'HbA1c'), ('t-r', 'ravi', 'LDL');
+        INSERT INTO results (id, person_id, category, test_name, value_text, unit, entered_at, test_id) VALUES
+        ('res-1', '${c.person}', 'lab', 'HbA1c', '6.8', '%', '2026-10-04T09:00:00Z', 't-1'),
+        ('res-r', 'ravi', 'lab', 'LDL', '162', 'mg/dL', '2026-10-04T09:00:00Z', 't-r')`);
       writable.db
         .exec(`INSERT INTO documents (id, person_id, added_at, added_from, sent_at) VALUES
         ('doc-1', '${c.person}', '2026-10-04T09:00:00Z', 'chat', '2026-10-04T09:00:00Z')`);

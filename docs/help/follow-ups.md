@@ -51,7 +51,7 @@ In the sidebar, click **Follow-ups**. The number next to it is how many follow-u
 6. **No date.**
 7. **Done** and **Dropped**, with what came of each.
 
-A follow-up about a record shows it under its name, for example "About: HbA1c 6.8 % · 12 Aug 2026". Click it to open that record on its own page: a result opens on Lab results or on Measurements, the page it is on now, and a visit on its own page. If the lab amended that result since, the line keeps the value the follow-up was about and adds what it was amended to ("· amended to 4.6 mIU/L"), and the link opens the current result, which shows the earlier value under **Replaces**. Click a follow-up's name to see its sources and history.
+A follow-up about a record shows it under its name, for example "About: HbA1c 6.8 % · 12 Aug 2026". Click it to open that record where it is now: a lab result on its test's page, a measurement on Measurements, and a visit on its own page. If the lab amended that result since, the line keeps the value the follow-up was about and adds what it was amended to ("· amended to 4.6 mIU/L"), and the link opens the current result, which shows the earlier value under **Replaces**. Click a follow-up's name to see its sources and history.
 
 The page shows the new day by itself: when it is open over midnight, it changes within a minute, and when you come back to its window, it reads again at once.
 

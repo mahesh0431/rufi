@@ -1163,15 +1163,18 @@ describe("the chat, on the scripted Codex", () => {
       -- Read long ago: nothing of it is read again.
       INSERT INTO jobs (id, person_id, kind, document_id, state, targets, created_at)
         VALUES ('job-1', 'asha', 'document_read', 'doc-1', 'done', '[1]', '2026-10-01T09:00:00Z');
-      INSERT INTO results (id, person_id, category, test_name, value_text, unit, measured_at, entered_at)
-        VALUES ('res-1', 'asha', 'lab', 'HbA1c', '6.8', '%', '2026-08-12', '2026-08-13T00:00:00Z');
+      INSERT INTO tests (id, person_id, name) VALUES
+        ('t-hba1c', 'asha', 'HbA1c'), ('t-glucose', 'asha', 'Glucose'),
+        ('t-crp', 'asha', 'CRP'), ('t-tsh', 'asha', 'TSH');
+      INSERT INTO results (id, person_id, category, test_name, value_text, unit, measured_at, entered_at, test_id)
+        VALUES ('res-1', 'asha', 'lab', 'HbA1c', '6.8', '%', '2026-08-12', '2026-08-13T00:00:00Z', 't-hba1c');
       INSERT INTO reports (id, person_id, document_id, issuer, collected) VALUES
         ('rep-1', 'asha', 'doc-1', 'Sunrise Labs', '2026-08-12'),
         ('rep-r', 'ravi', 'doc-r', 'Lakeside Diagnostics', '2026-06-30');
-      INSERT INTO results (id, person_id, report_id, category, test_name, value_text, unit, measured_at, entered_at, replaces_id, removed) VALUES
-        ('res-2', 'asha', 'rep-1', 'lab', 'Glucose', '118', 'mg/dL', '2026-08-12', '2026-08-13T00:00:00Z', NULL, 0),
-        ('res-3', 'asha', 'rep-1', 'lab', 'CRP', '<5', 'mg/L', '2026-08-12', '2026-08-13T00:00:00Z', NULL, 0),
-        ('res-4', 'asha', 'rep-1', 'lab', 'TSH', '2.1', 'mIU/L', '2026-08-12', '2026-08-13T00:00:00Z', NULL, 1);
+      INSERT INTO results (id, person_id, report_id, category, test_name, value_text, unit, measured_at, entered_at, replaces_id, removed, test_id) VALUES
+        ('res-2', 'asha', 'rep-1', 'lab', 'Glucose', '118', 'mg/dL', '2026-08-12', '2026-08-13T00:00:00Z', NULL, 0, 't-glucose'),
+        ('res-3', 'asha', 'rep-1', 'lab', 'CRP', '<5', 'mg/L', '2026-08-12', '2026-08-13T00:00:00Z', NULL, 0, 't-crp'),
+        ('res-4', 'asha', 'rep-1', 'lab', 'TSH', '2.1', 'mIU/L', '2026-08-12', '2026-08-13T00:00:00Z', NULL, 1, 't-tsh');
       INSERT INTO documents (id, person_id, added_at, added_from, kind, date, issuer, report_number, version, sent_at)
         VALUES ('doc-correction', 'asha', '2026-10-01T09:00:00Z', 'chat', 'lab_report', '2026-08-12', 'Sunrise Labs', 'CORRECTED', 1, '2026-10-01T09:00:00Z');
       INSERT INTO files (id, size, media_type, created_at)

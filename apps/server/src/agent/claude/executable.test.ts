@@ -1,7 +1,7 @@
 // Finding the Claude installed on this Mac, and how it's signed in. Fake
 // `claude` programs stand in for the real one, which CI doesn't have; the
 // real one is checked by scripts/claude-live.ts.
-import { chmod, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AccountInfo, query } from "@anthropic-ai/claude-agent-sdk";
@@ -132,5 +132,48 @@ esac
       "https://claude.com/cai/oauth/authorize?fictional=1",
     ]);
     expect(await claudeSignedIn(claude, env)).toBe(true);
+  });
+});
+
+describe("Claude stopped by Rufi", () => {
+  it("settles a cancelled sign-in or sign-in check only once Claude has exited, so it writes nothing after", async () => {
+    // A `claude` that takes half a second to exit when stopped, and writes
+    // a file as it goes, as the real one writes its .claude.json.
+    const home = await mkdtemp(join(tmpdir(), "rufi-claude-"));
+    const path = join(await emptyFolder(), "claude");
+    await writeFile(
+      path,
+      `#!/bin/sh
+mkdir -p "$CLAUDE_CONFIG_DIR"
+trap 'sleep 0.5; echo ended > "$CLAUDE_CONFIG_DIR/ended-$2"; exit 143' TERM
+echo "If the browser didn't open, visit: https://claude.com/cai/oauth/authorize?fictional=1"
+while :; do sleep 0.1; done
+`,
+    );
+    await chmod(path, 0o755);
+    const claude = { path, version: "2.1.314" };
+    const env = claudeEnvironment(home, { PATH: "/usr/bin:/bin" });
+    const ended = (what: string) =>
+      access(join(env["CLAUDE_CONFIG_DIR"] ?? "", `ended-${what}`));
+
+    // Quit while the browser sign-in waits.
+    const login = new AbortController();
+    await expect(
+      claudeLogIn(claude, env, {
+        showLink: () => {
+          login.abort();
+        },
+        signal: login.signal,
+      }),
+    ).rejects.toThrow();
+    await expect(ended("login")).resolves.toBeUndefined();
+
+    // Quit while Rufi asks how it's signed in.
+    const status = new AbortController();
+    setTimeout(() => {
+      status.abort();
+    }, 200);
+    await expect(claudeSignedIn(claude, env, status.signal)).rejects.toThrow();
+    await expect(ended("status")).resolves.toBeUndefined();
   });
 });

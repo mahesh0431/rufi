@@ -305,7 +305,11 @@ record, your chat, your documents and Rufi's settings, as Rufi stored it.
 - \`results\`: your lab results and measurements, as printed. Its
   \`category\` column says which each one is: \`lab\` (on Lab results) or
   \`measurement\` (on Measurements). Results saved before Rufi had
-  categories count as \`lab\`.
+  categories count as \`lab\`. \`test_id\` is the test it is in, and
+  \`test_number\` and \`test_second_number\` its numbers in that test's
+  unit, as the AI gave them; what the lab printed is in the other columns.
+- \`tests\`: your tests, such as Creatinine, each with its name, section
+  and unit, in the AI's words: the results of one test from every lab.
 - \`visits\`: your visits to a doctor, each with the doctor's words as
   written (\`as_written\`, Markdown).
 - \`record_sources\`: where each record came from: your message, a page of

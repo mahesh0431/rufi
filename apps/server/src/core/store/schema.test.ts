@@ -72,6 +72,9 @@ beforeEach(() => {
     person_id: "nanna",
     document_id: "doc-nanna",
   });
+  // Each person's test, which their results belong to.
+  insert("tests", { id: "tst-amma", person_id: "amma", name: "Creatinine" });
+  insert("tests", { id: "tst-nanna", person_id: "nanna", name: "Ferritin" });
 });
 
 describe("schema", () => {
@@ -220,6 +223,7 @@ describe("schema", () => {
           report_id: "rep-nanna",
           category: "lab",
           test_name: "HbA1c",
+          test_id: "tst-amma",
           value_text: "6.8",
           entered_at: now,
         });
@@ -231,6 +235,7 @@ describe("schema", () => {
         id: "res-typed",
         category: "measurement",
         test_name: "Weight",
+        test_id: "tst-amma",
         value_text: "61 kg",
         entered_at: now,
       };
@@ -247,6 +252,7 @@ describe("schema", () => {
         report_id: "rep-nanna",
         category: "lab",
         test_name: "Ferritin",
+        test_id: "tst-nanna",
         value_text: "22",
         entered_at: now,
       });
@@ -256,10 +262,26 @@ describe("schema", () => {
           person_id: "amma",
           category: "lab",
           test_name: "Ferritin",
+          test_id: "tst-amma",
           value_text: "25",
           entered_at: now,
           replaces_id: "res-nanna",
         });
+      }).toThrow("FOREIGN KEY constraint failed");
+    });
+
+    it("rejects a result for one person in another person's test", () => {
+      const result = {
+        id: "res-x",
+        person_id: "amma",
+        category: "lab",
+        test_name: "Creatinine",
+        value_text: "1.0",
+        entered_at: now,
+      };
+      insert("results", { ...result, test_id: "tst-amma" });
+      expect(() => {
+        insert("results", { ...result, id: "res-y", test_id: "tst-nanna" });
       }).toThrow("FOREIGN KEY constraint failed");
     });
 
@@ -349,6 +371,9 @@ describe("schema", () => {
       report_id: "rep-amma",
       category: "lab",
       test_name: "C-Reactive Protein",
+      test_id: "tst-amma",
+      test_number: 5,
+      test_second_number: null,
       value_text: "<5",
       comparator: "<",
       value_number: 5,
@@ -359,7 +384,6 @@ describe("schema", () => {
       measured_at: "2026-09-12",
       entered_at: now,
       replaces_id: null,
-      group_label: null,
       second_number: null,
       measured_words: null,
       removed: 0,
@@ -385,7 +409,6 @@ describe("schema", () => {
         flag_text: "High",
         context_text: "Calculated",
         measured_at: "2026-09",
-        group_label: "LDL",
       };
       const amended = {
         ...original,
@@ -399,7 +422,7 @@ describe("schema", () => {
       insert("results", original);
       insert("results", amended);
       const rows = db
-        .prepare("SELECT * FROM results WHERE group_label = 'LDL' ORDER BY id")
+        .prepare("SELECT * FROM results WHERE test_id = 'tst-amma' ORDER BY id")
         .all();
       expect(rows).toEqual([original, amended]);
     });
