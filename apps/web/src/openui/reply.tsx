@@ -2,10 +2,12 @@
 // renderer with Rufi's reply library (library.ts), in place of a Markdown
 // renderer, as OpenUI's guide for a chat of one's own says. Once the reply
 // ended, a piece of it that's broken (shapeOf) is left out as OpenUI leaves
-// it out, with a line that says so and the whole text a click away. A reply with no OpenUI in it shows as
-// Markdown, while it is written too, so a reply is never blank. A follow-up
-// or a button sends its words as the person's message, and Rufi AI gets
-// them as a click with a form's values and the action's context; every link opens by the reply's rule (parts.tsx).
+// it out, with a line that says so and the whole text a click away. A reply
+// with no OpenUI in it shows as Markdown, while it is written too, so a
+// reply is never blank. A follow-up or a button sends its words as the
+// person's message, and Rufi AI gets them as a click with a form's values
+// and the action's context; every link opens by the reply's rule
+// (parts.tsx).
 // Display only: no tools, so nothing in a reply reaches the record.
 import {
   BuiltinActionType,
