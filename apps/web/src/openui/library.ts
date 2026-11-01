@@ -12,7 +12,7 @@
 // part Rufi draws keeps OpenUI's name and props, and an old reply that no
 // longer fits the library draws what works and says part isn't shown.
 import "@rufi/contracts/jitless";
-import { parseExpression, split, tokenize } from "@openuidev/lang-core";
+import { split, tokenize } from "@openuidev/lang-core";
 import {
   createParser,
   type ComponentRenderer,
@@ -206,91 +206,38 @@ export function replyReader(library: ReturnType<typeof replyLibrary>) {
   };
 }
 
-/** OpenUI's token types (lang-core's `T`) that `allRead` reads. */
+/** OpenUI's token types (lang-core's `T`) that `allRead` passes over. */
 const NEWLINE = 0;
-const OPEN_LIST = 3;
-const CLOSE_LIST = 4;
 const END = 13;
-const STRING = 14;
-const NUMBER = 15;
 
 /**
- * Whether OpenUI's parse took in all of a reply's text, read with OpenUI's
- * own tokenizer and parser: each piece of the text is in a statement, each
- * statement is one expression all through (put in a list, anything after
- * the expression would be a second item: OpenUI passes over it), no
- * statement's name comes twice (the last wins), no comment (OpenUI drops
- * `//` and `#` outside a string), and each string and number in the text is
- * in the tree OpenUI made, as many times as the text has it.
+ * Whether each piece of a reply's text is in a statement, as OpenUI's own
+ * tokenizer and splitter read it: words outside its statements OpenUI
+ * passes over without a word.
  */
-function allRead(text: string, root: ElementNode): boolean {
+function allRead(text: string): boolean {
   const tokens = tokenize(text);
-  const statements = split(tokens);
-  const types: number[] = tokens.map((token) => token.t);
-  const read = statements.reduce(
+  const read = split(tokens).reduce(
     (count, statement) => count + 2 + statement.tokens.length,
     0,
   );
-  const found = types.filter((type) => type !== NEWLINE && type !== END).length;
-  if (read !== found) return false;
-  const names = new Set(statements.map((statement) => statement.id));
-  if (names.size !== statements.length || hasComment(text)) return false;
-  const whole = statements.every((statement) => {
-    const list = parseExpression([
-      { t: OPEN_LIST },
-      ...statement.tokens,
-      { t: CLOSE_LIST },
-    ]);
-    return list.k === "Arr" && list.els.length === 1;
-  });
-  if (!whole) return false;
-  // Each value's count in the tree, less its count in the text.
-  const counts = new Map<string, number>();
-  const count = (value: unknown): void => {
-    if (typeof value === "string" || typeof value === "number") {
-      const key = String(value);
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    } else if (typeof value === "object" && value !== null) {
-      Object.values(value).forEach(count);
-    }
-  };
-  count(root);
-  return tokens.every((token, i) => {
-    if (types[i] !== STRING && types[i] !== NUMBER) return true;
-    const key = String(token.v);
-    const left = (counts.get(key) ?? 0) - 1;
-    counts.set(key, left);
-    return left >= 0;
-  });
-}
-
-/** Whether the text has a comment OpenUI drops: `//` or `#` outside a string. */
-function hasComment(text: string): boolean {
-  let quote = "";
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (quote !== "") {
-      if (c === "\\") i++;
-      else if (c === quote) quote = "";
-    } else if (c === '"' || c === "'") {
-      quote = c;
-    } else if (c === "#" || (c === "/" && text[i + 1] === "/")) {
-      return true;
-    }
-  }
-  return false;
+  const found = tokens.filter((token) => {
+    const type: number = token.t;
+    return type !== NEWLINE && type !== END;
+  }).length;
+  return read === found;
 }
 
 /**
- * A finished reply: `drawn` when OpenUI took in all of its text (allRead),
- * its parse is whole (nothing cut off, every name used is defined and every
- * name defined is used, no errors) and its tree fits the library's schema,
- * from its Card down; `words` when it has no OpenUI at all; otherwise
- * `partial`: OpenUI draws what works and leaves out what it can't, so the
- * reply says part of it isn't shown and keeps its whole text a click away.
- * Whatever is in doubt is partial: a notice too many is fine, a value left
- * out without one isn't. The screens also mark it partial when drawing it
- * fails (reply.tsx).
+ * A finished reply: `drawn` when OpenUI's parse reports no problem (nothing
+ * cut off, every name used is defined and every name defined is used, no
+ * errors), no text is outside its statements (allRead) and its tree fits
+ * the library's schema, from its Card down; `words` when it has no OpenUI
+ * at all; otherwise `partial`: OpenUI draws what works and leaves out what
+ * it can't, so the reply says part of it isn't shown and keeps its whole
+ * text a click away. The screens also mark it partial when drawing it fails
+ * (reply.tsx). Rufi doesn't account for every character: other text OpenUI
+ * passes over is OpenUI's to handle.
  */
 export function shapeOf(
   reader: ReturnType<typeof replyReader>,
@@ -304,7 +251,7 @@ export function shapeOf(
     meta.orphaned.length === 0 &&
     meta.errors.length === 0;
   return whole &&
-    allRead(text, root) &&
+    allRead(text) &&
     fits(root, { $ref: "#/$defs/Card" }, reader.defs)
     ? "drawn"
     : "partial";

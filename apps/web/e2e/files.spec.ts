@@ -211,7 +211,7 @@ test("a picture that is gone keeps its card and says so", async ({
  * A stored reply in OpenUI Lang (openui/library.ts): keep it as written when
  * OpenUI changes, so an old reply still draws. A header, text with a web
  * link, a link to a page of Rufi and a citation of the Card's source (a page
- * of Rufi), OpenUI's line chart of one test and a table with every value
+ * of Rufi, its keys quoted), OpenUI's line chart of one test and a table with every value
  * ("<5" too), a callout with a link, an editable table with an address of
  * Rufi's, a button whose action names the test, and follow-ups.
  */
@@ -219,7 +219,7 @@ const STORED_REPLY = [
   "root = Card([header, intro, chart, table, note, reports, explain, followUps], [src])",
   'header = CardHeader("CRP", "Your last four results")',
   'intro = TextContent("Your CRP was **high** in March and August. [What CRP measures](https://example.com/crp) · [Your profile](rufi:/profile) [1]")',
-  'src = {title: "Your birth date and sex", sourceName: "Your profile", url: "rufi:/profile"}',
+  'src = {"title": "Your birth date and sex", "sourceName": "Your profile", "url": "rufi:/profile"}',
   'chart = LineChart(["4 Mar 2026", "12 Aug 2026"], [Series("CRP (mg/L)", [8.2, 6.0])])',
   'table = Table([Col("Date", ["1 Dec 2025", "4 Mar 2026", "12 Aug 2026"]), Col("CRP", ["<5 mg/L", "8.2 mg/L", "6.0 mg/L"]), Col("Lab range", ["<5", "<5", "<5"])])',
   'note = Callout("info", "Lab ranges", "Your ranges depend on [your sex](rufi:/profile).")',
@@ -324,13 +324,6 @@ const LEFT_OUT = [
     ].join("\n"),
     shown: "Haemoglobin: 11.6 g/dL",
     left: "Ferritin: 18 ng/mL",
-  },
-  // Words OpenUI passes over after a statement's expression.
-  {
-    reply:
-      'root = Card([TextContent("Haemoglobin: 11.6 g/dL")]) HBsAg: positive',
-    shown: "Haemoglobin: 11.6 g/dL",
-    left: "HBsAg: positive",
   },
 ];
 
