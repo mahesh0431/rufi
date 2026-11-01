@@ -222,8 +222,9 @@ const GONE_PAGE = `<!doctype html><html lang="en"><meta charset="utf-8"><title>F
  * Esc in a generated page, told to its dialog: the page has its own origin,
  * so Rufi never hears its keys. And the page's height, told to the frame in
  * the reply, so it shows whole with nothing scrolling inside it (as T3's
- * html_render and MCP Apps do): its content's height, or all it scrolls
- * when it is taller than its frame. Appended to what is served, after the
+ * html_render and MCP Apps do): its content's height, with html and body
+ * fitted to their content, or all it scrolls when it is taller than its
+ * frame. Appended to what is served, after the
  * file, so its doctype stays first and its bytes on disk stay as they are.
  */
 const pageEscape = (origin: string) => `
@@ -235,8 +236,16 @@ addEventListener("keydown", (event) => {
 }, true);
 {
   let told = 0;
+  // Html and body take their content's height: a page made for a window
+  // (min-height: 100vh) would otherwise grow with the frame that fits it.
+  const fit = (element) => {
+    element?.style.setProperty("min-height", "0", "important");
+    element?.style.setProperty("height", "auto", "important");
+  };
   const tell = () => {
     const root = document.documentElement;
+    fit(root);
+    fit(document.body);
     const height = Math.ceil(
       root.scrollHeight > root.clientHeight
         ? root.scrollHeight

@@ -13,6 +13,7 @@ import {
   useIsStreaming,
   type ActionEvent,
   type ComponentRenderProps,
+  type ElementNode,
 } from "@openuidev/react-lang";
 import { useMemo, type ReactNode } from "react";
 import type { Options } from "react-markdown";
@@ -112,6 +113,49 @@ const writtenShape = (text: string) =>
   reader.parser.parse(text).root !== null || STATEMENT_START.test(text)
     ? "drawn"
     : "words";
+
+/** Where each part that draws Markdown keeps its text. */
+const MARKDOWN: Record<string, string> = {
+  TextContent: "text",
+  MarkDownRenderer: "textMarkdown",
+  Callout: "description",
+  StepsItem: "details",
+};
+
+/**
+ * The pictures of the AI's folder a reply shows: its Image parts' files and
+ * those its Markdown text shows (`inMarkdown`), so a picture the AI made
+ * shows once. None when the reply shows as its text.
+ */
+export function picturesShownBy(
+  text: string,
+  streaming: boolean,
+  inMarkdown: (markdown: string) => string[],
+): string[] {
+  const shape = streaming ? writtenShape(text) : shapeOf(reader, text);
+  if (shape === "words") return inMarkdown(text);
+  if (shape === "broken") return [];
+  const shown: string[] = [];
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+    } else if (typeof value === "object" && value !== null) {
+      const node = value as Partial<ElementNode>;
+      if (node.type === "element" && node.props) {
+        const src = node.typeName === "Image" ? node.props["src"] : undefined;
+        const file = fileIn(typeof src === "string" ? src : undefined);
+        if (file?.shape === "picture") shown.push(file.path);
+        const markdown = node.props[MARKDOWN[node.typeName ?? ""] ?? ""];
+        if (typeof markdown === "string") shown.push(...inMarkdown(markdown));
+        visit(node.props);
+      } else {
+        Object.values(value).forEach(visit);
+      }
+    }
+  };
+  visit(reader.parser.parse(text).root);
+  return shown;
+}
 
 export function OpenUIReply({
   text,

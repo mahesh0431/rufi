@@ -68,9 +68,14 @@ function png(width: number, height: number, [r, g, b]: number[]): Buffer {
   ]);
 }
 
-/** A page the AI made that tries what a page mustn't, and writes what happened. */
+/**
+ * A page the AI made that tries what a page mustn't, and writes what
+ * happened. Made for a window, as many pages are: its body is at least the
+ * window's height, which would grow the frame that fits it.
+ */
 const TRYING = `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<title>Fictional results</title></head><body>
+<title>Fictional results</title>
+<style>body { margin: 0; min-height: 100vh; padding: 24px; box-sizing: content-box; }</style></head><body>
 <h1>Asha's fictional results</h1><button id="tab" type="button">2025</button>
 <label>Filter <input id="filter" autofocus></label><ul id="out"></ul>
 <script>
@@ -164,7 +169,7 @@ test("a picture in the AI's folder shows in the reply with its caption, opens fu
   expect(await refusedIn(page)).toEqual([]);
 });
 
-test("a picture the AI generated shows even without a link, and once when its reply links it, also after a reload", async ({
+test("a picture the AI generated shows even without a link, and once when its reply shows it, also after a reload", async ({
   page,
   rufi,
 }) => {
@@ -181,21 +186,22 @@ test("a picture the AI generated shows even without a link, and once when its re
 
   await send(page, "a fictional cat");
   await expect(log(page).getByText("ok:a fictional cat")).toBeVisible();
-  await send(page, `There: ![A cat](${saved})`);
+  // OpenUI replies: the picture by Image, then in Markdown text by another path.
+  await send(page, `There:\nroot = Card([Image("A cat", "${saved}")])`);
   await expect(log(page).getByRole("img", { name: "A cat" })).toBeVisible();
   await send(page, `I saved the picture at ${saved}`);
   await expect(log(page).getByRole("img")).toHaveCount(3);
   await send(
     page,
-    `There: ![A cat via alias](${saved.replace("/call-1.png", "/./call-1.png")})`,
+    `There:\nroot = Card([TextContent("![A cat via alias](${saved.replace("/call-1.png", "/./call-1.png")})")])`,
   );
   await expect(
     log(page).getByRole("img", { name: "A cat via alias" }),
   ).toBeVisible();
 
   const check = async () => {
-    // Plain words keep the native picture. A Markdown reference, including
-    // an equivalent path, shows it once. Intentional reuse in a later turn stays.
+    // Plain words keep the native picture. A reply's Image or Markdown text,
+    // including by an equivalent path, shows it once. Intentional reuse in a later turn stays.
     await expect(log(page).getByRole("img")).toHaveCount(4);
     await expect(log(page).getByText("Made by the AI")).toHaveCount(2);
     for (const img of await log(page).getByRole("img").all()) {

@@ -68,7 +68,7 @@ import { MiddleCut, StepDetails, took } from "./activity.tsx";
 import { boxFor } from "./boxes.ts";
 import { ChipView } from "./chips.tsx";
 import { Diagram, fileIn, NativePicture, Page, Picture } from "./files.tsx";
-import { OpenUIReply } from "./openui/reply.tsx";
+import { OpenUIReply, picturesShownBy } from "./openui/reply.tsx";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
 import {
   openAgent,
@@ -838,14 +838,13 @@ function GeneratedPicture({
       ...new Set(
         state.order.flatMap((id) => {
           const reply = state.entries[id];
-          return reply?.kind === "reply" && reply.turnId === entry.turnId
-            ? picturesIn(
-                readableReply(
-                  reply.text,
-                  state.turns[entry.turnId ?? ""]?.status === "running",
-                ),
-              )
-            : [];
+          if (reply?.kind !== "reply" || reply.turnId !== entry.turnId) {
+            return [];
+          }
+          const running = state.turns[entry.turnId ?? ""]?.status === "running";
+          return picturesShownBy(reply.text, running, (markdown) =>
+            picturesIn(readableReply(markdown, running)),
+          );
         }),
       ),
     ]),

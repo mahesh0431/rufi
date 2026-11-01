@@ -247,6 +247,14 @@ const inAppearance = (url: string, appearance: string) =>
  * (the reply's words for it, or its file name) and Open, which shows it
  * large over the chat.
  */
+/**
+ * The heights a page's frame takes, as T3's html_render does: the page's
+ * own height, from 80 px to 20,000 px, so one that grows with its frame
+ * stops.
+ */
+const PAGE_LOWEST = 80;
+const PAGE_TALLEST = 20_000;
+
 export function Page({ path, title }: { path: string; title: string }) {
   const client = useQueryClient();
   // Closed, the focus goes back to Open.
@@ -308,7 +316,12 @@ export function Page({ path, title }: { path: string; title: string }) {
         Number.isFinite(told.params.height) &&
         told.params.height > 0
       ) {
-        setHeight(Math.ceil(told.params.height));
+        setHeight(
+          Math.min(
+            PAGE_TALLEST,
+            Math.max(PAGE_LOWEST, Math.ceil(told.params.height)),
+          ),
+        );
       }
     };
     addEventListener("message", heard);
