@@ -130,21 +130,17 @@ describe("what is current", () => {
     const ferritin = ["asha", "ravi"].flatMap((person) =>
       [1, 2, 3, 4].map(
         (month) =>
-          `('${person}-fer-${String(month)}', '${person}', 'lab', 'Ferritin', '${String(20 + month)}', ${String(20 + month)}, 'µg/L', '2026-0${String(month)}-15', '2026-10-01T10:00:00Z', NULL)`,
+          `('${person}-fer-${String(month)}', '${person}', 'lab', 'Ferritin', '${String(20 + month)}', ${String(20 + month)}, 'µg/L', '2026-0${String(month)}-15', '2026-10-01T10:00:00Z', NULL, 'tst-fer-${person}', ${String(20 + month)})`,
       ),
     );
     store.db.exec(`
-      INSERT INTO results (id, person_id, category, test_name, value_text, value_number, unit, measured_at, entered_at, replaces_id) VALUES
+      INSERT INTO tests (id, person_id, name) VALUES
+        ('tst-fer-asha', 'asha', 'Ferritin'), ('tst-fer-ravi', 'ravi', 'Ferritin');
+      INSERT INTO results (id, person_id, category, test_name, value_text, value_number, unit, measured_at, entered_at, replaces_id, test_id, test_number) VALUES
         ${ferritin.join(",\n")};`);
-    const trend = async (person: string, id: string) => {
-      const pages =
-        person === "asha"
-          ? await allPages("lab_result")
-          : [await views.page(person, "lab_result")];
-      return pages
-        .flatMap((page) => page.trends?.[id] ?? [])
-        .map((value) => value.id);
-    };
+    // Lab results' row of each person's ferritin.
+    const trend = async (person: string, id: string) =>
+      (await views.labResults(person)).trends[id]?.map((value) => value.id);
     const whole = ["asha-fer-1", "asha-fer-2", "asha-fer-3", "asha-fer-4"];
     expect(await trend("asha", "asha-fer-4")).toEqual(whole);
     expect(await trend("ravi", "ravi-fer-4")).toEqual([
@@ -159,8 +155,8 @@ describe("what is current", () => {
       { kind: "result", action: "remove", id: "asha-fer-2" },
     ]);
     store.db.exec(`
-      INSERT INTO results (id, person_id, category, test_name, value_text, value_number, unit, measured_at, entered_at, replaces_id) VALUES
-        ('asha-fer-3b', 'asha', 'lab', 'Ferritin', '24', 24, 'µg/L', '2026-03-15', '2026-10-02T10:00:00Z', 'asha-fer-3');`);
+      INSERT INTO results (id, person_id, category, test_name, value_text, value_number, unit, measured_at, entered_at, replaces_id, test_id, test_number) VALUES
+        ('asha-fer-3b', 'asha', 'lab', 'Ferritin', '24', 24, 'µg/L', '2026-03-15', '2026-10-02T10:00:00Z', 'asha-fer-3', 'tst-fer-asha', 24);`);
     expect(await trend("asha", "asha-fer-4")).toEqual([
       "asha-fer-1",
       "asha-fer-3b",
@@ -191,7 +187,7 @@ describe("groups and paging", () => {
       "INSERT INTO reports (id, person_id, document_id, issuer, collected) VALUES (?, 'asha', 'doc-asha-aug', 'Sunrise Labs', ?)",
     );
     const insertResult = store.db.prepare(
-      "INSERT INTO results (id, person_id, report_id, category, test_name, value_text, measured_at, entered_at) VALUES (?, 'asha', ?, 'lab', ?, '1', ?, '2026-10-01T10:00:00Z')",
+      "INSERT INTO results (id, person_id, report_id, category, test_name, value_text, measured_at, entered_at, test_id) VALUES (?, 'asha', ?, 'lab', ?, '1', ?, '2026-10-01T10:00:00Z', 'tst-hba1c')",
     );
     for (const report of reports) {
       insertReport.run(report.id, report.collected);
@@ -402,10 +398,11 @@ describe("a row opened", () => {
 
   it("shows a stored row that doesn't fit as can't-show, and the page and tiles still answer", async () => {
     store.db.exec(
-      "INSERT INTO results (id, person_id, category, test_name, value_text, measured_at, entered_at) VALUES ('res-bad', 'asha', 'lab', 'Iron', '80', 'last week', '2026-10-01T10:00:00Z')",
+      `INSERT INTO tests (id, person_id, name) VALUES ('tst-iron', 'asha', 'Iron');
+       INSERT INTO results (id, person_id, category, test_name, value_text, measured_at, entered_at, test_id) VALUES ('res-bad', 'asha', 'lab', 'Iron', '80', 'last week', '2026-10-01T10:00:00Z', 'tst-iron')`,
     );
-    const page = await views.page("asha", "lab_result");
-    expect(page.groups.at(-1)?.rows).toEqual([
+    const lab = await views.labResults("asha");
+    expect(lab.sections.at(-1)?.tests.map((test) => test.latest)).toEqual([
       expect.objectContaining({
         kind: "result",
         id: "res-a8",
@@ -543,70 +540,112 @@ describe("a visit", () => {
   });
 });
 
-describe("series", () => {
-  it("lists a test's current values in one unit and category, dated oldest first, undated last", async () => {
+describe("lab results by test", () => {
+  it("list each test with a lab result once, in its section, its latest by sample date; a test's page has its current values newest first, and not another person's", async () => {
+    // Creatinine from two labs and an older report saved last; Albumin has
+    // no value.
     store.db.exec(`
-      INSERT INTO results (id, person_id, category, test_name, value_text, unit, measured_at, entered_at) VALUES
-        ('tsh-mar', 'asha', 'lab', 'TSH', '1.9', 'mIU/L', '2026-03', '2026-10-01T10:00:00Z'),
-        ('tsh-none', 'asha', 'lab', 'TSH', '3.0', 'mIU/L', NULL, '2026-10-01T10:00:00Z'),
-        ('tsh-other', 'asha', 'lab', 'TSH', '1900', 'µIU/mL', '2026-04-01', '2026-10-01T10:00:00Z'),
-        ('tsh-moved', 'asha', 'measurement', 'TSH', '2.5', 'mIU/L', '2026-04-01', '2026-10-01T10:00:00Z');`);
-    const series = await views.series("asha", "TSH", "mIU/L", "lab");
-    // The replaced 2.1 isn't a point: the amended 4.6 is.
-    expect(series.values.map((value) => value.id)).toEqual([
-      "tsh-mar",
-      "res-a5",
-      "tsh-none",
+      INSERT INTO tests (id, person_id, name, section, unit) VALUES
+        ('tst-crea', 'asha', 'Creatinine', 'Kidney', 'mg/dL'),
+        ('tst-alb', 'asha', 'Albumin', 'Kidney', 'g/dL');
+      INSERT INTO results (id, person_id, report_id, category, test_name, value_text, value_number, unit, measured_at, entered_at, test_id, test_number) VALUES
+        ('crea-1', 'asha', NULL, 'lab', 'S. Creatinine', '1.0', 1.0, 'mg/dL', '2026-03-01', '2026-03-02T09:00:00Z', 'tst-crea', 1.0),
+        ('crea-2', 'asha', 'rep-asha-sep', 'lab', 'Creatinine, serum', '1.2', 1.2, 'mg/dl', '2026-09-01', '2026-09-02T09:00:00Z', 'tst-crea', 1.2),
+        ('crea-old', 'asha', NULL, 'lab', 'CREA', '97', 97, 'µmol/L', '2023-01-10', '2026-10-01T09:00:00Z', 'tst-crea', 1.1);`);
+    const lab = await views.labResults("asha");
+    expect(
+      lab.sections.map(({ section, tests }) => [
+        section,
+        tests.map(({ test, latest, count }) => [test.id, latest.id, count]),
+      ]),
+    ).toEqual([
+      ["Inflammation", [["tst-crp", "res-a3", 1]]],
+      ["Kidney", [["tst-crea", "crea-2", 3]]],
+      [
+        "Sugar",
+        [
+          ["tst-glucose", "res-a2", 1],
+          ["tst-hba1c", "res-a1", 1],
+        ],
+      ],
+      [
+        "Thyroid",
+        [
+          ["tst-ft4", "res-a6", 1],
+          ["tst-tsh", "res-a5", 1],
+        ],
+      ],
+      ["Vitamins", [["tst-vitd", "res-a7", 1]]],
+      [null, [["tst-blood-group", "res-a8", 1]]],
     ]);
-    const other = await views.series("asha", "TSH", "mIU/L", "measurement");
-    expect(other.values.map((value) => value.id)).toEqual(["tsh-moved"]);
+    const tiles = await views.overview("asha");
+    expect(tiles?.tiles.find((tile) => tile.kind === "lab_result")?.count).toBe(
+      8,
+    );
+
+    const page = await views.test("asha", "tst-crea");
+    expect(page?.values.map(({ row, report }) => [row.id, report])).toEqual([
+      ["crea-2", { issuer: "Sunrise Labs" }],
+      ["crea-1", null],
+      ["crea-old", null],
+    ]);
+    expect(await views.test("asha", "tst-ldl")).toBeUndefined();
+    expect(
+      (await views.labResults("ravi")).sections.flatMap(({ tests }) =>
+        tests.map(({ test }) => test.id),
+      ),
+    ).toEqual(["tst-hdl", "tst-ldl"]);
   });
 });
 
 describe("a row's small trend", () => {
-  it("has its series' latest values up to it, read for the whole page, with a date and a number", async () => {
-    // Eight ferritin values typed in, one a month apart, one not a number,
-    // one in another unit, and one on the other page.
+  it("has the latest values of its test's line up to it, at their numbers in the test's unit, whatever their printed name, unit or page", async () => {
+    // Eight ferritin values typed in, one a month apart; a word; one in a
+    // unit the AI couldn't compare; one converted from another lab's unit;
+    // and one on Measurements.
     const months = Array.from({ length: 8 }, (_, i) => {
       const month = String(i + 1).padStart(2, "0");
-      return `('fer-${month}', 'asha', 'lab', 'Ferritin', '${String(20 + i)}', ${String(20 + i)}, 'µg/L', '30 - 400', '2025-${month}-15', '2025-12-01T10:00:00Z')`;
+      return `('fer-${month}', 'asha', 'lab', 'Ferritin', '${String(20 + i)}', ${String(20 + i)}, 'µg/L', '2025-${month}-15', 'tst-fer', ${String(20 + i)})`;
     });
     store.db.exec(`
-      INSERT INTO results (id, person_id, category, test_name, value_text, value_number, unit, reference_range, measured_at, entered_at) VALUES
-        ${months.join(",\n")},
-        ('fer-word', 'asha', 'lab', 'Ferritin', 'Haemolysed', NULL, 'µg/L', NULL, '2025-09-15', '2025-12-01T10:00:00Z'),
-        ('fer-unit', 'asha', 'lab', 'Ferritin', '2.6', 2.6, 'nmol/L', NULL, '2025-10-15', '2025-12-01T10:00:00Z'),
-        ('fer-meas', 'asha', 'measurement', 'Ferritin', '25', 25, 'µg/L', NULL, '2025-11-15', '2025-12-01T10:00:00Z');`);
-    const trends = Object.assign(
-      {},
-      ...(await allPages("lab_result")).map((page) => page.trends),
-    ) as Record<string, { id: string }[]>;
-    const ids = (id: string) => trends[id]?.map((value) => value.id);
-    // The newest: the six latest values, oldest first, ending at it.
-    expect(ids("fer-08")).toEqual([
-      "fer-03",
+      INSERT INTO tests (id, person_id, name, unit) VALUES ('tst-fer', 'asha', 'Ferritin', 'µg/L');
+      INSERT INTO results (id, person_id, category, test_name, value_text, value_number, unit, measured_at, test_id, test_number, entered_at) VALUES
+        ${months.map((month) => month.replace(/\)$/, ", '2025-12-01T10:00:00Z')")).join(",\n")},
+        ('fer-word', 'asha', 'lab', 'Ferritin', 'Haemolysed', NULL, 'µg/L', '2025-09-15', 'tst-fer', NULL, '2025-12-01T10:00:00Z'),
+        ('fer-unit', 'asha', 'lab', 'Ferritin', '2.6', 2.6, 'nmol/L', '2025-10-15', 'tst-fer', NULL, '2025-12-01T10:00:00Z'),
+        ('fer-conv', 'asha', 'lab', 'Ferritin (CLIA)', '0.026', 0.026, 'mg/L', '2025-10-20', 'tst-fer', 26, '2025-12-01T10:00:00Z'),
+        ('fer-meas', 'asha', 'measurement', 'Ferritin', '25', 25, 'µg/L', '2025-11-15', 'tst-fer', 25, '2025-12-01T10:00:00Z');`);
+    const ids = (
+      trends: Readonly<Record<string, readonly { id: string }[]>>,
+      id: string,
+    ) => trends[id]?.map((value) => value.id);
+    // Lab results' newest: the six latest values on the line, oldest
+    // first, ending at it, the converted one too.
+    const lab = await views.labResults("asha");
+    expect(ids(lab.trends, "fer-conv")).toEqual([
       "fer-04",
       "fer-05",
       "fer-06",
       "fer-07",
       "fer-08",
+      "fer-conv",
     ]);
-    // An older row's trend ends at its own value.
-    expect(ids("fer-02")).toEqual(["fer-01", "fer-02"]);
-    // The first value alone, a word, another unit alone: no trend.
-    expect(trends["fer-01"]).toBeUndefined();
-    expect(trends["fer-word"]).toBeUndefined();
-    expect(trends["fer-unit"]).toBeUndefined();
-    // On Measurements, the weights: one known by its month, then the day.
+    expect(lab.trends["fer-conv"]?.at(-1)).toMatchObject({ test_number: 26 });
+    // On Measurements, the same line goes on to its own value.
     const measured = Object.assign(
       {},
       ...(await allPages("measurement")).map((page) => page.trends),
     ) as Record<string, { id: string }[]>;
-    expect(measured["res-a10"]?.map((value) => value.id)).toEqual([
-      "res-a11",
-      "res-a10",
+    expect(ids(measured, "fer-meas")).toEqual([
+      "fer-05",
+      "fer-06",
+      "fer-07",
+      "fer-08",
+      "fer-conv",
+      "fer-meas",
     ]);
-    expect(measured["fer-meas"]).toBeUndefined();
+    // The weights: one known by its month, then the day.
+    expect(ids(measured, "res-a10")).toEqual(["res-a11", "res-a10"]);
     // Other pages have none.
     expect((await views.page("asha", "medicine_use")).trends).toBeUndefined();
   });
@@ -617,11 +656,11 @@ describe("lab results and measurements", () => {
     store.db.exec(`
       INSERT INTO reports (id, person_id, document_id, issuer, collected) VALUES
         ('rep-visit', 'asha', 'doc-asha-sep', 'Lakeview Clinic', NULL);
-      INSERT INTO results (id, person_id, report_id, category, test_name, value_text, unit, measured_at, entered_at) VALUES
-        ('bp-sep', 'asha', 'rep-asha-sep', 'measurement', 'Blood pressure', '130/85', 'mmHg', '2026-09-01', '2026-10-01T10:00:00Z'),
-        ('lab-visit', 'asha', 'rep-visit', 'lab', 'Ferritin', '35', 'ng/mL', '2025-07-20', '2026-10-01T10:00:00Z'),
-        ('pulse-visit', 'asha', 'rep-visit', 'measurement', 'Pulse', '72', '/min', '2025-09-03T10:15', '2026-10-01T10:00:00Z'),
-        ('height-when', 'asha', NULL, 'measurement', 'Height', '160', 'cm', NULL, '2026-10-01T10:00:00Z');`);
+      INSERT INTO results (id, person_id, report_id, category, test_name, value_text, unit, measured_at, entered_at, test_id) VALUES
+        ('bp-sep', 'asha', 'rep-asha-sep', 'measurement', 'Blood pressure', '130/85', 'mmHg', '2026-09-01', '2026-10-01T10:00:00Z', 'tst-bp'),
+        ('lab-visit', 'asha', 'rep-visit', 'lab', 'Ferritin', '35', 'ng/mL', '2025-07-20', '2026-10-01T10:00:00Z', 'tst-hba1c'),
+        ('pulse-visit', 'asha', 'rep-visit', 'measurement', 'Pulse', '72', '/min', '2025-09-03T10:15', '2026-10-01T10:00:00Z', 'tst-bp'),
+        ('height-when', 'asha', NULL, 'measurement', 'Height', '160', 'cm', NULL, '2026-10-01T10:00:00Z', 'tst-weight');`);
     const groupsOf = async (kind: "lab_result" | "measurement") =>
       (await allPages(kind)).flatMap((page) =>
         page.groups.map((group) => ({

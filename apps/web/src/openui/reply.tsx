@@ -109,8 +109,6 @@ function send(personId: string, message: string) {
   if (box.append(message) && empty) void box.submit();
 }
 
-const WEB = /^https?:\/\//i;
-
 /**
  * What OpenUI Lang starts with, before OpenUI finds its root: a name, or
  * `name = …`, on the first line (`root = Card(` until its `[` comes).
@@ -128,6 +126,7 @@ export function OpenUIReply({
   streaming,
   personId,
   markdown,
+  openLink,
   children,
 }: {
   text: string;
@@ -136,6 +135,8 @@ export function OpenUIReply({
   personId: string;
   /** How the reply's Markdown text draws its links and files. */
   markdown: Options;
+  /** Opens a button's link, as the reply's links open. */
+  openLink: (url: string) => void;
   /** The reply as Markdown, when it has no OpenUI in it. */
   children: ReactNode;
 }) {
@@ -159,9 +160,7 @@ export function OpenUIReply({
       send(personId, messageOf(event));
     } else if (event.type === BuiltinActionType.OpenUrl) {
       const url = event.params["url"];
-      if (typeof url === "string" && WEB.test(url)) {
-        open(url, "_blank", "noopener,noreferrer");
-      }
+      if (typeof url === "string") openLink(url);
     }
   };
   return (

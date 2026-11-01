@@ -123,11 +123,12 @@ test("Ask Rufi puts chips of several kinds in the box, a report as one, and the 
   const row = (name: string) =>
     page
       .getByRole("listitem")
-      .filter({ has: page.getByRole("button", { name, exact: true }) });
+      .filter({ has: page.getByRole("link", { name, exact: true }) });
 
-  // By keyboard: Tab from the row to its Ask Rufi shows it; Enter adds the chip.
+  // By keyboard: Tab from the test to its Ask Rufi shows it; Enter adds the
+  // test's chip.
   const ask = row("CRP").getByRole("button", { name: "Ask Rufi" });
-  await row("CRP").getByRole("button", { name: "CRP", exact: true }).focus();
+  await row("CRP").getByRole("link", { name: "CRP", exact: true }).focus();
   await page.keyboard.press("Tab");
   await expect(ask).toBeFocused();
   // Focus shows it, as the pointer does.
@@ -135,12 +136,9 @@ test("Ask Rufi puts chips of several kinds in the box, a report as one, and the 
   await page.keyboard.press("Enter");
   await added(bar, "Repeat HbA1c · 15 Jan 2026 +1");
   expect(page.url()).toBe(results);
-  // A report: one chip for its results, from its heading.
-  await page
-    .getByRole("button", {
-      name: "Ask Rufi about this report: Sunrise Labs · 1 Sep 2026 · 2 results",
-    })
-    .click();
+  // Another test, by the pointer.
+  await row("Free T4").hover();
+  await row("Free T4").getByRole("button", { name: "Ask Rufi" }).click();
   expect(page.url()).toBe(results);
   await expect(minimise).toHaveCount(0);
   await added(bar, "Repeat HbA1c · 15 Jan 2026 +2");
@@ -151,8 +149,8 @@ test("Ask Rufi puts chips of several kinds in the box, a report as one, and the 
   await expect(box(bar)).toBeFocused();
   await expect(chips(bar).getByRole("listitem")).toHaveText([
     "Repeat HbA1c · 15 Jan 2026",
-    "CRP <5 mg/L · 12 Aug 2026",
-    "Sunrise Labs · 1 Sep 2026 · 2 results",
+    "CRP",
+    "Free T4",
   ]);
   await accessible(page);
 
@@ -161,12 +159,12 @@ test("Ask Rufi puts chips of several kinds in the box, a report as one, and the 
     (response) =>
       response.url().endsWith("/chat/draft") &&
       response.request().method() === "PUT" &&
-      response.request().postData()?.includes("rep-asha-sep") === true &&
-      response.request().postData()?.includes("res-a3") === false,
+      response.request().postData()?.includes("tst-ft4") === true &&
+      response.request().postData()?.includes("tst-crp") === false,
   );
   await chips(bar)
     .getByRole("button", {
-      name: "Take CRP <5 mg/L · 12 Aug 2026 out of the message",
+      name: "Take CRP out of the message",
     })
     .click();
   await expect(chips(bar).getByRole("listitem")).toHaveCount(2);
@@ -176,7 +174,7 @@ test("Ask Rufi puts chips of several kinds in the box, a report as one, and the 
   await opener(bar).click();
   await expect(chips(bar).getByRole("listitem")).toHaveText([
     "Repeat HbA1c · 15 Jan 2026",
-    "Sunrise Labs · 1 Sep 2026 · 2 results",
+    "Free T4",
   ]);
 
   await box(bar).fill("Are these high?");
@@ -187,12 +185,12 @@ test("Ask Rufi puts chips of several kinds in the box, a report as one, and the 
   const message = log(bar).locator("[data-entry]").first();
   await expect(chips(message).getByRole("listitem")).toHaveText([
     "Repeat HbA1c · 15 Jan 2026",
-    "Sunrise Labs · 1 Sep 2026 · 2 results",
+    "Free T4",
   ]);
   await expect(log(bar).locator(".reply")).toHaveText(/^ok:Are these high\?/);
   expect(page.url()).toBe(results);
   expect((await inputs(rufi)).at(-1)?.at(-1)).toBe(
-    "Are these high?\n\nReferences the user added to this message (Rufi's, exact: read them with your tools):\n- follow-up f-hba1c (kind follow_up), version null: Repeat HbA1c · 15 Jan 2026\n- report rep-asha-sep, version null: Sunrise Labs · 1 Sep 2026 · 2 results",
+    "Are these high?\n\nReferences the user added to this message (Rufi's, exact: read them with your tools):\n- follow-up f-hba1c (kind follow_up), version null: Repeat HbA1c · 15 Jan 2026\n- test tst-ft4 (kind test), version null: Free T4",
   );
 
   // With the panel open, Ask Rufi adds to its box, and it stays open (a
@@ -202,7 +200,7 @@ test("Ask Rufi puts chips of several kinds in the box, a report as one, and the 
   await row("HbA1c").getByRole("button", { name: "Ask Rufi" }).click();
   await expect(minimise).toBeVisible();
   await expect(chips(bar.locator("form")).getByRole("listitem")).toHaveText([
-    "HbA1c 6.8 % · 12 Aug 2026",
+    "HbA1c",
   ]);
   await expect(box(bar)).toBeFocused();
 });
@@ -301,6 +299,9 @@ const DRAFTS = `
     json_object('test_name', 'Test ' || n, 'value_text', '' || n, 'date', json('{"label":"Collected","date":"12 Aug 2026","iso":"2026-08-12"}')),
     'Test ' || n || ' | ' || n, '2026-10-01T09:00:00Z'
   FROM (SELECT 1 AS n UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5 UNION SELECT 6 UNION SELECT 7);
+  INSERT INTO tests (id, person_id, name)
+  SELECT 'tst-' || n, 'asha', 'Test ' || n
+  FROM (SELECT 1 AS n UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5 UNION SELECT 6 UNION SELECT 7);
 `;
 
 test("a save of a document's items shows its summary, with what was saved folded", async ({
@@ -321,6 +322,7 @@ test("a save of a document's items shows its summary, with what was saved folded
                 version: 1,
                 as: "new",
                 category: "lab",
+                in_test: `tst-${String(n)}`,
               })),
             },
           },
@@ -341,7 +343,7 @@ test("a save of a document's items shows its summary, with what was saved folded
   await receipt.getByText("Show what was saved").click();
   await expect(list).toHaveCount(7);
   await expect(list.first()).toHaveText(
-    'Added result Test 1 1: category lab, measured 12 Aug 2026 ("Collected 12 Aug 2026") · page 1',
+    'Added result Test 1 1: category lab, measured 12 Aug 2026 ("Collected 12 Aug 2026"), in test Test 1 · page 1',
   );
   await accessible(page);
   // Overview's Recent changes names it by its summary alone.

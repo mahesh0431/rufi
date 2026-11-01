@@ -1,6 +1,7 @@
 // Saving a document's draft items into the record (docs/adr/0005). The AI
 // names each item, the version it read, how it goes in (a new result,
-// another source for a result the person has, or a correction of one) and
+// another source for a result the person has or one this save adds, or a
+// correction of one) and
 // any fix the user gave in the chat; Rufi takes the values from the stored
 // item, never retyped by the AI, but for the number of a value the user
 // fixed on the document's page, which the AI reads from their words. Code
@@ -21,6 +22,7 @@ import {
   kindNamed,
   literal,
   Position,
+  TestRef,
   type Field,
   type Kind,
   type Row,
@@ -73,25 +75,51 @@ export const ItemSave = Schema.Struct({
   }),
   as: Schema.Literals(["new", "another_source", "correction"]).annotate({
     description:
-      "new: a result the user doesn't have yet. another_source: the same result is already saved (from the user's message or another document): its values stay, and this document's page becomes another source. correction: the item corrects a saved result: a new result replaces it.",
+      "new: a result the user doesn't have yet. another_source: the same result is already saved (from the user's message or another document), or saved new from another item of this save: its values stay, and this document's page becomes another source. correction: the item corrects a saved result: a new result replaces it.",
   }),
   record: Schema.optionalKey(
-    Schema.Struct({
-      id: Id.annotate({
-        description: "The saved result's id, from get_records.",
+    Schema.Union([
+      Schema.Struct({
+        id: Id.annotate({
+          description: "The saved result's id, from get_records.",
+        }),
+        version: Schema.NullOr(Id).annotate({
+          description: "The saved result's version, as get_records gave it.",
+        }),
       }),
-      version: Schema.NullOr(Id).annotate({
-        description: "The saved result's version, as get_records gave it.",
+      Schema.Struct({
+        item: Id.annotate({
+          description:
+            "Another item of this save, saved as new in it: the same result printed twice (on two pages, or in two documents). Only for another_source.",
+        }),
       }),
-    }).annotate({
+    ]).annotate({
       description:
-        "For another_source and correction: the saved result it is another source for, or corrects.",
+        "For another_source and correction: the saved result it is another source for, or corrects. Another source can name instead an item this save adds as new.",
     }),
   ),
   category: Schema.optionalKey(
     Schema.Literals(["lab", "measurement"]).annotate({
       description:
         "What the item is, chosen with the user: lab (a test of a sample) or measurement (blood pressure, pulse, weight, height, temperature, SpO2). Needed for new; a correction keeps the corrected result's category unless you give one; never for another_source.",
+    }),
+  ),
+  in_test: Schema.optionalKey(
+    TestRef.annotate({
+      description:
+        "Which of the user's tests the result is in: a test's id from get_records (kind test), or {ref} of a test a change of this save adds, whatever the lab printed. Needed for new; a correction keeps the corrected result's test unless you give one; never for another_source.",
+    }),
+  ),
+  test_number: Schema.optionalKey(
+    Schema.Finite.annotate({
+      description:
+        "The result's number in its test's unit: the same number when its unit means the test's unit, converted when it doesn't and you know how, left out when you aren't sure or it has no number. For new and correction; never for another_source.",
+    }),
+  ),
+  test_second_number: Schema.optionalKey(
+    Schema.Finite.annotate({
+      description:
+        "A two-number result's second number (a blood pressure's 84) in its test's unit, as test_number.",
     }),
   ),
   value_number: Schema.optionalKey(
@@ -167,6 +195,36 @@ interface Context {
   problem: (path: string, got: unknown, fix: string) => void;
   /** Records the save already changes, "kind:id", and where. */
   touched: Map<string, string>;
+  /** The refs of the records the save's changes add. */
+  named: ReadonlyMap<string, Kind>;
+}
+
+/** A test as a result names it: its id, or the ref of a test this save adds. */
+export type TestGiven = string | { ref: string };
+
+/** Why a result can't be in the test it names, or undefined when it can. */
+export async function testProblem(
+  trx: Transaction<Tables>,
+  personId: string,
+  given: TestGiven,
+  named: ReadonlyMap<string, Kind>,
+): Promise<string | undefined> {
+  if (typeof given !== "string") {
+    const kind = named.get(given.ref);
+    if (kind?.name === "test") return undefined;
+    return kind
+      ? `${given.ref} is a ${kind.noun} this save adds, not a test.`
+      : `No earlier change of this save adds a record with ref ${given.ref}: add the test first, with that ref.`;
+  }
+  const test = await trx
+    .selectFrom("tests")
+    .select("id")
+    .where("person_id", "=", personId)
+    .where("id", "=", given)
+    .executeTakeFirst();
+  return test
+    ? undefined
+    : "No test with this id is in this person's record: read the tests with get_records, kind test.";
 }
 
 /**
@@ -226,10 +284,17 @@ export async function planItems(
       ?.file_name ?? "a document";
 
   const targets = items.flatMap((i) =>
-    i.record ? [{ kind: "result", id: i.record.id }] : [],
+    i.record && "id" in i.record ? [{ kind: "result", id: i.record.id }] : [],
   );
   const versions = await recordVersions(trx, personId, targets);
   const seen = new Map<string, number>();
+  /** Items that are another source for another item of this save. */
+  const ofItems: {
+    at: string;
+    item: string;
+    target: string;
+    page: Planned["page"];
+  }[] = [];
   const asked = (type: Ref["type"], id: string) =>
     context.refs.filter((ref) => ref.type === type && ref.id === id);
 
@@ -343,6 +408,14 @@ export async function planItems(
         );
         continue;
       }
+      if (save.in_test === undefined) {
+        problem(
+          `${at}.in_test`,
+          undefined,
+          "Give the new result's test: one of the user's tests from get_records (kind test), or {ref} of a test a change of this save adds.",
+        );
+        continue;
+      }
       if (save.record !== undefined) {
         problem(
           `${at}.record`,
@@ -358,6 +431,23 @@ export async function planItems(
           undefined,
           `Name the saved result this item is ${save.as === "correction" ? "a correction of" : "another source for"}, with its id and version from get_records.`,
         );
+        continue;
+      }
+      if ("item" in save.record) {
+        const target = save.record.item;
+        const wrong =
+          save.as !== "another_source"
+            ? "Only another_source can name an item of this save. A correction names the saved result it corrects, with its id and version from get_records."
+            : save.category !== undefined
+              ? "Another source keeps the result as it is, its category too: leave category out."
+              : save.fix !== undefined
+                ? "Another source keeps the result's values. If the user corrected a value, save the item as new or as a correction instead."
+                : undefined;
+        if (wrong) {
+          problem(`${at}.record`, save.record, wrong);
+          continue;
+        }
+        ofItems.push({ at, item: row.id, target, page });
         continue;
       }
       const target = save.record;
@@ -396,6 +486,17 @@ export async function planItems(
       }
       context.touched.set(key, at);
       if (save.as === "another_source") {
+        const own = (
+          ["in_test", "test_number", "test_second_number"] as const
+        ).find((name) => save[name] !== undefined);
+        if (own !== undefined) {
+          problem(
+            `${at}.${own}`,
+            save[own],
+            "Another source keeps the saved result as it is, its test and numbers too: leave them out. To move the result to another test, change it in a save of its own after this one.",
+          );
+          continue;
+        }
         if (save.category !== undefined) {
           problem(
             `${at}.category`,
@@ -431,9 +532,25 @@ export async function planItems(
     // result's category unless the AI gives one.
     const category = save.category ?? before?.["category"];
     const measurement = category === "measurement";
+    // Its test: the AI's, or the corrected result's.
+    if (save.in_test !== undefined) {
+      const wrong = await testProblem(
+        trx,
+        personId,
+        save.in_test,
+        context.named,
+      );
+      if (wrong) {
+        problem(`${at}.in_test`, save.in_test, wrong);
+        continue;
+      }
+    }
     let source: Source | undefined;
     const columns: Row = {
       category,
+      test_id: save.in_test ?? before?.["test_id"],
+      test_number: save.test_number ?? null,
+      test_second_number: save.test_second_number ?? null,
       test_name: fields.test_name,
       value_text: fields.value_text,
       // A value fixed on the page has no number of its own: the AI's.
@@ -496,6 +613,33 @@ export async function planItems(
         number: own?.report_number ?? null,
         collected: own?.date ?? null,
       },
+    });
+  }
+  // Another source for an item this save adds as new: linked once its
+  // result is written, in the same save.
+  for (const { at, item, target, page } of ofItems) {
+    const added = planned.find(
+      (p) => p.action === "add" && p.item?.id === target && p.item.as === "new",
+    );
+    if (!added) {
+      problem(
+        `${at}.record`,
+        { item: target },
+        "No item of this save is saved as new with this id. Name an item this save adds as new, or a saved result by its id and version from get_records.",
+      );
+      continue;
+    }
+    added.ref = `item:${target}`;
+    planned.push({
+      kind: result,
+      action: "link",
+      id: undefined,
+      of: added.ref,
+      source: undefined,
+      page,
+      columns: {},
+      before: undefined,
+      item: { id: item, as: "another_source" },
     });
   }
   return { planned, earlier };

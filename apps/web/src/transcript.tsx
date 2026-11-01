@@ -16,7 +16,7 @@
 // page; older pages load as you scroll up, and the view stays where it is.
 // Each entry reads only itself from the live store, so a streaming reply
 // re-renders alone.
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowUpRight,
   Bell,
@@ -92,13 +92,13 @@ import {
 import { Dog, LiveDog } from "./dog.tsx";
 import { effortName } from "./model-menu.tsx";
 import { Button, buttonLook, ICON, Problem } from "./ui.tsx";
-import { anyWaiting, WaitingView } from "./waiting.tsx";
 
 // The AI's text is shown as Markdown, never as HTML: no raw HTML, no remote
 // images, and links only to http(s) pages, opened outside Rufi with no opener
 // or referrer. A reply also shows a picture or a page in a file the AI made
-// (an image or a link to its path), and draws a Mermaid diagram once it has
-// ended. Anything else shows as its text.
+// (an image or a link to its path), links a page of Rufi for the person
+// whose chat it is (rufi:/documents/<id>), which opens in place, and draws a
+// Mermaid diagram once it has ended. Anything else shows as its text.
 const WEB = /^https?:\/\//i;
 const webLink: Components["a"] = ({ href, children }) =>
   href !== undefined && WEB.test(href) ? (
@@ -123,9 +123,60 @@ const textOf = (node: {
         .map((child) => textOf(child as Parameters<typeof textOf>[0]))
         .join("");
 
+/** A page of Rufi, as a reply links it: rufi:/documents/<id>. */
+const RUFI = /^rufi:(\/[^/].*)$/i;
+
+/**
+ * The address of the chat person's page at `path`, or undefined when it
+ * would leave their pages ("/../", also written "%2e%2e"): the router
+ * resolves those segments, so they are refused, decoded or not.
+ */
+function ownPage(personId: string, path: string): string | undefined {
+  let url: URL;
+  let decoded: string;
+  try {
+    url = new URL(`/people/${personId}${path}`, "http://rufi.invalid");
+    decoded = decodeURIComponent(url.pathname);
+  } catch {
+    return undefined; // Not a path Rufi has.
+  }
+  const own = `/people/${personId}/`;
+  if (!url.pathname.startsWith(own) || /[\\]|(^|\/)\.\.?(\/|$)/.test(decoded)) {
+    return undefined;
+  }
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+/**
+ * A link to a page of Rufi in a reply: the person's page at that path,
+ * opened in place by Rufi's router. A wrong path shows Rufi's "no page";
+ * one that would leave the person's pages is its words only.
+ */
+function RufiLink({ path, children }: { path: string; children: ReactNode }) {
+  const personId = use(Whose);
+  const navigate = useNavigate();
+  const href = personId === "" ? undefined : ownPage(personId, path);
+  if (href === undefined) return <span>{children}</span>;
+  return (
+    <a
+      href={href}
+      onClick={(event) => {
+        event.preventDefault();
+        void navigate({ href });
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
 /** A reply's parts; `streaming`: it is still being written. */
 const replyComponents = (streaming: boolean): Components => ({
   a: ({ href, children, node, ...rest }) => {
+    const page = href === undefined ? null : RUFI.exec(href);
+    if (page?.[1] !== undefined) {
+      return <RufiLink path={page[1]}>{children}</RufiLink>;
+    }
     const file = fileIn(href);
     if (!file) return webLink({ href, children, node, ...rest });
     const words = node ? textOf(node) : "";
@@ -166,9 +217,9 @@ const replyComponents = (streaming: boolean): Components => ({
 const WRITING = replyComponents(true);
 const ENDED = replyComponents(false);
 
-/** A file's path, kept as written (file: too); the parts above check it. */
+/** A file's path or a page of Rufi, kept as written; the parts above check it. */
 const keepFiles = (url: string) =>
-  /^file:/i.test(url) ? url : defaultUrlTransform(url);
+  /^(file|rufi):/i.test(url) ? url : defaultUrlTransform(url);
 
 /** An OpenUI reply's Markdown text: its links and files, as above. */
 const textOptions = (parts: Components): Options => ({
@@ -258,6 +309,18 @@ function Reply({
   streaming: boolean;
 }) {
   const personId = use(Whose);
+  const navigate = useNavigate();
+  // A button's link, as the reply's links: a page of Rufi in place, a web
+  // page outside Rufi; anything else does nothing.
+  const openLink = (url: string) => {
+    const path = RUFI.exec(url)?.[1];
+    const href =
+      path === undefined || personId === ""
+        ? undefined
+        : ownPage(personId, path);
+    if (href !== undefined) void navigate({ href });
+    else if (WEB.test(url)) open(url, "_blank", "noopener,noreferrer");
+  };
   return (
     <div className="reply" data-entry={id}>
       <OpenUIReply
@@ -265,6 +328,7 @@ function Reply({
         streaming={streaming}
         personId={personId}
         markdown={streaming ? WRITING_TEXT : ENDED_TEXT}
+        openLink={openLink}
       >
         {/* A reply with no OpenUI in it. While it streams, half-written
             Markdown is closed so it reads right; a half-written link shows
@@ -304,6 +368,7 @@ export function TranscriptView({
   onOlder,
   className,
   inner,
+  room = 0,
 }: {
   live: StoreApi<Live>;
   /** Whose chat it is, for the links its lines open. */
@@ -313,14 +378,13 @@ export function TranscriptView({
   /** The scrolling area's classes, and those of what it holds. */
   className?: string;
   inner?: string;
+  /** Room under the last message, for what floats over the chat's end. */
+  room?: number;
 }) {
   const shown = useStore(live, useShallow(lines));
   const status = useStore(live, (state) => state.status);
-  // Nothing in the chat yet, and nothing waits.
-  const empty = useStore(
-    live,
-    (state) => state.order.length === 0 && !anyWaiting(state),
-  );
+  // Nothing in the chat yet.
+  const empty = useStore(live, (state) => state.order.length === 0);
   const before = useStore(live, (state) => state.before);
   const older = useStore(live, (state) => state.older);
   const clock = useWorkingClock(live, personId);
@@ -332,6 +396,7 @@ export function TranscriptView({
 
   // Follows the reply as it streams, unless you scrolled up to read.
   const scroller = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
   const log = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   const seen = useRef<View>({ top: 0, height: 0, view: 0 });
@@ -349,7 +414,7 @@ export function TranscriptView({
       seen.current = viewOf(element);
     };
     follow();
-    // New text, and a smaller view (the box grows).
+    // New text, a smaller view (the box grows), and more room at the end.
     const changes = new MutationObserver(follow);
     changes.observe(element, {
       childList: true,
@@ -358,6 +423,7 @@ export function TranscriptView({
     });
     const resizes = new ResizeObserver(follow);
     resizes.observe(element);
+    if (content.current) resizes.observe(content.current);
     return () => {
       changes.disconnect();
       resizes.disconnect();
@@ -438,6 +504,7 @@ export function TranscriptView({
       }}
     >
       <div
+        ref={content}
         className={`${inner ?? ""} ${status === "open" && blank ? "h-full" : ""}`}
       >
         {status === "missing" ? (
@@ -503,8 +570,8 @@ export function TranscriptView({
             )}
           </div>
         )}
-        {status === "open" && !blank && (
-          <WaitingView live={live} personId={personId} />
+        {status === "open" && !blank && room > 0 && (
+          <div aria-hidden style={{ height: room }} />
         )}
       </div>
     </div>

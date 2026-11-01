@@ -218,7 +218,7 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
   await message.press("Enter");
   await expect(page.locator(".receipt").getByRole("listitem")).toHaveText([
     "Changed medicine use Metformin 500 mg: status current → stopped",
-    "Added result Vitamin D 24 ng/mL: category lab, replaces Vitamin D 22 ng/mL",
+    "Added result Vitamin D 24 ng/mL: category lab, replaces Vitamin D 22 ng/mL, in test Vitamin D",
   ]);
   await page.getByRole("link", { name: /^Open Visit brief/ }).click();
   await page.reload();
@@ -241,9 +241,9 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
     .getByRole("link", { name: "HbA1c 6.8 % · 12 Aug 2026" })
     .click();
   await expect(page).toHaveURL(
-    /\/people\/asha\/record\/lab_result\?open=res-a1$/,
+    /\/people\/asha\/tests\/tst-hba1c\?open=res-a1$/,
   );
-  const row = page.getByRole("button", { name: "HbA1c", exact: true });
+  const row = page.getByRole("button", { name: "12 Aug 2026" });
   await expect(row).toHaveAttribute("aria-expanded", "true");
   await expect(row).toBeInViewport();
 

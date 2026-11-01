@@ -36,7 +36,7 @@ export type Drawn =
 /** What the worker is asked: look at a whole file, or draw one PDF page. */
 export type Task =
   | { task: "inspect"; bytes: Uint8Array }
-  | { task: "draw"; bytes: Uint8Array; page: number };
+  | { task: "draw"; bytes: Uint8Array; page: number; full: boolean };
 
 /** How long one file may take: a long PDF or a big photo, with room to spare. */
 const DEADLINE_MS = 60_000;
@@ -77,14 +77,18 @@ export const inspect = (
     deadlineMs,
   );
 
-/** Draws page `page` (1, 2, 3...) of a PDF; see PAGE_PIXELS in the worker. */
+/**
+ * Draws page `page` (1, 2, 3...) of a PDF, at full size when `full`; see
+ * PAGE_PIXELS and FULL_PAGE_PIXELS in the worker.
+ */
 export const draw = (
   bytes: Uint8Array,
   page: number,
+  full = false,
   deadlineMs = DEADLINE_MS,
 ): Promise<Drawn> =>
   inWorker(
-    { task: "draw", bytes, page },
+    { task: "draw", bytes, page, full },
     { ok: false, reason: "slow" },
     deadlineMs,
   );

@@ -91,8 +91,11 @@ export interface ApiDeps {
   port: () => number;
   /** A person's Overview: Needs you, the tiles and the latest saves. */
   overview: (personId: string) => Promise<Overview>;
-  /** The record's pages, rows and series, read only. */
-  record: Pick<RecordViews, "page" | "detail" | "series" | "followUps">;
+  /** The record's pages, tests and rows, read only. */
+  record: Pick<
+    RecordViews,
+    "page" | "labResults" | "test" | "detail" | "followUps"
+  >;
   /** A person's profile with its history; what they enter in its form. */
   profile: {
     read: (personId: string) => Promise<Profile | undefined>;
@@ -708,8 +711,19 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     c.json({ overview: await deps.overview((await person(c)).id) }),
   );
 
-  // The record, read only: a kind's page, a row, a test's series. Changes
-  // start in the chat.
+  // The record, read only: a kind's page, Lab results by test, a test's
+  // page, a row. Changes start in the chat.
+  app.get("/api/people/:personId/lab-results", async (c) =>
+    c.json(await deps.record.labResults((await person(c)).id)),
+  );
+  app.get("/api/people/:personId/tests/:testId", async (c) => {
+    const found = await deps.record.test(
+      (await person(c)).id,
+      c.req.param("testId"),
+    );
+    if (!found) throw new HttpError(404, "Not found.");
+    return c.json(found);
+  });
   app.get("/api/people/:personId/record/:kind", async (c) => {
     const { id } = await person(c);
     const kind = c.req.param("kind");
@@ -752,23 +766,6 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     if (!saved) throw new HttpError(404, "Not found.");
     return c.json(saved);
   });
-  app.get("/api/people/:personId/series", async (c) => {
-    const { id } = await person(c);
-    const test = c.req.query("test");
-    const category = c.req.query("category");
-    if (
-      test === undefined ||
-      test === "" ||
-      (category !== "lab" && category !== "measurement")
-    ) {
-      throw new HttpError(400, "That request isn't valid.");
-    }
-    // No unit: the test's values that have none.
-    return c.json(
-      await deps.record.series(id, test, c.req.query("unit") ?? null, category),
-    );
-  });
-
   // The person's follow-ups, in the Follow-ups page's groups.
   app.get("/api/people/:personId/follow-ups", async (c) =>
     c.json(await deps.record.followUps((await person(c)).id)),
@@ -926,15 +923,30 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       throw error;
     }
   });
+  // A page as the AI saw it, from the document of its add that holds it
+  // now: an old step names the document before a sort moved the page.
+  // `size=full` as the AI asked for it at full size.
   app.get(`${documentsPath}/:documentId/pages/:position`, async (c) => {
     const position = c.req.param("position");
     if (!/^[1-9]\d{0,5}$/.test(position))
       throw new HttpError(404, "Not found.");
-    const page = await deps.pages.page(
-      (await person(c)).id,
+    const personId = (await person(c)).id;
+    const holder = await deps.pages.holder(
+      personId,
       c.req.param("documentId"),
       Number(position),
     );
+    if (holder && "deleted" in holder) {
+      throw new HttpError(404, "This document was deleted.", { deleted: true });
+    }
+    const page =
+      holder &&
+      (await deps.pages.page(
+        personId,
+        holder.document,
+        Number(position),
+        c.req.query("size") === "full",
+      ));
     if (!page) throw new HttpError(404, "Not found.");
     if (!page.ok) {
       throw new HttpError(409, "This page couldn't be prepared to be shown.");
