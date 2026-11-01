@@ -221,7 +221,7 @@ You can stop a sub-agent in its pop-up, or ask the AI to stop one: just that one
 
 ## While the AI replies
 
-From the moment you send until the reply ends, the round button is **Stop** (the square) while the box is empty, and the send button once you type. Enter, or a click on it, does what **Settings** › **Sending while Rufi replies** says: **Steer** (the start) or **Queue**. ⌘Enter, or ⌘-click, does the other, and a light line under the box says so: "⌘↵ to queue", or "⌘↵ to steer" when Queue is your choice. The chat bar also shows a turning circle before its text then, because Activity doesn't show there.
+From the moment you send until the reply ends, the round button is **Stop** (the square) while the box is empty, and the send button once you type. Enter, or a click on it, does what **Settings** › **Sending while Rufi replies** says: **Steer** (the start; two arrows that meet) or **Queue** (a list with a plus). ⌘Enter, or ⌘-click, does the other. The button's tooltip says both, such as "Click to steer, ⌘-click or ⌘Enter to queue", and while you hold ⌘ the button shows the other. Nothing appears under the box, so the box stays where it is. The chat bar also shows a turning circle before its text then, because Activity doesn't show there.
 
 **What the AI does.** Activity shows the AI's notes, its thinking and its steps as they happen (see [Activity](#activity)). After a reload, or in another tab, it shows the same.
 
