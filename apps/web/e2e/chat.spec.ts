@@ -296,7 +296,7 @@ const WAITING = `
     ('q-2', 'asha', 'c-asha', 'person', 'Second', 2, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z'),
     ('q-3', 'asha', 'c-asha', 'person', 'Third', 3, '2026-10-10T09:00:00Z', '2026-10-10T09:00:00Z');`;
 
-test("waiting messages show just above the box: edit, reorder, steer, queue and remove; after a Stop, the next one goes", async ({
+test("waiting messages float just above the box: edit, reorder, steer, queue and remove; after a Stop, the next one goes", async ({
   page,
   rufi,
 }) => {
@@ -305,11 +305,7 @@ test("waiting messages show just above the box: edit, reorder, steer, queue and 
   await page.goto(rufi.link());
   await opener(chat(page)).click();
   // Just above the box, out of the chat's messages, in the order they go.
-  const waiting = chat(page)
-    .locator("form")
-    .locator(
-      "xpath=preceding-sibling::section[@aria-label='Waiting messages'][1]",
-    );
+  const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
   const items = waiting.getByRole("listitem");
   await expect(items).toHaveText([/^Second/, /^Third/]);
   await expect(log(chat(page))).toContainText("hang");
