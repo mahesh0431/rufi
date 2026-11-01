@@ -391,7 +391,7 @@ describe("what Claude does in a turn", () => {
       },
       {
         type: "text",
-        item: "af1f118b-ac96-46ed-ad9c-ecd7f3b979c1",
+        item: "msg_011CgXDY16vB8KbqWt9bJTTC:text:0",
         delta: "done",
         done: true,
       },
