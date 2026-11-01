@@ -141,7 +141,7 @@ Marks show you where to look. A mark never changes a value:
    - a draft **worth a look**, a page that **couldn't be read**, or a date that isn't clear.
    - **another name** on the report. If the report isn't yours, the AI saves nothing from it. It never saves a report for someone else.
 3. Answer, and say yes. When every result is plainly new and you said "save it", the AI saves at once. A result printed twice, for example on two pages of the report, is saved once with both pages as its sources; the AI says so and doesn't ask again, as nothing is lost.
-4. Lab results go to the Lab results page and measurements to Measurements (see [Lab results and Measurements](record.md#lab-results-and-measurements)). One yes is one save, so the chat shows one receipt with a summary, for example **Saved 42 results from Sunrise Labs August.pdf · 40 new · 1 more source · 1 correction · 3 new tests**, and the page of each one. Click **Show what was saved** to see the whole list.
+4. Lab results go to the Lab results page and measurements to Measurements (see [Lab results and Measurements](record.md#lab-results-and-measurements)). One yes is one save, so the chat shows one receipt, headed by where it came from, for example **Saved from Sunrise Labs August.pdf**, with each change and its page. Click **Show what was saved** to see the whole list. The AI's reply under it says in a line what it saved, for example "Saved 82 results; the haemoglobin printed again on page 2 is kept as a second source."
 
 What Rufi does when it saves a document's results:
 

@@ -61,7 +61,7 @@ One lab test or measurement, kept exactly as reported or entered: name, value, u
 _Avoid_: reading, lab value
 
 **Test**:
-One of a person's tests, such as Creatinine or Blood pressure: what their results are in, whatever each lab printed, so the values of one test from every lab are together. It has a name, a section (such as Kidney) and the unit its numbers are in, all in the AI's words; its line has every value at its number in that unit. The AI chooses each result's test when it saves the result, with the user, and gives the result's numbers in the test's unit: the printed number when the units mean the same, converted when they don't, none when it can't compare; the printed value stays as it came. Joining two tests, splitting one and renaming are saves in the chat, with a receipt and undo. A test is never removed: one with no results stays, and the AI can use it again. Results saved before Rufi had tests are in one test for each printed name and unit.
+One of a person's tests, such as Creatinine or Blood pressure: what their results are in, whatever each lab printed, so the values of one test from every lab are together. It has a name, a section (such as Kidney) and the unit its numbers are in, all in the AI's words; its chart has every value at its number in that unit. The AI chooses each result's test when it saves the result, with the user, and gives the result's numbers in the test's unit: the printed number when the units mean the same, converted when they don't, none when it can't compare; the printed value stays as it came. Joining two tests, splitting one and renaming are saves in the chat, with a receipt and undo. A test is never removed: one with no results stays, and the AI can use it again. Results saved before Rufi had tests are in one test for each printed name and unit.
 _Avoid_: analyte, biomarker, series, group
 
 **Category**:
@@ -73,7 +73,7 @@ A result of the category lab: a test of a sample, such as blood or urine, from a
 _Avoid_: lab value, test result
 
 **Measurement**:
-A result of the category measurement: a reading of the body, such as blood pressure, pulse, weight, height, temperature or SpO2, typed in or read from a document. The **Measurements** page groups them by the day they were taken, at the precision known; each is in a test, whose line it is on. Its date is when it was taken, never a lab's collection date.
+A result of the category measurement: a reading of the body, such as blood pressure, pulse, weight, height, temperature or SpO2, typed in or read from a document. The **Measurements** page groups them by the day they were taken, at the precision known; each is in a test, and drawn on that test's chart. Its date is when it was taken, never a lab's collection date.
 _Avoid_: vital, vitals, reading
 
 **As printed**:
@@ -107,7 +107,7 @@ One change to the record that the user agreed to in the chat, or entered themsel
 _Avoid_: change set, batch, transaction, commit
 
 **Receipt**:
-What Rufi adds to the chat for each save: "Saved", then one line for each change, written from what was saved, never from the AI's words. A change the user made in their profile's form has its receipt in Overview's Recent changes, not in the chat. A save of a document's draft items starts with a summary (how many new, more sources and corrections), and its lines say each one's page. A **sub-agent**'s names it by its title after "Saved".
+What Rufi adds to the chat for each save: "Saved", then one line for each change, written from what was saved, never from the AI's words. A change the user made in their profile's form has its receipt in Overview's Recent changes, not in the chat. A save of a document's draft items starts with where it came from ("Saved from Sunrise Labs August.pdf"), with no counts, and its lines say each one's page. A **sub-agent**'s names it by its title after "Saved".
 _Avoid_: toast, success message, confirmation
 
 **Undo**:

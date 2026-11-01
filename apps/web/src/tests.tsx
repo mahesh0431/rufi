@@ -303,7 +303,7 @@ function ValueLine({
             <span className="block text-xs text-muted">= {converted}</span>
           )}
           {!onTheLine(row) && (
-            <span className="block text-xs text-muted">Not on the line</span>
+            <span className="block text-xs text-muted">Not drawn</span>
           )}
         </span>
         <span>

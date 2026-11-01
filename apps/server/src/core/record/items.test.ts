@@ -444,7 +444,7 @@ describe("saving draft items", () => {
     });
     expect(saved.ok).toBe(true);
     expect(lines(saved.result.receipt)).toEqual([
-      "Saved 2 results from Sunrise Labs August.pdf · 2 new",
+      "Saved from Sunrise Labs August.pdf",
       'Added result HbA1c 7.1 %: category lab, range 4.0 - 5.6, flag H, measured 12 Aug 2026 ("Collected 12/08/2026"), in test HbA1c · page 1',
       'Added result TSH 2.1 mIU/L: category lab, range 0.4 - 4.0, measured 12 Aug 2026 ("Collected 12/08/2026"), in test TSH · page 1',
     ]);
@@ -731,7 +731,7 @@ describe("saving draft items", () => {
     });
     expect(linked.ok).toBe(true);
     expect(lines(linked.result.receipt)).toEqual([
-      "Saved 1 result from Sunrise Labs August.pdf · 1 more source",
+      "Saved from Sunrise Labs August.pdf",
       "Added a source to result TSH 2.1 mIU/L: Sunrise Labs August.pdf, page 1 (its values stay as they are)",
     ]);
     expect(one("SELECT * FROM results WHERE id = 'res-typed'")).toEqual(before);
@@ -840,7 +840,7 @@ describe("saving draft items", () => {
       ],
     });
     expect(lines(saved.result.receipt)).toEqual([
-      "Saved 2 results from Sunrise Labs August.pdf · 1 new · 1 more source",
+      "Saved from Sunrise Labs August.pdf",
       'Added result Haemoglobin 13.4 g/dL: category lab, measured 12 Aug 2026 ("Collected 12/08/2026"), in test HbA1c · page 1',
       "Added a source to result Haemoglobin 13.4 g/dL: Sunrise Labs August.pdf, page 2 (its values stay as they are)",
     ]);
@@ -900,7 +900,7 @@ describe("saving draft items", () => {
     const again = await call("save_changes", { items: [await relink(id)] });
     expect(again.ok).toBe(true);
     expect(lines(again.result.receipt)).toEqual([
-      "Saved 1 result from Sunrise Labs August.pdf · 1 more source",
+      "Saved from Sunrise Labs August.pdf",
       "Added a source to result Haemoglobin 13.4 g/dL: Sunrise Labs August.pdf, page 2 (its values stay as they are)",
     ]);
     expect(again.result.changes).toEqual([
@@ -1178,7 +1178,7 @@ describe("saving draft items", () => {
     });
     expect(mixed.ok).toBe(true);
     expect(lines(mixed.result.receipt)[0]).toBe(
-      "Saved 1 result from Sunrise Labs August.pdf · 1 new",
+      "Saved from Sunrise Labs August.pdf",
     );
     expect(mixed.result.already_saved).toHaveLength(1);
     expect(mixed.result.note).toBe(
@@ -1214,7 +1214,7 @@ describe("saving draft items", () => {
     );
   });
 
-  it("saves 300 items in one save with a summary receipt", async () => {
+  it("saves 300 items in one save with one receipt", async () => {
     await read({
       1: {
         outcome: "read",
@@ -1245,9 +1245,7 @@ describe("saving draft items", () => {
         text: string;
       }
     ).text;
-    expect(lines(receipt)[0]).toBe(
-      "Saved 300 results from Sunrise Labs August.pdf · 300 new",
-    );
+    expect(lines(receipt)[0]).toBe("Saved from Sunrise Labs August.pdf");
     expect(lines(receipt)).toHaveLength(301);
     // The AI gets the start of it; the chat has it whole.
     expect(saved.result.receipt).toMatch(/282 more lines in Rufi's receipt/);
