@@ -63,7 +63,8 @@ test("your name opens your profile; a change in Settings or on the page saves on
   await accessible(page);
 
   // In Settings, only the blood group changes. A refused save keeps the
-  // choice and Retry, also after a look at another group.
+  // choice and Retry, also after a look at another group, and keeps
+  // Settings open at it.
   const settings = await openSettings(page, "Profile");
   await page.route("**/api/people/asha/profile", (route) =>
     route.request().method() === "PUT"
@@ -74,19 +75,28 @@ test("your name opens your profile; a change in Settings or on the page saves on
   const retry = settings.getByRole("button", { name: "Retry" });
   await expect(retry).toBeVisible();
   await settings.getByRole("tab", { name: "Appearance" }).click();
-  await settings.getByRole("tab", { name: "Profile" }).click();
+  await page.keyboard.press("Escape");
+  await expect(settings.getByRole("tab", { name: "Profile" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   await expect(settings.getByLabel("Blood group")).toHaveValue("B+");
   await page.unroute("**/api/people/asha/profile");
   await retry.click();
   await expect(retry).toHaveCount(0);
   await expect(settings.getByLabel("Blood group")).toHaveValue("B+");
+  // A height typed and closed with Esc, still in the field, is saved.
+  await settings.getByLabel("Height", { exact: true }).fill("162");
   await page.keyboard.press("Escape");
+  await expect(settings).toBeHidden();
   await page
     .getByRole("complementary")
     .getByRole("link", { name: "Asha Fictional" })
     .click();
   await expect(value(page, "Blood group")).toHaveText("B+");
+  await expect(value(page, "Height")).toHaveText("162 cm");
   await expect(history).toHaveText([
+    /Height Not set → 162 cm · in Settings$/,
     /Blood group O\+ → B\+ · in Settings$/,
     /Blood group Not set → O\+ · in the chat$/,
   ]);
@@ -94,11 +104,11 @@ test("your name opens your profile; a change in Settings or on the page saves on
   // On the page: a height, saved when you leave it.
   await page.getByRole("button", { name: "Edit" }).click();
   await accessible(page);
-  await page.getByLabel("Height", { exact: true }).fill("162");
+  await page.getByLabel("Height", { exact: true }).fill("165");
   await page.getByRole("button", { name: "Done" }).click();
-  await expect(value(page, "Height")).toHaveText("162 cm");
+  await expect(value(page, "Height")).toHaveText("165 cm");
   await expect(history.first()).toHaveText(
-    /Height Not set → 162 cm · on this page$/,
+    /Height 162 cm → 165 cm · on this page$/,
   );
   await expect(value(page, "Birth date")).toHaveText(/^Mar 1990/);
 
@@ -113,7 +123,7 @@ test("your name opens your profile; a change in Settings or on the page saves on
   await name.fill("Asha Fictional");
   await page.getByRole("button", { name: "Done" }).click();
   await expect(value(page, "Name")).toHaveText("Asha Fictional");
-  await expect(history).toHaveCount(3);
+  await expect(history).toHaveCount(4);
   await page.getByRole("button", { name: "Edit" }).click();
   await name.fill("Asha F.");
   await page.getByRole("button", { name: "Done" }).click();
