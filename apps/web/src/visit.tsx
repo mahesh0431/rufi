@@ -8,6 +8,7 @@ import { ArrowUpRight } from "lucide-react";
 import { AskRufi } from "./ask.tsx";
 import { askRufi } from "./panel.ts";
 import { useRecordDetail } from "./reads.ts";
+import { SettingsLink } from "./settings-link.tsx";
 import {
   cellsOf,
   chipOf,
@@ -125,13 +126,9 @@ function OpenRow({ personId, row }: { personId: string; row: RecordRow }) {
   );
   if (row.kind === "profile") {
     return (
-      <Link
-        to="/people/$personId/profile"
-        params={{ personId }}
-        className={look}
-      >
+      <SettingsLink group="profile" className={look}>
         {label}
-      </Link>
+      </SettingsLink>
     );
   }
   if (row.kind === "follow_up") {
