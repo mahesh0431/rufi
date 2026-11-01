@@ -58,7 +58,7 @@ const PARTS: Record<InstructionPartId, { title: string; about: string }> = {
   words: {
     title: "Your own words",
     about:
-      "The same as in Settings › Chat. Rufi AI is told they are your wishes for replies, and that Rufi's rules come first.",
+      "The same as in Settings › Chat. They come last, after the line above.",
   },
 };
 
