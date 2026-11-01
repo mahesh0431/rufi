@@ -20,7 +20,7 @@ test("a Claude step shows the page its get_documents result had as an image, and
         content: [image, { type: "text", text: "{}" }],
       },
     }),
-  ).toEqual({ document: "doc-1", page: 2 });
+  ).toEqual({ document: "doc-1", page: 2, full: false });
   expect(
     pageOf({
       use: {

@@ -904,6 +904,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   });
   // A page as the AI saw it, from the document of its add that holds it
   // now: an old step names the document before a sort moved the page.
+  // `size=full` as the AI asked for it at full size.
   app.get(`${documentsPath}/:documentId/pages/:position`, async (c) => {
     const position = c.req.param("position");
     if (!/^[1-9]\d{0,5}$/.test(position))
@@ -919,7 +920,12 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     }
     const page =
       holder &&
-      (await deps.pages.page(personId, holder.document, Number(position)));
+      (await deps.pages.page(
+        personId,
+        holder.document,
+        Number(position),
+        c.req.query("size") === "full",
+      ));
     if (!page) throw new HttpError(404, "Not found.");
     if (!page.ok) {
       throw new HttpError(409, "This page couldn't be prepared to be shown.");

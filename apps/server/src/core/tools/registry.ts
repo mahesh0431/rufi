@@ -140,10 +140,13 @@ export interface Issue {
   fix: string;
 }
 
-/** A tool's result with an image for the model beside it (a document page). */
+/**
+ * A tool's result with an image for the model beside it (a document page),
+ * `full` when the model asked for it at full size.
+ */
 export class WithImage {
   readonly result: unknown;
-  readonly image: { mediaType: string; bytes: Uint8Array };
+  readonly image: { mediaType: string; bytes: Uint8Array; full?: boolean };
   constructor(result: unknown, image: WithImage["image"]) {
     this.result = result;
     this.image = image;
@@ -155,8 +158,11 @@ export interface ToolAnswer {
   ok: boolean;
   /** JSON, for the model. */
   text: string;
-  /** Images the model sees before the text, in base64. Never stored. */
-  images?: readonly { mimeType: string; data: string }[];
+  /**
+   * Images the model sees before the text, in base64, `full` for one it
+   * asked for at full size. Never stored.
+   */
+  images?: readonly { mimeType: string; data: string; full?: true }[];
   /** Kept already, with what the call changed: the chat keeps it no more. */
   kept?: true;
   /** What the chat keeps of the call, when not the call as it came. */
@@ -234,7 +240,7 @@ export function toolCaller(
         callId,
       });
       if (result instanceof WithImage) {
-        const { mediaType, bytes } = result.image;
+        const { mediaType, bytes, full } = result.image;
         return {
           ok: true,
           text: JSON.stringify({ ok: true, result: result.result }),
@@ -242,6 +248,7 @@ export function toolCaller(
             {
               mimeType: mediaType,
               data: Buffer.from(bytes).toString("base64"),
+              ...(full === true && { full: true as const }),
             },
           ],
         };

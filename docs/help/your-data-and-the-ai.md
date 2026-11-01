@@ -126,6 +126,7 @@ When you ask about a document in the chat, the AI can look at its pages, one at 
 
 - **A PDF page:** Rufi draws the page as an image and gives it first, then the page's own text when the PDF has text (a scanned PDF has none). The AI reads the page from its image; the text only helps it confirm a character. Links and anything else in the PDF that would act on its own are left out.
 - **A photo:** the photo as you added it. A HEIC photo goes as its JPEG copy, because the AI can't open HEIC.
+- **At full size:** a page goes at the usual size, which reads most print. When the AI finds print too small to read, such as a dense lab table, it can ask for that page again at full size: a PDF page drawn twice as large, a photo marked to go whole. A full-size page uses several times more of your AI plan, so the AI asks only for the page it needs. On Claude, Claude scales any image to fit 2000 pixels a side, so full size helps less there than on GPT. In Activity, the page's step says `full_size` and shows the page it got.
 
 Each page the AI looks at goes to the AI service you signed in with, like the parts of your record it reads. Rufi's tool gives the AI only the documents of the person whose chat it is. Looking at a page changes nothing; documents aren't part of your record until you save from them.
 

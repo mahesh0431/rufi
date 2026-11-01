@@ -318,7 +318,9 @@ function inlined(schema: unknown): unknown {
 
 /**
  * A tool's answer as an MCP result: its images first (a page is read from
- * its image), then its text.
+ * its image), then its text. A full-size image is marked for Codex to send
+ * whole (`codex/imageDetail`, 0.165); without it Codex fits an image to
+ * 2048 px and 2,500 patches. Claude ignores the mark.
  */
 function resultOf(answer: ToolAnswer): CallToolResult {
   return {
@@ -327,6 +329,7 @@ function resultOf(answer: ToolAnswer): CallToolResult {
         type: "image" as const,
         data: image.data,
         mimeType: image.mimeType,
+        ...(image.full && { _meta: { "codex/imageDetail": "original" } }),
       })),
       { type: "text", text: answer.text },
     ],

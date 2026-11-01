@@ -119,7 +119,7 @@ function Reported({
   const seen = page && (
     <PageImage
       personId={personId}
-      path={pagePath(personId, page.document, page.page)}
+      path={pagePath(personId, page.document, page.page, page.full)}
       alt={`Page ${String(page.page)}`}
       className="max-h-64 max-w-full self-start rounded-md border border-line"
     />
