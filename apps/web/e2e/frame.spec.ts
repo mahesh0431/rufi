@@ -976,6 +976,47 @@ test.describe("when Rufi is slow or away", () => {
   });
 });
 
+test("Settings keeps how Rufi AI's replies look and your own words for them", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family();
+  await rufi.start();
+  await page.goto(rufi.link());
+  const settings = await openSettings(page, "Chat");
+  const style = settings.getByRole("radiogroup", { name: "Replies" });
+  const words = settings.getByRole("textbox", { name: "Your own words" });
+  await expect(style.getByRole("radio", { name: "Visual" })).toBeChecked();
+  await style.getByRole("radio", { name: "Simple" }).check();
+  await words.fill("Explain medical words simply.\nUse kg and cm.");
+  // Leaving the box saves it.
+  const saved = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/settings") &&
+      response.request().method() === "PUT" &&
+      response.request().postData()?.includes("replyWords") === true,
+  );
+  await settings.getByRole("tab", { name: "Data" }).focus();
+  expect((await saved).ok()).toBe(true);
+  await accessible(page);
+
+  // The address keeps Settings open at its group after a reload.
+  await page.reload();
+  await settings.getByRole("tab", { name: "Chat" }).click();
+  await expect(style.getByRole("radio", { name: "Simple" })).toBeChecked();
+  await expect(words).toHaveValue(
+    "Explain medical words simply.\nUse kg and cm.",
+  );
+
+  // Esc while still in the box saves them too, before Settings closes.
+  await words.fill("Use kg and cm.");
+  await words.press("Escape");
+  await expect(settings).toBeHidden();
+  await page.reload();
+  await openSettings(page, "Chat");
+  await expect(words).toHaveValue("Use kg and cm.");
+});
+
 test("Settings keeps the emergency region the AI uses, and clears it", async ({
   page,
   rufi,

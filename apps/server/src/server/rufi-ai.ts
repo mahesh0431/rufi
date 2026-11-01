@@ -57,6 +57,8 @@ export interface RufiAiHost {
    * that started it.
    */
   opening: (chat: ChatRow, agent: OpeningAgent) => Promise<ChatOpening>;
+  /** The version of the rules an agent's conversation opens with now. */
+  version: (agent: OpeningAgent) => Promise<string>;
   /**
    * Claims a row of the chat's queue as it goes to the agent's conversation
    * `sentAs`: its words, or that it doesn't go (Host.claim).
@@ -109,8 +111,6 @@ export interface RufiAi {
    * gives then: its own, or a new one (`fresh`). Refused while it is in use.
    */
   reopen: (chat: ChatRow, fresh: boolean) => Promise<void>;
-  /** The rules' version the chat's open conversation got; none when it isn't open. */
-  rules: (chat: ChatRow) => Promise<string | undefined>;
   /** Whether a turn of the chat's agent starts or runs now. */
   busy: (chat: ChatRow) => Promise<boolean>;
   /** Whether a reply starts or runs in the thread now. */
@@ -346,22 +346,27 @@ export async function startRufiAi(
     return owned?.root ? owned.row : undefined;
   };
 
-  const opening = async (
-    agent: Agent,
-    kind: "resume" | "new",
-  ): Promise<Opening> => {
-    const row = (await ownChat(agent.id))?.row;
-    if (!row || !chat) throw new Error("Rufi AI's chat isn't open.");
+  /** The agent, as the chat gives its conversation what it opens with. */
+  const openingAgent = (agent: Agent): OpeningAgent => {
     const parent =
       agent.parent === null ? undefined : system.agents.get(agent.parent);
-    const now = await chat.opening(row, {
+    return {
       id: agent.id,
       title: agent.title,
       tools: agent.tools,
       ...(parent && {
         parent: { title: parent.title, rufiAi: parent.parent === null },
       }),
-    });
+    };
+  };
+
+  const opening = async (
+    agent: Agent,
+    kind: "resume" | "new",
+  ): Promise<Opening> => {
+    const row = (await ownChat(agent.id))?.row;
+    if (!row || !chat) throw new Error("Rufi AI's chat isn't open.");
+    const now = await chat.opening(row, openingAgent(agent));
     given.set(agent.id, now.version);
     // A new conversation hears what came before: Rufi AI the chat, a
     // sub-agent its own turns, never the chat.
@@ -558,6 +563,13 @@ export async function startRufiAi(
     ...options,
     host: {
       opening,
+      // Rufi's rules changed since it opened (a setting, an update): each
+      // new turn has them.
+      outdated: async (agent) => {
+        const was = given.get(agent.id);
+        if (was === undefined || !chat) return false;
+        return (await chat.version(openingAgent(agent))) !== was;
+      },
       claim: async ({ agent, conversation, input }) => {
         // Rufi closing: the row stays for the next start.
         if (closed || !chat) return undefined;
@@ -650,8 +662,6 @@ export async function startRufiAi(
         await agents.reopen(agent, fresh);
         given.delete(agent);
       },
-
-      rules: async (row) => given.get(await system.root(row.id)),
 
       busy: async (row) =>
         agents.current(await system.root(row.id)) !== undefined,

@@ -5,7 +5,14 @@
 // rufi:/settings/<group>. What you typed and left unsaved is saved before
 // it closes (useSavedOnClose).
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { createContext, type ReactNode, useContext, useEffect } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 /** Settings' groups, in their order; the first is where Settings opens. */
 export const GROUPS = [
@@ -99,4 +106,43 @@ export function useSavedOnClose(save: Save): void {
       open.saves.delete(save);
     };
   });
+}
+
+/**
+ * A box of text in Settings, saved when you leave it and as Settings
+ * closes. What you type stays yours until it is saved: a save's answer, or
+ * a change from another tab, comes into the box only when you haven't typed
+ * since. Leaving it again while its save runs sends nothing more.
+ */
+export function useSavedText(
+  kept: string,
+  save: (text: string) => Promise<unknown>,
+) {
+  // What you typed, until it is the kept text.
+  const [draft, setDraft] = useState<string>();
+  if (draft !== undefined && draft === kept) setDraft(undefined);
+  const sending = useRef<{ text: string; saved: Promise<unknown> }>(undefined);
+  const saveText = (): Promise<unknown> => {
+    if (draft === undefined) return Promise.resolve();
+    if (sending.current?.text !== draft) {
+      const saved = save(draft).finally(() => {
+        if (sending.current?.saved === saved) sending.current = undefined;
+      });
+      sending.current = { text: draft, saved };
+    }
+    return sending.current.saved;
+  };
+  useSavedOnClose(saveText);
+  return {
+    text: draft ?? kept,
+    type: setDraft,
+    /** For the box's onBlur: a failed save says so beside it. */
+    leave: () => {
+      saveText().catch(() => undefined);
+    },
+    /** Shows the kept text again, dropping what was typed (a reset). */
+    drop: () => {
+      setDraft(undefined);
+    },
+  };
 }

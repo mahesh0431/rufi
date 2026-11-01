@@ -118,6 +118,18 @@ The AI's reply is drawn as it writes it: headings, text, lists and tables, chart
 - **When a reply can't be drawn**, Rufi doesn't show part of it, since a value could be missing. The reply shows what the AI wrote and "This reply couldn't be drawn. Ask again to have it drawn." A reply the AI wrote as plain words shows as words.
 - Nothing in a reply runs or loads from the internet, and nothing in it can reach your record: Rufi draws it from what the AI wrote. Check the values against your record, as with anything the AI says.
 
+### Choose how replies look
+
+In [Settings › Chat](rufi:/settings/chat) › **Replies**, choose how Rufi AI's replies look:
+
+- **Visual** (the start): replies built from OpenUI's parts, with cards, charts, tables and sections where they fit.
+- **Balanced:** text first, with a table or chart where it helps.
+- **Simple:** short text.
+
+Under **Your own words**, you can tell Rufi AI in your own words how you like replies, for example "Explain medical words simply. Use kg and cm." It saves when you leave the box, and Rufi AI reads it with every reply, whichever of the three you chose. Your words change how a reply looks and reads; Rufi's own rules still come first: your values exactly as your record keeps them, where they come from, and asking before it saves.
+
+A new choice or new words reach the AI with your next message, in the chat you have. For one reply only, ask in the chat, for example "show this more simply".
+
 When the AI makes a picture in its folder to show you (see [What the AI can do in its folder](your-data-and-the-ai.md#what-the-ai-can-do-in-its-folder)), the reply shows it:
 
 - **A picture**, such as one you asked the AI for, shows in the reply at its own size, up to the reply's width, with the AI's caption under it. Click it to see it full size; press Esc or click again to go back. Rufi shows PNG, JPEG, GIF and WebP pictures.
@@ -299,7 +311,7 @@ Your chat is always kept whole in Rufi, and the AI can read all of it. The AI al
 
 **New thread.** The AI starts a new thread only when its own copy of the chat is gone (for example after a restore, a move of Rufi's data, when its files were deleted, or when the AI's working state, `agents.sqlite`, is missing), or when you click **New thread** on a waiting message. The new thread has the chat's last 10 messages that reached the AI, never one still waiting, and the AI reads further back when it needs to. When Rufi can't open the AI's thread for another reason, it doesn't start a new one by itself: your message waits as **Failed** with the error, **Send** and **New thread** (see [Waiting messages](#waiting-messages)).
 
-**New rules.** When Rufi's rules for the AI change, after a Rufi update or when you choose another emergency region, the AI gets the new rules with your next message, and the chat shows no line. If the AI can't take them, your message waits as **Failed · The AI couldn't take Rufi's new instructions, so it can't reply now. Try again.**, with **Send** and **New thread**.
+**New rules.** When Rufi's rules for the AI change, after a Rufi update or when you choose another emergency region or another way replies look, the AI gets the new rules with its next reply, also one it starts by itself (for example when a helper finishes), and the chat shows no line. A reply already running keeps the rules it started with. If the AI can't take them, your message waits as **Failed · The AI couldn't take Rufi's new instructions, so it can't reply now. Try again.**, with **Send** and **New thread**.
 
 ## What you typed but didn't send
 

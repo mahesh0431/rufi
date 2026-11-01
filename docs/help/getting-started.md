@@ -77,7 +77,7 @@ Rufi keeps each step you finished. If you reload the page, close it or open Rufi
   - **Sign-in:** how Codex and Claude are signed in (see [Signing in](signing-in.md#your-sign-in-in-settings)).
   - **Profile:** about you (see [Your profile](record.md#your-profile)), your emergency region, and your profile's history. When a message may describe an emergency, the AI gives this region's number; with no region, it says to call your local emergency number. See [What Rufi's AI will and won't do](safety.md#in-an-emergency-it-tells-you-to-call-for-help-first).
   - **Appearance:** light or dark, the colour, and how Rufi AI's replies sit in the chat (see [How Rufi looks](#how-rufi-looks)).
-  - **Chat:** how a reply's Activity opens (see [Activity](chat.md#activity)), what sending does while Rufi replies, and how often Rufi carries on after a restart.
+  - **Chat:** how Rufi AI's replies look and your own words for them (see [Choose how replies look](chat.md#choose-how-replies-look)), how a reply's Activity opens (see [Activity](chat.md#activity)), what sending does while Rufi replies, and how often Rufi carries on after a restart.
   - **Data:** device data (see [Device data](device-data.md)), your backups and the export of your data (see [Backups and export](backups-and-export.md)), and where your data folder is (see [Your data and the AI](your-data-and-the-ai.md#where-your-data-lives)).
 - **Help:** these pages.
 
