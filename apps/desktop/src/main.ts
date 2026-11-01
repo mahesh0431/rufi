@@ -210,7 +210,16 @@ function menu(): Menu {
     { role: "editMenu" },
     {
       label: "View",
-      submenu: [{ role: "reload" }, { role: "toggleDevTools" }],
+      // ⌘+ (also ⌘=, without Shift), ⌘− and ⌘0 zoom the page.
+      submenu: [
+        { role: "reload" },
+        { role: "toggleDevTools" },
+        { type: "separator" },
+        { role: "resetZoom" },
+        { role: "zoomIn" },
+        { role: "zoomIn", accelerator: "CommandOrControl+=", visible: false },
+        { role: "zoomOut" },
+      ],
     },
     { role: "windowMenu" },
   ]);

@@ -308,7 +308,9 @@ function Reply({
     else if (WEB.test(url)) open(url, "_blank", "noopener,noreferrer");
   };
   return (
-    <div className="reply" data-entry={id}>
+    // data-reply: Rufi's own container around the reply, shaped as Settings
+    // chose (styles.css); OpenUI's parts inside are never restyled.
+    <div className="reply" data-entry={id} data-reply="">
       <OpenUIReply
         text={text}
         streaming={streaming}
@@ -1057,7 +1059,7 @@ function StepView({ entry, details: path }: { entry: Shown; details: string }) {
             aria-hidden
           />
         </summary>
-        <div className="thought mt-1 text-[13px] break-words text-ink">
+        <div className="thought mt-1 text-[0.8125rem] break-words text-ink">
           <Marked text={entry.text} />
         </div>
       </details>
@@ -1400,7 +1402,7 @@ export function Receipt({ text }: { text: string }) {
         <>
           <Marked text={head} links={false} />
           <details>
-            <summary className="w-fit cursor-pointer text-[13px] text-accent-ink">
+            <summary className="w-fit cursor-pointer text-[0.8125rem] text-accent-ink">
               {/* A set-aside's receipt; an older one says Dismissed. */}
               {/^\*\*(Set aside|Dismissed)\*\*/.test(head)
                 ? "Show the items"

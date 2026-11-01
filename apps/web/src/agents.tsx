@@ -111,7 +111,7 @@ function Sheet({
     <>
       <div className="flex items-start gap-2.5 border-b border-line px-4 py-2.5">
         <div className="min-w-0 flex-1">
-          <Dialog.Title className="truncate text-[14px] font-bold">
+          <Dialog.Title className="truncate text-[0.875rem] font-bold">
             {title}
           </Dialog.Title>
           {agent && (
@@ -155,7 +155,7 @@ function Sheet({
         tabIndex={0}
         role="group"
         aria-label={`${title}'s work`}
-        className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto px-4 py-3 text-[13px]"
+        className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto px-4 py-3 text-[0.8125rem]"
       >
         <AgentActivity personId={personId} id={id} title={title} />
       </div>

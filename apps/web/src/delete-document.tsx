@@ -159,7 +159,7 @@ function Preview({
       {/* One line: a long name is cut, and its tooltip has it whole. */}
       <Dialog.Title
         aria-label={title}
-        className="flex min-w-0 px-4 pt-3.5 pb-1 text-[14px] font-semibold whitespace-pre"
+        className="flex min-w-0 px-4 pt-3.5 pb-1 text-[0.875rem] font-semibold whitespace-pre"
       >
         {"Delete "}
         <span className="truncate" title={shown}>

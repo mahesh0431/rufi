@@ -20,16 +20,16 @@
   --openui-font-label: var(--font-ui);
   --openui-font-numbers: var(--font-ui);
   --openui-font-code: ui-monospace, SFMono-Regular, Menlo, monospace;
-  --openui-font-size-2xs: 10px;
-  --openui-font-size-xs: 11px;
-  --openui-font-size-sm: 12px;
-  --openui-font-size-md: 13px;
-  --openui-font-size-lg: 14px;
-  --openui-font-size-xl: 16px;
-  --openui-font-size-2xl: 18px;
-  --openui-font-size-3xl: 20px;
-  --openui-font-size-4xl: 24px;
-  --openui-font-size-5xl: 28px;
+  --openui-font-size-2xs: 0.625rem;
+  --openui-font-size-xs: 0.6875rem;
+  --openui-font-size-sm: 0.75rem;
+  --openui-font-size-md: 0.8125rem;
+  --openui-font-size-lg: 0.875rem;
+  --openui-font-size-xl: 1rem;
+  --openui-font-size-2xl: 1.125rem;
+  --openui-font-size-3xl: 1.25rem;
+  --openui-font-size-4xl: 1.5rem;
+  --openui-font-size-5xl: 1.75rem;
   --openui-font-weight-regular: 400;
   --openui-font-weight-medium: 500;
   --openui-font-weight-bold: 600;
@@ -39,76 +39,77 @@
   --openui-letter-spacing-normal: normal;
   --openui-letter-spacing-tight: normal;
   --openui-letter-spacing-tighter: normal;
-  --openui-text-body-xs: 400 11px/1.5 var(--openui-font-body);
+  --openui-text-body-xs: 400 0.6875rem/1.5 var(--openui-font-body);
   --openui-text-body-xs-letter-spacing: normal;
-  --openui-text-body-xs-heavy: 500 11px/1.5 var(--openui-font-body);
+  --openui-text-body-xs-heavy: 500 0.6875rem/1.5 var(--openui-font-body);
   --openui-text-body-xs-heavy-letter-spacing: normal;
-  --openui-text-body-sm: 400 12px/1.5 var(--openui-font-body);
+  --openui-text-body-sm: 400 0.75rem/1.5 var(--openui-font-body);
   --openui-text-body-sm-letter-spacing: normal;
-  --openui-text-body-sm-heavy: 500 12px/1.5 var(--openui-font-body);
+  --openui-text-body-sm-heavy: 500 0.75rem/1.5 var(--openui-font-body);
   --openui-text-body-sm-heavy-letter-spacing: normal;
-  --openui-text-body-default: 400 13px/1.5 var(--openui-font-body);
+  --openui-text-body-default: 400 0.8125rem/1.5 var(--openui-font-body);
   --openui-text-body-default-letter-spacing: normal;
-  --openui-text-body-default-heavy: 500 13px/1.5 var(--openui-font-body);
+  --openui-text-body-default-heavy: 500 0.8125rem/1.5 var(--openui-font-body);
   --openui-text-body-default-heavy-letter-spacing: normal;
-  --openui-text-body-lg: 400 14px/1.5 var(--openui-font-body);
+  --openui-text-body-lg: 400 0.875rem/1.5 var(--openui-font-body);
   --openui-text-body-lg-letter-spacing: normal;
-  --openui-text-body-lg-heavy: 500 14px/1.5 var(--openui-font-body);
+  --openui-text-body-lg-heavy: 500 0.875rem/1.5 var(--openui-font-body);
   --openui-text-body-lg-heavy-letter-spacing: normal;
-  --openui-text-label-xs: 400 11px/1.25 var(--openui-font-label);
+  --openui-text-label-xs: 400 0.6875rem/1.25 var(--openui-font-label);
   --openui-text-label-xs-letter-spacing: normal;
-  --openui-text-label-xs-heavy: 500 11px/1.25 var(--openui-font-label);
+  --openui-text-label-xs-heavy: 500 0.6875rem/1.25 var(--openui-font-label);
   --openui-text-label-xs-heavy-letter-spacing: normal;
-  --openui-text-label-sm: 400 12px/1.25 var(--openui-font-label);
+  --openui-text-label-sm: 400 0.75rem/1.25 var(--openui-font-label);
   --openui-text-label-sm-letter-spacing: normal;
-  --openui-text-label-sm-heavy: 500 12px/1.25 var(--openui-font-label);
+  --openui-text-label-sm-heavy: 500 0.75rem/1.25 var(--openui-font-label);
   --openui-text-label-sm-heavy-letter-spacing: normal;
-  --openui-text-label-default: 400 13px/1.25 var(--openui-font-label);
+  --openui-text-label-default: 400 0.8125rem/1.25 var(--openui-font-label);
   --openui-text-label-default-letter-spacing: normal;
-  --openui-text-label-default-heavy: 500 13px/1.25 var(--openui-font-label);
+  --openui-text-label-default-heavy: 500 0.8125rem/1.25 var(--openui-font-label);
   --openui-text-label-default-heavy-letter-spacing: normal;
-  --openui-text-label-lg: 400 14px/1.25 var(--openui-font-label);
+  --openui-text-label-lg: 400 0.875rem/1.25 var(--openui-font-label);
   --openui-text-label-lg-letter-spacing: normal;
-  --openui-text-label-lg-heavy: 500 14px/1.25 var(--openui-font-label);
+  --openui-text-label-lg-heavy: 500 0.875rem/1.25 var(--openui-font-label);
   --openui-text-label-lg-heavy-letter-spacing: normal;
-  --openui-text-numbers-xs: 400 11px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-xs: 400 0.6875rem/1.5 var(--openui-font-numbers);
   --openui-text-numbers-xs-letter-spacing: normal;
-  --openui-text-numbers-xs-heavy: 500 11px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-xs-heavy: 500 0.6875rem/1.5 var(--openui-font-numbers);
   --openui-text-numbers-xs-heavy-letter-spacing: normal;
-  --openui-text-numbers-sm: 400 12px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-sm: 400 0.75rem/1.5 var(--openui-font-numbers);
   --openui-text-numbers-sm-letter-spacing: normal;
-  --openui-text-numbers-sm-heavy: 500 12px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-sm-heavy: 500 0.75rem/1.5 var(--openui-font-numbers);
   --openui-text-numbers-sm-heavy-letter-spacing: normal;
-  --openui-text-numbers-default: 400 13px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-default: 400 0.8125rem/1.5 var(--openui-font-numbers);
   --openui-text-numbers-default-letter-spacing: normal;
-  --openui-text-numbers-default-heavy: 500 13px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-default-heavy: 500 0.8125rem/1.5
+    var(--openui-font-numbers);
   --openui-text-numbers-default-heavy-letter-spacing: normal;
-  --openui-text-numbers-lg: 400 14px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-lg: 400 0.875rem/1.5 var(--openui-font-numbers);
   --openui-text-numbers-lg-letter-spacing: normal;
-  --openui-text-numbers-lg-heavy: 500 14px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-lg-heavy: 500 0.875rem/1.5 var(--openui-font-numbers);
   --openui-text-numbers-lg-heavy-letter-spacing: normal;
-  --openui-text-heading-xs: 600 13px/1.25 var(--openui-font-heading);
+  --openui-text-heading-xs: 600 0.8125rem/1.25 var(--openui-font-heading);
   --openui-text-heading-xs-letter-spacing: normal;
-  --openui-text-heading-sm: 600 14px/1.25 var(--openui-font-heading);
+  --openui-text-heading-sm: 600 0.875rem/1.25 var(--openui-font-heading);
   --openui-text-heading-sm-letter-spacing: normal;
-  --openui-text-heading-md: 600 16px/1.25 var(--openui-font-heading);
+  --openui-text-heading-md: 600 1rem/1.25 var(--openui-font-heading);
   --openui-text-heading-md-letter-spacing: normal;
-  --openui-text-heading-lg: 600 18px/1.2 var(--openui-font-heading);
+  --openui-text-heading-lg: 600 1.125rem/1.2 var(--openui-font-heading);
   --openui-text-heading-lg-letter-spacing: normal;
-  --openui-text-heading-xl: 600 20px/1.2 var(--openui-font-heading);
+  --openui-text-heading-xl: 600 1.25rem/1.2 var(--openui-font-heading);
   --openui-text-heading-xl-letter-spacing: normal;
-  --openui-text-numbers-heading-sm: 600 14px/1.25 var(--openui-font-numbers);
+  --openui-text-numbers-heading-sm: 600 0.875rem/1.25 var(--openui-font-numbers);
   --openui-text-numbers-heading-sm-letter-spacing: normal;
-  --openui-text-numbers-heading-md: 600 16px/1.25 var(--openui-font-numbers);
+  --openui-text-numbers-heading-md: 600 1rem/1.25 var(--openui-font-numbers);
   --openui-text-numbers-heading-md-letter-spacing: normal;
-  --openui-text-numbers-heading-lg: 600 18px/1.2 var(--openui-font-numbers);
+  --openui-text-numbers-heading-lg: 600 1.125rem/1.2 var(--openui-font-numbers);
   --openui-text-numbers-heading-lg-letter-spacing: normal;
-  --openui-text-numbers-heading-xl: 600 20px/1.2 var(--openui-font-numbers);
+  --openui-text-numbers-heading-xl: 600 1.25rem/1.2 var(--openui-font-numbers);
   --openui-text-numbers-heading-xl-letter-spacing: normal;
-  --openui-text-code-sm: 400 11px/1.5 var(--openui-font-code);
-  --openui-text-code-sm-heavy: 600 11px/1.5 var(--openui-font-code);
-  --openui-text-code-default: 400 12px/1.5 var(--openui-font-code);
-  --openui-text-code-default-heavy: 600 12px/1.5 var(--openui-font-code);
+  --openui-text-code-sm: 400 0.6875rem/1.5 var(--openui-font-code);
+  --openui-text-code-sm-heavy: 600 0.6875rem/1.5 var(--openui-font-code);
+  --openui-text-code-default: 400 0.75rem/1.5 var(--openui-font-code);
+  --openui-text-code-default-heavy: 600 0.75rem/1.5 var(--openui-font-code);
 }
 
 /* OpenUI's colours on Rufi's theme, by the roles its theming guide maps:
@@ -160,6 +161,20 @@
   }
 }
 
+/* One base size for all of Rufi's text, replies too: every size is in rem,
+   so Settings › Appearance › Text size (<html data-text-size>) grows them
+   all at once, and the spacing in rem with them. Default is the 13 px app
+   (body text 0.8125rem); Large about 15 px; Larger about 17 px. */
+html {
+  font-size: 16px;
+}
+:root[data-text-size="large"] {
+  font-size: calc(16px * 15 / 13);
+}
+:root[data-text-size="larger"] {
+  font-size: calc(16px * 17 / 13);
+}
+
 html,
 body,
 #root {
@@ -171,23 +186,23 @@ body {
   background: var(--page);
   color: var(--ink);
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.5;
 }
 
 /* Help pages: plain Markdown, as written. */
 .prose h1 {
-  font-size: 22px;
+  font-size: 1.375rem;
   font-weight: 700;
   margin: 0 0 12px;
 }
 .prose h2 {
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 600;
   margin: 24px 0 8px;
 }
 .prose h3 {
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 600;
   margin: 18px 0 6px;
 }
@@ -212,7 +227,7 @@ body {
 }
 .prose code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
+  font-size: 0.75rem;
   background: var(--side);
   padding: 1px 4px;
   border-radius: 4px;
@@ -254,7 +269,7 @@ body {
   :is(.reply, .thought, .note, .agent-words) h2,
   :is(.reply, .thought, .note, .agent-words) h3,
   :is(.reply, .thought, .note, .agent-words) h4 {
-    font-size: 14px;
+    font-size: 0.875rem;
     font-weight: 600;
     margin: 12px 0 4px;
   }
@@ -272,7 +287,7 @@ body {
   }
   :is(.reply, .thought, .note, .agent-words) code {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 12px;
+    font-size: 0.75rem;
     background: var(--side);
     padding: 1px 4px;
     border-radius: 4px;
@@ -395,6 +410,20 @@ body {
 [data-dog="dark"] > svg {
   border-radius: 24%;
   box-shadow: 0 0 0 1px var(--line);
+}
+
+/* How Rufi AI's reply sits in the chat, as Settings › Appearance chose
+   (<html data-reply-shape>): flat on the chat's background; panel on its own
+   soft surface, a faint shade of the text over whatever is behind it (on
+   White, a very light grey); card the same with a thin border. Only Rufi's
+   container around the reply: OpenUI's parts inside keep their own look. */
+:root:is([data-reply-shape="panel"], [data-reply-shape="card"]) [data-reply] {
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+  padding: 12px 16px;
+}
+:root[data-reply-shape="card"] [data-reply] {
+  border: 1px solid var(--line);
 }
 
 /* In the Rufi app on the Mac: the window's own sidebar material shows

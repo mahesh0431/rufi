@@ -185,7 +185,7 @@ function Checking({
             actions go below them. */}
         <div className="min-w-0 flex-1 basis-80">
           <h2 className="truncate">
-            <b className="text-[14px]">{name}</b>{" "}
+            <b className="text-[0.875rem]">{name}</b>{" "}
             <span className="text-muted">· {about}</span>
           </h2>
           {document.status === "failed" && (
@@ -682,7 +682,7 @@ function FixForm({
             onChange={(event) => {
               setValues({ ...values, [id]: event.target.value });
             }}
-            className={`rounded-md border bg-surface px-1.5 py-1 text-[13px] text-ink ${changed.some((c) => c.id === id) ? "border-accent" : "border-line"}`}
+            className={`rounded-md border bg-surface px-1.5 py-1 text-[0.8125rem] text-ink ${changed.some((c) => c.id === id) ? "border-accent" : "border-line"}`}
           />
         </label>
       ))}

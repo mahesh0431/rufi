@@ -1,7 +1,8 @@
 // Settings, a pop-up over the page you are on (settings-link.tsx says how it
 // opens), its options in groups: Sign-in (how Codex and Claude are signed
 // in), Profile (about you, and the region whose emergency number the AI
-// gives, and the profile's history), Appearance (how Rufi looks), Chat (when a reply's Activity opens,
+// gives, and the profile's history), Appearance (light or dark, the colour
+// theme, and how a reply sits in the chat), Chat (when a reply's Activity opens,
 // what a message sent while a reply runs does, how often Rufi carries on
 // after a restart) and Data (device data, backups, the export of your data,
 // and where Rufi keeps it). A change takes effect at once; there is no Save.
@@ -23,7 +24,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { download, read } from "./api.ts";
-import { AppearanceChoice } from "./appearance.tsx";
+import { AppearanceChoice, ColourChoice } from "./appearance.tsx";
 import { DeviceDataSection } from "./devices.tsx";
 import { ProfileHistory, ProfileSection } from "./profile.tsx";
 import { SettingChoice } from "./choice.tsx";
@@ -118,7 +119,7 @@ export function SettingsDialog() {
               className="flex min-w-0 flex-1"
             >
               <div className="flex w-48 shrink-0 flex-col border-r border-line bg-side p-2.5">
-                <Dialog.Title className="px-2 pt-1 pb-3 text-[15px] font-semibold">
+                <Dialog.Title className="px-2 pt-1 pb-3 text-[0.9375rem] font-semibold">
                   Settings
                 </Dialog.Title>
                 <Tabs.List activateOnFocus className="flex flex-col gap-0.5">
@@ -156,7 +157,7 @@ export function SettingsDialog() {
                     keepMounted
                     className="min-h-0 flex-1 overflow-auto px-6 pt-5 pb-8 outline-none"
                   >
-                    <h3 className="mb-4 text-[15px] font-semibold">
+                    <h3 className="mb-4 text-[0.9375rem] font-semibold">
                       {NAMES[id].name}
                     </h3>
                     <div className="flex flex-col gap-6">
@@ -191,12 +192,54 @@ function GroupOptions({ group }: { group: Group }) {
       );
     case "appearance":
       return (
-        <Section title="Mode" id="appearance-mode">
-          <AppearanceChoice labelledBy="appearance-mode" />
-          <p className="text-muted">
-            System follows your Mac's light or dark appearance.
-          </p>
-        </Section>
+        <>
+          <Section title="Mode" id="appearance-mode">
+            <AppearanceChoice labelledBy="appearance-mode" />
+            <p className="text-muted">
+              System follows your Mac's light or dark appearance.
+            </p>
+          </Section>
+          <Section title="Colour" id="appearance-colour">
+            <ColourChoice labelledBy="appearance-colour" />
+            <p className="text-muted">
+              Changes at once when you pick it: the background, and the colour
+              of buttons, links, what is selected and your own messages.
+            </p>
+          </Section>
+          <Section title="Text size" id="text-size">
+            <SettingChoice
+              setting="textSize"
+              label="Text size"
+              labelledBy="text-size"
+              choices={[
+                { value: "default", label: "Default" },
+                { value: "large", label: "Large" },
+                { value: "larger", label: "Larger" },
+              ]}
+            />
+            <p className="text-muted">
+              All of Rufi's text, Rufi AI's replies too. In the Rufi app, ⌘+ and
+              ⌘− zoom the whole window, and ⌘0 puts it back.
+            </p>
+          </Section>
+          <Section title="Rufi's replies" id="reply-shape">
+            <SettingChoice
+              setting="replyShape"
+              label="Rufi's replies"
+              labelledBy="reply-shape"
+              choices={[
+                { value: "flat", label: "Flat" },
+                { value: "panel", label: "Panel" },
+                { value: "card", label: "Card" },
+              ]}
+            />
+            <p className="text-muted">
+              How Rufi AI's reply sits in the chat. Flat: on the chat's
+              background. Panel: on its own soft surface. Card: the same, with a
+              thin border.
+            </p>
+          </Section>
+        </>
       );
     case "chat":
       return (

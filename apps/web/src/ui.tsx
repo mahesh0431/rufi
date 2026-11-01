@@ -23,7 +23,7 @@ export type Icon = ComponentType<LucideProps>;
  * like a button takes the same look.
  */
 export const buttonLook = cva(
-  "inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg text-[13px] font-medium whitespace-nowrap disabled:opacity-50",
+  "inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg text-[0.8125rem] font-medium whitespace-nowrap disabled:opacity-50",
   {
     variants: {
       look: {
@@ -194,7 +194,7 @@ export function EmptyState({
     <div className="flex flex-col items-center gap-1 rounded-xl border-[1.5px] border-dashed border-line bg-surface px-6 py-14 text-center">
       <LiveDog size={64} />
       {title !== undefined && (
-        <h2 className="mt-3 text-[15px] font-semibold">{title}</h2>
+        <h2 className="mt-3 text-[0.9375rem] font-semibold">{title}</h2>
       )}
       {children !== undefined && (
         <p

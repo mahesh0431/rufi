@@ -95,7 +95,7 @@ export function AddDialog({
       <Dialog.Portal container={container ?? undefined}>
         <Dialog.Backdrop className={BACKDROP} />
         <Dialog.Popup className={`${PANEL} w-[460px] max-w-[92vw] p-[18px]`}>
-          <Dialog.Title className="text-[15px] font-semibold">
+          <Dialog.Title className="text-[0.9375rem] font-semibold">
             Add {what}
           </Dialog.Title>
           <Dialog.Description className="text-muted">
@@ -194,7 +194,7 @@ function Thumb({ file: { file, kind } }: { file: Chosen }) {
   const shows = kind === "jpeg" || kind === "png";
   const label = kind === "other" ? "File" : kind.toUpperCase();
   return (
-    <span className="flex h-11 w-[34px] shrink-0 items-center justify-center overflow-hidden rounded border border-line bg-side text-[10px] text-muted">
+    <span className="flex h-11 w-[34px] shrink-0 items-center justify-center overflow-hidden rounded border border-line bg-side text-[0.625rem] text-muted">
       {shows ? (
         <img
           alt=""

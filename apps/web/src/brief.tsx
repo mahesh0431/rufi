@@ -46,7 +46,7 @@ function Shown({ brief, person }: { brief: Brief; person: Person }) {
           <Dog size={24} />
         </span>
         <div className="flex-1">
-          <h2 className="text-[22px] font-bold">Visit brief</h2>
+          <h2 className="text-[1.375rem] font-bold">Visit brief</h2>
           <p className="text-muted">{made}</p>
         </div>
         <div className="flex items-start gap-3 print:hidden">

@@ -5,7 +5,45 @@ import { useMutation } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { queries, saveSettings, useSettings } from "./reads.ts";
 
-type Chosen = "appearance" | "activity" | "whileReplying";
+type Chosen =
+  | "appearance"
+  | "colour"
+  | "replyShape"
+  | "textSize"
+  | "activity"
+  | "whileReplying";
+
+/**
+ * A setting's chosen value, shown at once when a new one is picked, and the
+ * pick, saved one at a time so the last is the one kept.
+ */
+export function useChoice<K extends Chosen>(setting: K) {
+  const settings = useSettings();
+  // What was just chosen, shown until the core has it.
+  const [picked, setPicked] = useState<Settings[K]>();
+  const choose = useMutation({
+    // One save at a time, so the last choice is the one kept.
+    scope: { id: setting },
+    mutationFn: (value: Settings[K]) => saveSettings({ [setting]: value }),
+    onError: () => void queries.invalidateQueries({ queryKey: ["settings"] }),
+    onSettled: () => {
+      setPicked(undefined);
+    },
+  });
+  return {
+    chosen: picked ?? settings.data?.[setting],
+    pick: (value: Settings[K]) => {
+      setPicked(value);
+      // The page takes it at once; the core's answer follows.
+      queries.setQueryData(
+        ["settings"],
+        (old: Settings | undefined) => old && { ...old, [setting]: value },
+      );
+      choose.mutate(value);
+    },
+    error: choose.error,
+  };
+}
 
 /**
  * The choices of a setting, the chosen one checked. Named by `labelledBy`,
@@ -23,19 +61,7 @@ export function SettingChoice<K extends Chosen>({
   labelledBy?: string | undefined;
 }) {
   const own = useId();
-  const settings = useSettings();
-  // What was just chosen, shown until the core has it.
-  const [picked, setPicked] = useState<Settings[K]>();
-  const choose = useMutation({
-    // One save at a time, so the last choice is the one kept.
-    scope: { id: setting },
-    mutationFn: (value: Settings[K]) => saveSettings({ [setting]: value }),
-    onError: () => void queries.invalidateQueries({ queryKey: ["settings"] }),
-    onSettled: () => {
-      setPicked(undefined);
-    },
-  });
-  const chosen = picked ?? settings.data?.[setting];
+  const { chosen, pick, error } = useChoice(setting);
   if (chosen === undefined) return null;
   return (
     <div className="flex flex-col gap-1.5">
@@ -57,14 +83,7 @@ export function SettingChoice<K extends Chosen>({
                 value={choice.value}
                 checked={chosen === choice.value}
                 onChange={() => {
-                  setPicked(choice.value);
-                  // The page takes it at once; the core's answer follows.
-                  queries.setQueryData(
-                    ["settings"],
-                    (old: Settings | undefined) =>
-                      old && { ...old, [setting]: choice.value },
-                  );
-                  choose.mutate(choice.value);
+                  pick(choice.value);
                 }}
                 // Over the whole segment, unseen: the segment is the radio.
                 className="absolute inset-0 m-0 cursor-pointer opacity-0"
@@ -74,9 +93,9 @@ export function SettingChoice<K extends Chosen>({
           ))}
         </div>
       </div>
-      {choose.error && (
+      {error && (
         <p role="alert" className="text-muted">
-          {choose.error.message}
+          {error.message}
         </p>
       )}
     </div>

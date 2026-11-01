@@ -230,9 +230,9 @@ export function FileDrop({
     >
       {children}
       {dragging && (
-        <div className="pointer-events-none absolute inset-2 z-10 flex flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-accent bg-accent-soft/90 text-[15px] font-semibold text-accent-ink">
+        <div className="pointer-events-none absolute inset-2 z-10 flex flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-accent bg-accent-soft/90 text-[0.9375rem] font-semibold text-accent-ink">
           Drop to add to the chat
-          <span className="text-[12.5px] font-normal">
+          <span className="text-[0.78125rem] font-normal">
             PDF, JPG, PNG or HEIC · each becomes a document
           </span>
         </div>
