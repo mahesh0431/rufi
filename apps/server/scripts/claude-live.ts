@@ -1240,7 +1240,6 @@ const plugin = await prepareClaudePlugin(home, [
   {
     name: "greeting",
     text: "---\nname: greeting\ndescription: How to greet someone by name, fictional.\n---\nGreet them as: Ahoy, <name>.\n",
-    files: {},
   },
 ]);
 const context = {

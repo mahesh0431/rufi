@@ -1,10 +1,8 @@
 // Rufi's skills: the AI's instructions for each job, as standard SKILL.md
 // files (a front matter with `name` and `description`, then the body). They
 // ship with Rufi in this folder; the agent gets them as files in its own
-// home, and Rufi's MCP server offers the same text as resources. A skill
-// may carry other files beside its SKILL.md, from where they live.
+// home, and Rufi's MCP server offers the same text as resources.
 import { readdirSync, readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 
 export interface Skill {
   name: string;
@@ -12,8 +10,6 @@ export interface Skill {
   description: string;
   /** The whole SKILL.md, front matter included. */
   text: string;
-  /** Other files beside its SKILL.md, by name. */
-  files: Readonly<Record<string, string>>;
 }
 
 const FRONT_MATTER = /^---\nname: ([a-z0-9-]+)\ndescription: (.+)\n---\n/;
@@ -24,19 +20,10 @@ function parseSkill(folder: string, text: string): Skill {
   if (match?.[1] !== folder || match[2] === undefined) {
     throw new Error(`The skill in ${folder} needs a name and a description.`);
   }
-  return { name: match[1], description: match[2], text, files: {} };
+  return { name: match[1], description: match[2], text };
 }
 
 const here = new URL("./", import.meta.url);
-const require = createRequire(import.meta.url);
-
-/** What a skill carries beside its SKILL.md, from where each file lives. */
-const FILES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
-  analysis: {
-    // Rufi paper, a look for the pages the AI makes: the brand package's.
-    "paper.css": require.resolve("@rufi/brand/paper.css"),
-  },
-};
 
 /** Every skill Rufi ships, by name. */
 export const SKILLS: readonly Skill[] = readdirSync(here, {
@@ -45,15 +32,6 @@ export const SKILLS: readonly Skill[] = readdirSync(here, {
   .filter((entry) => entry.isDirectory())
   .map((entry) => entry.name)
   .sort()
-  .map((name) => ({
-    ...parseSkill(
-      name,
-      readFileSync(new URL(`${name}/SKILL.md`, here), "utf8"),
-    ),
-    files: Object.fromEntries(
-      Object.entries(FILES[name] ?? {}).map(([file, path]) => [
-        file,
-        readFileSync(path, "utf8"),
-      ]),
-    ),
-  }));
+  .map((name) =>
+    parseSkill(name, readFileSync(new URL(`${name}/SKILL.md`, here), "utf8")),
+  );

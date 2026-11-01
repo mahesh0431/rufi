@@ -8,8 +8,6 @@ import {
   FinishStep,
   MessageText,
   MAX_MESSAGE_CHARS,
-  PAGE_ESCAPE,
-  PAGE_SIZE_CHANGED,
   RecoverMessage,
   ReorderQueue,
   SaveDraft,
@@ -186,122 +184,12 @@ const PING_MS = 15_000;
 const BEHIND_MAX = 1_000;
 
 /**
- * The screens' policy: only Rufi's own code and styles. Frames: a document's
- * original (a blob the page made) and a page the AI made, from this origin
- * and locked by its own policy below.
+ * The screens' policy: only Rufi's own code and styles. Frames: only a
+ * document's original (a blob the page made).
  */
-const appCsp = (origin: string) =>
-  `default-src 'self'; img-src 'self' data: blob:; frame-src blob: ${origin}/files/; connect-src 'self'; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`;
+const APP_CSP =
+  "default-src 'self'; img-src 'self' data: blob:; frame-src blob:; connect-src 'self'; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
 
-/**
- * A page the AI made, in place of the screens' policy (two policies would
- * both apply): it runs in an opaque origin inside Rufi's frame, so
- * it can't read Rufi's pages or an answer of its API. Self-contained: its
- * own inline scripts, styles and data pictures, nothing remote, nothing
- * sent out, and only Rufi's screens may frame it. Its scripts may use eval,
- * as chart libraries do: in the sandbox, with nothing remote, that reaches
- * nothing more.
- */
-const pageCsp = (origin: string) =>
-  `sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors ${origin}`;
-
-/** What a page that is gone says, in its frame. */
-const GONE_PAGE = `<!doctype html><html lang="en"><meta charset="utf-8"><title>File not found</title><body style="font:14px/1.5 -apple-system,sans-serif;margin:24px"><p>This file is no longer in the AI's folder.</p></body></html>`;
-/**
- * Esc in a generated page, told to its dialog: the page has its own origin,
- * so Rufi never hears its keys. And the page's height, told to the frame in
- * the reply, so it shows whole with nothing scrolling inside it (as T3's
- * html_render and MCP Apps do): its content's height, with html and body
- * fitted to their content, or all it scrolls when it is taller than its
- * frame. Appended to what is served, after the
- * file, so its doctype stays first and its bytes on disk stay as they are.
- */
-const pageEscape = (origin: string) => `
-<script>
-addEventListener("keydown", (event) => {
-  if (event.key === "Escape") {
-    parent.postMessage(${JSON.stringify(PAGE_ESCAPE)}, ${JSON.stringify(origin)});
-  }
-}, true);
-{
-  let told = 0;
-  // Html and body take their content's height: a page made for a window
-  // (min-height: 100vh) would otherwise grow with the frame that fits it.
-  const fit = (element) => {
-    element?.style.setProperty("min-height", "0", "important");
-    element?.style.setProperty("height", "auto", "important");
-  };
-  const tell = () => {
-    const root = document.documentElement;
-    fit(root);
-    fit(document.body);
-    const height = Math.ceil(
-      root.scrollHeight > root.clientHeight
-        ? root.scrollHeight
-        : root.getBoundingClientRect().height,
-    );
-    if (height === told) return;
-    told = height;
-    parent.postMessage(
-      { jsonrpc: "2.0", method: ${JSON.stringify(PAGE_SIZE_CHANGED)}, params: { height } },
-      ${JSON.stringify(origin)},
-    );
-  };
-  new ResizeObserver(tell).observe(document.documentElement);
-  addEventListener("load", tell);
-  tell();
-}
-</script>`;
-/** A `prefers-color-scheme` condition in a media query. */
-const SCHEME_FEATURE = /\(\s*prefers-color-scheme\s*:\s*(light|dark)\s*\)/gi;
-/** In place of a condition on the chosen scheme, and on the other one. */
-const ALWAYS = "(width >= 0)";
-const NEVER = "(width < 0)";
-/**
- * A generated page in Rufi's appearance, light or dark, in place of the
- * system's: a frame's `prefers-color-scheme` follows the system, not the
- * page that frames it. Each such condition in the page's text (its styles,
- * `media` attributes and its scripts' queries) becomes one that always or
- * never holds, before any of it runs. Read as Latin-1, so every other byte
- * is served as it is; the file on disk doesn't change. Not done for System,
- * which the frame already follows.
- */
-const inAppearance = (bytes: Buffer, chosen: "light" | "dark") =>
-  Buffer.from(
-    bytes
-      .toString("latin1")
-      .replace(SCHEME_FEATURE, (_, scheme: string) =>
-        scheme.toLowerCase() === chosen ? ALWAYS : NEVER,
-      ),
-    "latin1",
-  );
-/**
- * Appended with Esc to a page in Rufi's appearance: a query the page builds
- * later follows it too, and a page that takes both schemes gets the chosen
- * one for the browser's own colours.
- */
-const pageAppearance = (chosen: "light" | "dark") => `
-<script>
-{
-  const chosen = ${JSON.stringify(chosen)};
-  const own = matchMedia.bind(window);
-  window.matchMedia = (query) =>
-    own(
-      String(query).replace(${String(SCHEME_FEATURE)}, (_, scheme) =>
-        scheme.toLowerCase() === chosen ? ${JSON.stringify(ALWAYS)} : ${JSON.stringify(NEVER)}),
-    );
-  const both = (value) => /light/.test(value) && /dark/.test(value);
-  const root = document.documentElement;
-  if (
-    both(getComputedStyle(root).colorScheme) ||
-    both(document.querySelector('meta[name="color-scheme"]')?.content ?? "")
-  ) {
-    root.style.colorScheme = chosen;
-  }
-}
-</script>`;
-/** A standalone request never receives the generated page's active content. */
-const OPEN_IN_RUFI = `<!doctype html><html lang="en"><meta charset="utf-8"><title>Open in Rufi</title><body><p>Open this page from the chat in Rufi.</p></body></html>`;
 const FORWARDING = [
   "forwarded",
   "x-forwarded-for",
@@ -342,7 +230,7 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
 
   // Every response: no framing, no sniffing, no referrer, no caching of API data.
   app.use("*", async (c, next) => {
-    c.header("Content-Security-Policy", appCsp(origin()));
+    c.header("Content-Security-Policy", APP_CSP);
     c.header("X-Content-Type-Options", "nosniff");
     c.header("Referrer-Policy", "no-referrer");
     c.header("Cross-Origin-Opener-Policy", "same-origin");
@@ -701,7 +589,6 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       url: `/files/${granted.token}/${encodeURIComponent(granted.file.name)}`,
       name: granted.file.name,
       path: granted.file.path,
-      shape: granted.file.shape,
     });
   });
 
@@ -1193,40 +1080,14 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     }
     c.header("Cache-Control", "no-store");
     c.header("Cross-Origin-Resource-Policy", "same-origin");
-    if ("missing" in found) {
-      // The file went between the check and this load: a page's frame says so.
-      c.header("Content-Security-Policy", pageCsp(origin()));
-      return c.html(GONE_PAGE, 404);
-    }
-    const { path, type, shape } = found.found;
-    // The browser sets this header. The page's ancestor policy admits only
-    // Rufi, whose frame-src also stops a frame navigating to another origin.
-    if (shape === "page" && c.req.header("Sec-Fetch-Dest") !== "iframe") {
-      c.header(
-        "Content-Security-Policy",
-        "sandbox; default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
-      );
-      return c.html(OPEN_IN_RUFI);
-    }
+    // Gone between the check and this load: the picture isn't there.
+    if ("missing" in found) throw new HttpError(404, "Not found.");
+    const { path, type } = found.found;
     const bytes = await readFile(path).catch((error: unknown) => {
       deps.log("api.failed", { error: errorCode(error) });
       throw new HttpError(404, "Not found.");
     });
     c.header("Content-Type", type);
-    if (shape === "page") {
-      c.header("Content-Security-Policy", pageCsp(origin()));
-      // The address names Rufi's appearance when it is light or dark.
-      const chosen = c.req.query("appearance");
-      const page =
-        chosen === "light" || chosen === "dark"
-          ? [inAppearance(bytes, chosen), Buffer.from(pageAppearance(chosen))]
-          : [bytes];
-      return c.body(
-        new Uint8Array(
-          Buffer.concat([...page, Buffer.from(pageEscape(origin()))]),
-        ),
-      );
-    }
     return c.body(new Uint8Array(bytes));
   });
 

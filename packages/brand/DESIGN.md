@@ -24,7 +24,6 @@ A theme is one block of values: light in `:root`, dark when `<html data-theme="d
 | `--accent-soft`                     | What is selected, and the person's own messages                      |
 | `--accent-ink`                      | Links and selected text                                              |
 | `--danger`, `--danger-soft`         | Only the last step of a delete that can't be undone                  |
-| `--paper`                           | Behind a page the AI made: white in every theme                      |
 | `--edge`, `--shade`, `--shade-menu` | The hairline and the shadows around floating panels and menus        |
 
 Rufi's own colours, for light pages (the website); they have no dark values and the app doesn't use them:
@@ -57,10 +56,6 @@ Two font roles, as family stacks in the tokens; sizes and weights stay with each
 ## Icons
 
 Lucide, everywhere (`lucide-react` in the app). One icon set, the same stroke; no second set beside it.
-
-## Rufi paper
-
-`paper.css` beside this file is one look the AI may give a page it makes; the analysis skill offers it beside the AI's own styles and plain Markdown. It is light on purpose, in every theme: a page reads as a sheet of white paper, as the frame behind it is (`--paper`), even when Rufi is dark. Its values are the light theme's. A page takes no outside files, so the AI puts the whole file in the page's `<style>`.
 
 ## The dog
 

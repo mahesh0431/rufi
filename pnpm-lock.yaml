@@ -250,9 +250,6 @@ importers:
       '@rufi/agents':
         specifier: workspace:*
         version: link:../../packages/agents
-      '@rufi/brand':
-        specifier: workspace:*
-        version: link:../../packages/brand
       '@rufi/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts

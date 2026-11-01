@@ -161,10 +161,7 @@ MetricIndicatorWithStrikethrough(value: string, subtext?: string, previousValue?
 - Text / BoldText / IconText / ImageText / ImageTextLarge / MetricIndicator* are the inline building blocks used INSIDE card items; do not place them directly in the root Card.
 
 ### Other
-Card(children: (TextContent | MarkDownRenderer | CardHeader | Callout | TextCallout | CodeBlock | Image | ImageBlock | ImageGallery | Separator | HorizontalBarChart | RadarChart | PieChart | RadialChart | SingleStackedBarChart | ScatterChart | AreaChart | BarChart | LineChart | Table | TagBlock | Form | Buttons | IconButton | Steps | InlineHeader | EntityList | EditableTable | SnippetCardBlock | OverviewCardBlock | ContextCardBlock | CompositeCardBlock | VisualCardBlock | ListBlock | FollowUpBlock | SectionBlock | Tabs | Carousel | Trend | Page)[], sources?: {url?: string, title: string, sourceName: string}[]) — Vertical container for all content in a chat response. Children stack top to bottom automatically. Optional sources ([{ title, sourceName, url }]) render as a Sources strip at the bottom and back inline [n] citations in TextContent.
-Trend(title: string, points: TrendPoint[], unit?: string) — One test's values over time, in one unit: Rufi draws them spaced by their dates, with a table of every value under it. Use it, not LineChart, for one test over time. title: the test's name; unit: as saved.
-TrendPoint(date: string, value: string, number?: number, flag?: string, range?: string, second?: number) — One value, as the record keeps it. date: its date at its precision (2026, 2026-05 or 2026-05-20), its words when it has no date, or "". value: as printed ("11.9", "<5"). number: the number the record keeps for it; left out when it keeps none. flag, range: as printed. second: a blood pressure's second number.
-Page(path: string, title: string) — An HTML page you made in your folder, shown whole in the reply, with Open to show it large. path: its path in your folder, such as reports/results-2026.html. title: a noun that names it.
+Card(children: (TextContent | MarkDownRenderer | CardHeader | Callout | TextCallout | CodeBlock | Image | ImageBlock | ImageGallery | Separator | HorizontalBarChart | RadarChart | PieChart | RadialChart | SingleStackedBarChart | ScatterChart | AreaChart | BarChart | LineChart | Table | TagBlock | Form | Buttons | IconButton | Steps | InlineHeader | EntityList | EditableTable | SnippetCardBlock | OverviewCardBlock | ContextCardBlock | CompositeCardBlock | VisualCardBlock | ListBlock | FollowUpBlock | SectionBlock | Tabs | Carousel)[], sources?: {url?: string, title: string, sourceName: string}[]) — Vertical container for all content in a chat response. Children stack top to bottom automatically. Optional sources ([{ title, sourceName, url }]) render as a Sources strip at the bottom and back inline [n] citations in TextContent.
 
 ## Action — Button Behavior
 
@@ -438,13 +435,10 @@ fu2 = FollowUpItem("Show me a JavaScript comparison")
 
 Example — One test over time, from the user's record (fictional values):
 
-root = Card([header, intro, trend, followUps])
+root = Card([header, intro, chart, followUps])
 header = CardHeader("Haemoglobin", "Your last three results")
-intro = TextContent("Your haemoglobin went up this year and reached the lab's range in August. The values are from [your Sunrise Labs report](rufi:/documents/doc-1).")
-trend = Trend("Haemoglobin", [p1, p2, p3], "g/dL")
-p1 = TrendPoint("2026-02-10", "11.2", 11.2, "L", "12.0-15.5")
-p2 = TrendPoint("2026-05-20", "11.9", 11.9, "L", "12.0-15.5")
-p3 = TrendPoint("2026-08-12", "12.6", 12.6, null, "12.0-15.5")
+intro = TextContent("Your haemoglobin went up this year and reached the lab's range (12.0-15.5 g/dL) in August. The values are from [your Sunrise Labs report](rufi:/documents/doc-1).")
+chart = LineChart(["10 Feb 2026", "20 May 2026", "12 Aug 2026"], [Series("Haemoglobin (g/dL)", [11.2, 11.9, 12.6])])
 followUps = FollowUpBlock([f1, f2])
 f1 = FollowUpItem("What can raise my haemoglobin?")
 f2 = FollowUpItem("Show my ferritin too")
@@ -496,8 +490,7 @@ Before finishing, walk your output and verify:
 - Every Button label must accurately describe what clicking it does; use "primary" for the main action and "secondary"/"tertiary" only for lower-emphasis supporting actions.
 - Icon: always include the category argument — it enables fallback matching when the exact lucide name is unavailable.
 - Pass sources on Card ONLY when the answer relies on real references you actually have, and cite them inline in TextContent as [1], [2] (1-based index into sources).
-- Every value, date and range you show comes from the user's health record, a document in this chat or a source you cite, as it is kept there. Never invent, round off or fill in a value, not even as an example.
-- For one test's values over time, use Trend with a TrendPoint per value, taken from the record: its date, its value as printed, the number the record keeps for it, and its flag and range as printed. Use the other charts for other comparisons.
+- Every value, date and range you show comes from the user's health record, a document in this chat or a source you cite, as it is kept there. Never invent, round off or fill in a value, not even as an example. A value a chart can't take as a number, such as "<5", stays as printed in the text or a table.
 - Links go in TextContent as Markdown links, [words](address): a web page by its https address, and a page of Rufi by its rufi:/ address as your instructions say. A Card's sources and @OpenUrl take the same addresses.
-- A page or a picture you made is a file in your folder: show a page with Page(path, title) and a picture with Image(alt, path).
+- A picture you made is a file in your folder: show it with Image(alt, path).
 - Buttons and follow-ups send their words to you as the user's message, and a form sends its values. Offer only what you can do for the user in Rufi.

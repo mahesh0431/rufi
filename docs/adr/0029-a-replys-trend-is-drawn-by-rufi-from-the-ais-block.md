@@ -1,6 +1,6 @@
 # 0029 · A reply's trend is drawn by Rufi from the AI's block
 
-**Date:** 1 Nov 2026 · **Status:** superseded by [ADR 0030](0030-rufi-ais-reply-is-openui-lang.md): the whole reply is OpenUI Lang, and the trend is a part of it (`Trend` and `TrendPoint`)
+**Date:** 1 Nov 2026 · **Status:** superseded by [ADR 0030](0030-rufi-ais-reply-is-openui-lang.md): the whole reply is OpenUI Lang, with OpenUI's parts only, so one test over time is one of OpenUI's charts; the record page's chart stays
 
 One result's values over time show in a reply as a trend that Rufi draws: the AI writes a short block in its reply, in OpenUI Lang (an `openui-lang` fence naming `Trend` and its `Point`s), and the screens draw it with the record page's trend and a table of every value under it. Mahesh asked for charts as HTML, not pictures, with OpenUI; other charts and richer pages stay the AI's own pages (ADR 0017), and a picture is what the AI makes when the person asks for one.
 

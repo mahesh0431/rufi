@@ -1,5 +1,4 @@
 import { chmod, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -214,31 +213,24 @@ describe("starting Codex", () => {
     }
   });
 
-  it("writes each skill with the files beside it at every start, replacing the old ones, and leaves the AI's folder as it is", async () => {
+  it("writes each skill at every start, replacing the old ones, and leaves the AI's folder as it is", async () => {
     const analysis = SKILLS.filter((skill) => skill.name === "analysis");
     await start({}, undefined, analysis).startThread(SETTINGS);
-    const paper = join(home, "codex/skills/analysis/paper.css");
-    expect(await readFile(paper, "utf8")).toBe(
-      await readFile(
-        createRequire(import.meta.url).resolve("@rufi/brand/paper.css"),
-        "utf8",
-      ),
-    );
-    // A page the AI made, in its own folder.
-    const page = join(home, "ai/page.html");
-    await writeFile(page, "<p>A fictional page</p>");
+    const written = join(home, "codex/skills/analysis/SKILL.md");
+    expect(await readFile(written, "utf8")).toBe(analysis[0]?.text);
+    // A file the AI made, in its own folder.
+    const made = join(home, "ai/notes.md");
+    await writeFile(made, "A fictional note");
     await runtime?.close();
 
-    // A later Rufi ships another paper.
+    // A later Rufi ships another analysis skill.
     const changed = analysis.map((skill) => ({
       ...skill,
-      files: { "paper.css": ".rufi-paper { color: black; }\n" },
+      text: `${skill.text}\n- A fictional new line.\n`,
     }));
     await start({}, undefined, changed).startThread(SETTINGS);
-    expect(await readFile(paper, "utf8")).toBe(
-      ".rufi-paper { color: black; }\n",
-    );
-    expect(await readFile(page, "utf8")).toBe("<p>A fictional page</p>");
+    expect(await readFile(written, "utf8")).toBe(changed[0]?.text);
+    expect(await readFile(made, "utf8")).toBe("A fictional note");
   });
 
   it("gives the child only listed variables, never secrets", () => {

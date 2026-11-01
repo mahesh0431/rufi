@@ -17,7 +17,7 @@ import {
 import { useMemo, type ReactNode } from "react";
 import type { Options } from "react-markdown";
 import { boxFor } from "../boxes.ts";
-import { fileIn, Page, Picture } from "../files.tsx";
+import { fileIn, Picture } from "../files.tsx";
 import { replyLibrary, replyReader, shapeOf } from "./library.ts";
 import {
   CalloutView,
@@ -28,27 +28,20 @@ import {
   TextContentView,
   TextParts,
 } from "./parts.tsx";
-import { TrendView } from "./trend-view.tsx";
 
 /**
- * A picture or a page the AI made, by its path in its folder. Rufi's
- * screens load nothing from the web: a web picture shows as its words.
+ * A picture the AI made, by its path in its folder. Rufi's screens load
+ * nothing from the web: a web picture shows as its words.
  */
 function ImageView({ props }: ComponentRenderProps) {
   const alt = typeof props["alt"] === "string" ? props["alt"] : "";
   const src = typeof props["src"] === "string" ? props["src"] : undefined;
-  const file = fileIn(src);
-  if (!file) return <p className="text-muted">{alt}</p>;
-  return file.shape === "page" ? (
-    <Page path={file.path} title={alt} />
-  ) : (
-    <Picture path={file.path} caption={alt} />
-  );
+  const path = fileIn(src);
+  if (path === undefined) return <p className="text-muted">{alt}</p>;
+  return <Picture path={path} caption={alt} />;
 }
 
 const library = replyLibrary({
-  Trend: TrendView,
-  Page: ({ props }) => <Page path={props.path} title={props.title} />,
   TextContent: TextContentView,
   MarkDownRenderer: MarkDownRendererView,
   Image: ImageView,
@@ -130,8 +123,8 @@ export function picturesShownBy(
       const node = value as Partial<ElementNode>;
       if (node.type === "element" && node.props) {
         const src = node.typeName === "Image" ? node.props["src"] : undefined;
-        const file = fileIn(typeof src === "string" ? src : undefined);
-        if (file?.shape === "picture") shown.push(file.path);
+        const path = fileIn(typeof src === "string" ? src : undefined);
+        if (path !== undefined) shown.push(path);
         const markdown = node.props[MARKDOWN[node.typeName ?? ""] ?? ""];
         if (typeof markdown === "string") shown.push(...inMarkdown(markdown));
         visit(node.props);

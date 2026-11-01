@@ -1059,8 +1059,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
   },
   /**
    * The analysis story: the AI reads the record and shows a chart in its
-   * OpenUI reply, as Trends or another of its charts, not a picture or a
-   * page (neither was asked for).
+   * OpenUI reply, one of OpenUI's charts, not a picture (none was asked for).
    */
   chart_in_reply: async (api, home) => {
     const c = chat(api);
@@ -1076,29 +1075,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         {
           check: "shows_a_chart",
           criterion:
-            "The reply is OpenUI Lang (root = Card(...)) that shows fasting glucose and HbA1c over the years as Trends, or another of its charts, not a picture or a page, with the values of the records read.",
-          evidence: replyOf(snapshot),
-        },
-      ],
-      snapshot,
-    };
-  },
-  /** A page of results, linked with words that are the page's title (not an action). */
-  page_in_reply: async (api, home) => {
-    const c = chat(api);
-    await c.ask(
-      "Make me a page of my lab results that I can show my doctor, and give it to me here.",
-    );
-    const snapshot = await c.read();
-    return {
-      checks: {
-        read_records: recordReads(home).length > 0,
-      },
-      verdicts: [
-        {
-          check: "titles_not_actions",
-          criterion:
-            "The reply links a page, and each link's words are the page's title, not an action such as Open, View or Download.",
+            "The reply is OpenUI Lang (root = Card(...)) that shows fasting glucose and HbA1c over the years in one or more of OpenUI's charts, not a picture, with the values of the records read.",
           evidence: replyOf(snapshot),
         },
       ],

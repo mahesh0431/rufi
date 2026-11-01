@@ -1,8 +1,6 @@
 // Rufi's MCP endpoints over real HTTP, as the pinned Codex talks to them: who
 // gets in, what a key opens, and the shape of answers. What a chat call may
 // do is chat.test.ts's; the real Codex against them is capture.test.ts's.
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   callTool,
@@ -228,7 +226,7 @@ describe("Rufi's MCP endpoints", () => {
     await Promise.allSettled(working);
     expect(working.size).toBe(0);
   });
-  it("offers each skill and the files beside it to read, the paper as CSS byte for byte", async () => {
+  it("offers each skill to read, as its SKILL.md says", async () => {
     let port = 0;
     const withSkills = await serveMcp(
       mcpEndpoint({
@@ -252,24 +250,16 @@ describe("Rufi's MCP endpoints", () => {
             uri: "skill://analysis/SKILL.md",
             mimeType: "text/markdown",
           }),
-          expect.objectContaining({
-            uri: "skill://analysis/paper.css",
-            mimeType: "text/css",
-          }),
         ]),
       );
-      const paper = readFileSync(
-        createRequire(import.meta.url).resolve("@rufi/brand/paper.css"),
-        "utf8",
-      );
       expect(
-        (await readResource(server, "skill://analysis/paper.css")).result,
+        (await readResource(server, "skill://analysis/SKILL.md")).result,
       ).toEqual({
         contents: [
           {
-            uri: "skill://analysis/paper.css",
-            mimeType: "text/css",
-            text: paper,
+            uri: "skill://analysis/SKILL.md",
+            mimeType: "text/markdown",
+            text: SKILLS.find((skill) => skill.name === "analysis")?.text,
           },
         ],
       });

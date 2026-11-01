@@ -2053,17 +2053,14 @@ describe("the files a reply shows", () => {
   const fileOf = (page: Awaited<ReturnType<typeof session>>, path: string) =>
     page.api("GET", `/api/files?path=${encodeURIComponent(path)}`);
 
-  it("gives a short-lived address for a picture or a page in the AI's folder or Codex's generated images, and serves only by it", async () => {
+  it("gives a short-lived address for a picture in the AI's folder or Codex's generated images, and serves only by it", async () => {
     const core = await start();
     const page = await session(core);
 
     // A relative path is in the AI's folder; an absolute one as written.
     const chart = await fileOf(page, "analysis/sugar-vs-sleep.png");
     expect(chart.status).toBe(200);
-    expect(chart.body).toMatchObject({
-      name: "sugar-vs-sleep.png",
-      shape: "picture",
-    });
+    expect(chart.body).toMatchObject({ name: "sugar-vs-sleep.png" });
     const url = String(chart.body["url"]);
     expect(url).toMatch(/^\/files\/[\w-]{43}\/sugar-vs-sleep\.png$/);
     const picture = await call(core.port, "GET", url);
@@ -2078,13 +2075,9 @@ describe("the files a reply shows", () => {
       page,
       join(home, "codex", "generated_images", "thread-1", "call-1.png"),
     );
-    expect(generated.body["shape"]).toBe("picture");
     expect(
       (await call(core.port, "GET", String(generated.body["url"]))).status,
     ).toBe(200);
-
-    const results = await fileOf(page, join(home, "ai", "results.html"));
-    expect(results.body["shape"]).toBe("page");
 
     // Without the screens' proofs there is no address; a made-up one, or
     // one for another file, serves nothing.
@@ -2093,7 +2086,7 @@ describe("the files a reply shows", () => {
         await call(
           core.port,
           "GET",
-          `/api/files?path=${encodeURIComponent("results.html")}`,
+          `/api/files?path=${encodeURIComponent("analysis/sugar-vs-sleep.png")}`,
         )
       ).status,
     ).toBe(401);
@@ -2127,6 +2120,7 @@ describe("the files a reply shows", () => {
       "folder.png",
       "notes.md",
       "drawing.svg",
+      "results.html",
       "https://example.com/chart.png",
       "data:image/png;base64,AAAA",
       "",
@@ -2140,24 +2134,15 @@ describe("the files a reply shows", () => {
   it("says a file is gone when it was, also after its address was given", async () => {
     const core = await start();
     const page = await session(core);
-    const gone = await fileOf(page, "reports/old-results.html");
+    const gone = await fileOf(page, "analysis/old-chart.png");
     expect(gone.status).toBe(404);
     expect(gone.body).toMatchObject({
       missing: true,
       error: "This file is no longer in the AI's folder.",
     });
 
-    const results = await fileOf(page, "results.html");
     const chart = await fileOf(page, "analysis/sugar-vs-sleep.png");
-    await rm(join(home, "ai", "results.html"));
     await rm(join(home, "ai", "analysis", "sugar-vs-sleep.png"));
-    // A page's frame says so; the picture is simply not there.
-    const frame = await call(core.port, "GET", String(results.body["url"]));
-    expect(frame.status).toBe(404);
-    expect(frame.text).toContain("This file is no longer in the AI's folder.");
-    expect(frame.headers["content-security-policy"]).toMatch(
-      /^sandbox allow-scripts;/,
-    );
     expect(
       (await call(core.port, "GET", String(chart.body["url"]))).status,
     ).toBe(404);
@@ -2180,47 +2165,15 @@ describe("the files a reply shows", () => {
     try {
       const core = await start();
       const page = await session(core);
-      const url = String((await fileOf(page, "results.html")).body["url"]);
+      const url = String(
+        (await fileOf(page, "analysis/sugar-vs-sleep.png")).body["url"],
+      );
       expect((await call(core.port, "GET", url)).status).toBe(200);
       vi.setSystemTime(Date.now() + 10 * 60_000 + 1);
       expect((await call(core.port, "GET", url)).status).toBe(404);
     } finally {
       vi.useRealTimers();
     }
-  });
-
-  it("serves a page under its own policy in place of the screens': locked, self-contained, framed only by Rufi", async () => {
-    const core = await start();
-    const page = await session(core);
-    const origin = `http://127.0.0.1:${String(core.port)}`;
-    const url = String((await fileOf(page, "results.html")).body["url"]);
-    const direct = await call(core.port, "GET", url);
-    expect(direct.text).toContain("Open this page from the chat in Rufi.");
-    expect(direct.text).not.toContain("Fictional results");
-    const served = await call(core.port, "GET", url, {
-      "Sec-Fetch-Dest": "iframe",
-    });
-    expect(served.headers["content-type"]).toBe("text/html; charset=utf-8");
-    const policy = String(served.headers["content-security-policy"]);
-    // One policy, not the screens' as well.
-    expect(policy).not.toContain("script-src 'self'");
-    expect(policy.split(/;\s*/)).toEqual(
-      expect.arrayContaining([
-        "sandbox allow-scripts",
-        "default-src 'none'",
-        "script-src 'unsafe-inline' 'unsafe-eval'",
-        "connect-src 'none'",
-        "form-action 'none'",
-        "base-uri 'none'",
-        `frame-ancestors ${origin}`,
-      ]),
-    );
-    expect(policy).not.toMatch(/https?:(?!\/\/127\.0\.0\.1)|allow-same-origin/);
-    // The screens may frame only these, and only from Rufi itself.
-    const screens = (await page.api("GET", "/api/people")).headers[
-      "content-security-policy"
-    ];
-    expect(screens).toContain(`frame-src blob: ${origin}/files/;`);
   });
 });
 

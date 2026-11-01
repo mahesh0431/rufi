@@ -110,7 +110,7 @@ export interface ClaudePlugin {
  * Writes Rufi's skills as a Claude plugin in Rufi's home, afresh at each
  * start, so they always match this Rufi: in a folder of its own, outside
  * Claude's folder, which the AI may never read, so its commands and file
- * tools read a skill's files (claudeLockDown keeps them from writing it).
+ * tools read a skill's file (claudeLockDown keeps them from writing it).
  */
 export async function prepareClaudePlugin(
   home: string,
@@ -127,12 +127,7 @@ export async function prepareClaudePlugin(
   for (const skill of skills) {
     const folder = join(path, "skills", skill.name);
     await mkdir(folder, { recursive: true, mode: 0o700 });
-    for (const [name, text] of [
-      ["SKILL.md", skill.text],
-      ...Object.entries(skill.files),
-    ] as const) {
-      await writeFile(join(folder, name), text, { mode: 0o600 });
-    }
+    await writeFile(join(folder, "SKILL.md"), skill.text, { mode: 0o600 });
   }
   return { path, skills: skills.map((skill) => `${PLUGIN}:${skill.name}`) };
 }

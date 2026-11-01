@@ -1,6 +1,6 @@
 // The chat's transcript as the core stored it: your messages, the AI's
-// replies in OpenUI Lang (openui/reply.tsx), with the pictures and pages
-// they show (files.tsx), each picture the AI generated, and under each
+// replies in OpenUI Lang (openui/reply.tsx), with the pictures they show
+// (files.tsx), each picture the AI generated, and under each
 // answer its Activity; Rufi's receipt for
 // each save to the record, Rufi's own event lines (never your words), the
 // line of each visit brief, which opens it, and how a reply ended when it
@@ -67,7 +67,7 @@ import { useShallow } from "zustand/shallow";
 import { MiddleCut, StepDetails, took } from "./activity.tsx";
 import { boxFor } from "./boxes.ts";
 import { ChipView } from "./chips.tsx";
-import { fileIn, NativePicture, Page, Picture } from "./files.tsx";
+import { fileIn, NativePicture, Picture } from "./files.tsx";
 import { OpenUIReply, picturesShownBy } from "./openui/reply.tsx";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
 import {
@@ -95,8 +95,8 @@ import { Button, buttonLook, ICON, Problem } from "./ui.tsx";
 
 // The AI's text is shown as Markdown, never as HTML: no raw HTML, no remote
 // images, and links only to http(s) pages, opened outside Rufi with no opener
-// or referrer. A reply also shows a picture or a page in a file the AI made
-// (an image or a link to its path), links a page of Rufi for the person
+// or referrer. A reply also shows a picture the AI made (an image or a link
+// to its path), links a page of Rufi for the person
 // whose chat it is (rufi:/documents/<id>), which opens in place. Anything
 // else shows as its text.
 const WEB = /^https?:\/\//i;
@@ -177,23 +177,14 @@ const REPLY: Components = {
     if (page?.[1] !== undefined) {
       return <RufiLink path={page[1]}>{children}</RufiLink>;
     }
-    const file = fileIn(href);
-    if (!file) return webLink({ href, children, node, ...rest });
-    const words = node ? textOf(node) : "";
-    return file.shape === "page" ? (
-      <Page path={file.path} title={words} />
-    ) : (
-      <Picture path={file.path} caption={words} />
-    );
+    const path = fileIn(href);
+    if (path === undefined) return webLink({ href, children, node, ...rest });
+    return <Picture path={path} caption={node ? textOf(node) : ""} />;
   },
   img: ({ src, alt }) => {
-    const file = fileIn(typeof src === "string" ? src : undefined);
-    if (!file) return null;
-    return file.shape === "page" ? (
-      <Page path={file.path} title={alt ?? ""} />
-    ) : (
-      <Picture path={file.path} caption={alt ?? ""} />
-    );
+    const path = fileIn(typeof src === "string" ? src : undefined);
+    if (path === undefined) return null;
+    return <Picture path={path} caption={alt ?? ""} />;
   },
 };
 
@@ -223,10 +214,10 @@ function picturesIn(text: string): string[] {
       (node.tagName === "a" || node.tagName === "img")
     ) {
       const url = node.properties[node.tagName === "a" ? "href" : "src"];
-      const file = fileIn(typeof url === "string" ? keepFiles(url) : undefined);
-      if (file) {
-        if (file.shape === "picture") paths.add(file.path);
-        return; // A file renderer replaces this element and its children.
+      const path = fileIn(typeof url === "string" ? keepFiles(url) : undefined);
+      if (path !== undefined) {
+        paths.add(path);
+        return; // A picture replaces this element and its children.
       }
     }
     if ("children" in node) for (const child of node.children) visit(child);

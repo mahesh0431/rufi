@@ -1,16 +1,13 @@
-// What a reply shows besides its text, on the real core with its real
-// headers: a picture the AI made, one it generated (once, also when the reply
-// links it, also after a reload), a page it made (drawn whole in the reply
-// in a locked frame, and opened large), a reply in OpenUI Lang (drawn by OpenUI with Rufi's trend,
-// or shown as its text when it isn't whole), and a file that is gone. A page's script runs, but can't read Rufi's page or an
-// API answer or the network. Standalone requests receive an inert page.
-// The screens' strict CSP refuses nothing.
+// What a reply shows, on the real core with its real headers: a picture the
+// AI made, one it generated (once, also when the reply links it, also after
+// a reload), a reply in OpenUI Lang (drawn by OpenUI, or shown as its text
+// when it isn't whole), and a picture that is gone. The screens' strict CSP
+// refuses nothing.
 import { AxeBuilder } from "@axe-core/playwright";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
-import { createServer } from "node:http";
 import { join } from "node:path";
 import { crc32, deflateSync } from "node:zlib";
-import type { Frame, Locator, Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { expect, test, type Rufi } from "./rufi.ts";
 
 async function accessible(page: Page) {
@@ -67,31 +64,6 @@ function png(width: number, height: number, [r, g, b]: number[]): Buffer {
   ]);
 }
 
-/**
- * A page the AI made that tries what a page mustn't, and writes what
- * happened. Made for a window, as many pages are: its body is at least the
- * window's height, which would grow the frame that fits it.
- */
-const TRYING = `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<title>Fictional results</title>
-<style>body { margin: 0; min-height: 100vh; padding: 24px; box-sizing: content-box; }</style></head><body>
-<h1>Asha's fictional results</h1><button id="tab" type="button">2025</button>
-<label>Filter <input id="filter" autofocus></label><ul id="out"></ul>
-<script>
-const out = (line) => { const li = document.createElement("li"); li.textContent = line; document.getElementById("out").append(li); };
-document.getElementById("filter").focus();
-out("script ran");
-document.getElementById("tab").onclick = () => out("tab clicked");
-out("eval: " + eval("6 * 7"));
-try { out("parent: " + parent.document.title); } catch { out("parent: blocked"); }
-try { out("storage: " + sessionStorage.length); } catch { out("storage: blocked"); }
-out("origin: " + self.origin);
-fetch("/api/people").then(() => out("api: read"), () => out("api: blocked"));
-fetch("http://127.0.0.1:9/send").then(() => out("send: sent"), () => out("send: blocked"));
-const img = new Image(); img.onload = () => out("remote image: loaded"); img.onerror = () => out("remote image: blocked"); img.src = "http://127.0.0.1:9/pixel.png";
-const s = document.createElement("script"); s.onload = () => out("remote script: loaded"); s.onerror = () => out("remote script: blocked"); s.src = "http://127.0.0.1:9/lib.js"; document.head.append(s);
-</script></body></html>`;
-
 const chat = (page: Page) => page.getByRole("region", { name: "Chat" });
 const log = (page: Page) => chat(page).getByRole("log", { name: "Messages" });
 
@@ -104,12 +76,10 @@ async function opened(
   await rufi.family();
   const ai = join(rufi.home, "ai");
   await mkdir(join(ai, "analysis"), { recursive: true });
-  await mkdir(join(ai, "reports"), { recursive: true });
   await writeFile(
     join(ai, "analysis", "sugar-vs-sleep.png"),
     png(320, 180, [37, 99, 235]),
   );
-  await writeFile(join(ai, "reports", "results-2026.html"), TRYING);
   await rufi.start(options);
   await page.goto(rufi.link());
   await expect(
@@ -222,441 +192,43 @@ test("a picture the AI generated shows even without a link, and once when its re
 });
 
 /** The frame of the opened page. */
-async function pageFrame(page: Page): Promise<Frame> {
-  const element = await page
-    .getByRole("dialog")
-    .locator("iframe")
-    .elementHandle();
-  const frame = await element.contentFrame();
-  if (!frame) throw new Error("No page frame");
-  return frame;
-}
-
-/**
- * Waits until the opened page has been read to its end: Rufi's Esc relay comes
- * after the page's own content, and until then an Esc in the page isn't heard.
- */
-async function relayReady(page: Page) {
-  const frame = await pageFrame(page);
-  await expect
-    .poll(() =>
-      frame
-        .evaluate(
-          () =>
-            location.pathname.startsWith("/files/") &&
-            document.readyState !== "loading",
-        )
-        .catch(() => false),
-    )
-    .toBe(true);
-}
-
-test("a page draws whole in the reply, at its own height with nothing scrolling inside, and opens large over the chat: its script runs, but it can't reach Rufi, its API or anything remote, and a standalone request is inert", async ({
+test("a picture that is gone keeps its card and says so", async ({
   page,
   rufi,
 }) => {
   await opened(page, rufi);
-  // Remote loads, and why each one failed: the page's policy refused it.
-  const remote: string[] = [];
-  const asked: string[] = [];
-  page.context().on("request", (request) => asked.push(request.url()));
-  page.context().on("requestfailed", (request) => {
-    if (request.url().includes("127.0.0.1:9/")) {
-      remote.push(request.failure()?.errorText ?? "");
-    }
-  });
-  page.context().on("response", (response) => {
-    if (response.url().includes("127.0.0.1:9/")) remote.push("answered");
-  });
-  // Keep the first page load pending while the person starts another draft.
-  const loading = Promise.withResolvers<undefined>();
-  await page.route(
-    "**/files/**",
-    async (route) => {
-      await loading.promise;
-      await route.continue();
-    },
-    { times: 1 },
-  );
-  // Put the page among enough text to check the reading position after closing.
-  const notes = Array.from(
-    { length: 8 },
-    (_, i) => `Fictional note ${String(i + 1)}: checked.`,
-  );
-  await send(
-    page,
-    [
-      ...notes,
-      "Your page: [Your 2026 results](reports/results-2026.html)",
-      ...notes,
-    ].join("\n\n"),
-  );
-  const message = chat(page).getByRole("textbox", { name: "Message to Rufi" });
-  await message.fill("Next draft");
+  await send(page, "Old: ![Sleep in August](analysis/sleep-august.png)");
   const reply = log(page).locator(".reply");
-  // It draws in the reply without a click, at the reply's width.
-  const inline = reply.locator('iframe[title="Your 2026 results"]');
-  await expect(inline).toBeVisible();
-  const box = await inline.locator("..").boundingBox();
-  const width = await reply.evaluate((element) => element.clientWidth);
-  expect(box?.width).toBe(width);
-  loading.resolve(undefined);
-  const inlineFrame = await (await inline.elementHandle()).contentFrame();
-  if (!inlineFrame) throw new Error("No page frame in the reply");
-  const out = inlineFrame.locator("#out");
-  // Its script ran first, so what it couldn't do proves the locks.
-  await expect(out).toContainText("script ran");
-  await expect(out).toContainText("remote script: blocked");
-  // Whole: the frame takes the page's height, so nothing scrolls inside it.
-  await expect
-    .poll(() =>
-      inlineFrame.evaluate(() => {
-        const root = document.documentElement;
-        return (
-          root.scrollHeight <= innerHeight &&
-          Math.ceil(root.getBoundingClientRect().height) === innerHeight
-        );
-      }),
-    )
-    .toBe(true);
-  await expect(message).toBeFocused();
-  await page.keyboard.type(" stays here");
-  await expect(message).toHaveValue("Next draft stays here");
-  await accessible(page);
-  await expect(out).toContainText("eval: 42");
-  await expect(out).toContainText("parent: blocked");
-  await expect(out).toContainText("storage: blocked");
-  await expect(out).toContainText("origin: null");
-  await expect(out).toContainText("api: blocked");
-  await expect(out).toContainText("send: blocked");
-  await expect(out).toContainText("remote image: blocked");
-  await expect(out).toContainText("remote script: blocked");
-  // A click still puts the focus inside the page.
-  const inlineFilter = inlineFrame.getByRole("textbox", { name: "Filter" });
-  await inlineFilter.click();
-  await page.keyboard.type("HbA1c");
-  await expect(inlineFilter).toHaveValue("HbA1c");
-  const open = reply.getByRole("button", { name: "Open Your 2026 results" });
-  // Clicked in the reply, the page keeps what it shows while it opens large.
-  await inlineFrame.locator("#tab").click();
-  await expect(out).toContainText("tab clicked");
-
-  await reply.getByRole("button", { name: "Open Your 2026 results" }).click();
-  const shown = page.getByRole("dialog", { name: "Your 2026 results" });
-  await expect(shown).toBeVisible();
-  const frame = await pageFrame(page);
-  await expect(frame.locator("#out")).toContainText("script ran");
-  // The Escape signal from any sender except this page's frame is ignored.
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve) => {
-        const heard = (event: MessageEvent) => {
-          if (event.data !== "rufi-page-escape") return;
-          removeEventListener("message", heard);
-          resolve();
-        };
-        addEventListener("message", heard);
-        postMessage("rufi-page-escape", location.origin);
-      }),
-  );
-  await expect(shown).toBeVisible();
-  await accessible(page);
-  const fileUrl = frame.url();
-  const scroll = page.locator('[aria-label="Messages"]').locator("../..");
-  const at = await scroll.evaluate((element) => element.scrollTop);
-  expect(at).toBeGreaterThan(0);
-  await shown.getByRole("button", { name: "Close" }).click();
-  await expect(shown).toHaveCount(0);
-  // Close and Esc give the focus back to Open.
-  await expect(open).toBeFocused();
-  await expect(message).toBeVisible();
-  await expect(
-    chat(page).getByRole("button", { name: "Minimise" }),
-  ).toBeVisible();
-  expect(await scroll.evaluate((element) => element.scrollTop)).toBe(at);
-  await expect(out).toContainText("tab clicked");
-  await reply.getByRole("button", { name: "Open Your 2026 results" }).click();
-  await expect(shown).toBeVisible();
-  // Not tested on purpose: an Esc while the page still loads may be ignored
-  // (a known TODO; pressing again closes it).
-  await relayReady(page);
-  await page.keyboard.press("Escape");
-  await expect(shown).toHaveCount(0);
-  await expect(open).toBeFocused();
-  // A person can click, pause, and type inside the page without losing focus.
-  await open.click();
-  const filter = (await pageFrame(page)).getByRole("textbox", {
-    name: "Filter",
-  });
-  await filter.click();
-  await page.waitForTimeout(300);
-  await page.keyboard.type("HbA1c");
-  await expect(filter).toHaveValue("HbA1c");
-  // Esc closes it after a click inside the page, and the click still works.
-  await (await pageFrame(page)).locator("#tab").click();
-  await expect((await pageFrame(page)).locator("#out")).toContainText(
-    "tab clicked",
-  );
-  await page.keyboard.press("Escape");
-  await expect(shown).toHaveCount(0);
-  await expect(open).toBeFocused();
-  // Tab reaches the page, Enter activates its control, and Esc closes it.
-  await open.click();
-  await expect((await pageFrame(page)).locator("#out")).toContainText(
-    "script ran",
-  );
-  await shown.getByRole("button", { name: "Close" }).focus();
-  await page.keyboard.press("Tab");
-  await expect((await pageFrame(page)).locator("#tab")).toBeFocused();
-  await page.keyboard.press("Enter");
-  await expect((await pageFrame(page)).locator("#out")).toContainText(
-    "tab clicked",
-  );
-  await page.keyboard.press("Escape");
-  await expect(shown).toHaveCount(0);
-  await expect(open).toBeFocused();
-  await expect(message).toBeVisible();
-  await expect(
-    chat(page).getByRole("button", { name: "Minimise" }),
-  ).toBeVisible();
-  expect(await scroll.evaluate((element) => element.scrollTop)).toBe(at);
-  expect(await refusedIn(page)).toEqual([]);
-
-  // A standalone request gets an inert instruction, never the file's script.
-  const alone = await page.context().newPage();
-  await alone.goto(fileUrl);
-  await expect(
-    alone.getByText("Open this page from the chat in Rufi."),
-  ).toBeVisible();
-  await expect(alone.locator("script, #out")).toHaveCount(0);
-  await alone.close();
-
-  expect(remote.length).toBeGreaterThan(0);
-  expect(new Set(remote)).toEqual(new Set(["csp"]));
-  // The page itself asked nothing of Rufi's API.
-  expect(asked.filter((url) => url.endsWith("/api/people"))).toEqual([]);
-
-  // An automatic navigation is different from fetch. The parent policy
-  // must stop it before it reaches a second, reachable origin.
-  const received: string[] = [];
-  const outside = createServer((request, response) => {
-    received.push(request.url ?? "");
-    response.end("Fictional external page");
-  });
-  await new Promise<void>((resolve) => outside.listen(0, "127.0.0.1", resolve));
-  try {
-    const address = outside.address();
-    if (address === null || typeof address === "string")
-      throw new Error("No listener");
-    const origin = `http://127.0.0.1:${String(address.port)}`;
-    expect((await page.context().request.get(`${origin}/ready`)).status()).toBe(
-      200,
-    );
-    const destination = `${origin}/navigate`;
-    let ran = 0;
-    page.on("console", (message) => {
-      if (message.text() === "navigation script ran") ran++;
-    });
-    await writeFile(
-      join(rufi.home, "ai", "reports", "navigation.html"),
-      `<!doctype html><html lang="en"><title>Fictional navigation</title><script>console.log("navigation script ran"); location.href = ${JSON.stringify(destination)};</script></html>`,
-    );
-    await send(page, "[Fictional navigation](reports/navigation.html)");
-    const navigating = log(page).locator(
-      'iframe[title="Fictional navigation"]',
-    );
-    const url = new URL(
-      (await navigating.getAttribute("src")) ?? "",
-      page.url(),
-    ).href;
-    await expect.poll(() => ran).toBe(1);
-    await expect.poll(() => refusedIn(page)).toEqual([`frame-src ${origin}`]);
-    // Other programs may look at a new local port (with a request for "/"),
-    // so what must never arrive is the navigation itself.
-    expect(received).not.toContain("/navigate");
-    const direct = await page.context().newPage();
-    await direct.goto(url);
-    await expect(
-      direct.getByText("Open this page from the chat in Rufi."),
-    ).toBeVisible();
-    await expect(direct.locator("script")).toHaveCount(0);
-    expect(ran).toBe(1);
-    expect(received).not.toContain("/navigate");
-    await direct.close();
-    expect(await refusedIn(page)).toEqual([`frame-src ${origin}`]);
-  } finally {
-    await new Promise<void>((resolve, reject) =>
-      outside.close((error) => {
-        if (error) reject(error);
-        else resolve();
-      }),
-    );
-  }
-});
-
-/**
- * A page with a dark look, which says what its scripts see: one that runs as
- * the page loads (as a chart drawn inline does), and one later, with a query
- * it builds. Both schemes' colours come from its `light-dark()` text.
- */
-const COLOURS = `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<title>Colours</title><style>
-:root { color-scheme: light dark; }
-body { background: rgb(255, 255, 255); color: light-dark(rgb(1, 1, 1), rgb(2, 2, 2)); }
-@media (prefers-color-scheme: dark) { body { background: rgb(0, 0, 0); } }
-</style></head><body><p id="loading"></p><p id="seen">…</p><script>
-const scheme = (query) => (matchMedia(query).matches ? "dark" : "light");
-document.getElementById("loading").textContent = [
-  getComputedStyle(document.body).backgroundColor,
-  scheme("(prefers-color-scheme: dark)"),
-].join(" ");
-addEventListener("load", () => {
-  document.getElementById("seen").textContent = scheme(
-    "(prefers-color-scheme: " + "dark)",
-  );
-});
-</script></body></html>`;
-
-for (const { system, chosen } of [
-  { system: "dark", chosen: "Light" },
-  { system: "light", chosen: "Dark" },
-] as const) {
-  test(`a page follows Rufi's appearance, ${chosen} with the system ${system}, a change in another tab while it shows open large, and the system with System`, async ({
-    page,
-    rufi,
-    context,
-  }) => {
-    await page.emulateMedia({ colorScheme: system });
-    await rufi.family();
-    await mkdir(join(rufi.home, "ai", "reports"), { recursive: true });
-    await writeFile(join(rufi.home, "ai", "reports", "colours.html"), COLOURS);
-    await rufi.start();
-    await page.goto(rufi.link());
-    const choose = async (label: string) => {
-      await page.getByRole("link", { name: "Settings" }).click();
-      await page
-        .getByRole("radiogroup", { name: "Appearance" })
-        .getByRole("radio", { name: label })
-        .check();
-      await page.getByRole("link", { name: "Chat with Rufi" }).click();
-    };
-    const inline = page.locator('.reply iframe[title="Colours"]');
-    /** What the page shows, and what its scripts saw, loading and later. */
-    const looks = async (shown = inline) => {
-      const frame = shown.contentFrame();
-      await expect(frame.locator("#seen")).not.toHaveText("…");
-      return {
-        ...(await frame.locator("body").evaluate((body) => {
-          const { backgroundColor, color } = getComputedStyle(body);
-          return { background: backgroundColor, text: color };
-        })),
-        loading: await frame.locator("#loading").textContent(),
-        seen: await frame.locator("#seen").textContent(),
-      };
-    };
-    const black = {
-      background: "rgb(0, 0, 0)",
-      text: "rgb(2, 2, 2)",
-      loading: "rgb(0, 0, 0) dark",
-      seen: "dark",
-    };
-    const white = {
-      background: "rgb(255, 255, 255)",
-      text: "rgb(1, 1, 1)",
-      loading: "rgb(255, 255, 255) light",
-      seen: "light",
-    };
-
-    await choose(chosen);
-    const box = page.getByRole("textbox", { name: "Message to Rufi" });
-    await box.fill("Your page: [Colours](reports/colours.html)");
-    await box.press("Enter");
-    expect(await looks()).toEqual(chosen === "Dark" ? black : white);
-
-    // Another tab chooses the other look; this one stays on its chat with
-    // the page open large, which stays open, and both frames follow. The
-    // other tab tells this one after its save's answer, so it stays open
-    // until they have.
-    await page.getByRole("button", { name: "Open Colours" }).click();
-    const large = page.getByRole("dialog", { name: "Colours" });
-    await expect(large).toBeVisible();
-    const other = await context.newPage();
-    await other.goto(rufi.link());
-    await other.getByRole("link", { name: "Settings" }).click();
-    const saved = other.waitForResponse(
-      (response) =>
-        response.url().endsWith("/api/settings") &&
-        response.request().method() === "PUT",
-    );
-    await other
-      .getByRole("radiogroup", { name: "Appearance" })
-      .getByRole("radio", { name: chosen === "Dark" ? "Light" : "Dark" })
-      .check();
-    expect((await saved).ok()).toBe(true);
-    const now =
-      chosen === "Dark" ? /\?appearance=light$/ : /\?appearance=dark$/;
-    for (const shown of [inline, large.locator("iframe")]) {
-      await expect.poll(() => shown.getAttribute("src")).toMatch(now);
-      await expect
-        .poll(() => looks(shown))
-        .toEqual(chosen === "Dark" ? white : black);
-    }
-    await other.close();
-    await expect(large).toBeVisible();
-    await large.getByRole("button", { name: "Close" }).click();
-
-    await choose("System");
-    expect(await looks()).toEqual(system === "dark" ? black : white);
-    expect(await refusedIn(page)).toEqual([]);
-  });
-}
-
-test("a file that is gone keeps its card and says so", async ({
-  page,
-  rufi,
-}) => {
-  await opened(page, rufi);
-  await send(
-    page,
-    "Old: [Your 2025 results](reports/results-2025.html) ![Sleep in August](analysis/sleep-august.png)",
-  );
-  const reply = log(page).locator(".reply");
-  await expect(reply.getByText("Your 2025 results")).toBeVisible();
   await expect(reply.getByText("Sleep in August")).toBeVisible();
   await expect(
     reply.getByText("This file is no longer in the AI's folder."),
-  ).toHaveCount(2);
+  ).toBeVisible();
   await accessible(page);
   expect(await refusedIn(page)).toEqual([]);
 });
 
 /**
  * A stored reply in OpenUI Lang (openui/library.ts): keep it as written when
- * Rufi's parts or OpenUI change, so an old reply still draws. A header, text
- * with a web link, a link to a page of Rufi and a citation of the Card's
- * source (a page of Rufi), Rufi's trend (its points out of order, one with no
- * date, "<5" kept with its number), OpenUI's table, a callout with a link, an
- * editable table with an address of Rufi's, a button whose action names the
- * test, and follow-ups.
+ * OpenUI changes, so an old reply still draws. A header, text with a web
+ * link, a link to a page of Rufi and a citation of the Card's source (a page
+ * of Rufi), OpenUI's line chart of one test and a table with every value
+ * ("<5" too), a callout with a link, an editable table with an address of
+ * Rufi's, a button whose action names the test, and follow-ups.
  */
 const STORED_REPLY = [
-  "root = Card([header, intro, trend, table, note, reports, explain, followUps], [src])",
+  "root = Card([header, intro, chart, table, note, reports, explain, followUps], [src])",
   'header = CardHeader("CRP", "Your last four results")',
   'intro = TextContent("Your CRP was **high** in March and August. [What CRP measures](https://example.com/crp) · [Your profile](rufi:/profile) [1]")',
   'src = {title: "Your birth date and sex", sourceName: "Your profile", url: "rufi:/profile"}',
-  'trend = Trend("CRP", [c3, c1, c2, c0], "mg/L")',
-  'c1 = TrendPoint("2025-12-01", "<5", 5, null, "<5")',
-  'c2 = TrendPoint("2026-03-04", "8.2", 8.2, "H", "<5")',
-  'c3 = TrendPoint("2026-08-12", "6.0", 6.0, "H", "<5")',
-  'c0 = TrendPoint("", "<5")',
-  'table = Table([Col("Lab", ["Sunrise Labs", "Northgate"]), Col("Results", [3, 1])])',
+  'chart = LineChart(["4 Mar 2026", "12 Aug 2026"], [Series("CRP (mg/L)", [8.2, 6.0])])',
+  'table = Table([Col("Date", ["1 Dec 2025", "4 Mar 2026", "12 Aug 2026"]), Col("CRP", ["<5 mg/L", "8.2 mg/L", "6.0 mg/L"]), Col("Lab range", ["<5", "<5", "<5"])])',
   'note = Callout("info", "Lab ranges", "Your ranges depend on [your sex](rufi:/profile).")',
   'reports = EditableTable("reports", [{type: "url", key: "source", header: "Report"}], [{id: "p1", values: ["rufi:/profile"]}])',
   'explain = Buttons([Button("Explain", @ToAssistant("Explain this result", {test: "CRP"}))])',
   'followUps = FollowUpBlock([FollowUpItem("Show my ferritin too")])',
 ].join("\n");
 
-test("a reply the AI wrote in OpenUI draws in the chat under Rufi's strict CSP: its trend oldest first with every value in a table, and a follow-up or button sends its words and context, and every link of Rufi's opens in place", async ({
+test("a reply the AI wrote in OpenUI draws in the chat under Rufi's strict CSP: its chart and table, and a follow-up or button sends its words and context, and every link of Rufi's opens in place", async ({
   page,
   rufi,
 }) => {
@@ -676,21 +248,8 @@ test("a reply the AI wrote in OpenUI draws in the chat under Rufi's strict CSP: 
     );
   }
   await expect(reply.getByRole("button", { name: "Citations" })).toBeVisible();
-  await expect(
-    reply.getByRole("heading", { name: "CRP (mg/L) over time" }),
-  ).toBeVisible();
-  await expect(
-    reply.getByRole("img", { name: /^CRP \(mg\/L\) over time/ }),
-  ).toHaveAccessibleName(
-    "CRP (mg/L) over time: <5 on 1 Dec 2025, 8.2 on 4 Mar 2026, 6.0 on 12 Aug 2026. Lab range <5",
-  );
-  await expect(reply.locator("figure tbody tr")).toHaveText([
-    /1 Dec 2025\s*<5 mg\/L\s*<5/,
-    /4 Mar 2026\s*8\.2 mg\/L\s*<5\s*H/,
-    /12 Aug 2026\s*6\.0 mg\/L\s*<5\s*H/,
-    /No date\s*<5 mg\/L · Not drawn/,
-  ]);
-  await expect(reply.getByText("Northgate")).toBeVisible();
+  await expect(reply.locator(".openui-chart")).toBeVisible();
+  await expect(reply.getByText("<5 mg/L")).toBeVisible();
   // Drawn, not shown as its text.
   await expect(reply.locator("pre")).toHaveCount(0);
   await accessible(page);
@@ -726,14 +285,12 @@ test("a finished reply that names a value it never gives, or puts another part w
     [
       "Not whole:",
       "root = Card([t])",
-      't = Trend("Haemoglobin", [p1, p2], "g/dL")',
-      'p1 = TrendPoint("2026-02-10", "11.6", 11.6)',
+      't = Table([Col("Test", ["Haemoglobin", "Ferritin"]), Col("Value", [v1, v2])])',
+      'v1 = "11.6 g/dL"',
     ].join("\n"),
   );
   const first = log(page).locator(".reply").last();
-  await expect(first.locator("pre")).toContainText(
-    'p1 = TrendPoint("2026-02-10"',
-  );
+  await expect(first.locator("pre")).toContainText('v1 = "11.6 g/dL"');
   await expect(
     first.getByText(
       "This reply couldn't be drawn. Ask again to have it drawn.",

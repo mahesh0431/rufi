@@ -1,34 +1,16 @@
-// What a reply shows besides its text: a picture or a page the AI made, by
-// the path the reply holds. A file comes from the core by a short-lived
-// address for that one file (/api/files); a page draws in the reply in a
-// locked frame and opens large over the chat in another. A file that is gone
-// says so.
+// What a reply shows besides its text: a picture the AI made, by the path
+// the reply holds. A picture comes from the core by a short-lived address
+// for that one file (/api/files). A file that is gone says so.
 import { Dialog } from "@base-ui/react/dialog";
-import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { PAGE_ESCAPE, PAGE_SIZE_CHANGED, ShownFile } from "@rufi/contracts";
-import {
-  ExternalLink,
-  FileCode,
-  FileX,
-  Image,
-  LoaderCircle,
-  RotateCw,
-  X,
-} from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useContext,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { useQueries, useQuery } from "@tanstack/react-query";
+import { ShownFile } from "@rufi/contracts";
+import { FileX, Image, LoaderCircle, RotateCw, X } from "lucide-react";
+import { useContext, useRef, useState } from "react";
 import { ApiError, read } from "./api.ts";
 import { Button } from "./ui.tsx";
 import { Menus } from "./model-menu.tsx";
 
 const PICTURE = /\.(png|jpe?g|gif|webp)$/i;
-const PAGE = /\.html?$/i;
 
 /** The path a reply's link or image names, as the AI wrote it. */
 function pathOf(href: string): string {
@@ -41,19 +23,15 @@ function pathOf(href: string): string {
 }
 
 /**
- * What a reply's link or image names: a picture or a page in a file, by
- * its extension; undefined for a web address or anything else.
+ * The picture file a reply's link or image names, by its extension;
+ * undefined for a web address or anything else.
  */
-export function fileIn(
-  href: string | undefined,
-): { path: string; shape: "picture" | "page" } | undefined {
+export function fileIn(href: string | undefined): string | undefined {
   if (href === undefined || href === "" || href.startsWith("#")) return;
   // Another scheme (a web page, data:, mailto:) isn't a file.
   if (/^[a-z][a-z0-9+.-]*:/i.test(href) && !/^file:/i.test(href)) return;
   const path = pathOf(href);
-  if (PICTURE.test(path)) return { path, shape: "picture" };
-  if (PAGE.test(path)) return { path, shape: "page" };
-  return undefined;
+  return PICTURE.test(path) ? path : undefined;
 }
 
 /** A file's address lasts 10 minutes; one older than this is asked again. */
@@ -201,7 +179,7 @@ export function NativePicture({
     identity !== undefined &&
     references.some(
       (reference) =>
-        (reference.data?.shape === "picture" ||
+        (reference.data !== undefined ||
           problemOf(reference.error) === "gone") &&
         identityOf(reference) === identity,
     )
@@ -211,233 +189,6 @@ export function NativePicture({
     <div data-entry={entryId} className="reply">
       <Picture path={path} caption="Made by the AI" />
     </div>
-  );
-}
-
-/** Keep an inline page's automatic first load from taking the focus. */
-function keepFocusOnLoad(frame: HTMLIFrameElement | null) {
-  if (!frame) return;
-  const before = document.activeElement;
-  const loaded = () => {
-    if (document.activeElement === frame && before instanceof HTMLElement) {
-      before.focus({ preventScroll: true });
-    }
-  };
-  frame.addEventListener("load", loaded, { once: true });
-  return () => {
-    frame.removeEventListener("load", loaded);
-  };
-}
-
-/** A page's address, with Rufi's appearance when it is light or dark. */
-const inAppearance = (url: string, appearance: string) =>
-  appearance === "light" || appearance === "dark"
-    ? `${url}${url.includes("?") ? "&" : "?"}appearance=${appearance}`
-    : url;
-
-/**
- * A page the AI made, drawn whole in the reply at the height it tells
- * (nothing scrolls inside its frame; 400 px until it tells), with its title
- * (the reply's words for it, or its file name) and Open, which shows it
- * large over the chat.
- */
-/**
- * The heights a page's frame takes, as T3's html_render does: the page's
- * own height, from 80 px to 20,000 px, so one that grows with its frame
- * stops.
- */
-const PAGE_LOWEST = 80;
-const PAGE_TALLEST = 20_000;
-
-export function Page({ path, title }: { path: string; title: string }) {
-  const client = useQueryClient();
-  // Closed, the focus goes back to Open.
-  const opener = useRef<HTMLButtonElement>(null);
-  const portals = useContext(Menus);
-  const file = useQuery(fileQuery(path));
-  // The frame in the reply keeps the address it loaded, so a fresh one (for
-  // Open) doesn't load the page again and lose what it shows. A stale address
-  // may have run out; the query is asking for a fresh one.
-  const [src, setSrc] = useState<string>();
-  if (src === undefined && file.data && !file.isStale) setSrc(file.data.url);
-  const [opened, setOpened] = useState<ShownFile | null>(null);
-  // Rufi's appearance, when it is light or dark, goes in the page's address:
-  // a frame follows the system's otherwise. A new one loads the page again
-  // in place, also open large, from a fresh address: an old one may have
-  // run out. Until then the page keeps its look.
-  const appearance = useRootData("appearance", "system");
-  const [lookedIn, setLookedIn] = useState(appearance);
-  useEffect(() => {
-    if (appearance === lookedIn) return;
-    let gone = false;
-    client.query({ ...fileQuery(path), staleTime: 0 }).then(
-      (fresh) => {
-        if (gone) return;
-        setSrc(fresh.url);
-        setOpened((now) => now && fresh);
-        setLookedIn(appearance);
-      },
-      // Gone, refused or failed: the card says so (the query holds why);
-      // the frames take the new look on the address they have.
-      () => {
-        if (!gone) setLookedIn(appearance);
-      },
-    );
-    return () => {
-      gone = true;
-    };
-  }, [appearance, lookedIn, client, path]);
-  const [state, setState] = useState<"idle" | "opening" | "failed">("idle");
-  const frame = useRef<HTMLIFrameElement>(null);
-  // The page in the reply tells its height (the server's script after it);
-  // only this frame's word counts.
-  const inReply = useRef<HTMLIFrameElement>(null);
-  const [height, setHeight] = useState<number>();
-  useEffect(() => {
-    const heard = (event: MessageEvent) => {
-      if (event.source !== inReply.current?.contentWindow) return;
-      const told: unknown = event.data;
-      if (
-        typeof told === "object" &&
-        told !== null &&
-        "method" in told &&
-        told.method === PAGE_SIZE_CHANGED &&
-        "params" in told &&
-        typeof told.params === "object" &&
-        told.params !== null &&
-        "height" in told.params &&
-        typeof told.params.height === "number" &&
-        Number.isFinite(told.params.height) &&
-        told.params.height > 0
-      ) {
-        setHeight(
-          Math.min(
-            PAGE_TALLEST,
-            Math.max(PAGE_LOWEST, Math.ceil(told.params.height)),
-          ),
-        );
-      }
-    };
-    addEventListener("message", heard);
-    return () => {
-      removeEventListener("message", heard);
-    };
-  }, []);
-  const inReplyRef = useCallback((element: HTMLIFrameElement | null) => {
-    inReply.current = element;
-    return keepFocusOnLoad(element);
-  }, []);
-  // The served page relays only Esc. Its opaque origin cannot reach this
-  // dialog's keys, so check the sender frame instead of moving its focus.
-  useEffect(() => {
-    if (!opened) return;
-    const heard = (event: MessageEvent) => {
-      if (
-        event.source === frame.current?.contentWindow &&
-        event.data === PAGE_ESCAPE
-      ) {
-        setOpened(null);
-      }
-    };
-    addEventListener("message", heard);
-    return () => {
-      removeEventListener("message", heard);
-    };
-  }, [opened]);
-  const name = title === "" ? nameOf(path) : title;
-  if (file.isError) {
-    const problem = problemOf(file.error);
-    if (problem === "gone") return <Gone title={name} />;
-    if (problem === "refused") return <span>{name}</span>;
-    return <Failed retry={() => void file.refetch()} />;
-  }
-  if (src === undefined) return <Loading />;
-  return (
-    <span className="my-1 block">
-      {/* Locked twice: this frame's sandbox and the page's own policy. Its
-          border is around it, so the frame is the page's height exactly. */}
-      <span className="block overflow-hidden rounded-[10px] border border-line bg-paper">
-        <iframe
-          ref={inReplyRef}
-          src={inAppearance(src, lookedIn)}
-          title={name}
-          sandbox="allow-scripts"
-          style={height === undefined ? undefined : { height }}
-          className="block h-100 w-full"
-        />
-      </span>
-      <span className="mt-1 flex items-center gap-1.5 text-xs text-muted">
-        <FileCode size={12} className="shrink-0" aria-hidden />
-        <span className="min-w-0 flex-1 break-words">
-          {state === "failed"
-            ? "Rufi couldn't open this file. Try again."
-            : name}
-        </span>
-        <Button
-          ref={opener}
-          look="quiet"
-          icon={ExternalLink}
-          busy={state === "opening" && "Opening…"}
-          aria-label={`Open ${name}`}
-          onClick={() => {
-            setState("opening");
-            // A fresh address, and a check the file is there: a frame can't
-            // say that its page didn't load.
-            client
-              .query({ ...fileQuery(path), staleTime: 0 })
-              .then((file) => {
-                setState("idle");
-                setOpened(file);
-              })
-              .catch((error: unknown) => {
-                // A page gone meanwhile says so (the query says).
-                setState(problemOf(error) === "gone" ? "idle" : "failed");
-              });
-          }}
-        >
-          Open
-        </Button>
-      </span>
-      {opened && (
-        <Dialog.Root
-          open
-          onOpenChange={(next) => {
-            if (!next) setOpened(null);
-          }}
-        >
-          <Dialog.Portal container={portals}>
-            <Dialog.Backdrop className="fixed inset-0 z-40 bg-ink/25" />
-            <Dialog.Popup
-              finalFocus={opener}
-              className="fixed inset-4 z-40 flex flex-col overflow-hidden rounded-[14px] bg-surface shadow-menu outline-none"
-            >
-              <div className="flex items-center gap-2 border-b border-line px-3 py-2">
-                <FileCode
-                  size={18}
-                  className="shrink-0 text-accent-ink"
-                  aria-hidden
-                />
-                <div className="min-w-0 flex-1">
-                  <Dialog.Title className="truncate text-[13px] font-semibold">
-                    {name}
-                  </Dialog.Title>
-                  <p className="truncate text-xs text-muted">{path}</p>
-                </div>
-                <Dialog.Close render={<Button icon={X} />}>Close</Dialog.Close>
-              </div>
-              {/* Locked twice: this frame's sandbox and the page's own policy. */}
-              <iframe
-                ref={frame}
-                src={inAppearance(opened.url, lookedIn)}
-                title={name}
-                sandbox="allow-scripts"
-                className="m-2.5 min-h-0 flex-1 rounded-lg border border-line bg-paper"
-              />
-            </Dialog.Popup>
-          </Dialog.Portal>
-        </Dialog.Root>
-      )}
-    </span>
   );
 }
 
@@ -475,21 +226,5 @@ function Failed({ retry }: { retry: () => void }) {
         Retry
       </Button>
     </span>
-  );
-}
-
-/** A value on <html>, as it changes: the appearance chosen (`data-appearance`). */
-function useRootData(name: "appearance", otherwise: string): string {
-  return useSyncExternalStore(
-    (changed) => {
-      const watch = new MutationObserver(changed);
-      watch.observe(document.documentElement, {
-        attributeFilter: [`data-${name}`],
-      });
-      return () => {
-        watch.disconnect();
-      };
-    },
-    () => document.documentElement.dataset[name] ?? otherwise,
   );
 }

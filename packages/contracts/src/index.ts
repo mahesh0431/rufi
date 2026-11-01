@@ -605,27 +605,16 @@ export const DataFolder = Schema.Struct({
 export type DataFolder = typeof DataFolder.Type;
 
 /**
- * A file a reply shows (a picture or a page the AI made), found now: a
- * short-lived address for that one file, and its name.
+ * A picture a reply shows, made by the AI, found now: a short-lived address
+ * for that one file, and its name.
  */
 export const ShownFile = Schema.Struct({
   url: Schema.String,
   name: Schema.String,
   /** The canonical path from the resolver: aliases name the same file. */
   path: Schema.String,
-  shape: Schema.Literals(["picture", "page"]),
 });
 export type ShownFile = typeof ShownFile.Type;
-
-/** Escape from a generated page. Accept only from the currently open frame. */
-export const PAGE_ESCAPE = "rufi-page-escape";
-
-/**
- * A generated page's height, which it tells the frame that shows it in a
- * reply, as an MCP App tells its host: `{ jsonrpc: "2.0", method, params:
- * { height } }`. Accept only from that frame.
- */
-export const PAGE_SIZE_CHANGED = "ui/notifications/size-changed";
 
 /** The first step of the first run not done yet, or done. */
 export const FirstRunStep = Schema.Literals([

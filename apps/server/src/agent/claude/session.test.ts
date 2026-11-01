@@ -16,22 +16,19 @@ import {
 const skill = (name: string) => ({
   name,
   text: `---\nname: ${name}\ndescription: A fictional skill.\n---\nBody.\n`,
-  files: {},
 });
 
 describe("Rufi's skills as Claude's plugin", () => {
   it("are written afresh, so a skill Rufi no longer has is gone", async () => {
     const home = await mkdtemp(join(tmpdir(), "rufi-claude-"));
     await prepareClaudePlugin(home, [skill("visits"), skill("results")]);
-    const plugin = await prepareClaudePlugin(home, [
-      { ...skill("visits"), files: { "paper.css": "body {}" } },
-    ]);
+    const plugin = await prepareClaudePlugin(home, [skill("visits")]);
 
     expect(plugin.skills).toEqual(["rufi:visits"]);
     expect(await readdir(join(plugin.path, "skills"))).toEqual(["visits"]);
     expect(
-      await readFile(join(plugin.path, "skills/visits/paper.css"), "utf8"),
-    ).toBe("body {}");
+      await readFile(join(plugin.path, "skills/visits/SKILL.md"), "utf8"),
+    ).toContain("name: visits");
     expect(
       JSON.parse(
         await readFile(join(plugin.path, ".claude-plugin/plugin.json"), "utf8"),
