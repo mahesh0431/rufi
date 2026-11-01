@@ -1,8 +1,8 @@
 // Settings, a pop-up over the page you are on (settings-link.tsx says how it
 // opens), its options in groups: Sign-in (how Codex and Claude are signed
 // in), Profile (about you, and the region whose emergency number the AI
-// gives), Appearance (light or dark, the colour theme, the text size and how
-// a reply sits in the chat), Chat (how Rufi AI's replies look and your own
+// gives, and the profile's history), Appearance (light or dark, the colour
+// theme, the text size and how a reply sits in the chat), Chat (how Rufi AI's replies look and your own
 // words for them, when a reply's Activity opens, what a message sent while a
 // reply runs does, how often Rufi carries on after a restart), Data (device
 // data, backups, the export of your data and where Rufi keeps it) and
@@ -30,7 +30,7 @@ import { download, read } from "./api.ts";
 import { AdvancedOptions } from "./advanced.tsx";
 import { AppearanceChoice, ColourChoice } from "./appearance.tsx";
 import { DeviceDataSection } from "./devices.tsx";
-import { ProfileSection } from "./profile.tsx";
+import { ProfileHistory, ProfileSection } from "./profile.tsx";
 import { SettingChoice } from "./choice.tsx";
 import { printedTime } from "./dates.ts";
 import {
@@ -113,7 +113,7 @@ export function SettingsDialog() {
         />
         <Dialog.Popup
           data-over-chat
-          className="fixed top-1/2 left-1/2 z-40 flex h-[min(620px,88vh)] w-[780px] max-w-[94vw] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[14px] bg-surface shadow-menu outline-none"
+          className="fixed top-1/2 left-1/2 z-40 flex h-[min(90vh,56rem)] w-[min(90vw,68rem)] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[14px] bg-surface shadow-menu outline-none"
         >
           {group !== undefined && (
             <Tabs.Root
@@ -193,6 +193,7 @@ function GroupOptions({ group }: { group: Group }) {
         <>
           {person && <ProfileSection person={person} />}
           <EmergencySection />
+          {person && <ProfileHistory person={person} />}
         </>
       );
     case "appearance":

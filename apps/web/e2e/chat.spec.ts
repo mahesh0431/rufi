@@ -1028,7 +1028,7 @@ test("Markdown in a reply: tables and web links work, Rufi's own links open in p
   await box(chat(page)).fill(
     [
       "![pixel](http://127.0.0.1:9/pixel.png) <img src=http://127.0.0.1:9/x.png>",
-      "[run](javascript:alert(1)) [inside](/settings) [web](https://example.com/page) [your profile](rufi:/profile) [data settings](rufi:/settings/data) [up](rufi:/../ravi/profile) [encoded](rufi:/%2e%2e/ravi/profile) [deeper](rufi:/documents/%2e%2e%2f..%2fravi)",
+      "[run](javascript:alert(1)) [inside](/settings) [web](https://example.com/page) [your follow-ups](rufi:/follow-ups) [data settings](rufi:/settings/data) [up](rufi:/../ravi/profile) [encoded](rufi:/%2e%2e/ravi/profile) [deeper](rufi:/documents/%2e%2e%2f..%2fravi)",
       "",
       "| Test | Value |",
       "|---|---|",
@@ -1044,11 +1044,11 @@ test("Markdown in a reply: tables and web links work, Rufi's own links open in p
     "https://example.com/page",
   );
   // Every other link goes to a web page, outside Rufi; none other is a link.
-  const own = reply.getByRole("link", { name: "your profile" });
+  const own = reply.getByRole("link", { name: "your follow-ups" });
   await expect(own).not.toHaveAttribute("target");
   for (const link of await reply
     .getByRole("link")
-    .filter({ hasNotText: /^(your profile|data settings)$/ })
+    .filter({ hasNotText: /^(your follow-ups|data settings)$/ })
     .all()) {
     await expect(link).toHaveAttribute("href", /^https?:\/\//);
     await expect(link).toHaveAttribute("target", "_blank");
@@ -1056,11 +1056,11 @@ test("Markdown in a reply: tables and web links work, Rufi's own links open in p
   }
   await expect(reply.locator("img")).toHaveCount(0);
   await expect(reply).toContainText(
-    "run inside web your profile data settings up encoded deeper",
+    "run inside web your follow-ups data settings up encoded deeper",
   );
   // A Rufi link that would leave this person's pages is its words only.
   for (const name of ["up", "encoded", "deeper"]) {
-    await expect(reply.getByRole("link", { name })).toHaveCount(0);
+    await expect(reply.getByRole("link", { name, exact: true })).toHaveCount(0);
   }
 
   const at = page.url();
@@ -1079,8 +1079,8 @@ test("Markdown in a reply: tables and web links work, Rufi's own links open in p
   expect(page.url()).toBe(at);
   // Rufi's own link opens the person's page in this window.
   await own.click();
-  await expect(page).toHaveURL(/\/people\/[^/]+\/profile$/);
-  await expect(page.getByRole("heading", { name: "Profile" })).toBeVisible();
+  await expect(page).toHaveURL(/\/people\/[^/]+\/follow-ups$/);
+  await expect(page.getByRole("heading", { name: "Follow-ups" })).toBeVisible();
   expect(page.context().pages()).toHaveLength(1);
 });
 

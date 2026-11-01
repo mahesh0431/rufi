@@ -218,12 +218,12 @@ test("a picture that is gone keeps its card and says so", async ({
 const STORED_REPLY = [
   "root = Card([header, intro, chart, table, note, reports, explain, followUps], [src])",
   'header = CardHeader("CRP", "Your last four results")',
-  'intro = TextContent("Your CRP was **high** in March and August. [What CRP measures](https://example.com/crp) · [Your profile](rufi:/profile) [1]")',
-  'src = {title: "Your birth date and sex", sourceName: "Your profile", url: "rufi:/profile"}',
+  'intro = TextContent("Your CRP was **high** in March and August. [What CRP measures](https://example.com/crp) · [Your follow-ups](rufi:/follow-ups) [1]")',
+  'src = {title: "Your follow-ups list", sourceName: "Your follow-ups", url: "rufi:/follow-ups"}',
   'chart = LineChart(["4 Mar 2026", "12 Aug 2026"], [Series("CRP (mg/L)", [8.2, 6.0])])',
   'table = Table([Col("Date", ["1 Dec 2025", "4 Mar 2026", "12 Aug 2026"]), Col("CRP", ["<5 mg/L", "8.2 mg/L", "6.0 mg/L"]), Col("Lab range", ["<5", "<5", "<5"])])',
-  'note = Callout("info", "Lab ranges", "Your ranges depend on [your sex](rufi:/profile).")',
-  'reports = EditableTable("reports", [{type: "url", key: "source", header: "Report"}], [{id: "p1", values: ["rufi:/profile"]}])',
+  'note = Callout("info", "Lab ranges", "Your ranges depend on [what comes next](rufi:/follow-ups).")',
+  'reports = EditableTable("reports", [{type: "url", key: "source", header: "Report"}], [{id: "p1", values: ["rufi:/follow-ups"]}])',
   'explain = Buttons([Button("Explain", @ToAssistant("Explain this result", {test: "CRP"}))])',
   'followUps = FollowUpBlock([FollowUpItem("Show my ferritin too")])',
 ].join("\n");
@@ -241,10 +241,10 @@ test("a reply the AI wrote in OpenUI draws in the chat under Rufi's strict CSP: 
     reply.getByRole("link", { name: "What CRP measures" }),
   ).toHaveAttribute("href", "https://example.com/crp");
   // Every link opens by Rufi's rule, wherever OpenUI draws it.
-  for (const name of ["Your profile", "your sex"]) {
+  for (const name of ["Your follow-ups", "what comes next"]) {
     await expect(reply.getByRole("link", { name })).toHaveAttribute(
       "href",
-      /^\/people\/[^/]+\/profile$/,
+      /^\/people\/[^/]+\/follow-ups$/,
     );
   }
   await expect(reply.getByRole("button", { name: "Citations" })).toBeVisible();
@@ -264,14 +264,14 @@ test("a reply the AI wrote in OpenUI draws in the chat under Rufi's strict CSP: 
     /ok:Explain this result\s+Context: \{"test":"CRP"\}/,
   );
   // A source of Rufi's opens the person's page in this window.
-  await reply.getByRole("button", { name: /Your birth date and sex/ }).click();
-  await expect(page).toHaveURL(/\/people\/[^/]+\/profile$/);
+  await reply.getByRole("button", { name: /Your follow-ups list/ }).click();
+  await expect(page).toHaveURL(/\/people\/[^/]+\/follow-ups$/);
   expect(page.context().pages()).toHaveLength(1);
   // So does an address OpenUI draws itself, in an editable table.
   await page.goBack();
   await chat(page).getByRole("button", { name: "Open the chat" }).click();
-  await reply.locator('a[href="rufi:/profile"]').click();
-  await expect(page).toHaveURL(/\/people\/[^/]+\/profile$/);
+  await reply.locator('a[href="rufi:/follow-ups"]').click();
+  await expect(page).toHaveURL(/\/people\/[^/]+\/follow-ups$/);
   expect(page.context().pages()).toHaveLength(1);
 });
 
