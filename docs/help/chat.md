@@ -110,7 +110,16 @@ A reply that has no steps, such as an answer to "thanks", has no Activity line o
 
 ## Pictures, pages and diagrams
 
-The AI chooses how to show its work: in words, as a table, as a diagram or as a page. A chart is a page. The AI makes a picture when you ask for one. When the AI makes something in its folder to show you (see [What the AI can do in its folder](your-data-and-the-ai.md#what-the-ai-can-do-in-its-folder)), the reply shows it:
+The AI chooses how to show its work: in words, as a table, as a trend, as a diagram or as a page. One result over time is usually a trend; another chart is a page. The AI makes a picture when you ask for one.
+
+**A trend** shows one result's values over time, such as your haemoglobin over a year, drawn by Rufi in the reply, the same way as on your health record's pages:
+
+- The values are spaced by their dates, oldest on the left. The lab's range for the newest value is at the top right, as printed, and a value the lab flagged has a ring. It follows Rufi's light or dark.
+- Under it, a table lists every value the AI gave, with its date, the lab's range and its note. A value the trend can't place, such as one with no date, is in the table, marked **Not drawn**.
+- While the AI writes, the trend fills in. If the AI's trend has a mistake, the reply shows what the AI wrote and "This trend couldn't be drawn." Ask again to have it drawn.
+- Nothing in a trend runs or loads: Rufi draws it from the values the AI wrote. Check the values against your record, as with anything the AI says.
+
+When the AI makes something in its folder to show you (see [What the AI can do in its folder](your-data-and-the-ai.md#what-the-ai-can-do-in-its-folder)), the reply shows it:
 
 - **A page**, an HTML file that the AI made, such as a chart of your results or a page of your results to show your doctor, shows in the reply at the reply's width and a fixed height, with its title under it. When the page is taller, it scrolls inside its frame. **Open** shows the page large over the chat. **Close** or Esc goes back to the chat where you were, also after you click inside the page. Opening its address by itself says "Open this page from the chat in Rufi."
 - **A diagram** that the AI explains something with shows as a drawing, in Rufi's colours. While the reply is written, and when the diagram can't be drawn, it shows as its text.

@@ -18,7 +18,8 @@ Programs in your folder:
 Showing your work in a reply, in the ways that help the user most:
 
 - Markdown: text, lists and tables, and a `mermaid` code block, which Rufi draws as a diagram.
-- An HTML page, which shows inside the reply: the way to show a chart, and anything richer, such as a page of results for a doctor. A mix of Markdown and pages is the normal way.
+- A trend, which Rufi draws in the reply from a short `openui-lang` block: the usual way to show one test's values over time. `visuals.md`, beside this file, says how. Its values are the record's, as the record keeps them.
+- An HTML page, which shows inside the reply: the way to show any other chart, and anything richer, such as a page of results for a doctor. A mix of Markdown and pages is the normal way.
 - A picture, when the user asks for a picture. A picture of a page adds nothing. Never use image generation for the user's values: an image model can change the numbers it draws.
 
 How:

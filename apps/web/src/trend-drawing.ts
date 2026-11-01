@@ -14,14 +14,27 @@ import type {
 import { printedDate } from "./dates.ts";
 
 /** A calendar date ("2026", "2026-05", "2026-05-20T08:30") as a time to space values by. */
-function timeOf(date: string): number {
+export function timeOf(date: string): number {
   const [year = 0, month = 1, day = 1, hour = 0, minute = 0] = date
     .split(/[-T:]/)
     .map(Number);
   return Date.UTC(year, month - 1, day, hour, minute);
 }
 
-/** What a chart reads of a value: its label, numbers, flag, range and date. */
+/**
+ * Whether a date is a calendar date at the record's precision (YYYY,
+ * YYYY-MM, YYYY-MM-DD or YYYY-MM-DDTHH:MM) that gives a time: the only dates
+ * a trend places. Other words, such as "2026 (date unclear)", stay in the
+ * table.
+ */
+export const isCalendarDate = (date: string): boolean =>
+  /^\d{4}(-\d{2}(-\d{2}(T\d{2}:\d{2})?)?)?$/.test(date) &&
+  Number.isFinite(timeOf(date));
+
+/**
+ * What a chart reads of a value: its label, numbers, flag, range and date;
+ * a test's line's, or one a reply's trend gives.
+ */
 export type TrendValue = Pick<
   ResultRow,
   "value" | "number" | "second_number" | "flag" | "range" | "measured"
@@ -37,12 +50,12 @@ type Placed = TrendValue & {
  * The values a chart can place, oldest first: those with a calendar date
  * and a number.
  */
-function placedOf(values: readonly TrendValue[]): Placed[] {
+export function placedOf(values: readonly TrendValue[]): Placed[] {
   return values.filter(
     (value): value is Placed =>
       value.number !== undefined &&
       value.measured !== undefined &&
-      /^\d{4}/.test(value.measured.date),
+      isCalendarDate(value.measured.date),
   );
 }
 
@@ -53,7 +66,7 @@ function placedOf(values: readonly TrendValue[]): Placed[] {
 export const onTheLine = (row: ResultRow) =>
   row.test_number !== undefined &&
   row.measured !== undefined &&
-  /^\d{4}/.test(row.measured.date);
+  isCalendarDate(row.measured.date);
 
 /**
  * A test's results as its line draws them, oldest first: each at its

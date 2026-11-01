@@ -6,6 +6,7 @@
     "mise.lock",
     "apps/server/src/agent/codex/protocol/**",
     "apps/server/tools.json",
+    "apps/server/src/core/skills/analysis/visuals.md",
     "packages/brand/mark/**"
   ]
 }
