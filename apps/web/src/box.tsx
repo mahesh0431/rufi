@@ -1,10 +1,11 @@
 // The chat's box, the same in every size: what you type is the chat's
 // draft, kept by the core, saved quietly; the box says only when it couldn't
 // be. Enter sends. From the send until the reply ends, the one round button
-// is Stop while the box is empty, and sends once you type: Enter or a click does what
-// Settings chose (Steer puts the message into the reply, Queue keeps it for
-// after it), ⌘Enter or a ⌘-click the other, as a line under the box says
-// (Activity shows what the AI does; the bar, where it
+// is Stop while the box is empty, and sends once you type: Enter or a click
+// does what Settings chose (Steer puts the message into the reply, Queue
+// keeps it for after it), ⌘Enter or a ⌘-click the other. Its tooltip says
+// both; while ⌘ is held, it shows the other. Nothing appears under the box,
+// so the box never moves (Activity shows what the AI does; the bar, where it
 // doesn't show, has a busy sign from the send on; the chat's working line
 // shows the send, not the box). The box clears only when the core took the message, and nothing
 // is sent again by itself. Signed out, the core takes nothing: the box says so, with Sign in.
@@ -24,9 +25,11 @@ import {
 } from "@rufi/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import {
+  ListPlus,
   LoaderCircle,
   LogIn,
   type LucideProps,
+  Merge,
   RotateCw,
   Send,
   Square,
@@ -52,6 +55,41 @@ import { usePanel } from "./panel.ts";
 import { useSettings } from "./reads.ts";
 import { workingOf } from "./transcript-state.ts";
 import { Button, IconButton } from "./ui.tsx";
+
+/** The send button's two ways while a reply runs, as Settings names them. */
+const WAYS = {
+  steer: { label: "Steer", icon: Merge },
+  queue: { label: "Queue", icon: ListPlus },
+} as const;
+
+/**
+ * Whether ⌘ (or Ctrl) is held: from its key down to its key up, or until
+ * the window loses the focus, which can swallow the key up.
+ */
+function useCommandHeld() {
+  const [held, setHeld] = useState(false);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      setHeld(
+        event.key === "Meta" || event.key === "Control"
+          ? event.type === "keydown"
+          : event.metaKey || event.ctrlKey,
+      );
+    };
+    const letGo = () => {
+      setHeld(false);
+    };
+    addEventListener("keydown", onKey, true);
+    addEventListener("keyup", onKey, true);
+    addEventListener("blur", letGo);
+    return () => {
+      removeEventListener("keydown", onKey, true);
+      removeEventListener("keyup", onKey, true);
+      removeEventListener("blur", letGo);
+    };
+  }, []);
+  return held;
+}
 
 /**
  * What the box says under it: a draft that couldn't be saved. Saves are
@@ -90,6 +128,8 @@ export function Box({
   // What Enter does while a reply runs, and ⌘Enter.
   const enter = useSettings().data?.whileReplying ?? "steer";
   const other: WhileReplying = enter === "steer" ? "queue" : "steer";
+  // While ⌘ is held, the button shows what a click does then.
+  const shown = useCommandHeld() ? other : enter;
   const navigate = useNavigate();
   const [problem, setProblem] = useState<string | null>(null);
   const long = tooLong(text);
@@ -193,8 +233,9 @@ export function Box({
     hasText && !locked ? (
       <IconButton
         look="main"
-        label={enter === "steer" ? "Steer" : "Queue"}
-        icon={Send}
+        label={WAYS[shown].label}
+        tip={`Click to ${enter}, ⌘-click or ⌘Enter to ${other}`}
+        icon={WAYS[shown].icon}
         disabled={locked}
         onClick={(event) => {
           submit(event.metaKey || event.ctrlKey ? other : enter);
@@ -300,12 +341,6 @@ export function Box({
             {working ? whileWorking : sendButton}
           </div>
         </div>
-      )}
-      {size !== "bar" && working && hasText && !locked && (
-        // The other way to send, light, while a reply runs.
-        <p className="px-3.5 pt-1 text-xs text-muted">
-          {other === "queue" ? "⌘↵ to queue" : "⌘↵ to steer"}
-        </p>
       )}
       {size === "bar"
         ? why !== null && (
