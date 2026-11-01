@@ -44,7 +44,7 @@ import {
   GROUPS,
   type Save,
   SettingsSaves,
-  useSavedOnClose,
+  useSavedText,
   useSettingsGroup,
 } from "./settings-link.tsx";
 import {
@@ -78,8 +78,12 @@ export function SettingsDialog() {
       replace: true,
     });
   const [saves] = useState(() => new Map<Save, Group>());
-  // Text not saved yet is saved first; a failed save keeps Settings open at it.
+  // What you typed is saved first: the field you are in as when you leave
+  // it, then each part's own. One that fails keeps Settings open at it.
   const close = async () => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     const failed = await Promise.all(
       [...saves].map(([save, at]) =>
         save().then(
@@ -324,30 +328,22 @@ function ReplyWordsSection() {
 }
 
 function ReplyWords({ kept }: { kept: string }) {
-  const [words, setWords] = useState(kept);
   const save = useMutation({
     mutationFn: (replyWords: string) => saveSettings({ replyWords }),
   });
-  // Saved, the settings keep these words (saveSettings).
-  const saveWords = async () => {
-    if (words !== kept) await save.mutateAsync(words);
-  };
-  useSavedOnClose(saveWords);
+  const words = useSavedText(kept, save.mutateAsync);
   return (
     <>
       <textarea
         aria-label="Your own words"
-        value={words}
+        value={words.text}
         maxLength={MAX_REPLY_WORDS}
         rows={3}
         placeholder="For example: Explain medical words simply. Use kg and cm."
         onChange={(event) => {
-          setWords(event.target.value);
+          words.type(event.target.value);
         }}
-        onBlur={() => {
-          // A failed save says so below.
-          saveWords().catch(() => undefined);
-        }}
+        onBlur={words.leave}
         className="w-full resize-y rounded-lg border border-line bg-surface px-2.5 py-2"
       />
       <p className="text-muted">
