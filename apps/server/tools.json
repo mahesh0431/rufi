@@ -126,7 +126,7 @@
     },
     {
       "name": "rufi.get_documents",
-      "description": "The active person's documents (lab reports, prescriptions, letters they added), read only. Without document: the list, newest first, each with its id, when it was added, its kind and date (as sorted), its files and pages, its agent (the reader you set on it with set_reader), its status: \"not_read\" (no reading saved yet), \"reading\" (its agent is at work and hasn't saved its reading, or an older reader was copying its pages), \"done\" or \"failed\", and \"not sorted yet\" when its pages wait for you to sort them. One add (what the user added at once: a PDF, or photos together) can be several documents once sorted: such a document names its pages in the add (\"pages 3–4 of 5\"). With document: its version (it rises when a sort, a reading or a fix changes its draft items or pages), kind, date, lab and report number, its agent and status as in the list, its add (every document of it, with their pages, and the pages not sorted yet), its pages (each with its number in the add, its state and whether it is sorted; an older reading's facts and issues) and its draft items: what you or an older reader drafted, each with its id, version, page, status (not saved, saved with how and into which record, or dismissed), fields exactly as printed or as the user fixed them on the document's page (a fixed item has fixed_by_user, and drafted: what was drafted in each field the user changed, null where none), the words it came from (quote), why it is worth a look, and out_of_date when its page was read again after the reading it was drafted from. Draft items are not saved: they are not the record and count in no answer until the user saves them. With document and page: that page as an image, with the page's own text when the PDF has some and the reader's copy (use them for exact characters); a photo or a scan is the image and the copy. With document and copies: the reader's copy of every page of its add, as Markdown, exactly as printed, with the reader's marks where something is unclear (2[3?]6, [unclear: ...], ~~crossed out~~, [handwritten: ...]). Each copy names its reading: a draft made from it names the same. At most 50 documents, 100 pages, 100 draft items or 20 copies come back; when there are more, the answer has \"next\": pass it as after to read on. Rufi chooses the person, not you.",
+      "description": "The active person's documents (lab reports, prescriptions, letters they added), read only. Without document: the list, newest first, each with its id, when it was added, its kind and date (as sorted), its files and pages, its agent (the reader you set on it with set_reader), its status: \"not_read\" (no reading saved yet), \"reading\" (its agent is at work and hasn't saved its reading, or an older reader was copying its pages), \"done\" or \"failed\", and \"not sorted yet\" when its pages wait for you to sort them. One add (what the user added at once: a PDF, or photos together) can be several documents once sorted: such a document names its pages in the add (\"pages 3–4 of 5\"). With document: its version (it rises when a sort, a reading or a fix changes its draft items or pages), kind, date, lab and report number, its agent and status as in the list, its add (every document of it, with their pages, and the pages not sorted yet), its pages (each with its number in the add, its state and whether it is sorted; an older reading's facts and issues) and its draft items: what you or an older reader drafted, each with its id, version, page, status (not saved, saved with how and into which record, or dismissed), fields exactly as printed or as the user fixed them on the document's page (a fixed item has fixed_by_user, and drafted: what was drafted in each field the user changed, null where none), the words it came from (quote), why it is worth a look, and out_of_date when its page was read again after the reading it was drafted from. Draft items are not saved: they are not the record and count in no answer until the user saves them. With document and page: that page's image first, then the reader's copy, and the page's own text when the PDF has some. Read the page from its image; the PDF's text can help confirm a character you see, never in place of the image, and where they differ the image is right. A photo or a scan is the image and the copy. A page comes at the usual size, which reads most print; with full_size too, it comes again at full size, for print too small to read, at several times the cost. With document and copies: the reader's copy of every page of its add, as Markdown, exactly as printed, with the reader's marks where something is unclear (2[3?]6, [unclear: ...], ~~crossed out~~, [handwritten: ...]). Each copy names its reading: a draft made from it names the same. At most 50 documents, 100 pages, 100 draft items or 20 copies come back; when there are more, the answer has \"next\": pass it as after to read on. Rufi chooses the person, not you.",
       "callers": "model",
       "readOnly": true,
       "destructive": false,
@@ -141,7 +141,11 @@
             "type": "integer",
             "maximum": 9007199254740991,
             "exclusiveMinimum": 0,
-            "description": "A page of that document, by its number: you get the page's image, its own text when it has some, and the reader's copy."
+            "description": "A page of that document, by its number: you get the page's image first, to read it from, then the reader's copy and the PDF's own text when it has some."
+          },
+          "full_size": {
+            "type": "boolean",
+            "description": "true with document and page: that page again at full size, for print too small to read at the usual size. It costs several times the usual page: ask only for a page you couldn't read, never for every page."
           },
           "copies": {
             "type": "boolean",
@@ -162,6 +166,11 @@
         {
           "document": "01a12345-0000-7000-8000-000000000000",
           "page": 1
+        },
+        {
+          "document": "01a12345-0000-7000-8000-000000000000",
+          "page": 1,
+          "full_size": true
         },
         {
           "document": "01a12345-0000-7000-8000-000000000000",
@@ -203,7 +212,7 @@
     },
     {
       "name": "rufi.save_changes",
-      "description": "Saves to the active person's record, all or nothing, after the user clearly said yes to exactly this in this chat. Two parts, either or both:\n- changes: typed changes from the user's own words or their documents. Each is one record: add one, change the fields given (the rest stay as they are), remove one (it stays in history), restore a removed one, link (add sources to a record whose values stay as they are) or remove_source (take sources off a record, as get_records lists them, to undo a link or \"another source\"); ids come from get_overview or get_records. from names the user's document pages ({document, page}) and visits ({visit: id}) a change rests on; a record saved from a visit cites the visit, and the visit cites its page. ref names a record an add makes (\"v1\"), so a later change in the same save can cite it as {visit: {ref: \"v1\"}}: add the visit first, then the records from it. Give only what the user said: a field they didn't give stays out, and a date comes with the words it came from. What you choose, with the user, for a result: its category (lab or measurement); its test (in_test), one of the user's tests (kind test: read them with get_records) or a test this save adds first, with a ref, whatever the lab printed; and its numbers in that test's unit (test_number, test_second_number), the printed number when the units mean the same, converted when they don't and you know how, left out when you aren't sure. Every added result needs a category and a test, except an amended result, which keeps the ones of the result it replaces unless you give others. When a result moves to another test, or its printed number changes, give its numbers in the test's unit again in the same change, or null to clear them. A test is never removed. A result read from a document changes in place only its category, its test and its numbers in the test's unit, in a change of their own; what it prints and its date change only by amendment. source is the user's message with the facts the change rests on, so the record shows why it is there: when the facts came in an earlier message than the yes, give that message's position as read_chat shows it; when they are in this turn's message, leave source out. A change with from rests only on it unless you give source too: the user's yes alone is never a source.\n- items: draft items of the user's documents (get_documents), each with the version you read and how it goes in: new, another_source (the same result is already saved: its values stay, and the document page becomes another source) or correction (it corrects a saved result: a new result replaces it); record names the saved result, with its version from get_records. category and in_test (and test_number, test_second_number), for new; a correction keeps the corrected result's category and test unless you give others; never for another_source. Rufi takes each item's values and date from the stored item, never from you, except the number of a value the user fixed on the document's page: give it in value_number (and comparator) as you read their value, and ask them when it is unclear; fix holds only a value the user corrected in the chat, or the date they gave for an item with none (a rough one is fine, at their precision), with the words it came from; its source is as a change's. An item saved at that version, and still in the record so (its page a source of that result, the result not removed), returns its earlier save and saves nothing; after an undo took its page off or removed its result, it can be saved again. A dismissed item, or one whose version changed, is refused, and nothing is saved.\nNo count limit. Rufi refuses a save with any problem and says each one; nothing is saved then. On success Rufi adds its own receipt to the chat and returns it; the same call again returns the same receipt. Never say something was saved without this tool's answer.\nFields by kind, in changes[].fields (a date is {\"date\": \"2026-09-28\", \"words\": \"last Monday\"}: YYYY, YYYY-MM, YYYY-MM-DD or YYYY-MM-DDTHH:MM in local time, at the precision the user gave, with the words it came from):\n- medicine_use: name, strength, amount, schedule, route, purpose, status (current|paused|stopped|completed|unknown), started (date), ended (date)\n- symptom: name, status (ongoing|resolved|unknown), onset (date), ended (date), severity, location, intermittent (true|false), details\n- condition: name, certainty (suspected|diagnosed|unknown), status (ongoing|resolved|unknown), recognised (date), resolved (date), details\n- allergy: substance, reaction, status (active|inactive|unknown), certainty (confirmed|suspected|unknown), reacted (date)\n- result: test, value, category (lab|measurement), comparator (<|<=|>|>=), number, second_number, unit, range, flag, context, measured (date), replaces, in_test (a test's id, or {\"ref\": \"t1\"} of a test this save adds), test_number, test_second_number\n- visit: setting, date (date), ended (date), doctor, place, reason, as_written\n- care_event: type (procedure|immunisation), name, status (planned|done|not_done|unknown), date (date), provider, details\n- none_known: category (allergies)\n- profile: name, birth_date (date), sex_for_ranges (female|male), blood_group (A+|A-|B+|B-|AB+|AB-|O+|O-), height ({\"value\": 162, \"unit\": \"cm\"|\"in\"})\n- test: name, section, unit\n- follow_up: title, due (date or \"next_visit\"), status (open|done|dropped), outcome, about ({kind: medicine_use|visit|symptom|condition|allergy|result|care_event, id} of another record)\nA draft item's fix.fields: test, value, comparator (<|<=|>|>=), number, unit, range, flag, context, measured (date).",
+      "description": "Saves to the active person's record, all or nothing, after the user clearly said yes to exactly this in this chat. Two parts, either or both:\n- changes: typed changes from the user's own words or their documents. Each is one record: add one, change the fields given (the rest stay as they are), remove one (it stays in history), restore a removed one, link (add sources to a record whose values stay as they are) or remove_source (take sources off a record, as get_records lists them, to undo a link or \"another source\"); ids come from get_overview or get_records. from names the user's document pages ({document, page}) and visits ({visit: id}) a change rests on; a record saved from a visit cites the visit, and the visit cites its page. ref names a record an add makes (\"v1\"), so a later change in the same save can cite it as {visit: {ref: \"v1\"}}: add the visit first, then the records from it. Give only what the user said: a field they didn't give stays out, and a date comes with the words it came from. What you choose, with the user, for a result: its category (lab or measurement); its test (in_test), one of the user's tests (kind test: read them with get_records) or a test this save adds first, with a ref, whatever the lab printed; and its numbers in that test's unit (test_number, test_second_number), the printed number when the units mean the same, converted when they don't and you know how, left out when you aren't sure. Every added result needs a category and a test, except an amended result, which keeps the ones of the result it replaces unless you give others. When a result moves to another test, or its printed number changes, give its numbers in the test's unit again in the same change, or null to clear them. A test is never removed. A result read from a document changes in place only its category, its test and its numbers in the test's unit, in a change of their own; what it prints and its date change only by amendment. source is the user's message with the facts the change rests on, so the record shows why it is there: when the facts came in an earlier message than the yes, give that message's position as read_chat shows it; when they are in this turn's message, leave source out. A change with from rests only on it unless you give source too: the user's yes alone is never a source.\n- items: draft items of the user's documents (get_documents), each with the version you read and how it goes in: new, another_source (the same result is already saved: its values stay, and the document page becomes another source) or correction (it corrects a saved result: a new result replaces it); record names the saved result, with its version from get_records; for a result printed twice in what this save saves (on two pages, or in two documents), record {item} names the item saved as new in this save, so one save keeps both pages. category and in_test (and test_number, test_second_number), for new; a correction keeps the corrected result's category and test unless you give others; never for another_source. Rufi takes each item's values and date from the stored item, never from you, except the number of a value the user fixed on the document's page: give it in value_number (and comparator) as you read their value, and ask them when it is unclear; fix holds only a value the user corrected in the chat, or the date they gave for an item with none (a rough one is fine, at their precision), with the words it came from; its source is as a change's. An item saved at that version, and still in the record so (its page a source of that result, the result not removed), returns its earlier save and saves nothing; after an undo took its page off or removed its result, it can be saved again. A dismissed item, or one whose version changed, is refused, and nothing is saved.\nNo count limit. Rufi refuses a save with any problem and says each one; nothing is saved then. On success Rufi adds its own receipt to the chat and returns it; the same call again returns the same receipt. Never say something was saved without this tool's answer.\nFields by kind, in changes[].fields (a date is {\"date\": \"2026-09-28\", \"words\": \"last Monday\"}: YYYY, YYYY-MM, YYYY-MM-DD or YYYY-MM-DDTHH:MM in local time, at the precision the user gave, with the words it came from):\n- medicine_use: name, strength, amount, schedule, route, purpose, status (current|paused|stopped|completed|unknown), started (date), ended (date)\n- symptom: name, status (ongoing|resolved|unknown), onset (date), ended (date), severity, location, intermittent (true|false), details\n- condition: name, certainty (suspected|diagnosed|unknown), status (ongoing|resolved|unknown), recognised (date), resolved (date), details\n- allergy: substance, reaction, status (active|inactive|unknown), certainty (confirmed|suspected|unknown), reacted (date)\n- result: test, value, category (lab|measurement), comparator (<|<=|>|>=), number, second_number, unit, range, flag, context, measured (date), replaces, in_test (a test's id, or {\"ref\": \"t1\"} of a test this save adds), test_number, test_second_number\n- visit: setting, date (date), ended (date), doctor, place, reason, as_written\n- care_event: type (procedure|immunisation), name, status (planned|done|not_done|unknown), date (date), provider, details\n- none_known: category (allergies)\n- profile: name, birth_date (date), sex_for_ranges (female|male), blood_group (A+|A-|B+|B-|AB+|AB-|O+|O-), height ({\"value\": 162, \"unit\": \"cm\"|\"in\"})\n- test: name, section, unit\n- follow_up: title, due (date or \"next_visit\"), status (open|done|dropped), outcome, about ({kind: medicine_use|visit|symptom|condition|allergy|result|care_event, id} of another record)\nA draft item's fix.fields: test, value, comparator (<|<=|>|>=), number, unit, range, flag, context, measured (date).",
       "callers": "model",
       "readOnly": false,
       "destructive": false,
@@ -1570,39 +1579,59 @@
                     "another_source",
                     "correction"
                   ],
-                  "description": "new: a result the user doesn't have yet. another_source: the same result is already saved (from the user's message or another document): its values stay, and this document's page becomes another source. correction: the item corrects a saved result: a new result replaces it."
+                  "description": "new: a result the user doesn't have yet. another_source: the same result is already saved (from the user's message or another document), or saved new from another item of this save: its values stay, and this document's page becomes another source. correction: the item corrects a saved result: a new result replaces it."
                 },
                 "record": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
-                      "minLength": 1,
-                      "maxLength": 100,
-                      "description": "The saved result's id, from get_records."
-                    },
-                    "version": {
-                      "anyOf": [
-                        {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "id": {
                           "type": "string",
                           "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
                           "minLength": 1,
-                          "maxLength": 100
+                          "maxLength": 100,
+                          "description": "The saved result's id, from get_records."
                         },
-                        {
-                          "type": "null"
+                        "version": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "The saved result's version, as get_records gave it."
                         }
+                      },
+                      "required": [
+                        "id",
+                        "version"
                       ],
-                      "description": "The saved result's version, as get_records gave it."
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "item": {
+                          "type": "string",
+                          "pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$",
+                          "minLength": 1,
+                          "maxLength": 100,
+                          "description": "Another item of this save, saved as new in it: the same result printed twice (on two pages, or in two documents). Only for another_source."
+                        }
+                      },
+                      "required": [
+                        "item"
+                      ],
+                      "additionalProperties": false
                     }
-                  },
-                  "required": [
-                    "id",
-                    "version"
                   ],
-                  "additionalProperties": false,
-                  "description": "For another_source and correction: the saved result it is another source for, or corrects."
+                  "description": "For another_source and correction: the saved result it is another source for, or corrects. Another source can name instead an item this save adds as new."
                 },
                 "category": {
                   "type": "string",

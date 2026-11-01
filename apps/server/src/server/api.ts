@@ -902,15 +902,30 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
       throw error;
     }
   });
+  // A page as the AI saw it, from the document of its add that holds it
+  // now: an old step names the document before a sort moved the page.
+  // `size=full` as the AI asked for it at full size.
   app.get(`${documentsPath}/:documentId/pages/:position`, async (c) => {
     const position = c.req.param("position");
     if (!/^[1-9]\d{0,5}$/.test(position))
       throw new HttpError(404, "Not found.");
-    const page = await deps.pages.page(
-      (await person(c)).id,
+    const personId = (await person(c)).id;
+    const holder = await deps.pages.holder(
+      personId,
       c.req.param("documentId"),
       Number(position),
     );
+    if (holder && "deleted" in holder) {
+      throw new HttpError(404, "This document was deleted.", { deleted: true });
+    }
+    const page =
+      holder &&
+      (await deps.pages.page(
+        personId,
+        holder.document,
+        Number(position),
+        c.req.query("size") === "full",
+      ));
     if (!page) throw new HttpError(404, "Not found.");
     if (!page.ok) {
       throw new HttpError(409, "This page couldn't be prepared to be shown.");
