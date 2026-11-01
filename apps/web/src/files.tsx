@@ -505,6 +505,8 @@ function useRootData(name: "theme" | "appearance", otherwise: string): string {
 
 /** How long a diagram may take to draw before its source stays shown. */
 const DRAW_MS = 15_000;
+/** Each diagram's height when it last drew, for its place while it draws again. */
+const drawnHeights = new Map<string, number>();
 
 /**
  * A Mermaid diagram, drawn in its locked frame in the theme's colours. Until
@@ -515,7 +517,7 @@ export function Diagram({
   children,
 }: {
   source: string;
-  /** The code block, shown until the diagram is drawn. */
+  /** The code block, shown when the diagram can't be drawn. */
   children: ReactNode;
 }) {
   const theme = useRootData("theme", "light");
@@ -560,9 +562,18 @@ export function Diagram({
   if (drawn === "failed") return children;
   const height = drawn?.src === src ? drawn.height : undefined;
   const shown = height !== undefined;
+  if (shown) drawnHeights.set(source, height);
   return (
     <>
-      {!shown && children}
+      {/* While it draws, its place, never its code: at the height it drew
+          at before (back in the chat), or about a diagram's. */}
+      {!shown && (
+        <div
+          aria-hidden
+          className="mb-2 rounded-[10px] border border-line bg-surface"
+          style={{ height: (drawnHeights.get(source) ?? 140) + 22 }}
+        />
+      )}
       <iframe
         key={src}
         ref={frame}
