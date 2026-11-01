@@ -103,7 +103,7 @@ _Avoid_: origin, provenance, attachment
 ## Changes
 
 **Save**:
-One change to the record that the user agreed to in the chat, or entered themselves in their profile (in the welcome, on the profile page or in Settings): the AI's call or the form's sending, then every record it changed, each with its before and after, and its receipt, all together or none. The same call or sending again saves nothing new.
+One change to the record that the user agreed to in the chat, or entered themselves in their profile (in the welcome or in Settings): the AI's call or the form's sending, then every record it changed, each with its before and after, and its receipt, all together or none. The same call or sending again saves nothing new.
 _Avoid_: change set, batch, transaction, commit
 
 **Receipt**:

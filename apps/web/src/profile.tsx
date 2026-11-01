@@ -1,8 +1,7 @@
-// Your profile: its page (your name in the sidebar opens it), the same form
-// in Settings, and its history. The form saves each field once it is
-// complete, through the record's one save, with where it was entered as its
-// source; a field that fails keeps what you entered, with one line on what
-// to do.
+// Your profile, in Settings › Profile (your name in the sidebar opens it):
+// its form and its history. The form saves each field once it is complete,
+// through the record's one save, with where it was entered as its source; a
+// field that fails keeps what you entered, with one line on what to do.
 import type { Person } from "@rufi/contracts";
 import type {
   MadeIn,
@@ -11,19 +10,12 @@ import type {
   ProfileValues,
 } from "@rufi/contracts/record";
 import { useMutation } from "@tanstack/react-query";
-import { Check, Pencil } from "lucide-react";
-import {
-  type FocusEvent,
-  type ReactNode,
-  useId,
-  useRef,
-  useState,
-} from "react";
+import { type FocusEvent, useId, useRef, useState } from "react";
 import { printedDate } from "./dates.ts";
 import { savedAt } from "./overview.tsx";
 import { saveProfile, useProfile } from "./reads.ts";
 import { useSavedOnClose } from "./settings-link.tsx";
-import { Button, Problem, Section } from "./ui.tsx";
+import { Problem, Section } from "./ui.tsx";
 
 const MONTHS = [
   "January",
@@ -88,15 +80,11 @@ function shownValue<K extends ProfileField>(
   return "";
 }
 
-/** The age today from the birth date: "36", or "about 36" when it is open. */
-const ageText = ([youngest, oldest]: readonly [number, number]) =>
-  `${youngest === oldest ? "" : "about "}${String(oldest)} years old today`;
-
 /** Where a change was made, as its history says it. */
 const MADE_IN: Record<MadeIn, string> = {
   chat: "in the chat",
   welcome: "in the welcome",
-  profile: "on this page",
+  profile: "on the profile page",
   settings: "in Settings",
 };
 
@@ -548,28 +536,23 @@ function Height({
 }
 
 /**
- * The form, saving each field as it is committed, from the profile page or
- * Settings (`in`). One save at a time, so the last change is the one kept.
- * A change shows until it is saved, and one that fails stays, with why and
- * Retry. On the page, Done closes the form once nothing is left unsaved.
+ * The form, saving each field as it is committed. One save at a time, so
+ * the last change is the one kept. A change shows until it is saved, and
+ * one that fails stays, with why and Retry; Settings doesn't close over it.
  */
 function SavedFields({
   personId,
   values,
-  in: where,
-  done,
 }: {
   personId: string;
   values: ProfileValues;
-  in: "profile" | "settings";
-  done?: () => void;
 }) {
   const save = useMutation({
     scope: { id: `profile-${personId}` },
     mutationFn: (changes: Partial<ProfileValues>) =>
       saveProfile(personId, {
         sending: crypto.randomUUID(),
-        in: where,
+        in: "settings",
         changes,
       }),
   });
@@ -621,11 +604,6 @@ function SavedFields({
   };
   // Settings closing waits for it, and stays open when it fails.
   useSavedOnClose(settle);
-  const finish = () =>
-    settle().then(
-      () => done?.(),
-      () => undefined,
-    );
   return (
     <div className="flex flex-col gap-3">
       <ProfileFields
@@ -646,23 +624,11 @@ function SavedFields({
           }}
         />
       )}
-      {done && (
-        <div>
-          <Button
-            icon={Check}
-            onClick={() => {
-              void finish();
-            }}
-          >
-            Done
-          </Button>
-        </div>
-      )}
     </div>
   );
 }
 
-/** Settings › Profile › About you: the same form as the page, its changes "in Settings". */
+/** Settings › Profile › About you: the form, its changes "in Settings". */
 export function ProfileSection({ person }: { person: Person }) {
   const profile = useProfile(person.id);
   return (
@@ -676,17 +642,33 @@ export function ProfileSection({ person }: { person: Person }) {
             />
           )
         ) : (
-          <SavedFields
-            personId={person.id}
-            values={profile.data.values}
-            in="settings"
-          />
+          <SavedFields personId={person.id} values={profile.data.values} />
         )}
         <p className="text-muted">
           A change saves at once, and goes in your profile's history. The AI
           reads your profile with your health record.
         </p>
       </div>
+    </Section>
+  );
+}
+
+/** Settings › Profile › History: each change, newest first, and where it was made. */
+export function ProfileHistory({ person }: { person: Person }) {
+  const history = useProfile(person.id).data?.history;
+  const [now] = useState(() => new Date());
+  if (history === undefined) return null;
+  return (
+    <Section title="History">
+      {history.length === 0 ? (
+        <p className="text-muted">No changes yet.</p>
+      ) : (
+        <ol>
+          {history.toReversed().map((change) => (
+            <ChangeLine key={change.save} change={change} now={now} />
+          ))}
+        </ol>
+      )}
     </Section>
   );
 }
@@ -704,84 +686,5 @@ function ChangeLine({ change, now }: { change: ProfileChange; now: Date }) {
         .join("; ")}{" "}
       · <span className="text-muted">{MADE_IN[change.madeIn]}</span>
     </li>
-  );
-}
-
-function Row({ name, children }: { name: string; children: ReactNode }) {
-  return (
-    <div className="flex gap-4 border-t border-line py-2 first:border-t-0">
-      <dt className="w-40 shrink-0 text-muted">{name}</dt>
-      <dd className="min-w-0 flex-1">{children}</dd>
-    </div>
-  );
-}
-
-/** Your profile's page: each value, your age, Edit, and the history. */
-export function ProfilePage({ person }: { person: Person }) {
-  const profile = useProfile(person.id);
-  const [editing, setEditing] = useState(false);
-  const [now] = useState(() => new Date());
-  if (profile.data === undefined) {
-    return (
-      <div className="mx-auto max-w-[620px] px-6 py-8">
-        {profile.error && (
-          <Problem error={profile.error} retry={() => void profile.refetch()} />
-        )}
-      </div>
-    );
-  }
-  const { values, age, history } = profile.data;
-  return (
-    <div className="mx-auto max-w-[620px] px-6 py-8">
-      <div className="rounded-xl border border-line bg-surface p-4">
-        {editing ? (
-          <SavedFields
-            personId={person.id}
-            values={values}
-            in="profile"
-            done={() => {
-              setEditing(false);
-            }}
-          />
-        ) : (
-          <>
-            <dl>
-              {(Object.keys(FIELD_NAMES) as ProfileField[]).map((field) => (
-                <Row key={field} name={FIELD_NAMES[field]}>
-                  <span className={values[field] === null ? "text-muted" : ""}>
-                    {shownValue(field, values[field])}
-                  </span>
-                  {field === "birth_date" && age !== null && (
-                    <span className="text-muted"> · {ageText(age)}</span>
-                  )}
-                </Row>
-              ))}
-            </dl>
-            <div className="mt-3">
-              <Button
-                icon={Pencil}
-                onClick={() => {
-                  setEditing(true);
-                }}
-              >
-                Edit
-              </Button>
-            </div>
-          </>
-        )}
-      </div>
-      <h2 className="mt-8 mb-2 px-0.5 font-semibold">History</h2>
-      <div className="rounded-xl border border-line bg-surface p-4">
-        {history.length === 0 ? (
-          <p className="text-muted">No changes yet.</p>
-        ) : (
-          <ol>
-            {history.toReversed().map((change) => (
-              <ChangeLine key={change.save} change={change} now={now} />
-            ))}
-          </ol>
-        )}
-      </div>
-    </div>
   );
 }
