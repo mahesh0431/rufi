@@ -309,10 +309,10 @@ const LEFT_OUT = [
     shown: "Fast for 8 hours",
     left: "Ferritin: 18 ng/mL",
   },
-  // A table cell OpenUI can't draw.
+  // A table cell OpenUI can't draw, though it looks like an expression.
   {
     reply:
-      'root = Card([TextContent("Your iron results"), Table([Col("Ferritin", [{value: "18 ng/mL"}])])])',
+      'root = Card([TextContent("Your iron results"), Table([Col("Ferritin", [{k: "value", value: "18 ng/mL"}])])])',
     shown: "Your iron results",
     left: "18 ng/mL",
   },
@@ -324,6 +324,13 @@ const LEFT_OUT = [
     ].join("\n"),
     shown: "Haemoglobin: 11.6 g/dL",
     left: "Ferritin: 18 ng/mL",
+  },
+  // Words OpenUI passes over after a statement's expression.
+  {
+    reply:
+      'root = Card([TextContent("Haemoglobin: 11.6 g/dL")]) HBsAg: positive',
+    shown: "Haemoglobin: 11.6 g/dL",
+    left: "HBsAg: positive",
   },
 ];
 

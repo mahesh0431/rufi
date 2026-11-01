@@ -622,7 +622,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
           .map((e) => [e.kind, e.activity, e.text, e.status]),
       ).toEqual([
         ["activity", "note", NOTE, "done"],
-        ["reply", null, `ok:${text}`, null],
+        ["reply", null, `ok:${text}`, "done"],
       ]);
       // Never a reply, not even while it streamed; it grew as it came.
       expect(
@@ -648,7 +648,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
           .map((e) => [e.kind, e.activity, e.text, e.status]),
       ).toEqual([
         ["activity", "note", NOTE, "done"],
-        ["reply", null, "ok:whole commentary", null],
+        ["reply", null, "ok:whole commentary", "done"],
       ]);
     },
   );

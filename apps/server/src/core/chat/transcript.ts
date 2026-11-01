@@ -261,7 +261,8 @@ const toEntry = (
   activity: row.activity as Entry["activity"],
   detail: row.detail,
   // Reasoning is whole once the agent gave all of it; a partial summary
-  // stops with its turn, without changing what the agent gave.
+  // stops with its turn, without changing what the agent gave. A reply the
+  // agent gave whole is done, also while its turn goes on.
   status:
     row.kind === "reasoning"
       ? row.details === null
@@ -270,7 +271,9 @@ const toEntry = (
           : "stopped"
         : "done"
       : row.kind === "reply"
-        ? null
+        ? row.status === "done"
+          ? "done"
+          : null
         : (row.status as Entry["status"]),
   createdAt: row.created_at,
   updatedAt: row.updated_at,

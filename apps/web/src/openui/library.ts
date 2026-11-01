@@ -12,7 +12,7 @@
 // part Rufi draws keeps OpenUI's name and props, and an old reply that no
 // longer fits the library draws what works and says part isn't shown.
 import "@rufi/contracts/jitless";
-import { split, tokenize } from "@openuidev/lang-core";
+import { parseExpression, split, tokenize } from "@openuidev/lang-core";
 import {
   createParser,
   type ComponentRenderer,
@@ -122,6 +122,35 @@ const isFree = (schema: Schema) =>
   !schema.items &&
   !schema.properties;
 
+/** The kinds of OpenUI's expressions (lang-core's `ASTNode`). */
+const EXPRESSIONS = new Set([
+  "Comp",
+  "Str",
+  "Num",
+  "Bool",
+  "Null",
+  "Arr",
+  "Obj",
+  "Ref",
+  "Ph",
+  "StateRef",
+  "RuntimeRef",
+  "BinOp",
+  "UnaryOp",
+  "Ternary",
+  "Member",
+  "Index",
+  "Assign",
+]);
+
+/** An expression OpenUI keeps in the tree to read later, such as an action. */
+const isExpression = (value: unknown) =>
+  typeof value === "object" &&
+  value !== null &&
+  "k" in value &&
+  typeof value.k === "string" &&
+  EXPRESSIONS.has(value.k);
+
 /**
  * Whether a value fits its place in the library's schema: a part only where
  * that part may go (anywhere in a free place), each part's props by its own
@@ -147,7 +176,7 @@ function fits(
       )
     );
   }
-  if (typeof value === "object" && "k" in value) return true;
+  if (isExpression(value)) return true;
   const options = schema.anyOf ?? schema.oneOf;
   if (options) return options.some((option) => fits(value, option, defs));
   if (schema.$ref) return false;
@@ -177,19 +206,22 @@ export function replyReader(library: ReturnType<typeof replyLibrary>) {
   };
 }
 
-/** OpenUI's token types (lang-core's `T`) that `allRead` counts. */
+/** OpenUI's token types (lang-core's `T`) that `allRead` reads. */
 const NEWLINE = 0;
+const OPEN_LIST = 3;
+const CLOSE_LIST = 4;
 const END = 13;
 const STRING = 14;
 const NUMBER = 15;
 
 /**
- * Whether OpenUI's parse took in all of a reply's text: each piece OpenUI's
- * tokenizer finds is in a statement it reads, no statement's name comes
- * twice (the last wins), no comment (OpenUI drops `//` and `#` outside a
- * string), and each string and number in the text is in the tree OpenUI
- * made. So words OpenUI passes over, outside a statement or after its
- * expression, count as left out.
+ * Whether OpenUI's parse took in all of a reply's text, read with OpenUI's
+ * own tokenizer and parser: each piece of the text is in a statement, each
+ * statement is one expression all through (put in a list, anything after
+ * the expression would be a second item: OpenUI passes over it), no
+ * statement's name comes twice (the last wins), no comment (OpenUI drops
+ * `//` and `#` outside a string), and each string and number in the text is
+ * in the tree OpenUI made, as many times as the text has it.
  */
 function allRead(text: string, root: ElementNode): boolean {
   const tokens = tokenize(text);
@@ -203,20 +235,33 @@ function allRead(text: string, root: ElementNode): boolean {
   if (read !== found) return false;
   const names = new Set(statements.map((statement) => statement.id));
   if (names.size !== statements.length || hasComment(text)) return false;
-  const values = new Set<string>();
-  const collect = (value: unknown): void => {
+  const whole = statements.every((statement) => {
+    const list = parseExpression([
+      { t: OPEN_LIST },
+      ...statement.tokens,
+      { t: CLOSE_LIST },
+    ]);
+    return list.k === "Arr" && list.els.length === 1;
+  });
+  if (!whole) return false;
+  // Each value's count in the tree, less its count in the text.
+  const counts = new Map<string, number>();
+  const count = (value: unknown): void => {
     if (typeof value === "string" || typeof value === "number") {
-      values.add(String(value));
+      const key = String(value);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
     } else if (typeof value === "object" && value !== null) {
-      Object.values(value).forEach(collect);
+      Object.values(value).forEach(count);
     }
   };
-  collect(root);
-  return tokens.every(
-    (token, i) =>
-      (types[i] !== STRING && types[i] !== NUMBER) ||
-      values.has(String(token.v)),
-  );
+  count(root);
+  return tokens.every((token, i) => {
+    if (types[i] !== STRING && types[i] !== NUMBER) return true;
+    const key = String(token.v);
+    const left = (counts.get(key) ?? 0) - 1;
+    counts.set(key, left);
+    return left >= 0;
+  });
 }
 
 /** Whether the text has a comment OpenUI drops: `//` or `#` outside a string. */
