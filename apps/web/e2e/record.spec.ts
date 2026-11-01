@@ -333,8 +333,8 @@ test("a test's page draws one line across labs at the numbers in its unit, then 
   await expect(value("1 May 2024")).toContainText(
     "<0.03 mg/L= <30 µg/LFerritin (CLIA)Typed in the chat",
   );
-  await expect(value("10 Jan 2025")).toContainText("HaemolysedNot on the line");
-  await expect(value("1 May 2024")).not.toContainText("Not on the line");
+  await expect(value("10 Jan 2025")).toContainText("HaemolysedNot drawn");
+  await expect(value("1 May 2024")).not.toContainText("Not drawn");
 
   await values.getByRole("button", { name: "4 Mar 2026" }).click();
   await expect(value("4 Mar 2026")).toContainText("Sources");
