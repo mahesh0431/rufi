@@ -209,10 +209,16 @@ async function startChat(
       ),
     agent: ai.agent,
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp`, keys },
-    rules: ({ region, replies }) => ({
-      instructions: `Rufi's rules ${options.rules ?? "1"}, for ${region ?? "no region"}, ${replies.style} replies.`,
-      version: `rules-${options.rules ?? "1"}-${region ?? ""}-${replies.style}`,
-    }),
+    rules: ({ region, replies }, helper) =>
+      helper
+        ? {
+            instructions: `Rufi's rules ${options.rules ?? "1"} for ${helper.title}, for ${region ?? "no region"}.`,
+            version: `rules-${options.rules ?? "1"}-${region ?? ""}-${helper.title}`,
+          }
+        : {
+            instructions: `Rufi's rules ${options.rules ?? "1"}, for ${region ?? "no region"}, ${replies.style} replies${replies.words === "" ? "" : `, ${replies.words}`}.`,
+            version: `rules-${options.rules ?? "1"}-${region ?? ""}-${replies.style}${replies.words === "" ? "" : `-${replies.words}`}`,
+          },
     tools: {
       specs: tools.specs,
       caller: (scope) => {
@@ -1993,6 +1999,43 @@ describe("the chat, on the scripted Codex", () => {
       ["receipt", "**Saved** · Helper\n\n- Added symptom **Headache**"],
     ]);
     expect(all.find((entry) => entry.kind === "receipt")?.turnId).toBeNull();
+  });
+
+  it("starts the reply a helper's done message wakes with the reply style and words chosen while the helper ran; the helper's turn keeps its own", async () => {
+    const changed = Promise.withResolvers<undefined>();
+    await startChat("fake", {
+      scenario: {
+        callsByText: {
+          "Ask a helper": [
+            {
+              tool: "start_agent",
+              arguments: { title: "Helper", task: "helper: look" },
+            },
+          ],
+          "helper:": [{ tool: "get_overview", arguments: {} }],
+        },
+      },
+      waitFor: (tool) =>
+        tool === "get_overview" ? changed.promise : undefined,
+    });
+    const c = await newChat();
+    await say(c, "Ask a helper");
+    await ended(c.id);
+    await transcripts.saveSetting("reply_style", "simple");
+    await transcripts.saveSetting(
+      "reply_words",
+      "Explain medical words simply.",
+    );
+    changed.resolve(undefined);
+    await until(async () => (await turnsRun()).length === 3);
+    await settled(c.id);
+    expect((await turnsRun()).map((turn) => turn.told ?? "")).toEqual([
+      "Rufi's rules 1, for no region, visual replies.",
+      "Rufi's rules 1 for Helper, for no region.",
+      expect.stringContaining(
+        "Rufi's rules 1, for no region, simple replies, Explain medical words simply.",
+      ),
+    ]);
   });
 
   it("writes a sub-agent's message into the chat once, in its own words, where Rufi AI takes it: steered into the reply that runs", async () => {

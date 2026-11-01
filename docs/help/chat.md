@@ -311,7 +311,7 @@ Your chat is always kept whole in Rufi, and the AI can read all of it. The AI al
 
 **New thread.** The AI starts a new thread only when its own copy of the chat is gone (for example after a restore, a move of Rufi's data, when its files were deleted, or when the AI's working state, `agents.sqlite`, is missing), or when you click **New thread** on a waiting message. The new thread has the chat's last 10 messages that reached the AI, never one still waiting, and the AI reads further back when it needs to. When Rufi can't open the AI's thread for another reason, it doesn't start a new one by itself: your message waits as **Failed** with the error, **Send** and **New thread** (see [Waiting messages](#waiting-messages)).
 
-**New rules.** When Rufi's rules for the AI change, after a Rufi update or when you choose another emergency region, the AI gets the new rules with your next message, and the chat shows no line. If the AI can't take them, your message waits as **Failed · The AI couldn't take Rufi's new instructions, so it can't reply now. Try again.**, with **Send** and **New thread**.
+**New rules.** When Rufi's rules for the AI change, after a Rufi update or when you choose another emergency region or another way replies look, the AI gets the new rules with its next reply, also one it starts by itself (for example when a helper finishes), and the chat shows no line. A reply already running keeps the rules it started with. If the AI can't take them, your message waits as **Failed · The AI couldn't take Rufi's new instructions, so it can't reply now. Try again.**, with **Send** and **New thread**.
 
 ## What you typed but didn't send
 

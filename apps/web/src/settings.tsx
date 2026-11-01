@@ -81,7 +81,12 @@ export function SettingsDialog() {
   // Text not saved yet is saved first; a failed save keeps Settings open at it.
   const close = async () => {
     const failed = await Promise.all(
-      [...saves].map(([save, at]) => save().then(() => undefined, () => at)),
+      [...saves].map(([save, at]) =>
+        save().then(
+          () => undefined,
+          () => at,
+        ),
+      ),
     );
     show(failed.find((at) => at !== undefined));
   };
