@@ -87,12 +87,15 @@ export function Button({
  */
 export function IconButton({
   label,
+  tip = label,
   icon: Glyph,
   look = "quiet",
   className,
   ...props
 }: Omit<ComponentProps<"button">, "children"> & {
   label: string;
+  /** Its tooltip, when it says more than the name. */
+  tip?: string;
   icon: Icon;
   look?: Look;
 }) {
@@ -113,7 +116,7 @@ export function IconButton({
       <Tooltip.Portal>
         <Tooltip.Positioner sideOffset={6} className="z-50">
           <Tooltip.Popup className="rounded-md bg-ink px-2 py-1 text-xs whitespace-nowrap text-surface shadow-menu">
-            {label}
+            {tip}
           </Tooltip.Popup>
         </Tooltip.Positioner>
       </Tooltip.Portal>

@@ -442,7 +442,7 @@ test("an older read of the queue never undoes a newer change", async ({
   await expect(items).toHaveText([/^Second, edited/]);
 });
 
-test("while a reply runs, the box's one button is Stop until you type; then Enter steers into the reply and ⌘Enter queues; with Queue chosen in Settings, the other way round", async ({
+test("while a reply runs, the box's one button is Stop until you type; then Enter steers into the reply and ⌘Enter queues, and the button says Queue while ⌘ is held; with Queue chosen in Settings, the other way round", async ({
   page,
   rufi,
 }) => {
@@ -466,7 +466,11 @@ test("while a reply runs, the box's one button is Stop until you type; then Ente
   await expect(waiting).toHaveCount(0);
   await expect(button("Stop")).toBeVisible();
   await box(chat(page)).fill("Then my ferritin");
-  await box(chat(page)).press("ControlOrMeta+Enter");
+  // While ⌘ is held, the button says what a click does then.
+  await page.keyboard.down("ControlOrMeta");
+  await expect(button("Queue")).toBeVisible();
+  await box(chat(page)).press("Enter");
+  await page.keyboard.up("ControlOrMeta");
   await expect(waiting).toContainText("Then my ferritin");
 
   await sidebar(page).getByRole("link", { name: "Settings" }).click();
