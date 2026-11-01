@@ -27,6 +27,18 @@ export interface Timing {
   until: string | null;
 }
 
+/** A medicine use's timing, from its stored row. */
+export const timingOf = (row: Record<string, unknown>): Timing => {
+  const text = (value: unknown) => (typeof value === "string" ? value : null);
+  const times = text(row["times"]);
+  return {
+    times: times === null ? null : (JSON.parse(times) as string[]),
+    days: text(row["days"]),
+    started: text(row["started"]),
+    until: text(row["until"]),
+  };
+};
+
 /**
  * The days a rule with no DTSTART counts from. For the forms that don't
  * depend on a start (every day, named weekdays, a named day of the month)

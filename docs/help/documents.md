@@ -169,7 +169,7 @@ A prescription, an e-prescription or a discharge summary is the paper from a vis
 Answer in the chat, for example "only the Levothyroxine; add the follow-ups". The AI saves it all in one save, with one receipt:
 
 - **the visit**, with the doctor's words as the paper has them, and the paper's page as its source;
-- **each medicine you said you take**, with the visit as its source. One already in your health record keeps its details and gets the visit as one more source. A medicine you don't take stays only in the doctor's words;
+- **each medicine you said you take**, with the visit as its source and its directions as the paper has them. Before saving, the AI says when you'd take it, such as "08:00 and 21:00, the last dose on the morning of 6 Nov", and asks when you start, which times suit you and whether to remind you (see [Medicines](record.md#medicines)). One already in your health record keeps its details and gets the visit as one more source. A medicine you don't take stays only in the doctor's words;
 - **follow-ups** for the tests and the next visit, when you said yes to them.
 
 The paper's page shows **Saved as** with each visit saved from it; click one to open the visit (see [A visit](record.md#a-visit)). This doesn't mean everything on the paper is saved. When the paper may be someone else's, the AI asks whose it is and saves nothing until you say. Say "undo that" to take the visit back (see [Undo](chat.md#undo)).

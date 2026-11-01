@@ -69,6 +69,8 @@ export const MedicineUseRow = Schema.Struct({
   times: Schema.optionalKey(Schema.Array(Schema.String)),
   /** Which days, an RFC 5545 rule as saved; none: every day. */
   days: Text,
+  /** The days in plain words, when Rufi can say the rule fully. */
+  days_words: Text,
   route: Text,
   purpose: Text,
   status: Schema.Literals([
@@ -473,6 +475,24 @@ export const FollowUps = Schema.Struct({
   ),
 });
 export type FollowUps = typeof FollowUps.Type;
+
+/**
+ * Today on the Medicines page: each current medicine's doses on the Mac's
+ * local day, by time, then name. A past dose is only earlier today, never
+ * taken or skipped. `upcoming`: a dose of one of them falls after today.
+ */
+export const Today = Schema.Struct({
+  day: RecordDate,
+  doses: Schema.Array(
+    Schema.Struct({
+      at: Schema.String,
+      past: Schema.Boolean,
+      medicine: MedicineUseRow,
+    }),
+  ),
+  upcoming: Schema.Boolean,
+});
+export type Today = typeof Today.Type;
 
 /**
  * The person's profile: their name, never empty, and the few facts their

@@ -106,7 +106,7 @@ export interface ApiDeps {
   /** The record's pages, tests and rows, read only. */
   record: Pick<
     RecordViews,
-    "page" | "labResults" | "test" | "detail" | "followUps"
+    "page" | "labResults" | "test" | "detail" | "followUps" | "today"
   >;
   /** A person's profile with its history; what they enter in its form. */
   profile: {
@@ -725,6 +725,10 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     if (!saved) throw new HttpError(404, "Not found.");
     return c.json(saved);
   });
+  // The person's medicine doses today, for the Medicines page.
+  app.get("/api/people/:personId/today", async (c) =>
+    c.json(await deps.record.today((await person(c)).id)),
+  );
   // The person's follow-ups, in the Follow-ups page's groups.
   app.get("/api/people/:personId/follow-ups", async (c) =>
     c.json(await deps.record.followUps((await person(c)).id)),
