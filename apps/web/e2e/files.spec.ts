@@ -679,11 +679,12 @@ test("a Mermaid diagram draws in place of its code block, with its labelled edge
  * Rufi's parts or OpenUI change, so an old reply still draws. A header, text
  * with a web link, a link to a page of Rufi and a citation of the Card's
  * source (a page of Rufi), Rufi's trend (its points out of order, one with no
- * date, "<5" kept with its number), OpenUI's table, a callout with a link, a
- * button whose action names the test, and follow-ups.
+ * date, "<5" kept with its number), OpenUI's table, a callout with a link, an
+ * editable table with an address of Rufi's, a button whose action names the
+ * test, and follow-ups.
  */
 const STORED_REPLY = [
-  "root = Card([header, intro, trend, table, note, explain, followUps], [src])",
+  "root = Card([header, intro, trend, table, note, reports, explain, followUps], [src])",
   'header = CardHeader("CRP", "Your last four results")',
   'intro = TextContent("Your CRP was **high** in March and August. [What CRP measures](https://example.com/crp) · [Your profile](rufi:/profile) [1]")',
   'src = {title: "Your birth date and sex", sourceName: "Your profile", url: "rufi:/profile"}',
@@ -694,6 +695,7 @@ const STORED_REPLY = [
   'c0 = TrendPoint("", "<5")',
   'table = Table([Col("Lab", ["Sunrise Labs", "Northgate"]), Col("Results", [3, 1])])',
   'note = Callout("info", "Lab ranges", "Your ranges depend on [your sex](rufi:/profile).")',
+  'reports = EditableTable("reports", [{type: "url", key: "source", header: "Report"}], [{id: "p1", values: ["rufi:/profile"]}])',
   'explain = Buttons([Button("Explain", @ToAssistant("Explain this result", {test: "CRP"}))])',
   'followUps = FollowUpBlock([FollowUpItem("Show my ferritin too")])',
 ].join("\n");
@@ -750,6 +752,12 @@ test("a reply the AI wrote in OpenUI draws in the chat under Rufi's strict CSP: 
   await reply.getByRole("button", { name: /Your birth date and sex/ }).click();
   await expect(page).toHaveURL(/\/people\/[^/]+\/profile$/);
   expect(page.context().pages()).toHaveLength(1);
+  // So does an address OpenUI draws itself, in an editable table.
+  await page.goBack();
+  await chat(page).getByRole("button", { name: "Open the chat" }).click();
+  await reply.locator('a[href="rufi:/profile"]').click();
+  await expect(page).toHaveURL(/\/people\/[^/]+\/profile$/);
+  expect(page.context().pages()).toHaveLength(1);
 });
 
 test("a finished reply that names a value it never gives, or puts another part where a value goes, shows as its text, never in part", async ({
@@ -778,8 +786,8 @@ test("a finished reply that names a value it never gives, or puts another part w
   await send(
     page,
     [
-      "Text where a table column goes:",
-      'root = Card([TextContent("Your results"), Table([TextContent("Haemoglobin: 11.2 g/dL")])])',
+      "Text where a table column goes, in a table cell:",
+      'root = Card([Table([Col("Result", [Table([TextContent("Haemoglobin: 11.2 g/dL")])])])])',
     ].join("\n"),
   );
   const second = log(page).locator(".reply").last();

@@ -157,6 +157,9 @@ export function picturesShownBy(
   return shown;
 }
 
+/** A link that opens by the rule as it is: a web page, Rufi's own or in-page. */
+const OWN_LINK = /^(?:https?:|\/|#)/i;
+
 export function OpenUIReply({
   text,
   streaming,
@@ -202,13 +205,30 @@ export function OpenUIReply({
   return (
     <TextParts value={markdown}>
       <LinkOpener value={openLink}>
-        <Renderer
-          response={text}
-          library={library}
-          isStreaming={streaming}
-          onAction={onAction}
-          publishObservability={false}
-        />
+        {/* A link OpenUI draws itself, such as an editable table's address,
+            keeps its raw address and stops its click: caught first, it
+            opens by the rule too. Rufi's own links are web or in-app. */}
+        <div
+          className="contents"
+          onClickCapture={(event) => {
+            const href = (event.target as Element)
+              .closest("a[href]")
+              ?.getAttribute("href");
+            if (href === undefined || href === null || OWN_LINK.test(href)) {
+              return;
+            }
+            event.preventDefault();
+            openLink(href);
+          }}
+        >
+          <Renderer
+            response={text}
+            library={library}
+            isStreaming={streaming}
+            onAction={onAction}
+            publishObservability={false}
+          />
+        </div>
       </LinkOpener>
     </TextParts>
   );

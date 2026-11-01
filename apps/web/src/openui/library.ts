@@ -175,23 +175,34 @@ const TYPES: Record<string, (value: unknown) => boolean> = {
     typeof value === "object" && value !== null && !Array.isArray(value),
 };
 
+/** A place the schema says nothing about, such as a table column's data. */
+const isFree = (schema: Schema) =>
+  !schema.$ref &&
+  !schema.anyOf &&
+  !schema.oneOf &&
+  schema.type === undefined &&
+  !schema.enum &&
+  !schema.items &&
+  !schema.properties;
+
 /**
  * Whether a value fits its place in the library's schema: a part only where
- * that part may go, each part's props by its schema, plain values by their
- * type, nothing coerced. An expression (a variable, an action) is OpenUI's
- * to read, and null is a prop left out.
+ * that part may go (anywhere in a free place), each part's props by its own
+ * schema wherever it sits, plain values by their type, nothing coerced. An
+ * expression (a variable, an action) is OpenUI's to read, and null is a prop
+ * left out.
  */
 function fits(
   value: unknown,
-  schema: Schema | undefined,
+  schema: Schema = {},
   defs: Record<string, Schema>,
 ): boolean {
-  if (schema === undefined || value === null) return true;
+  if (value === null) return true;
   if (isElement(value)) {
     const def = defs[value.typeName];
     return (
       def !== undefined &&
-      partsTaken(schema).includes(value.typeName) &&
+      (isFree(schema) || partsTaken(schema).includes(value.typeName)) &&
       Object.entries(value.props).every(([name, prop]) =>
         fits(prop, def.properties?.[name], defs),
       )
@@ -209,7 +220,7 @@ function fits(
   if (Array.isArray(value)) {
     return value.every((item) => fits(item, schema.items, defs));
   }
-  if (typeof value === "object" && schema.properties) {
+  if (typeof value === "object") {
     return Object.entries(value).every(([name, item]) =>
       fits(item, schema.properties?.[name], defs),
     );
