@@ -2,8 +2,8 @@
 // renderer with Rufi's reply library (library.ts), in place of a Markdown
 // renderer, as OpenUI's guide for a chat of one's own says. Once the reply
 // ended it is drawn only when it is whole (shapeOf); otherwise its text shows
-// with a line, never a part of it, and a reply with no OpenUI in it shows as
-// Markdown. A follow-up or a button sends its words as the person's message,
+// with a line, never a part of it. A reply with no OpenUI in it shows as
+// Markdown, while it is written too, so a reply is never blank. A follow-up or a button sends its words as the person's message,
 // a form its values too; a link opens as a reply's links do. Display only:
 // no tools, so nothing in a reply reaches the record.
 import {
@@ -111,6 +111,18 @@ function send(personId: string, message: string) {
 
 const WEB = /^https?:\/\//i;
 
+/**
+ * What OpenUI Lang starts with, before OpenUI finds its root: a name, or
+ * `name = …`, on the first line (`root = Card(` until its `[` comes).
+ */
+const STATEMENT_START = /^\s*[A-Za-z_]\w*(?:\s*=[^\n]*)?$/;
+
+/** While written: OpenUI once it parses or may still, else words. */
+const writtenShape = (text: string) =>
+  parser.parse(text).root !== null || STATEMENT_START.test(text)
+    ? "drawn"
+    : "words";
+
 export function OpenUIReply({
   text,
   streaming,
@@ -128,7 +140,7 @@ export function OpenUIReply({
   children: ReactNode;
 }) {
   const shape = useMemo(
-    () => (streaming ? "drawn" : shapeOf(parser, text)),
+    () => (streaming ? writtenShape(text) : shapeOf(parser, text)),
     [text, streaming],
   );
   if (shape === "words") return children;
