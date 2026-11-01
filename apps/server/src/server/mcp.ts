@@ -316,16 +316,22 @@ function inlined(schema: unknown): unknown {
   return walk(schema as Json, []);
 }
 
-/** A tool's answer as an MCP result: its text, then its images. */
+/**
+ * A tool's answer as an MCP result: its images first (a page is read from
+ * its image), then its text. A full-size image is marked for Codex to send
+ * whole (`codex/imageDetail`, 0.165); without it Codex fits an image to
+ * 2048 px and 2,500 patches. Claude ignores the mark.
+ */
 function resultOf(answer: ToolAnswer): CallToolResult {
   return {
     content: [
-      { type: "text", text: answer.text },
       ...(answer.images ?? []).map((image) => ({
         type: "image" as const,
         data: image.data,
         mimeType: image.mimeType,
+        ...(image.full && { _meta: { "codex/imageDetail": "original" } }),
       })),
+      { type: "text", text: answer.text },
     ],
     ...(!answer.ok && { isError: true }),
   };

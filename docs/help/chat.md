@@ -74,7 +74,7 @@ When you delete a document (see [Documents](documents.md#delete-a-document)), it
 ## What you see
 
 - **Your messages**, on the right, with the chips you added to them.
-- **The AI's replies**, which appear as the AI writes them. Replies can have lists and tables, and the pictures, pages and diagrams the AI makes (see [Pictures, pages and diagrams](#pictures-pages-and-diagrams)). Links to web pages open in your browser, outside Rufi. A reply never shows a picture from the internet.
+- **The AI's replies**, which appear as the AI writes them. Replies can have lists and tables, and the pictures, pages and diagrams the AI makes (see [Pictures, pages and diagrams](#pictures-pages-and-diagrams)). Links to web pages open in your browser, outside Rufi. A link to a page of Rufi, such as a document the AI read, opens that page here in Rufi. A reply never shows a picture from the internet.
 - **Activity**, under an answer: what the AI did for that reply, folded into one line, such as "Activity · 12 steps · 1 failed · 1m 36s". Click it to open it. While the AI works, it is open, and you can read along. See [Activity](#activity).
 - **Receipts**, with a tick, each time the AI saved something to your health record: "Saved", then one line for each change. A save from a document starts with a summary, such as "Saved 42 results from Sunrise Labs August.pdf · 40 new · 1 more source · 1 correction"; when the list is long, click **Show what was saved** to see it. Rufi writes them. See [Changing your health record](#changing-your-health-record).
 - **A visit brief's line**, with a page sign and **Open**, when the AI made a brief for you. Rufi writes it. See [Visit brief](visit-brief.md).
@@ -90,7 +90,7 @@ Activity shows what the AI did for a reply, as the AI's agent reported it. Rufi 
 - **The AI's thinking**, as the headings the AI service sends, such as "Comparing the reports", in their place among the steps. When a heading has more under it, click it to read the AI's summary. On Codex and on Claude, the summary shows as the AI writes it, and once it's whole it shows as the AI finished it. If you stop the reply while the AI thinks, what showed stays. When the AI service sends nothing, there is no line.
 - **The steps**, each as it was reported: a command the AI ran, with its exit code; one of Rufi's tools, such as `rufi.get_records`, with what the AI asked for; the files the AI changed; a web search. A long step is cut in the middle, so the start and the file name show. A tick means it was done. Other signs mean it is running, it failed, or it stopped.
 
-Click a step to open everything the agent reported about it: for a command, the whole command, its folder, its exit code, how long it took and what it printed; for a tool, what the AI sent and what came back. Long output shows 12 lines, then **Show all**. A step from before Rufi kept these says "Rufi kept no details for this step."
+Click a step to open everything the agent reported about it: for a command, the whole command, its folder, its exit code, how long it took and what it printed; for a tool, what the AI sent and what came back. When a tool gave the AI a page of one of your documents, such as `rufi.get_documents` with a page, what came back starts with that page's image, small, as the AI got it; a page of a document you deleted says so instead. Long output shows 12 lines, then **Show all**. A step from before Rufi kept these says "Rufi kept no details for this step."
 
 **Sub-agents.** Where the AI started a sub-agent, its Activity shows one line: the name the AI gave it, its status (such as running, done, stopped or failed) and the start of its result. Click the line, or press Enter on it, to open the sub-agent's pop-up (see [When the AI starts agents of its own](#when-the-ai-starts-agents-of-its-own)).
 
@@ -165,7 +165,7 @@ You change your health record by telling the AI in the chat. Nothing changes unt
    > - Changed medicine use **Creatine 5 g**: status _current_ → _stopped_
    > - Added symptom **Stomach upset**
 
-   When a detail is long, its line shows the part around the change. Rufi writes the receipt itself, from what it saved, not from the AI's words. If the receipt is different from what the AI told you, trust the receipt and tell the AI.
+   A detail that had no value says _Not set_, as in your profile's history: "height _Not set_ → _162 cm_". When a detail is long, its line shows the part around the change. Rufi writes the receipt itself, from what it saved, not from the AI's words. If the receipt is different from what the AI told you, trust the receipt and tell the AI.
 
 The AI can save medicines you take, visits to a doctor (with what the doctor wrote or said), symptoms, conditions, allergies, lab results, measurements such as your weight or blood pressure, procedures and immunisations, "no known allergies", follow-ups, and your profile: your name, your birth date, sex for lab ranges, blood group and height (see [Your profile](record.md#your-profile)). When you mention one of these about yourself, the AI may offer to save it.
 
@@ -237,7 +237,7 @@ If the reply ends before your steer reaches it, your message goes in a following
 
 ## Waiting messages
 
-What waits shows in the chat, after its last message, in the order it goes: your messages as dashed bubbles, and Rufi's notes. It shows there also after a reload, a restart of Rufi, or a change of model. For each of your waiting messages you can:
+What waits shows over the bottom of the chat, just above the box, in the order it goes: your messages and Rufi's notes. It sits outside the chat's messages: the box stays where it is and the chat keeps its size when a message starts or stops waiting. At the end of the chat, its newest message shows above the list; scrolled up, the list covers the bottom of what you read. A long list scrolls there. It shows there also after a reload, a restart of Rufi, or a change of model. For each of your waiting messages you can:
 
 - **Steer** it (two arrows that meet), while a reply runs: it goes into that reply now.
 - **Edit** it (the pencil), then **Save**.
@@ -271,7 +271,7 @@ Some things happen outside your chat. Rufi tells you with its own line in the ch
 When the AI should know too, Rufi gives it a note:
 
 - **When nothing runs**, the AI gets the note at once, in a short reply of its own. In that reply the AI explains or asks. It carries on with work you already asked for, and asks you first before any new change: every save rests on a message of yours.
-- **When a reply runs**, the note waits in the chat among the waiting messages, as "Rufi's note", and goes in its turn after the reply, in a short reply of its own. Each note gets its own reply. **Remove** it if the AI doesn't need it.
+- **When a reply runs**, the note waits among the waiting messages above the box, as "Rufi's note", and goes in its turn after the reply, in a short reply of its own. Each note gets its own reply. **Remove** it if the AI doesn't need it.
 - **When you're signed out**, it waits with the line on how to sign in, such as "You're signed out. Sign in with ChatGPT to chat.", and goes the next time Rufi gives the AI something after you sign in again.
 
 ## The model and effort
