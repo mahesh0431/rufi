@@ -671,13 +671,13 @@ test("a Mermaid diagram draws in place of its code block, with its labelled edge
 /**
  * A stored reply in OpenUI Lang (openui/library.ts): keep it as written when
  * Rufi's parts or OpenUI change, so an old reply still draws. A header, text
- * with a web link, Rufi's trend (its points out of order, one with no date,
+ * with a web link and a link to a page of Rufi, Rufi's trend (its points out of order, one with no date,
  * "<5" kept with its number), OpenUI's table and follow-ups.
  */
 const STORED_REPLY = [
   "root = Card([header, intro, trend, table, followUps])",
   'header = CardHeader("CRP", "Your last four results")',
-  'intro = TextContent("Your CRP was **high** in March and August. [What CRP measures](https://example.com/crp)")',
+  'intro = TextContent("Your CRP was **high** in March and August. [What CRP measures](https://example.com/crp) · [Your profile](rufi:/profile)")',
   'trend = Trend("CRP", [c3, c1, c2, c0], "mg/L")',
   'c1 = TrendPoint("2025-12-01", "<5", 5, null, "<5")',
   'c2 = TrendPoint("2026-03-04", "8.2", 8.2, "H", "<5")',
@@ -687,18 +687,21 @@ const STORED_REPLY = [
   'followUps = FollowUpBlock([FollowUpItem("Show my ferritin too")])',
 ].join("\n");
 
-test("a reply the AI wrote in OpenUI draws in the chat under Rufi's strict CSP: its trend oldest first with every value in a table, and a follow-up sends its words", async ({
+test("a reply the AI wrote in OpenUI draws in the chat under Rufi's strict CSP: its trend oldest first with every value in a table, and a follow-up sends its words and Rufi's own link opens in place", async ({
   page,
   rufi,
 }) => {
   await opened(page, rufi);
   // The fake answers "ok:" and the message; OpenUI passes over that first line.
   await send(page, `A stored reply:\n${STORED_REPLY}`);
-  const reply = log(page).locator(".reply").last();
+  const reply = log(page).locator(".reply").first();
   await expect(reply.getByText("Your last four results")).toBeVisible();
   await expect(
     reply.getByRole("link", { name: "What CRP measures" }),
   ).toHaveAttribute("href", "https://example.com/crp");
+  await expect(
+    reply.getByRole("link", { name: "Your profile" }),
+  ).toHaveAttribute("href", /^\/people\/[^/]+\/profile$/);
   await expect(
     reply.getByRole("heading", { name: "CRP (mg/L) over time" }),
   ).toBeVisible();
@@ -722,6 +725,10 @@ test("a reply the AI wrote in OpenUI draws in the chat under Rufi's strict CSP: 
   await expect(log(page).locator(".reply").last()).toContainText(
     "ok:Show my ferritin too",
   );
+  // Rufi's own link opens the person's page in this window.
+  await reply.getByRole("link", { name: "Your profile" }).click();
+  await expect(page).toHaveURL(/\/people\/[^/]+\/profile$/);
+  expect(page.context().pages()).toHaveLength(1);
 });
 
 test("a finished reply that names a value it never gives, or puts another part where a value goes, shows as its text, never in part", async ({
