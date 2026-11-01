@@ -179,7 +179,8 @@ export function Frame() {
         </div>
         <nav
           aria-label="Pages"
-          className="mt-2 flex min-h-0 flex-1 flex-col gap-0.5"
+          // Scrolls within its height when the text is large.
+          className="-mx-1 mt-2 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1 pb-1"
         >
           {person && (
             <Link
