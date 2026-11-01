@@ -22,6 +22,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
+import { useState } from "react";
 import { download, read } from "./api.ts";
 import { AppearanceChoice, ColourChoice } from "./appearance.tsx";
 import { DeviceDataSection } from "./devices.tsx";
@@ -37,7 +38,13 @@ import {
   useSettings,
   useStatus,
 } from "./reads.ts";
-import { type Group, GROUPS, useSettingsGroup } from "./settings-link.tsx";
+import {
+  type Group,
+  GROUPS,
+  type Save,
+  SettingsSaves,
+  useSettingsGroup,
+} from "./settings-link.tsx";
 import {
   Button,
   ICON,
@@ -68,11 +75,28 @@ export function SettingsDialog() {
       search: (previous) => ({ ...previous, settings: next }),
       replace: true,
     });
+  const [saves] = useState(() => new Map<Save, Group>());
+  // What you typed is saved first: the field you are in as when you leave
+  // it, then each part's own. One that fails keeps Settings open at it.
+  const close = async () => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    const failed = await Promise.all(
+      [...saves].map(([save, at]) =>
+        save().then(
+          () => undefined,
+          () => at,
+        ),
+      ),
+    );
+    show(failed.find((at) => at !== undefined));
+  };
   return (
     <Dialog.Root
       open={group !== undefined}
       onOpenChange={(open) => {
-        if (!open) show(undefined);
+        if (!open) void close();
       }}
     >
       <Dialog.Portal>
@@ -137,7 +161,9 @@ export function SettingsDialog() {
                       {NAMES[id].name}
                     </h3>
                     <div className="flex flex-col gap-6">
-                      <GroupOptions group={id} />
+                      <SettingsSaves value={{ saves, group: id }}>
+                        <GroupOptions group={id} />
+                      </SettingsSaves>
                     </div>
                   </Tabs.Panel>
                 ))}

@@ -2,9 +2,10 @@
 // The address says which: `?settings=<group>` on any page, so a link from the
 // sidebar, a help page or Rufi AI opens it at its group, and closing it leaves
 // the page as it was. Rufi AI and the help pages write such a link as
-// rufi:/settings/<group>.
+// rufi:/settings/<group>. What you typed and left unsaved is saved before
+// it closes (useSavedOnClose).
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { createContext, type ReactNode, useContext, useEffect } from "react";
 
 /** Settings' groups, in their order; the first is where Settings opens. */
 export const GROUPS = [
@@ -74,4 +75,28 @@ export function SettingsLink({
       {children}
     </Link>
   );
+}
+
+/** Makes sure what a part of Settings has is saved; rejects when it isn't. */
+export type Save = () => Promise<unknown>;
+
+/** The saves of Settings' open parts, each with the group it is in. */
+export const SettingsSaves = createContext<
+  { saves: Map<Save, Group>; group: Group } | undefined
+>(undefined);
+
+/**
+ * Runs `save` as Settings closes, after the field you are in has had its
+ * own save on leaving it: by Esc too, while you type. When it fails,
+ * Settings stays open at its group, what you typed still there.
+ */
+export function useSavedOnClose(save: Save): void {
+  const open = useContext(SettingsSaves);
+  useEffect(() => {
+    if (open === undefined) return;
+    open.saves.set(save, open.group);
+    return () => {
+      open.saves.delete(save);
+    };
+  });
 }
