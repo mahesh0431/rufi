@@ -22,6 +22,7 @@ import {
 import { printedDate } from "./dates.ts";
 import { savedAt } from "./overview.tsx";
 import { saveProfile, useProfile } from "./reads.ts";
+import { useSavedOnClose } from "./settings-link.tsx";
 import { Button, Problem, Section } from "./ui.tsx";
 
 const MONTHS = [
@@ -608,12 +609,23 @@ function SavedFields({
     return saved;
   };
   const retry = () => send(sending.current.unsaved);
-  const finish = async () => {
+  const left = () => Object.keys(sending.current.unsaved).length > 0;
+  /** Everything entered is saved, once complete; rejects when it isn't. */
+  const settle = async () => {
     await Promise.all(sending.current.saves);
-    if (sending.current.problems.size > 0) return;
-    if (Object.keys(sending.current.unsaved).length > 0) await retry();
-    if (Object.keys(sending.current.unsaved).length === 0) done?.();
+    if (sending.current.problems.size > 0) {
+      throw new Error("A field isn't complete.");
+    }
+    if (left()) await retry();
+    if (left()) throw new Error("A change isn't saved.");
   };
+  // Settings closing waits for it, and stays open when it fails.
+  useSavedOnClose(settle);
+  const finish = () =>
+    settle().then(
+      () => done?.(),
+      () => undefined,
+    );
   return (
     <div className="flex flex-col gap-3">
       <ProfileFields
