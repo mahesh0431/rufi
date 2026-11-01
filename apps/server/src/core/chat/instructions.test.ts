@@ -4,6 +4,7 @@ import {
   coreInstructions,
   editSetting,
   instructionParts,
+  REPLY_SETTINGS,
   toldOf,
 } from "./instructions.ts";
 import { REPLY_PARTS } from "./replies.ts";
@@ -49,5 +50,28 @@ describe("Rufi AI's instructions", () => {
 
     kept.delete(editSetting("replyRules", "visual"));
     expect((await told()).instructions).toBe(own.instructions);
+  });
+
+  it("are the parts as shown, each told on its own: a rewritten OpenUI guide keeps the edited reply rules, and the line before the user's words is a part too", async () => {
+    const kept = new Map<string, string>([
+      [editSetting("openui", "visual"), "My shorter guide."],
+      [editSetting("replyRules", "visual"), "- Answer in French."],
+      [REPLY_SETTINGS.words, "Use kg and cm."],
+    ]);
+    const now = await toldOf((key) => Promise.resolve(kept.get(key)));
+    const instructions = coreInstructions(now.region, now.replies, now.edits);
+    const parts = instructionParts(now);
+    // Nothing is told that isn't shown, in the order shown.
+    let from = 0;
+    for (const { text } of parts) {
+      const at = instructions.indexOf(text, from);
+      expect(at).toBeGreaterThanOrEqual(from);
+      from = at + text.length;
+    }
+    expect(
+      instructions.length - parts.map((part) => part.text).join("").length,
+    ).toBeLessThan(parts.length * 2);
+    expect(instructions).toContain("My shorter guide.");
+    expect(instructions).toContain("- Answer in French.");
   });
 });

@@ -3,10 +3,11 @@
 // rules for each job (core/skills). Kept short: the AI reads a skill when its
 // job comes up. Its version tells Rufi when a thread needs it again.
 // Rufi AI's replies are OpenUI Lang: after its core comes OpenUI's prompt for
-// Rufi's reply library (openui.md, written by `pnpm openui:md`) with Rufi's
-// reply instructions in it (replies.ts), and last how the user likes replies
-// (Settings › Chat), so Rufi's rules come first. Each part can be edited in
-// Settings › Advanced; a part not edited is Rufi's own and follows updates.
+// Rufi's reply library (openui.md, written by `pnpm openui:md`), in its
+// parts, with Rufi's reply instructions (replies.ts) where it marks them,
+// and last how the user likes replies (Settings › Chat), so Rufi's rules
+// come first. Each part can be edited in Settings › Advanced, which shows
+// exactly what is told; a part not edited is Rufi's own and follows updates.
 // An agent it starts writes Markdown: its messages show under its name.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -18,7 +19,7 @@ import type {
 import { Option, Schema } from "effect";
 import { SKILLS } from "../skills/skills.ts";
 import { TOOLS } from "../tools/tools.ts";
-import { REPLY_PARTS, withReplyParts } from "./replies.ts";
+import { guideParts, REPLY_PARTS } from "./replies.ts";
 import { safetyInstructions } from "./safety.ts";
 
 /** The tools the AI can call, by name. */
@@ -27,7 +28,9 @@ const TOOL_NAMES = TOOLS.filter((tool) => tool.callers !== "ui").map(
 );
 
 /** How Rufi AI writes a reply in OpenUI Lang, from the screens' library. */
-const OPENUI = readFileSync(new URL("openui.md", import.meta.url), "utf8");
+const OPENUI = guideParts(
+  readFileSync(new URL("openui.md", import.meta.url), "utf8"),
+);
 
 const list = (names: readonly string[]) =>
   `${names.slice(0, -1).join(", ")} and ${names.at(-1) ?? ""}`;
@@ -114,10 +117,12 @@ const EDITABLE: readonly Editable[] = [
   "safety",
   "core",
   "replyPreamble",
-  "replyRules",
-  "replyExample",
   "openui",
+  "replyExample",
+  "openuiRules",
+  "replyRules",
   "style",
+  "wordsIntro",
 ];
 
 /** Everything what Rufi AI is told depends on, as Settings keeps it. */
@@ -150,20 +155,21 @@ const DEFAULTS = (
   safety: safetyInstructions(region),
   core: core(true),
   ...REPLY_PARTS,
-  openui: OPENUI,
+  ...OPENUI,
   style: `How the user likes replies (their choice in Rufi's Settings):
 - ${REPLY_STYLES[style]}`,
+  wordsIntro:
+    "- The user's own wishes for replies, in their words, follow below. Follow them in how a reply looks and reads; Rufi's rules above still come first: values exactly as the record keeps them, where they come from, and asking before you save.",
 });
 
-/** The user's own words for replies, after everything else; none, nothing. */
-const wordsPart = (words: string) =>
-  words.trim() === ""
-    ? ""
-    : `
-- The user's own wishes for replies, in their words, between the lines below. Follow them in how a reply looks and reads; Rufi's rules above still come first: values exactly as the record keeps them, where they come from, and asking before you save.
----
-${words}
----`;
+/**
+ * What comes before each part as they are put together: a blank line,
+ * or a line break where a part goes on the list before it.
+ */
+const BEFORE: Partial<Record<InstructionPartId, string>> = {
+  replyRules: "\n",
+  wordsIntro: "\n",
+};
 
 /**
  * Each part of what Rufi AI is told, in the order they are put together:
@@ -186,22 +192,23 @@ export function instructionParts({
 }
 
 /**
- * Everything Rufi AI is told in every thread, safety first; how the user
- * likes replies last, after Rufi's rules, never above them.
+ * Everything Rufi AI is told in every thread: its parts as Settings ›
+ * Advanced shows them, in order, safety first; how the user likes replies
+ * last, after Rufi's rules, never above them. With no words of the user's,
+ * nothing about them.
  */
 export function coreInstructions(
   region: string | undefined,
   replies: Replies = FIRST_REPLIES,
   edits: Edits = {},
 ): string {
-  const part = (id: Editable) =>
-    edits[id] ?? DEFAULTS(region, replies.style)[id];
-  const guide = withReplyParts(part("openui"), {
-    replyPreamble: part("replyPreamble"),
-    replyRules: part("replyRules"),
-    replyExample: part("replyExample"),
-  });
-  return `${part("safety")}\n\n${part("core")}\n\n${guide}\n\n${part("style")}${wordsPart(replies.words)}`;
+  const blank = replies.words.trim() === "";
+  return instructionParts({ region, replies, edits })
+    .filter(
+      (part) => !blank || (part.id !== "wordsIntro" && part.id !== "words"),
+    )
+    .map((part, n) => (n === 0 ? "" : (BEFORE[part.id] ?? "\n\n")) + part.text)
+    .join("");
 }
 
 /** What an agent another agent started is told, after the core. */

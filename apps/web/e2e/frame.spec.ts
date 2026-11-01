@@ -1033,12 +1033,26 @@ test("Settings › Advanced shows what Rufi AI is told; an edited part is marked
   expect(own).not.toBe("");
   await expect(rules.getByText("Edited", { exact: true })).toHaveCount(0);
 
+  // What you type while a save runs stays, and is saved as Settings closes.
+  const answered = Promise.withResolvers<undefined>();
+  await page.route("**/api/instructions", async (route) => {
+    if (route.request().method() === "PUT") await answered.promise;
+    await route.continue();
+  });
   await box.fill("- Answer in French.");
   await settings.getByRole("tab", { name: "Advanced" }).focus();
+  await box.press("End");
+  await box.pressSequentially(" Briefly.");
+  answered.resolve(undefined);
   await expect(rules.getByText("Edited", { exact: true })).toBeVisible();
+  await expect(box).toHaveValue("- Answer in French. Briefly.");
+  await expect(box).toBeFocused();
   await accessible(page);
+  await page.keyboard.press("Escape");
+  await expect(settings).toBeHidden();
   await page.reload();
-  await expect(box).toHaveValue("- Answer in French.");
+  await openSettings(page, "Advanced");
+  await expect(box).toHaveValue("- Answer in French. Briefly.");
 
   await rules.getByRole("button", { name: "Reset to default" }).click();
   await expect(box).toHaveValue(own);

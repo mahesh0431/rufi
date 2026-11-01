@@ -1,12 +1,12 @@
 // What Rufi AI is told, in its parts, as Settings › Advanced shows and edits
 // them, and the marks in OpenUI's generated guide (openui.md) where Rufi's
-// own reply instructions go.
+// own reply instructions go: the core cuts the guide there into its parts.
 import { Schema } from "effect";
 
 /**
  * Where Rufi's reply instructions go in OpenUI's guide: the screens'
- * library gives OpenUI these marks in place of the text, and the core puts
- * the text (Rufi's own or the user's edit) where they are.
+ * library gives OpenUI these marks in place of the text, and the core cuts
+ * the guide at them, so that each part is told on its own.
  */
 export const REPLY_MARKS = {
   preamble: "<<Rufi's reply preamble>>",
@@ -19,10 +19,12 @@ export const InstructionPartId = Schema.Literals([
   "safety",
   "core",
   "replyPreamble",
-  "replyRules",
-  "replyExample",
   "openui",
+  "replyExample",
+  "openuiRules",
+  "replyRules",
   "style",
+  "wordsIntro",
   "words",
 ]);
 export type InstructionPartId = typeof InstructionPartId.Type;

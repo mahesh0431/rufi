@@ -329,7 +329,7 @@ function ReplyWordsSection() {
   return (
     <Section title="Your own words">
       {/* Your words changed elsewhere (Advanced, another tab): shown anew. */}
-      {kept !== undefined && <ReplyWords key={kept} kept={kept} />}
+      {kept !== undefined && <ReplyWords kept={kept} />}
     </Section>
   );
 }

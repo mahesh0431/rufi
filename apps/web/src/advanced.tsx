@@ -8,9 +8,8 @@ import type {
 } from "@rufi/contracts/instructions";
 import { useMutation } from "@tanstack/react-query";
 import { RotateCcw } from "lucide-react";
-import { useState } from "react";
 import { editInstruction, useInstructions } from "./reads.ts";
-import { useSavedOnClose } from "./settings-link.tsx";
+import { useSavedText } from "./settings-link.tsx";
 import { Button, Problem, Section } from "./ui.tsx";
 
 /** Each part's name, and what the user should know about it. */
@@ -27,25 +26,34 @@ const PARTS: Record<InstructionPartId, { title: string; about: string }> = {
   },
   replyPreamble: {
     title: "Reply instructions: preamble",
-    about: "The start of OpenUI's guide below: how a reply is shown.",
+    about: "How a reply is shown: it opens OpenUI's guide.",
   },
-  replyRules: {
-    title: "Reply instructions: rules",
-    about: "Rufi's own rules for a reply, after OpenUI's rules in its guide.",
+  openui: {
+    title: "OpenUI's guide: the language and examples",
+    about:
+      "Made by OpenUI from the parts Rufi AI can build a reply from: how to write them, and its examples.",
   },
   replyExample: {
     title: "Reply instructions: example",
-    about: "Rufi's own example reply, after OpenUI's examples in its guide.",
+    about: "Rufi's own example reply, after OpenUI's.",
   },
-  openui: {
-    title: "OpenUI's guide",
-    about:
-      "Made by OpenUI from Rufi's reply parts. The three reply instructions above go where it marks them, such as <<Rufi's reply rules>>.",
+  openuiRules: {
+    title: "OpenUI's guide: its rules",
+    about: "OpenUI's rules for a reply, and its checks before one is done.",
+  },
+  replyRules: {
+    title: "Reply instructions: rules",
+    about: "Rufi's own rules for a reply, after OpenUI's.",
   },
   style: {
     title: "Reply style in use",
     about:
       "After everything else: the line for the style chosen in Settings › Chat. Each style keeps its own edit.",
+  },
+  wordsIntro: {
+    title: "Before your own words",
+    about:
+      "How Rufi AI is told what your own words are. Sent only when you have written some.",
   },
   words: {
     title: "Your own words",
@@ -73,8 +81,7 @@ export function AdvancedOptions() {
             />
           )
         : instructions.data.map((part) => (
-            // A new text from Rufi (a reset, another tab) starts the box again.
-            <PartEditor key={`${part.id}:${part.text}`} part={part} />
+            <PartEditor key={part.id} part={part} />
           ))}
     </>
   );
@@ -82,14 +89,10 @@ export function AdvancedOptions() {
 
 /** One part: its text to edit, saved when you leave it or close Settings, and Reset. */
 function PartEditor({ part }: { part: InstructionPart }) {
-  const [text, setText] = useState(part.text);
   const save = useMutation({
     mutationFn: (edit: string | null) => editInstruction(part.id, edit),
   });
-  const saveText = async () => {
-    if (text !== part.text) await save.mutateAsync(text);
-  };
-  useSavedOnClose(saveText);
+  const text = useSavedText(part.text, save.mutateAsync);
   const { title, about } = PARTS[part.id];
   return (
     <Section title={title}>
@@ -105,7 +108,8 @@ function PartEditor({ part }: { part: InstructionPart }) {
             icon={RotateCcw}
             busy={save.isPending && save.variables === null && "Resetting…"}
             onClick={() => {
-              save.mutate(null);
+              // Rufi's own comes back in place of what you typed.
+              save.mutateAsync(null).then(text.drop, () => undefined);
             }}
           >
             Reset to default
@@ -114,16 +118,13 @@ function PartEditor({ part }: { part: InstructionPart }) {
       </div>
       <textarea
         aria-label={title}
-        value={text}
+        value={text.text}
         spellCheck={false}
         rows={part.id === "openui" || part.id === "core" ? 16 : 6}
         onChange={(event) => {
-          setText(event.target.value);
+          text.type(event.target.value);
         }}
-        onBlur={() => {
-          // A failed save says so below.
-          saveText().catch(() => undefined);
-        }}
+        onBlur={text.leave}
         className="w-full resize-y rounded-lg border border-line bg-surface px-2.5 py-2 font-mono text-xs"
       />
       {save.error && (

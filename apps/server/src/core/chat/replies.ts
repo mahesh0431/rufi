@@ -1,7 +1,8 @@
 // Rufi's own instructions for a reply in OpenUI Lang: its preamble, its
 // rules and its example. OpenUI's generated guide (openui.md, from the
-// screens' reply library) marks where each goes; here the text (Rufi's own,
-// or the user's edit in Settings › Advanced) is put there.
+// screens' reply library) marks where each goes; here it is cut there into
+// its own parts, so that each part, Rufi's own or the user's edit in
+// Settings › Advanced, is told on its own.
 import { REPLY_MARKS } from "@rufi/contracts/instructions";
 
 /** The top of Rufi's reply instructions: how a reply is shown. */
@@ -37,16 +38,31 @@ export const REPLY_PARTS = {
   replyExample: EXAMPLE,
 } as const;
 
-/** OpenUI's guide with Rufi's reply instructions where it marks them. */
-export function withReplyParts(
-  guide: string,
-  parts: Record<keyof typeof REPLY_PARTS, string>,
-): string {
-  return guide
-    .split(REPLY_MARKS.preamble)
-    .join(parts.replyPreamble)
-    .split(`- ${REPLY_MARKS.rules}`)
-    .join(parts.replyRules)
-    .split(REPLY_MARKS.example)
-    .join(parts.replyExample);
+/** Cuts `text` at `mark`: what is before it, and after it. */
+function cut(text: string, mark: string): [string, string] {
+  const at = text.indexOf(mark);
+  if (at < 0) {
+    throw new Error(`openui.md has no ${mark}: run pnpm openui:md.`);
+  }
+  return [text.slice(0, at).trim(), text.slice(at + mark.length).trim()];
+}
+
+/**
+ * OpenUI's guide in its two parts, cut where it marks Rufi's: the
+ * language and its examples (after Rufi's preamble, before Rufi's example),
+ * and its rules (before Rufi's rules, which end it).
+ */
+export function guideParts(guide: string): {
+  openui: string;
+  openuiRules: string;
+} {
+  const [before, rest] = cut(guide, REPLY_MARKS.preamble);
+  const [openui, more] = cut(rest, REPLY_MARKS.example);
+  const [openuiRules, after] = cut(more, `- ${REPLY_MARKS.rules}`);
+  if (before !== "" || after !== "") {
+    throw new Error(
+      "openui.md has text before Rufi's preamble or after its rules.",
+    );
+  }
+  return { openui, openuiRules };
 }

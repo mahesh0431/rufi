@@ -132,13 +132,17 @@ A new choice or new words reach the AI with your next message, in the chat you h
 
 ### Rufi AI's instructions
 
-[Settings › Advanced](rufi:/settings/advanced) shows exactly what Rufi AI is told with every reply, in its parts as they are put together:
+[Settings › Advanced](rufi:/settings/advanced) shows exactly what Rufi AI is told with every reply, in its parts, in the order they are put together. Nothing else is added: only a line break between parts.
 
 - **Safety and emergencies:** what it does when a message may describe an emergency, with your emergency region's number.
 - **Rufi's core instructions:** how it reads and changes your health record, asks before it saves, and uses its tools and skills.
-- **Reply instructions:** the preamble, the rules and the example for a reply. They go into OpenUI's guide where it marks them.
-- **OpenUI's guide:** made by OpenUI, the parts Rufi AI can build a reply from.
+- **Reply instructions: preamble:** how a reply is shown.
+- **OpenUI's guide: the language and examples:** made by OpenUI, how to write the parts Rufi AI can build a reply from, with its examples.
+- **Reply instructions: example:** Rufi's own example reply.
+- **OpenUI's guide: its rules:** OpenUI's rules for a reply.
+- **Reply instructions: rules:** Rufi's own rules for a reply.
 - **Reply style in use:** the line for the style you chose in [Settings › Chat](rufi:/settings/chat). Each style keeps its own edit.
+- **Before your own words:** how Rufi AI is told what your own words are. It is sent only when you have written some.
 - **Your own words:** the same as in Settings › Chat.
 
 You can edit every part. Edits change how Rufi AI answers, handles your health record and responds to an emergency, so change them with care. A part saves when you leave its box, shows **Edited**, and is used from your next reply on, with Codex and Claude alike, in the chat you have. **Reset to default** puts Rufi's own back. A part you haven't edited follows Rufi's updates; an edited part stays as you wrote it, also after Rufi changes its own. Your edits are kept with Rufi's settings, and the agents Rufi AI starts keep Rufi's own instructions.
