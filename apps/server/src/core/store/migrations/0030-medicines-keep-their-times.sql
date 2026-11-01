@@ -17,3 +17,13 @@ ALTER TABLE medicine_uses ADD COLUMN days TEXT;
 ALTER TABLE medicine_uses ADD COLUMN until TEXT;
 ALTER TABLE medicine_uses ADD COLUMN until_words TEXT;
 ALTER TABLE medicine_uses ADD COLUMN remind INTEGER NOT NULL DEFAULT 0 CHECK (remind IN (0, 1));
+-- The reminders Rufi handled for medicines (docs/adr/0012, 0031): for each,
+-- the latest dose the notice claim told or passed over. Operational state,
+-- like follow_up_notices: no save writes it and no history keeps it.
+CREATE TABLE medicine_notices (
+  person_id TEXT NOT NULL,
+  medicine_use_id TEXT NOT NULL,
+  told TEXT NOT NULL,          -- the latest dose handled, local 'YYYY-MM-DDTHH:MM'
+  PRIMARY KEY (person_id, medicine_use_id),
+  FOREIGN KEY (person_id, medicine_use_id) REFERENCES medicine_uses (person_id, id)
+) STRICT;

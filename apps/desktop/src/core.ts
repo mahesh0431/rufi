@@ -48,7 +48,7 @@ export interface Core {
    */
   link: () => Promise<URL>;
   /**
-   * The follow-up notices due now, which the Rufi this app runs marks as
+   * The follow-up and medicine notices due now, which the Rufi this app runs marks as
    * told (docs/adr/0012). None when the app runs no Rufi of its own: one
    * that `pnpm start` runs gives no notices.
    */

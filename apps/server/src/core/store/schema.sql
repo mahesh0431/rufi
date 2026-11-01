@@ -421,6 +421,17 @@ CREATE TABLE follow_up_notices (
   FOREIGN KEY (person_id, follow_up_id) REFERENCES follow_ups (person_id, id)
 ) STRICT;
 
+-- The reminders Rufi handled for medicines (docs/adr/0012, 0031): for each,
+-- the latest dose the notice claim told or passed over. Operational state,
+-- like follow_up_notices: no save writes it and no history keeps it.
+CREATE TABLE medicine_notices (
+  person_id TEXT NOT NULL,
+  medicine_use_id TEXT NOT NULL,
+  told TEXT NOT NULL,          -- the latest dose handled, local 'YYYY-MM-DDTHH:MM'
+  PRIMARY KEY (person_id, medicine_use_id),
+  FOREIGN KEY (person_id, medicine_use_id) REFERENCES medicine_uses (person_id, id)
+) STRICT;
+
 -- Rufi-wide settings, such as the emergency region. One row per key.
 CREATE TABLE settings (
   key TEXT PRIMARY KEY,

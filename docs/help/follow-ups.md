@@ -73,7 +73,7 @@ It never shows a name or what the follow-up is, so nothing about your health sho
 
 How notices work:
 
-- The app checks as Rufi starts, then every 15 minutes, and when your Mac wakes. A follow-up that becomes due at midnight shows within 15 minutes, or when the Mac wakes.
+- The app checks as Rufi starts, then every minute, and when your Mac wakes. A follow-up that becomes due at midnight shows within a minute, or when the Mac wakes.
 - Each follow-up gets one notice when it becomes due and one when it becomes overdue, never more, also after Rufi starts again. If Rufi wasn't running on the day, you get one notice when it starts: "overdue" only, if the day has passed.
 - A follow-up that is done or dropped before its day never gets a notice. A follow-up you reopen with the same date doesn't get its notices again; Needs you shows it.
 - When you change the date, the follow-up gets new notices for the new date.
@@ -82,7 +82,22 @@ How notices work:
 When you don't get a notice:
 
 - **Rufi isn't running:** the app tells you when it starts again.
-- **Notifications are off, or a Focus is on:** the notice doesn't show, and Rufi doesn't try again. Needs you shows the follow-up.
+- **Notifications are off, or a Focus is on:** the notice doesn't show, and Rufi doesn't try again. Needs you shows the follow-up, and Today the medicine's times.
 - **Rufi runs in a browser only** (`pnpm start`), or the app opened on a Rufi that you started in the terminal: there are no notices. The pages show everything.
 - **Rufi stopped at the moment it told you** (for example, it crashed): that notice is lost. Needs you shows the follow-up, and the overdue notice still comes.
 - **You restored an older backup:** a notice you already had can show again (see [Backups and export](backups-and-export.md#restore-a-backup)).
+
+### Medicine reminders
+
+A medicine with reminders on gets a notice at each of its times (see [Medicines](record.md#medicines)). It shows only Rufi, how many medicines and the time, for example:
+
+- **Rufi** · 1 medicine at 21:00
+- **Rufi** · 2 medicines at 08:00
+
+It never names the medicine or the person. Click it to open that person's Medicines page at **Today**. A notice only tells you it's time to check your medicine in Rufi: follow your directions.
+
+- Each dose gets one notice, also after Rufi starts again. A new course's first dose gets one too.
+- If Rufi wasn't running or your Mac slept at that time, the notice comes when Rufi is back, if that is within an hour of the dose; later than that, none comes, and the next dose has its own. Today still lists the time.
+- After a course's last dose, and as soon as you stop, pause or remove a medicine, or turn its reminders off, no more notices come for it.
+- If you move a time to earlier today, or turn reminders off and on again within an hour of a dose, that dose's notice can show at once.
+- Reminders need the Rufi app open: after your Mac restarts, open Rufi again.

@@ -249,6 +249,11 @@ export interface Tables {
     reader: string | null;
     created_at: string;
   };
+  medicine_notices: {
+    person_id: string;
+    medicine_use_id: string;
+    told: string;
+  };
   medicine_uses: {
     id: string;
     person_id: string;
