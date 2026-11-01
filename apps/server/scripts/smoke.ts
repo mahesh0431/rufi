@@ -505,18 +505,20 @@ const seeded = (rows: readonly ReturnType<typeof result>[]) => {
 const HAEMOGLOBIN_2016 = seeded([
   result("res-hb-2016", "Haemoglobin", "11.9", "g/dL", "2016-06-10"),
 ]);
+/** Asha told the AI she takes Levothyroxine 25 mcg, with no times. */
+const LEVOTHYROXINE_TOLD = `INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, revision, created_at, updated_at) VALUES
+      ('m-levo', 'asha', 'c-asha', 1, 'message', 'I take Levothyroxine 25 mcg every morning.', 1, '2026-08-01T09:00:00Z', '2026-08-01T09:00:00Z');
+    INSERT INTO medicine_uses (id, person_id, name, strength, directions, status) VALUES
+      ('med-levo', 'asha', 'Levothyroxine', '25 mcg', 'every morning', 'current');
+    INSERT INTO record_sources (person_id, kind, record_id, type, entry_id) VALUES
+      ('asha', 'medicine_use', 'med-levo', 'message', 'm-levo');`;
 const SEEDS: Record<string, string> = {
   profile_settings: HAEMOGLOBIN_2016,
   // Asha gave only her year of birth.
   profile_year_alone: `${HAEMOGLOBIN_2016}
     UPDATE profiles SET birth_date = '1990', birth_date_words = '1990' WHERE id = 'asha';`,
-  // Asha told the AI she takes Levothyroxine 25 mcg.
-  prescription_visit: `INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, revision, created_at, updated_at) VALUES
-      ('m-levo', 'asha', 'c-asha', 1, 'message', 'I take Levothyroxine 25 mcg every morning.', 1, '2026-08-01T09:00:00Z', '2026-08-01T09:00:00Z');
-    INSERT INTO medicine_uses (id, person_id, name, strength, directions, status) VALUES
-      ('med-levo', 'asha', 'Levothyroxine', '25 mcg', 'every morning', 'current');
-    INSERT INTO record_sources (person_id, kind, record_id, type, entry_id) VALUES
-      ('asha', 'medicine_use', 'med-levo', 'message', 'm-levo');`,
+  prescription_visit: LEVOTHYROXINE_TOLD,
+  medicine_course: LEVOTHYROXINE_TOLD,
   // The August report's results were removed, so it can be deleted.
   deleted_document:
     "UPDATE results SET removed = 1 WHERE report_id = 'rep-asha-aug';",
@@ -2065,6 +2067,143 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
             .filter((e) => e.kind === "reply")
             .map((e) => e.text)
             .join("\n\n"),
+        },
+      ],
+      snapshot,
+    };
+  },
+  /**
+   * A prescription with a 5-day course, 1-0-1: Rufi AI keeps the directions
+   * as printed, proposes two times and the last dose, and asks; on Asha's
+   * start, times and "remind me", one save with the course's timing.
+   */
+  medicine_course: async (api, home) => {
+    const c = chat(api);
+    const now = new Date();
+    const day = (ahead: number) => {
+      const d = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate() + ahead,
+      );
+      return `${String(d.getFullYear())}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    };
+    const [doc = ""] = await api.upload([
+      {
+        name: "lakeview-today.pdf",
+        bytes: textPdf([
+          [
+            {
+              x: 40,
+              y: 48,
+              size: 16,
+              text: "Lakeview Family Clinic",
+              bold: true,
+            },
+            {
+              x: 40,
+              y: 64,
+              size: 8,
+              text: "Fictional clinic · For testing only",
+            },
+            {
+              x: 40,
+              y: 88,
+              size: 10,
+              text: "Patient: Asha Fictional",
+              bold: true,
+            },
+            { x: 330, y: 88, size: 10, text: `Visit date: ${day(0)}` },
+            { x: 330, y: 102, size: 10, text: "Dr. Rao, MBBS" },
+            {
+              x: 40,
+              y: 130,
+              size: 11,
+              text: "Diagnosis: Acute sinusitis",
+              bold: true,
+            },
+            { x: 40, y: 156, size: 11, text: "Rx", bold: true },
+            {
+              x: 40,
+              y: 172,
+              size: 10,
+              text: "1. Cap. Amoxicillin 500 mg · 1-0-1 after food × 5 days",
+            },
+            { x: 40, y: 200, size: 8, text: "Fictional data for testing Rufi" },
+          ],
+        ]),
+      },
+    ]);
+    await c.say("Saw Dr Rao today, here is the prescription.", [
+      chipOf("document", doc),
+    ]);
+    const proposed = await c.read();
+    const savedBefore = record(home).saves;
+    await c.say(
+      "Yes, I'm taking it, starting tomorrow morning. 8 in the morning and 9 at night, and remind me. Save the visit too.",
+    );
+    await yesIfAsked(c, home);
+    const snapshot = await c.read();
+    const amoxicillin = record(home).medicines.find((m) =>
+      /amoxicillin/i.test(String(m["name"])),
+    );
+    return {
+      checks: {
+        nothing_saved_with_the_proposal: savedBefore === 0,
+        one_save: record(home).saves === 1,
+        directions_as_printed: /1-0-1/.test(
+          String(amoxicillin?.["directions"]),
+        ),
+        two_times: amoxicillin?.["times"] === '["08:00","21:00"]',
+        every_day: amoxicillin?.["days"] === null,
+        starts_tomorrow: String(amoxicillin?.["started"]).startsWith(day(1)),
+        last_dose_after_5_days: String(amoxicillin?.["until"]).startsWith(
+          day(5),
+        ),
+        reminders_on: amoxicillin?.["remind"] === 1,
+      },
+      verdicts: [
+        {
+          check: "proposes_times_and_the_last_dose_and_asks",
+          criterion:
+            "In its reply to the prescription, Rufi AI keeps the directions as printed (1-0-1 after food × 5 days), says it means a morning and a night dose, asks when Asha starts, which times suit her and whether to remind her, and saves nothing yet.",
+          evidence: replyOf(proposed),
+        },
+      ],
+      snapshot,
+    };
+  },
+  /**
+   * A long-term tablet told in the chat, with its time and "remind me":
+   * times 06:30, no until, reminders on, nothing saved before her yes.
+   */
+  medicine_long_term: async (api, home) => {
+    const c = chat(api);
+    await c.say(
+      "I take Levothyroxine 25 mcg every morning at 6:30, since 2019. Please remind me.",
+    );
+    const proposed = await c.read();
+    const savedBefore = record(home).saves;
+    await yesIfAsked(c, home, "Yes.");
+    if (record(home).saves === 0) await c.say("Yes, save it.");
+    const snapshot = await c.read();
+    const levothyroxine = record(home).medicines.find((m) =>
+      /levothyroxine/i.test(String(m["name"])),
+    );
+    return {
+      checks: {
+        nothing_saved_before_the_yes: savedBefore === 0,
+        at_6_30: levothyroxine?.["times"] === '["06:30"]',
+        no_until: levothyroxine?.["until"] === null,
+        since_2019: String(levothyroxine?.["started"]).startsWith("2019"),
+        reminders_on: levothyroxine?.["remind"] === 1,
+      },
+      verdicts: [
+        {
+          check: "proposes_the_time_and_reminders",
+          criterion:
+            "Before saving, Rufi AI says it will save Levothyroxine 25 mcg at 06:30 every day since 2019 with reminders on this Mac, and asks.",
+          evidence: replyOf(proposed),
         },
       ],
       snapshot,
