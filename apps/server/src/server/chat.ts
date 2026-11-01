@@ -20,6 +20,7 @@ import {
   type ProviderStatus,
 } from "@rufi/contracts";
 import { Stopped } from "../agent/runtime.ts";
+import { repliesOf, type Told } from "../core/chat/instructions.ts";
 import { NOT_A_MODEL, UNKNOWN_PROVIDER } from "../core/chat/models.ts";
 import {
   QueueRefusal,
@@ -55,12 +56,13 @@ export interface ChatDeps {
   /** Rufi's MCP endpoint for the chat's agents: its address and its keys. */
   mcp: { url: () => string; keys: McpKeys };
   /**
-   * What the AI is told in every thread, for the emergency region chosen,
-   * and its version: a thread told another version is told again. A
-   * sub-agent's names it and the agent that started it.
+   * What the AI is told in every thread, for the user's settings (the
+   * emergency region, how they like replies), and its version: a thread told
+   * another version is told again. A sub-agent's names it and the agent that
+   * started it.
    */
   rules: (
-    region: string | undefined,
+    told: Told,
     agent?: { title: string; parent: { title: string; rufiAi: boolean } },
   ) => {
     instructions: string;
@@ -445,9 +447,7 @@ export function chat(deps: ChatDeps) {
           (item) => item.state !== "handing_over",
         );
       // A conversation told older rules is told again, once nothing runs.
-      const { version } = deps.rules(
-        await transcripts.setting("emergency_region"),
-      );
+      const { version } = deps.rules(await toldNow());
       const told = await agent.rules(fresh);
       if (told !== undefined && told !== version) {
         if (!idle) return;
@@ -533,6 +533,14 @@ export function chat(deps: ChatDeps) {
     return run;
   }
 
+  /** The user's settings that what the agents are told depends on, now. */
+  async function toldNow(): Promise<Told> {
+    return {
+      region: await transcripts.setting("emergency_region"),
+      replies: await repliesOf(transcripts.setting),
+    };
+  }
+
   /**
    * What a conversation of one of the chat's agents opens with now: the
    * current rules, its tools with the agent's key, and for a new one the
@@ -543,10 +551,10 @@ export function chat(deps: ChatDeps) {
     chat: ChatRow,
     own: OpeningAgent,
   ): Promise<ChatOpening> {
-    const region = await transcripts.setting("emergency_region");
+    const told = await toldNow();
     const { instructions, version } = own.parent
-      ? deps.rules(region, { title: own.title, parent: own.parent })
-      : deps.rules(region);
+      ? deps.rules(told, { title: own.title, parent: own.parent })
+      : deps.rules(told);
     return {
       instructions,
       version,

@@ -54,6 +54,7 @@ import {
 } from "../core/chat/continues.ts";
 import { RefRefusal } from "../core/chat/refs.ts";
 import { emergencyFor, emergencyRegions } from "../core/chat/safety.ts";
+import { REPLY_SETTINGS, repliesOf } from "../core/chat/instructions.ts";
 import {
   NoChoice,
   StalePreview,
@@ -383,12 +384,15 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
   const settings = async (c: Context): Promise<Settings> => {
     const known = emergencyFor(await transcripts.setting("emergency_region"));
     const chosen = await appearance();
+    const replies = await repliesOf(transcripts.setting);
     c.header(APPEARANCE_HEADER, chosen);
     return {
       appearance: chosen,
       colour: await colour(),
       replyShape: await replyShape(),
       textSize: await textSize(),
+      replyStyle: replies.style,
+      replyWords: replies.words,
       // Open while the AI works, until another is chosen.
       activity: Schema.decodeUnknownOption(ActivityShown)(
         await transcripts.setting("activity"),
@@ -473,6 +477,13 @@ export function api(deps: ApiDeps): Hono<{ Bindings: HttpBindings }> {
     }
     if (changed.colour !== undefined) {
       await transcripts.saveSetting("colour", changed.colour);
+    }
+    if (changed.replyStyle !== undefined) {
+      await transcripts.saveSetting(REPLY_SETTINGS.style, changed.replyStyle);
+    }
+    if (changed.replyWords !== undefined) {
+      // As they wrote it; the chat's next reply reads it with Rufi's rules.
+      await transcripts.saveSetting(REPLY_SETTINGS.words, changed.replyWords);
     }
     if (changed.textSize !== undefined) {
       await transcripts.saveSetting("text_size", changed.textSize);

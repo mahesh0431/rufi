@@ -469,6 +469,16 @@ export const TextSize = Schema.Literals(["default", "large", "larger"]);
 export type TextSize = typeof TextSize.Type;
 
 /**
+ * How Rufi AI's replies look, as the user chose: visual (built from OpenUI's
+ * parts), balanced (text first) or simple (short text). Visual until chosen.
+ */
+export const ReplyStyle = Schema.Literals(["visual", "balanced", "simple"]);
+export type ReplyStyle = typeof ReplyStyle.Type;
+
+/** The user's own words for how replies look and read; empty for none. */
+export const MAX_REPLY_WORDS = 1000;
+
+/**
  * When a reply's Activity is open by itself: while the AI works (working),
  * always (shown), or never (hidden). It folds or opens by hand in each.
  */
@@ -484,6 +494,9 @@ export const Settings = Schema.Struct({
   colour: Colour,
   replyShape: ReplyShape,
   textSize: TextSize,
+  replyStyle: ReplyStyle,
+  /** The user's own words for replies, as they wrote them; "" for none. */
+  replyWords: Schema.String,
   activity: ActivityShown,
   /** What Enter does while a reply runs. */
   whileReplying: WhileReplying,
@@ -681,6 +694,10 @@ export const SaveSettings = Schema.Struct({
   colour: Schema.optionalKey(Colour),
   replyShape: Schema.optionalKey(ReplyShape),
   textSize: Schema.optionalKey(TextSize),
+  replyStyle: Schema.optionalKey(ReplyStyle),
+  replyWords: Schema.optionalKey(
+    Schema.String.check(Schema.isMaxLength(MAX_REPLY_WORDS)),
+  ),
   activity: Schema.optionalKey(ActivityShown),
   whileReplying: Schema.optionalKey(WhileReplying),
   /** A region code Rufi knows, such as "IN"; null clears it. */

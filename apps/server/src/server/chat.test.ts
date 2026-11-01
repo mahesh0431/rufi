@@ -209,9 +209,9 @@ async function startChat(
       ),
     agent: ai.agent,
     mcp: { url: () => `http://127.0.0.1:${String(port)}/mcp`, keys },
-    rules: (region) => ({
-      instructions: `Rufi's rules ${options.rules ?? "1"}, for ${region ?? "no region"}.`,
-      version: `rules-${options.rules ?? "1"}-${region ?? ""}`,
+    rules: ({ region, replies }) => ({
+      instructions: `Rufi's rules ${options.rules ?? "1"}, for ${region ?? "no region"}, ${replies.style} replies.`,
+      version: `rules-${options.rules ?? "1"}-${region ?? ""}-${replies.style}`,
     }),
     tools: {
       specs: tools.specs,
@@ -897,7 +897,7 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
   );
 
   it(
-    "tells the thread Rufi's new rules (a new emergency region, an update after a restart) and goes on in it",
+    "tells the thread Rufi's new rules (a new emergency region, a reply style, an update after a restart) and goes on in it",
     timeout,
     async () => {
       await startChat(name);
@@ -910,6 +910,9 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       await startChat(name, { rules: "2" }); // Rufi updated.
       await say(await chatRow(c.id), "third");
       await ended(c.id, 3);
+      await transcripts.saveSetting("reply_style", "simple");
+      await say(await chatRow(c.id), "fourth");
+      await ended(c.id, 4);
       const { turns, entries } = await transcript(c.id);
       // One thread, and Rufi's summaries aren't replies.
       expect(threadsUsed()).toBe(1);
@@ -922,14 +925,23 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
         ["reply", "ok:first"],
         ["reply", "ok:second"],
         ["reply", "ok:third"],
+        ["reply", "ok:fourth"],
       ]);
       // Each reply after a change had the new rules whole, as the last word.
       const rules = await backend.rules();
-      expect(rules).toHaveLength(3);
-      const regionNote = instructionsNote("Rufi's rules 1, for IN.");
-      const updateNote = instructionsNote("Rufi's rules 2, for IN.");
+      expect(rules).toHaveLength(4);
+      const regionNote = instructionsNote(
+        "Rufi's rules 1, for IN, visual replies.",
+      );
+      const updateNote = instructionsNote(
+        "Rufi's rules 2, for IN, visual replies.",
+      );
+      const styleNote = instructionsNote(
+        "Rufi's rules 2, for IN, simple replies.",
+      );
       expect(rules[1]?.slice(-regionNote.length)).toBe(regionNote);
       expect(rules[2]?.slice(-updateNote.length)).toBe(updateNote);
+      expect(rules[3]?.slice(-styleNote.length)).toBe(styleNote);
     },
   );
 
@@ -4213,7 +4225,7 @@ describe("the chat, on the scripted Codex", () => {
       ?.received?.params;
     expect(start).toMatchObject({
       model: "gpt-6-astra",
-      developerInstructions: "Rufi's rules 1, for IN.",
+      developerInstructions: "Rufi's rules 1, for IN, visual replies.",
       cwd: join(home, "ai"),
       permissions: "rufi-ai",
       approvalPolicy: "never",
