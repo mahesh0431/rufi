@@ -145,7 +145,10 @@ export function Section({
   const own = useId();
   const heading = id ?? own;
   return (
-    <section aria-labelledby={heading} className="flex flex-col gap-2">
+    <section
+      aria-labelledby={heading}
+      className="flex flex-col gap-2 border-t border-line pt-5 first:border-t-0 first:pt-0"
+    >
       <h4 id={heading} className="font-semibold">
         {title}
       </h4>
