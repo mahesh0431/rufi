@@ -1,4 +1,10 @@
+/* OpenUI's component styles, for replies (src/openui/reply.tsx), in their
+   own layer below Tailwind's components and utilities, as OpenUI says for
+   Tailwind v4. They hold OpenUI's light and dark colours, chosen by
+   <html data-openui-theme> (public/theme.js). */
+@layer theme, base, openui, components, utilities;
 @import "tailwindcss";
+@import "@openuidev/react-ui/layered/styles/index.css";
 @import "./themes.css";
 /* The dog's motion (src/dog.tsx); it stops under reduced motion. */
 @import "@rufi/brand/mark/motion.css";

@@ -363,6 +363,9 @@ importers:
       unified:
         specifier: 11.0.5
         version: 11.0.5
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
       zustand:
         specifier: 5.0.16
         version: 5.0.16(@types/react@19.3.0)(react@19.3.1)(use-sync-external-store@1.7.0(react@19.3.1))
@@ -408,9 +411,6 @@ importers:
 
   packages/contracts:
     dependencies:
-      '@openuidev/lang-core':
-        specifier: 1.0.2
-        version: 1.0.2(zod@4.6.7)
       effect:
         specifier: 4.0.7
         version: 4.0.7

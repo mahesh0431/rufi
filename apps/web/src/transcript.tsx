@@ -1,6 +1,6 @@
 // The chat's transcript as the core stored it: your messages, the AI's
-// replies as Markdown, with the pictures, pages and diagrams they show
-// (files.tsx), each picture the AI generated, and under each answer its
+// replies in OpenUI Lang (openui/reply.tsx), with the pictures, pages and
+// diagrams they show (files.tsx), each picture the AI generated, and under each answer its
 // Activity; Rufi's receipt for
 // each save to the record, Rufi's own event lines (never your words), the
 // line of each visit brief, which opens it, and how a reply ended when it
@@ -42,7 +42,11 @@ import {
   useRef,
   useState,
 } from "react";
-import Markdown, { defaultUrlTransform, type Components } from "react-markdown";
+import Markdown, {
+  defaultUrlTransform,
+  type Components,
+  type Options,
+} from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
@@ -64,7 +68,7 @@ import { MiddleCut, StepDetails, took } from "./activity.tsx";
 import { boxFor } from "./boxes.ts";
 import { ChipView } from "./chips.tsx";
 import { Diagram, fileIn, NativePicture, Page, Picture } from "./files.tsx";
-import { Visual } from "./visual.tsx";
+import { OpenUIReply } from "./openui/reply.tsx";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
 import {
   openAgent,
@@ -147,14 +151,6 @@ const replyComponents = (streaming: boolean): Components => ({
     const classes = code?.properties["className"];
     const language = (name: string) =>
       Array.isArray(classes) && classes.includes(`language-${name}`);
-    // A trend draws while it is written: its parser closes what's open.
-    if (code && language("openui-lang")) {
-      return (
-        <Visual source={textOf(code)} streaming={streaming}>
-          <pre>{children}</pre>
-        </Visual>
-      );
-    }
     // Half-written, a diagram stays its code until the reply ends.
     return code && language("mermaid") && !streaming ? (
       <Diagram source={textOf(code)}>
@@ -173,6 +169,16 @@ const ENDED = replyComponents(false);
 /** A file's path, kept as written (file: too); the parts above check it. */
 const keepFiles = (url: string) =>
   /^file:/i.test(url) ? url : defaultUrlTransform(url);
+
+/** An OpenUI reply's Markdown text: its links and files, as above. */
+const textOptions = (parts: Components): Options => ({
+  remarkPlugins: REMARK,
+  components: { a: parts.a, img: parts.img },
+  urlTransform: keepFiles,
+  skipHtml: true,
+});
+const WRITING_TEXT = textOptions(WRITING);
+const ENDED_TEXT = textOptions(ENDED);
 
 /** The same Markdown tree and file rules as the reply renderer above. */
 const parser = unified()
@@ -251,11 +257,20 @@ function Reply({
   text: string;
   streaming: boolean;
 }) {
+  const personId = use(Whose);
   return (
     <div className="reply" data-entry={id}>
-      {/* While it streams, half-written Markdown is closed so it reads right;
-          a half-written link shows as its text. */}
-      <Marked text={readableReply(text, streaming)} reply={{ streaming }} />
+      <OpenUIReply
+        text={text}
+        streaming={streaming}
+        personId={personId}
+        markdown={streaming ? WRITING_TEXT : ENDED_TEXT}
+      >
+        {/* A reply with no OpenUI in it. While it streams, half-written
+            Markdown is closed so it reads right; a half-written link shows
+            as its text. */}
+        <Marked text={readableReply(text, streaming)} reply={{ streaming }} />
+      </OpenUIReply>
     </div>
   );
 }

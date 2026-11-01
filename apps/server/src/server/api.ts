@@ -9,6 +9,7 @@ import {
   MessageText,
   MAX_MESSAGE_CHARS,
   PAGE_ESCAPE,
+  PAGE_SIZE_CHANGED,
   RecoverMessage,
   ReorderQueue,
   SaveDraft,
@@ -216,8 +217,11 @@ const DIAGRAM = "/diagram.html";
 const GONE_PAGE = `<!doctype html><html lang="en"><meta charset="utf-8"><title>File not found</title><body style="font:14px/1.5 -apple-system,sans-serif;margin:24px"><p>This file is no longer in the AI's folder.</p></body></html>`;
 /**
  * Esc in a generated page, told to its dialog: the page has its own origin,
- * so Rufi never hears its keys. Appended to what is served, after the file,
- * so its doctype stays first and its bytes on disk stay as they are.
+ * so Rufi never hears its keys. And the page's height, told to the frame in
+ * the reply, so it shows whole with nothing scrolling inside it (as T3's
+ * html_render and MCP Apps do): its content's height, or all it scrolls
+ * when it is taller than its frame. Appended to what is served, after the
+ * file, so its doctype stays first and its bytes on disk stay as they are.
  */
 const pageEscape = (origin: string) => `
 <script>
@@ -226,6 +230,26 @@ addEventListener("keydown", (event) => {
     parent.postMessage(${JSON.stringify(PAGE_ESCAPE)}, ${JSON.stringify(origin)});
   }
 }, true);
+{
+  let told = 0;
+  const tell = () => {
+    const root = document.documentElement;
+    const height = Math.ceil(
+      root.scrollHeight > root.clientHeight
+        ? root.scrollHeight
+        : root.getBoundingClientRect().height,
+    );
+    if (height === told) return;
+    told = height;
+    parent.postMessage(
+      { jsonrpc: "2.0", method: ${JSON.stringify(PAGE_SIZE_CHANGED)}, params: { height } },
+      ${JSON.stringify(origin)},
+    );
+  };
+  new ResizeObserver(tell).observe(document.documentElement);
+  addEventListener("load", tell);
+  tell();
+}
 </script>`;
 /** A `prefers-color-scheme` condition in a media query. */
 const SCHEME_FEATURE = /\(\s*prefers-color-scheme\s*:\s*(light|dark)\s*\)/gi;

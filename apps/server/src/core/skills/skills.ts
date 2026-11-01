@@ -5,7 +5,6 @@
 // may carry other files beside its SKILL.md, from where they live.
 import { readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
 
 export interface Skill {
   name: string;
@@ -36,8 +35,6 @@ const FILES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   analysis: {
     // Rufi paper, a look for the pages the AI makes: the brand package's.
     "paper.css": require.resolve("@rufi/brand/paper.css"),
-    // How to write a trend, from its components (pnpm visuals:md).
-    "visuals.md": fileURLToPath(new URL("analysis/visuals.md", here)),
   },
 };
 

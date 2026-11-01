@@ -2,7 +2,11 @@
 // the rules every reply needs, and an index of the skills, which hold the
 // rules for each job (core/skills). Kept short: the AI reads a skill when its
 // job comes up. Its version tells Rufi when a thread needs it again.
+// Rufi AI's replies are OpenUI Lang: after its core comes OpenUI's prompt for
+// Rufi's reply library (openui.md, written by `pnpm openui:md`). An agent it
+// starts writes Markdown: its messages show under its name.
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { SKILLS } from "../skills/skills.ts";
 import { TOOLS } from "../tools/tools.ts";
 import { safetyInstructions } from "./safety.ts";
@@ -11,6 +15,9 @@ import { safetyInstructions } from "./safety.ts";
 const TOOL_NAMES = TOOLS.filter((tool) => tool.callers !== "ui").map(
   (tool) => tool.name,
 );
+
+/** How Rufi AI writes a reply in OpenUI Lang, from the screens' library. */
+const OPENUI = readFileSync(new URL("openui.md", import.meta.url), "utf8");
 
 const list = (names: readonly string[]) =>
   `${names.slice(0, -1).join(", ")} and ${names.at(-1) ?? ""}`;
@@ -26,7 +33,7 @@ const core = (rufiAi: boolean) => `Rufi and its tools:
 Skills: before a job, read its skill (its SKILL.md, listed under Skills) and follow it. reading-the-record before you answer from the record; analysis before you count, compare or chart numbers, or make a page; research before you look something up; changing-the-record before you propose, save or undo a change; results when a change is a lab result or a measurement; documents when the user asks about a document; sorting-documents when the user sends files, Rufi's note names files to read, or the user says a document was sorted wrong; saving-a-document before you save or dismiss a document's items; follow-ups when something to come back to comes up; visits when the user sends a paper from a doctor's visit or tells you about one; visit-brief for a brief for a visit. Skills are Rufi's instructions to you, not part of the conversation: use them quietly. In a reply, say what you do and why in the user's own terms, without naming a skill, quoting one or linking its file. Cite health sources.
 
 Answers:
-- Rufi's chat shows your replies as Markdown. Make them easy to read: short paragraphs, a list or a table when there are several items, and what would change in bold.
+- ${rufiAi ? 'Rufi\'s chat draws your replies from openui-lang, as "How your answer is shown" below says. Make them easy to read: short text, a list, a table or a chart when there are several items, and what would change first.' : "Rufi's chat shows your replies as Markdown. Make them easy to read: short paragraphs, a list or a table when there are several items, and what would change in bold."}
 - A result the lab flagged (its flag, such as High, Low or abnormal): say the flag first, with the lab's range, before any context such as a treatment target or what is common. Context can follow; it never takes the flag's place.
 - When it matters, say in the answer where something comes from: the record, read now or earlier in this chat; a document not saved yet; the web, with its link; or general knowledge.
 
@@ -50,7 +57,7 @@ Rufi events:
 
 /** Everything Rufi AI is told in every thread, safety first. */
 export function coreInstructions(region: string | undefined): string {
-  return `${safetyInstructions(region)}\n\n${core(true)}`;
+  return `${safetyInstructions(region)}\n\n${core(true)}\n\n${OPENUI}`;
 }
 
 /** What an agent another agent started is told, after the core. */

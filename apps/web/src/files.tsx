@@ -5,7 +5,7 @@
 // diagram draws in one (diagram/frame.ts). A file that is gone says so.
 import { Dialog } from "@base-ui/react/dialog";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { PAGE_ESCAPE, ShownFile } from "@rufi/contracts";
+import { PAGE_ESCAPE, PAGE_SIZE_CHANGED, ShownFile } from "@rufi/contracts";
 import {
   ExternalLink,
   FileCode,
@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  useCallback,
   useEffect,
   useContext,
   useRef,
@@ -241,9 +242,10 @@ const inAppearance = (url: string, appearance: string) =>
     : url;
 
 /**
- * A page the AI made, drawn in the reply at a fixed height (it scrolls inside
- * its frame), with its title (the reply's words for it, or its file name)
- * and Open, which shows it large over the chat.
+ * A page the AI made, drawn whole in the reply at the height it tells
+ * (nothing scrolls inside its frame; 400 px until it tells), with its title
+ * (the reply's words for it, or its file name) and Open, which shows it
+ * large over the chat.
  */
 export function Page({ path, title }: { path: string; title: string }) {
   const client = useQueryClient();
@@ -285,6 +287,39 @@ export function Page({ path, title }: { path: string; title: string }) {
   }, [appearance, lookedIn, client, path]);
   const [state, setState] = useState<"idle" | "opening" | "failed">("idle");
   const frame = useRef<HTMLIFrameElement>(null);
+  // The page in the reply tells its height (the server's script after it);
+  // only this frame's word counts.
+  const inReply = useRef<HTMLIFrameElement>(null);
+  const [height, setHeight] = useState<number>();
+  useEffect(() => {
+    const heard = (event: MessageEvent) => {
+      if (event.source !== inReply.current?.contentWindow) return;
+      const told: unknown = event.data;
+      if (
+        typeof told === "object" &&
+        told !== null &&
+        "method" in told &&
+        told.method === PAGE_SIZE_CHANGED &&
+        "params" in told &&
+        typeof told.params === "object" &&
+        told.params !== null &&
+        "height" in told.params &&
+        typeof told.params.height === "number" &&
+        Number.isFinite(told.params.height) &&
+        told.params.height > 0
+      ) {
+        setHeight(Math.ceil(told.params.height));
+      }
+    };
+    addEventListener("message", heard);
+    return () => {
+      removeEventListener("message", heard);
+    };
+  }, []);
+  const inReplyRef = useCallback((element: HTMLIFrameElement | null) => {
+    inReply.current = element;
+    return keepFocusOnLoad(element);
+  }, []);
   // The served page relays only Esc. Its opaque origin cannot reach this
   // dialog's keys, so check the sender frame instead of moving its focus.
   useEffect(() => {
@@ -314,10 +349,11 @@ export function Page({ path, title }: { path: string; title: string }) {
     <span className="my-1 block">
       {/* Locked twice: this frame's sandbox and the page's own policy. */}
       <iframe
-        ref={keepFocusOnLoad}
+        ref={inReplyRef}
         src={inAppearance(src, lookedIn)}
         title={name}
         sandbox="allow-scripts"
+        style={height === undefined ? undefined : { height }}
         className="block h-100 w-full rounded-[10px] border border-line bg-paper"
       />
       <span className="mt-1 flex items-center gap-1.5 text-xs text-muted">

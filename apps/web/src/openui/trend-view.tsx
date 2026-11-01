@@ -1,29 +1,18 @@
-// A trend in a reply: the AI's `openui-lang` block (@rufi/contracts/visuals),
-// drawn by Rufi as the record page draws a result over time (trend.tsx),
-// with a table of every value under it, so what was drawn is plain to see.
-// While the reply is written, it draws what has come. Once the reply ended,
-// it draws only a whole block (OpenUI's own parse: nothing cut off, every
-// name used is defined and every name defined is used, no errors);
-// otherwise the block shows as its text with a line, never as a partial
-// trend. Display only: no tools, no actions, nothing the AI wrote runs.
-// First: zod's settings, before OpenUI's packages build their schemas.
-import "@rufi/contracts/jitless";
-import {
-  createLibrary,
-  Renderer,
-  type ElementNode,
-  type OpenUIError,
-} from "@openuidev/react-lang";
-import { Point, readTrend, Trend as TrendPart } from "@rufi/contracts/visuals";
-import { useMemo, useState, type ReactNode } from "react";
-import { printedDate } from "./dates.ts";
-import { Trend } from "./trend.tsx";
+// A Trend in a reply (openui/library.ts), drawn as the record page draws a
+// result over time (trend.tsx), with a table of every value under it, so
+// what was drawn is plain to see. Values in the order of their dates,
+// whatever order the AI gave; those with no calendar date last, in the
+// table, marked Not drawn.
+import type { ComponentRenderProps, ElementNode } from "@openuidev/react-lang";
+import { printedDate } from "../dates.ts";
+import { Trend } from "../trend.tsx";
 import {
   isCalendarDate,
   placedOf,
   timeOf,
   type TrendValue,
-} from "./trend-drawing.ts";
+} from "../trend-drawing.ts";
+import type { TrendProps } from "./library.ts";
 
 /** One value as the block gives it, with nothing it left out or set to null. */
 interface Given {
@@ -74,13 +63,9 @@ const byDate = (values: readonly Given[]) =>
     return timeOf(a.date) - timeOf(b.date);
   });
 
-function TrendView({
-  props,
-}: {
-  props: { title: string; points: unknown[]; unit?: string | null };
-}) {
+export function TrendView({ props }: ComponentRenderProps<TrendProps>) {
   const given = byDate(
-    (Array.isArray(props.points) ? props.points : [])
+    (Array.isArray(props.points) ? (props.points as unknown[]) : [])
       .filter(isElement)
       .map((node) => givenOf(node.props)),
   );
@@ -125,51 +110,5 @@ function TrendView({
         </tbody>
       </table>
     </figure>
-  );
-}
-
-const library = createLibrary({
-  root: "Trend",
-  components: [
-    { ...TrendPart, component: TrendView },
-    { ...Point, component: () => null },
-  ],
-});
-/**
- * The block `source` as a trend; `children` is the block as code, shown
- * instead when a finished block can't be drawn whole.
- */
-export function Visual({
-  source,
-  streaming,
-  children,
-}: {
-  source: string;
-  streaming: boolean;
-  children: ReactNode;
-}) {
-  const parsedWhole = useMemo(
-    () => streaming || readTrend(source).whole,
-    [source, streaming],
-  );
-  const [errors, setErrors] = useState<readonly OpenUIError[]>([]);
-  if (!parsedWhole || (!streaming && errors.length > 0)) {
-    return (
-      <>
-        {children}
-        <p className="text-muted">This trend couldn't be drawn.</p>
-      </>
-    );
-  }
-  return (
-    <Renderer.Root
-      response={source}
-      library={library}
-      isStreaming={streaming}
-      onError={setErrors}
-      publishObservability={false}
-    >
-      <Renderer.Content />
-    </Renderer.Root>
   );
 }

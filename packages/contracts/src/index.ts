@@ -620,6 +620,13 @@ export type ShownFile = typeof ShownFile.Type;
 /** Escape from a generated page. Accept only from the currently open frame. */
 export const PAGE_ESCAPE = "rufi-page-escape";
 
+/**
+ * A generated page's height, which it tells the frame that shows it in a
+ * reply, as an MCP App tells its host: `{ jsonrpc: "2.0", method, params:
+ * { height } }`. Accept only from that frame.
+ */
+export const PAGE_SIZE_CHANGED = "ui/notifications/size-changed";
+
 /** The first step of the first run not done yet, or done. */
 export const FirstRunStep = Schema.Literals([
   "welcome",
