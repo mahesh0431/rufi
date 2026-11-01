@@ -248,7 +248,7 @@ test("a reply the AI wrote in OpenUI draws in the chat under Rufi's strict CSP: 
     );
   }
   await expect(reply.getByRole("button", { name: "Citations" })).toBeVisible();
-  await expect(reply.locator(".openui-chart")).toBeVisible();
+  await expect(reply.getByRole("img", { name: /^Line chart/ })).toBeVisible();
   await expect(reply.getByText("<5 mg/L")).toBeVisible();
   // Drawn, not shown as its text.
   await expect(reply.locator("pre")).toHaveCount(0);
