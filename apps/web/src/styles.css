@@ -64,12 +64,13 @@
 /* OpenUI's colours in Rufi's, by role, as its theme maps them: surfaces,
    text, the accent in every state, text on the accent, borders and the
    person's messages. Rufi's tokens change with the theme (and stay light on
-   paper), so one block serves light and dark. Blue is for doing
-   (packages/brand/DESIGN.md): links, buttons, focus and what is checked;
-   OpenUI's info, purple and pink, like its success, warning and danger,
-   take Rufi's calm greys, so nothing in a reply is blue for decoration
-   and nothing looks like a good or bad result. A reply's button only sends words or opens a link, so a
-   "destructive" one looks like any other: Rufi's one red is for deleting.
+   paper), so one block serves light and dark. OpenUI's info, purple and
+   pink take the theme's colour, the accent family (its soft fill, its
+   link-coloured text and a soft accent border); its success, warning and
+   danger take Rufi's calm greys, so nothing looks like a good or bad
+   result (packages/brand/DESIGN.md). A reply's button only sends words or
+   opens a link, so a "destructive" one looks like any other: Rufi's one
+   red is for deleting.
    Tints of ink are OpenUI's own steps. A chart's axes, grid and legend
    take these; its series keep OpenUI's blues, which only its own theme
    can set, and its chat library keeps that theme to itself
@@ -90,9 +91,9 @@
   --openui-highlight-strong: color-mix(in srgb, var(--ink) 8%, transparent);
   --openui-highlight-intense: color-mix(in srgb, var(--ink) 32%, transparent);
   --openui-inverted-background: var(--ink);
-  --openui-info-background: var(--openui-sunk);
-  --openui-purple-background: var(--openui-sunk);
-  --openui-pink-background: var(--openui-sunk);
+  --openui-info-background: var(--accent-soft);
+  --openui-purple-background: var(--accent-soft);
+  --openui-pink-background: var(--accent-soft);
   --openui-success-background: var(--openui-sunk);
   --openui-alert-background: var(--openui-sunk);
   --openui-danger-background: var(--openui-sunk);
@@ -117,12 +118,12 @@
     var(--on-accent) 40%,
     transparent
   );
-  --openui-text-info-primary: var(--ink);
-  --openui-text-info-inverted: var(--side);
-  --openui-text-purple-primary: var(--ink);
-  --openui-text-purple-inverted: var(--side);
-  --openui-text-pink-primary: var(--ink);
-  --openui-text-pink-inverted: var(--side);
+  --openui-text-info-primary: var(--accent-ink);
+  --openui-text-info-inverted: var(--accent-soft);
+  --openui-text-purple-primary: var(--accent-ink);
+  --openui-text-purple-inverted: var(--accent-soft);
+  --openui-text-pink-primary: var(--accent-ink);
+  --openui-text-pink-inverted: var(--accent-soft);
   --openui-text-success-primary: var(--ink);
   --openui-text-success-inverted: var(--side);
   --openui-text-alert-primary: var(--ink);
@@ -180,8 +181,12 @@
     var(--accent) 45%,
     transparent
   );
-  --openui-border-info: var(--line);
-  --openui-border-info-emphasis: var(--muted);
+  --openui-border-info: color-mix(in srgb, var(--accent) 15%, transparent);
+  --openui-border-info-emphasis: color-mix(
+    in srgb,
+    var(--accent) 45%,
+    transparent
+  );
   --openui-border-success: var(--line);
   --openui-border-success-emphasis: var(--muted);
   --openui-border-alert: var(--line);
@@ -193,9 +198,9 @@
 /* OpenUI's parts in a reply, where its own look is too quiet for the chat:
    in the components layer, over OpenUI's own. */
 @layer components {
-  /* A neutral callout's mark is grey like the others' (OpenUI gives it
-     the selection colour). A link in Markdown keeps the link colour,
-     which OpenUI takes from its info text. */
+  /* A neutral callout's mark is grey (OpenUI gives it the selection
+     colour). A link in Markdown keeps the link colour, whatever OpenUI's
+     info text, from which it takes its own, is set to. */
   .openui-callout-neutral {
     border-color: var(--muted);
   }
