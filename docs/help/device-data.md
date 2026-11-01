@@ -1,6 +1,6 @@
 # Device data
 
-Device data is what your devices measure, such as your heart rate through the day and your resting heart rate each day, from Apple Health. Rufi keeps it apart from your health record: nobody confirms each value in the chat, and the AI doesn't read it yet. Nothing in Rufi shows it yet except **Settings → Device data**. This page says what Rufi keeps, how long, and what Settings tells you.
+Device data is what your devices measure, such as your heart rate through the day and your resting heart rate each day, from Apple Health. Rufi keeps it apart from your health record: nobody confirms each value in the chat, and the AI doesn't read it yet. Nothing in Rufi shows it yet except [Settings › Data](rufi:/settings/data) › **Device data**. This page says what Rufi keeps, how long, and what Settings tells you.
 
 Rufi's phone app, which will send it, isn't ready yet. Until then, a developer can put fictional device data in with the terminal (see [For developers](#for-developers)).
 
@@ -14,7 +14,7 @@ Rufi keeps values as they were sent: it doesn't judge whether a number is likely
 
 A day with no value means nothing was measured or sent that day, not zero.
 
-## Settings → Device data
+## Settings › Data › Device data
 
 The section shows once a device source exists. Each source has one line: the system and the device, how many values Rufi has from it, when its last batch came, and how many values it sent that Rufi couldn't read (skipped).
 

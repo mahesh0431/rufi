@@ -71,7 +71,7 @@ Click your name at the top of the sidebar to open your profile. It shows each va
 You can change your profile in three places:
 
 - **On its page:** click **Edit**, change a field, then click **Done**.
-- **In Settings › Profile:** the same fields.
+- **In [Settings › Profile](rufi:/settings/profile) › About you:** the same fields.
 - **In the chat:** tell the AI, for example "I was born in March 1990" or "my blood group is B+". As for every change, it asks first, and the chat shows a receipt.
 
 On the page and in Settings, a field saves on its own once it is complete: a choice when you choose it, a birth date or a height when you leave it. Only that field is saved. Empty a birth date, a blood group or a height to clear it. If a change can't be saved, what you entered or chose stays, with why and **Retry**. On the page, **Done** closes the form once every change is saved. A change made there has no receipt in the chat: it is in your profile's history and in Overview's **Recent changes**. The AI sees it too, so "undo my last profile change" in the chat puts the earlier value back, after your yes. Your profile is never removed.

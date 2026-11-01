@@ -1,10 +1,12 @@
 // A help page, drawn from its Markdown as written. No HTML and no images;
-// links to other pages stay in Rufi, links to the web open outside it.
+// links to other pages stay in Rufi, a link to Settings opens it at its
+// group, and links to the web open outside it.
 import { Link } from "@tanstack/react-router";
 import { type ComponentProps, useEffect } from "react";
-import Markdown, { type Components } from "react-markdown";
+import Markdown, { type Components, defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { HELP, helpLink, slug } from "./help.ts";
+import { SettingsLink } from "./settings-link.tsx";
 
 type Node = { type: string; value?: string; children?: Node[] };
 const textOf = (node: Node): string =>
@@ -24,6 +26,9 @@ const components: Components = {
   h3: (props) => <Heading as="h3" {...props} />,
   a: ({ href = "", children }) => {
     const target = helpLink(href);
+    if (target?.kind === "settings") {
+      return <SettingsLink group={target.group}>{children}</SettingsLink>;
+    }
     if (target?.kind === "page") {
       return (
         <Link
@@ -65,6 +70,10 @@ export function HelpPage({ page, hash }: { page: string; hash: string }) {
           disallowedElements={["img"]}
           unwrapDisallowed
           skipHtml
+          // A link to Settings (rufi:/settings/…) is kept; helpLink checks it.
+          urlTransform={(url) =>
+            url.startsWith("rufi:") ? url : defaultUrlTransform(url)
+          }
         >
           {text}
         </Markdown>

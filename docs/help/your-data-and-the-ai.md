@@ -10,7 +10,7 @@ Everything for your health record is in one data folder on your Mac. The first t
 ~/.rufi/data
 ```
 
-To see where your data folder is, open **Settings** › **Data folder**. **Show in Finder** shows it in Finder. Finder hides folders whose name starts with a dot, such as `~/.rufi`: **Show in Finder** opens it anyway, and in Finder ⇧⌘. (Shift-Command-period) shows hidden folders.
+To see where your data folder is, open [Settings › Data](rufi:/settings/data) › **Data folder**. **Show in Finder** shows it in Finder. Finder hides folders whose name starts with a dot, such as `~/.rufi`: **Show in Finder** opens it anyway, and in Finder ⇧⌘. (Shift-Command-period) shows hidden folders.
 
 Rufi remembers where your data folder is in a small file, the location file: `~/.rufi/location.json`. It holds only the folder's path, never health data or secrets. Each time Rufi starts, it opens that folder:
 
@@ -91,7 +91,7 @@ When a move is finished, there is nothing to finish or cancel. To go back, move 
 RUFI_HOME=~/Rufi-restored pnpm start
 ```
 
-Then Rufi doesn't read or change the location file, and **Settings** › **Data folder** says that `RUFI_HOME` chose the folder. The next time you start Rufi without it, Rufi opens your usual data folder.
+Then Rufi doesn't read or change the location file, and [Settings › Data](rufi:/settings/data) › **Data folder** says that `RUFI_HOME` chose the folder. The next time you start Rufi without it, Rufi opens your usual data folder.
 
 ## What goes to the AI
 

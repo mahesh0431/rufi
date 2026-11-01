@@ -91,13 +91,15 @@ import {
 } from "./transcript-state.ts";
 import { Dog, LiveDog } from "./dog.tsx";
 import { effortName } from "./model-menu.tsx";
+import { settingsGroupOf, SettingsLink } from "./settings-link.tsx";
 import { Button, buttonLook, ICON, Problem } from "./ui.tsx";
 
 // The AI's text is shown as Markdown, never as HTML: no raw HTML, no remote
 // images, and links only to http(s) pages, opened outside Rufi with no opener
 // or referrer. A reply also shows a picture the AI made (an image or a link
 // to its path), links a page of Rufi for the person
-// whose chat it is (rufi:/documents/<id>), which opens in place. Anything
+// whose chat it is (rufi:/documents/<id>), which opens in place, and a
+// group of Settings (rufi:/settings/<group>), which opens over it. Anything
 // else shows as its text.
 const WEB = /^https?:\/\//i;
 const webLink: Components["a"] = ({ href, children }) =>
@@ -173,6 +175,10 @@ function RufiLink({ path, children }: { path: string; children: ReactNode }) {
 /** A reply's parts: its links and the files it names. */
 const REPLY: Components = {
   a: ({ href, children, node, ...rest }) => {
+    const group = href === undefined ? undefined : settingsGroupOf(href);
+    if (group !== undefined) {
+      return <SettingsLink group={group}>{children}</SettingsLink>;
+    }
     const page = href === undefined ? null : RUFI.exec(href);
     if (page?.[1] !== undefined) {
       return <RufiLink path={page[1]}>{children}</RufiLink>;

@@ -22,7 +22,7 @@ import {
 import { printedDate } from "./dates.ts";
 import { savedAt } from "./overview.tsx";
 import { saveProfile, useProfile } from "./reads.ts";
-import { Button, Problem } from "./ui.tsx";
+import { Button, Problem, Section } from "./ui.tsx";
 
 const MONTHS = [
   "January",
@@ -650,15 +650,12 @@ function SavedFields({
   );
 }
 
-/** Settings › Profile: the same form as the page, its changes "in Settings". */
+/** Settings › Profile › About you: the same form as the page, its changes "in Settings". */
 export function ProfileSection({ person }: { person: Person }) {
   const profile = useProfile(person.id);
   return (
-    <>
-      <h2 id="profile" className="mt-8 mb-2 px-0.5 font-semibold">
-        Profile
-      </h2>
-      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4">
+    <Section title="About you">
+      <div className="flex flex-col gap-3">
         {profile.data === undefined ? (
           profile.error && (
             <Problem
@@ -678,7 +675,7 @@ export function ProfileSection({ person }: { person: Person }) {
           reads your profile with your health record.
         </p>
       </div>
-    </>
+    </Section>
   );
 }
 

@@ -39,11 +39,12 @@ import { retain } from "./live.ts";
 import { resetPanel } from "./panel.ts";
 import { SidebarDog } from "./sidebar-dog.tsx";
 import { isPageKind, KIND_TITLES } from "./record.tsx";
+import { SettingsDialog } from "./settings.tsx";
+import { SettingsLink, useSettingsGroup } from "./settings-link.tsx";
 import { useFirstRun, useOverview, usePeople, useStatus } from "./reads.ts";
 import { ICON, type Icon } from "./ui.tsx";
 
 const TITLES: Record<string, string> = {
-  settings: "Settings",
   help: "Help",
   "sign-in": "Sign in",
 };
@@ -90,7 +91,7 @@ const isDocumentsPage = (pathname: string) =>
 
 /**
  * Whether the page has the chat bar: the pages where you read your health.
- * Not the chat's page (it has its own box), Help, Settings or Sign in.
+ * Not the chat's page (it has its own box), Help or Sign in.
  */
 const hasBar = (pathname: string) =>
   pathname === "/" ||
@@ -115,6 +116,7 @@ export function Frame() {
   const person =
     people?.find((p) => p.id === personAt(pathname)) ?? people?.[0];
   const onChat = isChatPage(pathname);
+  const settingsOpen = useSettingsGroup() !== undefined;
   const bar =
     person !== undefined && connection !== "ended" && hasBar(pathname);
   const kind = recordKind(pathname);
@@ -210,9 +212,13 @@ export function Frame() {
           <Place to="/help" icon={<CircleHelp size={ICON} aria-hidden />}>
             Help
           </Place>
-          <Place to="/settings" icon={<Settings size={ICON} aria-hidden />}>
+          <SettingsLink
+            group="sign-in"
+            className={`flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-surface/60 ${settingsOpen ? "bg-accent-soft text-accent-ink" : ""}`}
+          >
+            <Settings size={ICON} aria-hidden />
             Settings
-          </Place>
+          </SettingsLink>
         </nav>
         <Account />
       </aside>
@@ -252,6 +258,7 @@ export function Frame() {
         </main>
       </div>
       {bar && <ChatDock person={person} />}
+      <SettingsDialog />
       <ReadingSheet />
       <AgentSheet />
     </div>
@@ -350,7 +357,7 @@ function Place({
   icon,
   children,
 }: {
-  to: "/" | "/help" | "/settings";
+  to: "/" | "/help";
   icon: ReactNode;
   children: ReactNode;
 }) {

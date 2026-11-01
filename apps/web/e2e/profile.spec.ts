@@ -3,7 +3,7 @@
 // each change was made.
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
-import { expect, test } from "./rufi.ts";
+import { expect, openSettings, test } from "./rufi.ts";
 
 /** Asha's profile as a save in the chat left it: her blood group O+. */
 const row = (blood: string | null) =>
@@ -63,9 +63,10 @@ test("your name opens your profile; a change in Settings or on the page saves on
   await accessible(page);
 
   // In Settings, only the blood group changes.
-  await page.getByRole("link", { name: "Settings" }).click();
-  await page.getByLabel("Blood group").selectOption("B+");
-  await expect(page.getByLabel("Blood group")).toHaveValue("B+");
+  const settings = await openSettings(page, "Profile");
+  await settings.getByLabel("Blood group").selectOption("B+");
+  await expect(settings.getByLabel("Blood group")).toHaveValue("B+");
+  await page.keyboard.press("Escape");
   await page
     .getByRole("complementary")
     .getByRole("link", { name: "Asha Fictional" })
@@ -119,8 +120,10 @@ test("a field you only pass through takes a change made elsewhere and saves noth
   await rufi.family();
   await rufi.start();
   await page.goto(rufi.link());
-  await page.getByRole("link", { name: "Settings" }).click();
-  const settingsHeight = page.getByLabel("Height", { exact: true });
+  const settingsHeight = (await openSettings(page, "Profile")).getByLabel(
+    "Height",
+    { exact: true },
+  );
   await settingsHeight.fill("162");
   await settingsHeight.blur();
 

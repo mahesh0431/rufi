@@ -23,13 +23,17 @@ import { OverviewPage } from "./overview.tsx";
 import { ProfilePage } from "./profile.tsx";
 import { isPageKind, pageOf, RecordPage } from "./record.tsx";
 import { usePeople, useRecordDetail } from "./reads.ts";
-import { SettingsPage } from "./settings.tsx";
+import { settingsSearch } from "./settings-link.tsx";
 import { SignIn } from "./signin.tsx";
 import { LabResultsPage, TestPage } from "./tests.tsx";
 import { VisitPage } from "./visit.tsx";
 import { buttonLook, ICON, Problem } from "./ui.tsx";
 
-const root = createRootRoute({ component: Frame });
+// `?settings=<group>`, on any page: Settings open over it (settings-link.tsx).
+const root = createRootRoute({
+  component: Frame,
+  validateSearch: settingsSearch,
+});
 
 const home = createRoute({
   getParentRoute: () => root,
@@ -378,10 +382,18 @@ const profile = createRoute({
   },
 });
 
+// Settings' address before it was a pop-up: Overview, with Settings open.
 const settings = createRoute({
   getParentRoute: () => root,
   path: "/settings",
-  component: SettingsPage,
+  beforeLoad: () => {
+    redirect({
+      to: "/",
+      search: { settings: "sign-in" },
+      replace: true,
+      throw: true,
+    });
+  },
 });
 
 const signIn = createRoute({
