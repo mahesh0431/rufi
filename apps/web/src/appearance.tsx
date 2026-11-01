@@ -70,7 +70,8 @@ export function ColourChoice({ labelledBy }: { labelledBy: string }) {
       <div
         role="radiogroup"
         aria-labelledby={labelledBy}
-        className="grid grid-cols-4 gap-2"
+        // As many columns as fit, so a long name never clips.
+        className="grid grid-cols-[repeat(auto-fill,minmax(6.5rem,1fr))] gap-2"
       >
         {COLOURS.map((colour) => (
           <label

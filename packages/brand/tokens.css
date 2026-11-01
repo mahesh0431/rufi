@@ -20,7 +20,7 @@
   --surface: #ffffff; /* groups, fields and floating panels on the page */
   --line: #e6e6e6; /* borders and dividers */
   --ink: #222222; /* text */
-  --muted: #5f5f5f; /* quieter text and icons; AA on the Mac's sidebar material too */
+  --muted: #676767; /* quieter text and icons */
   --accent: #2563eb; /* the one main action, and selection marks */
   --accent-hover: #1d4ed8; /* the main action under the pointer */
   --on-accent: #ffffff; /* text and icons on the accent */
@@ -49,6 +49,13 @@
   --font-ui:
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; /* the app */
   --font-brand: "Inter Variable", Inter, sans-serif; /* the website */
+}
+
+/* The app (it always names a colour theme): its quieter text a little
+   darker, so it keeps AA on the Mac's light sidebar material too. Before
+   the dark block, which keeps its own. */
+:root[data-colour] {
+  --muted: #5f5f5f;
 }
 
 /* Dark: the same layout in dark greys; groups are a step lighter than the

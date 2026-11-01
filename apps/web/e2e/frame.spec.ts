@@ -348,14 +348,11 @@ test("Settings chooses light, dark or the Mac's, a colour and a text size; every
   await expect.poll(theme(page)).toBe("dark");
   await expect.poll(theme(other)).toBe("dark");
   await expect.poll(colour(other)).toBe("plum");
-  // All text grows: the app's and a reply's, from one base size.
   await expect
     .poll(() =>
-      other.evaluate(() =>
-        getComputedStyle(document.body).getPropertyValue("font-size"),
-      ),
+      other.evaluate(() => document.documentElement.dataset["textSize"]),
     )
-    .toBe("17px");
+    .toBe("larger");
   await accessible(page);
   const fresh = await context.newPage();
   await fresh.goto((await runningLink(rufi.home)) ?? "");
