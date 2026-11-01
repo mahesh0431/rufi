@@ -1,9 +1,9 @@
 // A test's values over time as a calm line: an ink line, a ring on a value
 // the lab flagged, the newest value filled, and the lab's range as printed.
 // No red, amber or green: the lab's flag and note say what it means, in
-// words. Large on a test's page, in an open measurement and in a reply,
-// small after a row's value. A large trend is drawn at the width it has (up
-// to 640 px), not scaled down, so its labels keep their size in a narrow chat.
+// words. Large on a test's page, in an open measurement and in a reply, small
+// after a row's value. A large trend is drawn at the width it has (up to
+// 640 px), not scaled down, so its labels keep their size in a narrow chat.
 import { useCallback, useState } from "react";
 import {
   drawTrend,
@@ -49,7 +49,7 @@ export function Trend({
 }: {
   /** What the values are, as the chart's spoken label starts. */
   title: string;
-  /** Oldest first, as `lineOf` gives them, or a reply's trend in date order. */
+  /** Oldest first, as `lineOf` and a reply's trend give them. */
   values: readonly TrendValue[];
   mini?: boolean;
 }) {

@@ -1,6 +1,6 @@
-# 0029 · Rufi AI's reply is OpenUI Lang
+# 0030 · Rufi AI's reply is OpenUI Lang
 
-**Date:** 1 Nov 2026 · **Status:** accepted · Supersedes ADR 0028's trend block in a Markdown reply
+**Date:** 1 Nov 2026 · **Status:** accepted · Supersedes [ADR 0029](0029-a-replys-trend-is-drawn-by-rufi-from-the-ais-block.md)'s trend block in a Markdown reply
 
 Every reply of Rufi AI is OpenUI Lang, drawn by OpenUI's renderer in place of the Markdown renderer, as it is written. This follows OpenUI's recommended path for a chat UI of one's own: the agent writes OpenUI Lang, and "adding OpenUI changes a single component". Mahesh asked for OpenUI for the whole reply, so Rufi doesn't build its own kit, and for a page in a reply shown whole. Rufi's chat stays: Activity, receipts, the waiting list, the box and the dog. Notes, an agent's messages, receipts and visit briefs stay Markdown.
 
@@ -39,4 +39,4 @@ Every reply of Rufi AI is OpenUI Lang, drawn by OpenUI's renderer in place of th
 
 **Replies are kept as written.** Rufi's parts are frozen like a stored contract: they keep their names, the order of their props and their meanings, and a new prop goes only at the end. Replies written before this one are Markdown, and still show as Markdown.
 
-**Considered:** OpenUI's `AgentInterface` (a second chat, where Rufi already has its own); inline mode (text with fenced blocks, which is ADR 0028's shape, and not the recommended path); `LineChart` for results over time (it misplaces dates); OpenUI Gateway or Autofix (a cloud service between Rufi and its providers). **Not now:** saving a form's values across reloads, OpenUI's artifacts panel, and a tuned type scale (OpenUI's text is its own size, a little larger than Rufi's chat text).
+**Considered:** OpenUI's `AgentInterface` (a second chat, where Rufi already has its own); inline mode (text with fenced blocks, which is ADR 0029's shape, and not the recommended path); `LineChart` for results over time (it misplaces dates); OpenUI Gateway or Autofix (a cloud service between Rufi and its providers). **Not now:** saving a form's values across reloads, OpenUI's artifacts panel, and a tuned type scale (OpenUI's text is its own size, a little larger than Rufi's chat text).

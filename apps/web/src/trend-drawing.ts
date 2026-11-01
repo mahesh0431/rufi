@@ -24,14 +24,17 @@ export function timeOf(date: string): number {
 /**
  * Whether a date is a calendar date at the record's precision (YYYY,
  * YYYY-MM, YYYY-MM-DD or YYYY-MM-DDTHH:MM) that gives a time: the only dates
- * a chart places. Other words, such as "2026 (date unclear)", stay in the
- * list of values.
+ * a trend places. Other words, such as "2026 (date unclear)", stay in the
+ * table.
  */
 export const isCalendarDate = (date: string): boolean =>
   /^\d{4}(-\d{2}(-\d{2}(T\d{2}:\d{2})?)?)?$/.test(date) &&
   Number.isFinite(timeOf(date));
 
-/** What a chart reads of a value: its label, numbers, flag, range and date. */
+/**
+ * What a chart reads of a value: its label, numbers, flag, range and date;
+ * a test's line's, or one a reply's trend gives.
+ */
 export type TrendValue = Pick<
   ResultRow,
   "value" | "number" | "second_number" | "flag" | "range" | "measured"
