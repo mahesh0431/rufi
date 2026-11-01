@@ -1,11 +1,11 @@
 // get_documents: the active person's documents, read only. No document: the
 // list, newest first. A document: its pages, its add and its drafts. A
-// document and a page: that page as the AI sees it (the image, the PDF's own
-// text when it has some, and the reader's copy), from the same page service
-// the reader uses. A document and copies: the reader's copies of its add's
-// pages, for sorting (sort_documents). Lists come in parts
-// with a continuation, so a read can always be finished. The person is
-// Rufi's choice; the AI names only a document of theirs and a page.
+// document and a page: that page as the AI sees it (the image first, then
+// the reader's copy and the PDF's own text when it has some), from the same
+// page service the reader uses. A document and copies: the reader's copies
+// of its add's pages, for sorting (sort_documents). Lists come in parts with
+// a continuation, so a read can always be finished. The person is Rufi's
+// choice; the AI names only a document of theirs and a page.
 import type { DraftItem } from "@rufi/contracts/documents";
 import { Schema } from "effect";
 import { DELETED_DOCUMENT, ranges } from "../documents/naming.ts";
@@ -39,7 +39,7 @@ const Input = Schema.Struct({
   page: Schema.optionalKey(
     Schema.Int.check(Schema.isGreaterThan(0)).annotate({
       description:
-        "A page of that document, by its number: you get the page's image, its own text when it has some, and the reader's copy.",
+        "A page of that document, by its number: you get the page's image first, to read it from, then the reader's copy and the PDF's own text when it has some.",
     }),
   ),
   copies: Schema.optionalKey(
@@ -57,7 +57,7 @@ const Input = Schema.Struct({
 
 export const getDocuments = defineTool({
   name: "get_documents",
-  description: `The active person's documents (lab reports, prescriptions, letters they added), read only. Without document: the list, newest first, each with its id, when it was added, its kind and date (as sorted), its files and pages, its agent (the reader you set on it with set_reader), its status: "not_read" (no reading saved yet), "reading" (its agent is at work and hasn't saved its reading, or an older reader was copying its pages), "done" or "failed", and "not sorted yet" when its pages wait for you to sort them. One add (what the user added at once: a PDF, or photos together) can be several documents once sorted: such a document names its pages in the add ("pages 3–4 of 5"). With document: its version (it rises when a sort, a reading or a fix changes its draft items or pages), kind, date, lab and report number, its agent and status as in the list, its add (every document of it, with their pages, and the pages not sorted yet), its pages (each with its number in the add, its state and whether it is sorted; an older reading's facts and issues) and its draft items: what you or an older reader drafted, each with its id, version, page, status (not saved, saved with how and into which record, or dismissed), fields exactly as printed or as the user fixed them on the document's page (a fixed item has fixed_by_user, and drafted: what was drafted in each field the user changed, null where none), the words it came from (quote), why it is worth a look, and out_of_date when its page was read again after the reading it was drafted from. Draft items are not saved: they are not the record and count in no answer until the user saves them. With document and page: that page as an image, with the page's own text when the PDF has some and the reader's copy (use them for exact characters); a photo or a scan is the image and the copy. With document and copies: the reader's copy of every page of its add, as Markdown, exactly as printed, with the reader's marks where something is unclear (2[3?]6, [unclear: ...], ~~crossed out~~, [handwritten: ...]). Each copy names its reading: a draft made from it names the same. At most ${String(PART.documents)} documents, ${String(PART.pages)} pages, ${String(PART.items)} draft items or ${String(PART.copies)} copies come back; when there are more, the answer has "next": pass it as after to read on. Rufi chooses the person, not you.`,
+  description: `The active person's documents (lab reports, prescriptions, letters they added), read only. Without document: the list, newest first, each with its id, when it was added, its kind and date (as sorted), its files and pages, its agent (the reader you set on it with set_reader), its status: "not_read" (no reading saved yet), "reading" (its agent is at work and hasn't saved its reading, or an older reader was copying its pages), "done" or "failed", and "not sorted yet" when its pages wait for you to sort them. One add (what the user added at once: a PDF, or photos together) can be several documents once sorted: such a document names its pages in the add ("pages 3–4 of 5"). With document: its version (it rises when a sort, a reading or a fix changes its draft items or pages), kind, date, lab and report number, its agent and status as in the list, its add (every document of it, with their pages, and the pages not sorted yet), its pages (each with its number in the add, its state and whether it is sorted; an older reading's facts and issues) and its draft items: what you or an older reader drafted, each with its id, version, page, status (not saved, saved with how and into which record, or dismissed), fields exactly as printed or as the user fixed them on the document's page (a fixed item has fixed_by_user, and drafted: what was drafted in each field the user changed, null where none), the words it came from (quote), why it is worth a look, and out_of_date when its page was read again after the reading it was drafted from. Draft items are not saved: they are not the record and count in no answer until the user saves them. With document and page: that page's image first, then the reader's copy, and the page's own text when the PDF has some. Read the page from its image; the PDF's text can help confirm a character you see, never in place of the image, and where they differ the image is right. A photo or a scan is the image and the copy. With document and copies: the reader's copy of every page of its add, as Markdown, exactly as printed, with the reader's marks where something is unclear (2[3?]6, [unclear: ...], ~~crossed out~~, [handwritten: ...]). Each copy names its reading: a draft made from it names the same. At most ${String(PART.documents)} documents, ${String(PART.pages)} pages, ${String(PART.items)} draft items or ${String(PART.copies)} copies come back; when there are more, the answer has "next": pass it as after to read on. Rufi chooses the person, not you.`,
   input: Input,
   callers: "model",
   readOnly: true,
