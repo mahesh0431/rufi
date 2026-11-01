@@ -1,7 +1,7 @@
 // The chat's transcript as the core stored it: your messages, the AI's
-// replies as Markdown, with the pictures, pages and diagrams they show
-// (files.tsx), each picture the AI generated, and under each answer its
-// Activity; Rufi's receipt for
+// replies in OpenUI Lang (openui/reply.tsx), with the pictures they show
+// (files.tsx), each picture the AI generated, and under each
+// answer its Activity; Rufi's receipt for
 // each save to the record, Rufi's own event lines (never your words), the
 // line of each visit brief, which opens it, and how a reply ended when it
 // didn't finish. A line between days, and a quiet line where a new AI thread
@@ -42,7 +42,11 @@ import {
   useRef,
   useState,
 } from "react";
-import Markdown, { defaultUrlTransform, type Components } from "react-markdown";
+import Markdown, {
+  defaultUrlTransform,
+  type Components,
+  type Options,
+} from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
@@ -63,8 +67,8 @@ import { useShallow } from "zustand/shallow";
 import { MiddleCut, StepDetails, took } from "./activity.tsx";
 import { boxFor } from "./boxes.ts";
 import { ChipView } from "./chips.tsx";
-import { Diagram, fileIn, NativePicture, Page, Picture } from "./files.tsx";
-import { Visual } from "./visual.tsx";
+import { fileIn, NativePicture, Picture } from "./files.tsx";
+import { OpenUIReply, picturesShownBy } from "./openui/reply.tsx";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
 import {
   openAgent,
@@ -91,10 +95,10 @@ import { Button, buttonLook, ICON, Problem } from "./ui.tsx";
 
 // The AI's text is shown as Markdown, never as HTML: no raw HTML, no remote
 // images, and links only to http(s) pages, opened outside Rufi with no opener
-// or referrer. A reply also shows a picture or a page in a file the AI made
-// (an image or a link to its path), links a page of Rufi for the person
-// whose chat it is (rufi:/documents/<id>), which opens in place, and draws a
-// Mermaid diagram once it has ended. Anything else shows as its text.
+// or referrer. A reply also shows a picture the AI made (an image or a link
+// to its path), links a page of Rufi for the person
+// whose chat it is (rufi:/documents/<id>), which opens in place. Anything
+// else shows as its text.
 const WEB = /^https?:\/\//i;
 const webLink: Components["a"] = ({ href, children }) =>
   href !== undefined && WEB.test(href) ? (
@@ -166,64 +170,35 @@ function RufiLink({ path, children }: { path: string; children: ReactNode }) {
   );
 }
 
-/** A reply's parts; `streaming`: it is still being written. */
-const replyComponents = (streaming: boolean): Components => ({
+/** A reply's parts: its links and the files it names. */
+const REPLY: Components = {
   a: ({ href, children, node, ...rest }) => {
     const page = href === undefined ? null : RUFI.exec(href);
     if (page?.[1] !== undefined) {
       return <RufiLink path={page[1]}>{children}</RufiLink>;
     }
-    const file = fileIn(href);
-    if (!file) return webLink({ href, children, node, ...rest });
-    const words = node ? textOf(node) : "";
-    return file.shape === "page" ? (
-      <Page path={file.path} title={words} />
-    ) : (
-      <Picture path={file.path} caption={words} />
-    );
+    const path = fileIn(href);
+    if (path === undefined) return webLink({ href, children, node, ...rest });
+    return <Picture path={path} caption={node ? textOf(node) : ""} />;
   },
   img: ({ src, alt }) => {
-    const file = fileIn(typeof src === "string" ? src : undefined);
-    if (!file) return null;
-    return file.shape === "page" ? (
-      <Page path={file.path} title={alt ?? ""} />
-    ) : (
-      <Picture path={file.path} caption={alt ?? ""} />
-    );
+    const path = fileIn(typeof src === "string" ? src : undefined);
+    if (path === undefined) return null;
+    return <Picture path={path} caption={alt ?? ""} />;
   },
-  pre: ({ node, children }) => {
-    const first = node?.children[0];
-    const code =
-      first?.type === "element" && first.tagName === "code" ? first : null;
-    const classes = code?.properties["className"];
-    const language = (name: string) =>
-      Array.isArray(classes) && classes.includes(`language-${name}`);
-    // A trend draws while it is written: its parser closes what's open.
-    if (code && language("openui-lang")) {
-      return (
-        <Visual source={textOf(code)} streaming={streaming}>
-          <pre>{children}</pre>
-        </Visual>
-      );
-    }
-    // Half-written, a diagram stays its code until the reply ends.
-    return code && language("mermaid") && !streaming ? (
-      <Diagram source={textOf(code)}>
-        <pre>{children}</pre>
-      </Diagram>
-    ) : (
-      <pre>{children}</pre>
-    );
-  },
-});
-
-/** Made once each, so a reply's pictures don't draw again as it grows. */
-const WRITING = replyComponents(true);
-const ENDED = replyComponents(false);
+};
 
 /** A file's path or a page of Rufi, kept as written; the parts above check it. */
 const keepFiles = (url: string) =>
   /^(file|rufi):/i.test(url) ? url : defaultUrlTransform(url);
+
+/** An OpenUI reply's Markdown text: its links and files, as above. */
+const REPLY_TEXT: Options = {
+  remarkPlugins: REMARK,
+  components: REPLY,
+  urlTransform: keepFiles,
+  skipHtml: true,
+};
 
 /** The same Markdown tree and file rules as the reply renderer above. */
 const parser = unified()
@@ -239,10 +214,10 @@ function picturesIn(text: string): string[] {
       (node.tagName === "a" || node.tagName === "img")
     ) {
       const url = node.properties[node.tagName === "a" ? "href" : "src"];
-      const file = fileIn(typeof url === "string" ? keepFiles(url) : undefined);
-      if (file) {
-        if (file.shape === "picture") paths.add(file.path);
-        return; // A file renderer replaces this element and its children.
+      const path = fileIn(typeof url === "string" ? keepFiles(url) : undefined);
+      if (path !== undefined) {
+        paths.add(path);
+        return; // A picture replaces this element and its children.
       }
     }
     if ("children" in node) for (const child of node.children) visit(child);
@@ -265,14 +240,14 @@ export function Marked({
 }: {
   text: string;
   links?: boolean;
-  /** A reply: it shows the files it names; `streaming` while it is written. */
-  reply?: { streaming: boolean };
+  /** A reply: it shows the files it names. */
+  reply?: boolean;
 }) {
   if (reply) {
     return (
       <Markdown
         remarkPlugins={REMARK}
-        components={reply.streaming ? WRITING : ENDED}
+        components={REPLY}
         urlTransform={keepFiles}
         skipHtml
       >
@@ -302,11 +277,33 @@ function Reply({
   text: string;
   streaming: boolean;
 }) {
+  const personId = use(Whose);
+  const navigate = useNavigate();
+  // A button's link, as the reply's links: a page of Rufi in place, a web
+  // page outside Rufi; anything else does nothing.
+  const openLink = (url: string) => {
+    const path = RUFI.exec(url)?.[1];
+    const href =
+      path === undefined || personId === ""
+        ? undefined
+        : ownPage(personId, path);
+    if (href !== undefined) void navigate({ href });
+    else if (WEB.test(url)) open(url, "_blank", "noopener,noreferrer");
+  };
   return (
     <div className="reply" data-entry={id}>
-      {/* While it streams, half-written Markdown is closed so it reads right;
-          a half-written link shows as its text. */}
-      <Marked text={readableReply(text, streaming)} reply={{ streaming }} />
+      <OpenUIReply
+        text={text}
+        streaming={streaming}
+        personId={personId}
+        markdown={REPLY_TEXT}
+        openLink={openLink}
+      >
+        {/* A reply with no OpenUI in it. While it streams, half-written
+            Markdown is closed so it reads right; a half-written link shows
+            as its text. */}
+        <Marked text={readableReply(text, streaming)} reply />
+      </OpenUIReply>
     </div>
   );
 }
@@ -810,14 +807,13 @@ function GeneratedPicture({
       ...new Set(
         state.order.flatMap((id) => {
           const reply = state.entries[id];
-          return reply?.kind === "reply" && reply.turnId === entry.turnId
-            ? picturesIn(
-                readableReply(
-                  reply.text,
-                  state.turns[entry.turnId ?? ""]?.status === "running",
-                ),
-              )
-            : [];
+          if (reply?.kind !== "reply" || reply.turnId !== entry.turnId) {
+            return [];
+          }
+          const running = state.turns[entry.turnId ?? ""]?.status === "running";
+          return picturesShownBy(reply.text, running, (markdown) =>
+            picturesIn(readableReply(markdown, running)),
+          );
         }),
       ),
     ]),

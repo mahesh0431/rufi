@@ -3735,6 +3735,22 @@ describe("the chat, on the scripted Codex", () => {
       ),
       part({ type: "content_block_stop", index }),
     ];
+    /** A text block, the same way. */
+    const text = (index: number, parts: string[]) => [
+      part({
+        type: "content_block_start",
+        index,
+        content_block: { type: "text", text: "" },
+      }),
+      ...parts.map((text) =>
+        part({
+          type: "content_block_delta",
+          index,
+          delta: { type: "text_delta", text },
+        }),
+      ),
+      part({ type: "content_block_stop", index }),
+    ];
     /** What Claude finished, as its own message. */
     const whole = (uuid: string, block: object) => ({
       type: "assistant",
@@ -3750,7 +3766,7 @@ describe("the chat, on the scripted Codex", () => {
       const shown: [string, string | null][] = [];
       transcripts.subscribe(c.id, (change) => {
         for (const entry of change.entries) {
-          if (entry.kind === "reasoning")
+          if (entry.kind === "reasoning" || entry.kind === "reply")
             shown.push([entry.text, entry.status]);
         }
       });
@@ -3759,7 +3775,7 @@ describe("the chat, on the scripted Codex", () => {
     const thoughts = async (id: string) =>
       (await transcript(id)).entries.filter(([kind]) => kind !== "activity");
 
-    it("shows as Claude writes it, then once, whole, for each block, also after a restart", async () => {
+    it("shows as Claude writes it, then once, whole, for each block, its reply too, also after a restart", async () => {
       const { c, shown } = await onClaude([
         ...begins,
         ...thinking(0, ["Asha asks ", "about her TSH."]),
@@ -3774,6 +3790,7 @@ describe("the chat, on the scripted Codex", () => {
           thinking: "Look it up in the record.",
           signature: "fictional",
         }),
+        ...text(2, ["Her last ", "TSH was 2.1."]),
         whole("a-3", { type: "text", text: "Her last TSH was 2.1." }),
         {
           type: "result",
@@ -3791,6 +3808,7 @@ describe("the chat, on the scripted Codex", () => {
       // Its parts as they came, each block's growing, then whole.
       expect(shown).toContainEqual(["Asha asks ", "running"]);
       expect(shown).toContainEqual(["Look it up.", "running"]);
+      expect(shown).toContainEqual(["Her last ", null]);
       const kept = [
         ["message", "What was my last TSH?"],
         ["reasoning", "Asha asks about her TSH."],

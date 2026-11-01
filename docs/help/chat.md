@@ -74,7 +74,7 @@ When you delete a document (see [Documents](documents.md#delete-a-document)), it
 ## What you see
 
 - **Your messages**, on the right, with the chips you added to them.
-- **The AI's replies**, which appear as the AI writes them. Replies can have lists and tables, and the pictures, pages and diagrams the AI makes (see [Pictures, pages and diagrams](#pictures-pages-and-diagrams)). Links to web pages open in your browser, outside Rufi. A link to a page of Rufi, such as a document the AI read, opens that page here in Rufi. A reply never shows a picture from the internet.
+- **The AI's replies**, which appear as the AI writes them. Replies can have lists, tables and charts, and the pictures the AI makes (see [How a reply looks](#how-a-reply-looks)). Links to web pages open in your browser, outside Rufi. A link to a page of Rufi, such as a document the AI read, opens that page here in Rufi. A reply never shows a picture from the internet.
 - **Activity**, under an answer: what the AI did for that reply, folded into one line, such as "Activity · 12 steps · 1 failed · 1m 36s". Click it to open it. While the AI works, it is open, and you can read along. See [Activity](#activity).
 - **Receipts**, with a tick, each time the AI saved something to your health record: "Saved", then one line for each change. A save from a document starts with where it came from, such as "Saved from Sunrise Labs August.pdf", and the AI says in its reply what it saved; when the list is long, click **Show what was saved** to see it. Rufi writes the receipts. See [Changing your health record](#changing-your-health-record).
 - **A visit brief's line**, with a page sign and **Open**, when the AI made a brief for you. Rufi writes it. See [Visit brief](visit-brief.md).
@@ -108,32 +108,24 @@ In each one, you can still fold or open a reply's Activity yourself. That holds 
 
 A reply that has no steps, such as an answer to "thanks", has no Activity line once it ends. In replies from before this version of Rufi, the AI's notes show as replies, and each step keeps the words Rufi gave it then. If the AI's working state is lost, a reply from before says **Activity is gone with the AI's working state.**, and its sub-agents' Activity is gone too (see [Your data and the AI](your-data-and-the-ai.md#your-chat)).
 
-## Pictures, pages and diagrams
+## How a reply looks
 
-The AI chooses how to show its work: in words, as a table, as a trend, as a diagram or as a page. One result over time is usually a trend; another chart is a page. The AI makes a picture when you ask for one.
+The AI's reply is drawn as it writes it: headings, text, lists and tables, charts, steps or a picture, whichever shows its answer best. Rufi draws replies with OpenUI, a set of parts for answers like these, in Rufi's light or dark.
 
-**A trend** shows one result's values over time, such as your haemoglobin over a year, drawn by Rufi in the reply, the same way as on your health record's pages:
+- **Text** can be **bold**, have lists and links. A link to a web page opens in your browser, outside Rufi; a link to a page of Rufi, such as a document, opens it in Rufi. Links work the same anywhere in a reply, also in a note box, a list of steps and the **Sources** under a reply, and a small globe after a sentence lists the sources it rests on.
+- **Charts** show values from your record, such as one test over time or several tests side by side. A chart's labels and the value you point at can be rounded, so the AI also gives the values it draws in a table or the text, as your record keeps them, with their units; a value a chart can't take as a number, such as "<5", is there too. A test's own chart, spaced by date with the lab's range, is on its page in your [health record](record.md#a-test), which the AI can link.
+- **Follow-ups and buttons** at the end of a reply suggest what to ask next. A click sends its words as your message, with what it is about, such as which result's card you clicked. If you've typed something you haven't sent yet, its words go into the box after yours instead, and you send them when you're ready. A form sends what you filled in. A button that opens a link opens it as a link in text does.
+- **When a reply can't be drawn**, Rufi doesn't show part of it, since a value could be missing. The reply shows what the AI wrote and "This reply couldn't be drawn. Ask again to have it drawn." A reply the AI wrote as plain words shows as words.
+- Nothing in a reply runs or loads from the internet, and nothing in it can reach your record: Rufi draws it from what the AI wrote. Check the values against your record, as with anything the AI says.
 
-- The values are spaced by their dates, oldest on the left. The lab's range for the newest value is at the top right, as printed, and a value the lab flagged has a ring. It follows Rufi's light or dark.
-- Under it, a table lists every value the AI gave, with its date, the lab's range and its note. A value the trend can't place, such as one with no date, is in the table, marked **Not drawn**.
-- While the AI writes, the trend fills in. If the AI's trend has a mistake, the reply shows what the AI wrote and "This trend couldn't be drawn." Ask again to have it drawn.
-- Nothing in a trend runs or loads: Rufi draws it from the values the AI wrote. Check the values against your record, as with anything the AI says.
+When the AI makes a picture in its folder to show you (see [What the AI can do in its folder](your-data-and-the-ai.md#what-the-ai-can-do-in-its-folder)), the reply shows it:
 
-When the AI makes something in its folder to show you (see [What the AI can do in its folder](your-data-and-the-ai.md#what-the-ai-can-do-in-its-folder)), the reply shows it:
-
-- **A page**, an HTML file that the AI made, such as a chart of your results or a page of your results to show your doctor, shows in the reply at the reply's width and a fixed height, with its title under it. When the page is taller, it scrolls inside its frame. **Open** shows the page large over the chat. **Close** or Esc goes back to the chat where you were, also after you click inside the page. Opening its address by itself says "Open this page from the chat in Rufi."
-- **A diagram** that the AI explains something with shows as a drawing, in Rufi's colours. While the reply is written, and when the diagram can't be drawn, it shows as its text.
 - **A picture**, such as one you asked the AI for, shows in the reply at its own size, up to the reply's width, with the AI's caption under it. Click it to see it full size; press Esc or click again to go back. Rufi shows PNG, JPEG, GIF and WebP pictures.
 - **A picture the AI generated** shows the same way, with "Made by the AI" under it. When the reply also shows that picture, it shows once. Rufi tells the AI never to generate a picture of your values: a picture model can change the numbers it draws.
 
-Rufi shows files only from the AI's folder and from the folder where the AI keeps the pictures it generates. A link to any other file shows as its words.
+Rufi shows pictures only from the AI's folder and from the folder where the AI keeps the pictures it generates. A link to any other file shows as its words.
 
-A page runs in a locked frame:
-
-- **It is self-contained.** It shows only what is in its own file. It can't load anything from the internet or send anything, so it shows the same with no connection, and your health data in it stays on your Mac. The AI can use the internet while it makes a page, and puts in the file what the page needs.
-- **It can't reach Rufi.** Its scripts run (for example tabs, or a chart that shows a value when you point at it), but they can't read Rufi's pages, your record or anything Rufi answers, and they can't change anything.
-
-A reply shows the file as it is now, not as it was when the AI wrote the reply. If the AI changes the file later, an older reply shows the new version. If the file is no longer there, the reply keeps its title and says "This file is no longer in the AI's folder."
+A reply shows the picture as it is now, not as it was when the AI wrote the reply. If the AI changes the file later, an older reply shows the new version. If the file is no longer there, the reply keeps its caption and says "This file is no longer in the AI's folder."
 
 ## Asking about your health record
 

@@ -114,7 +114,7 @@ Rufi limits what the AI's programs can reach. This is a lock, not only an instru
 
 Rufi doesn't check what the AI sends to the internet or gets from it. Text from a web page is data for the AI, never an instruction or your yes.
 
-When the AI makes a picture or a page to show you, the reply shows it from the AI's folder, or from `codex/generated_images/` for a picture the AI generated. Rufi shows nothing from anywhere else. See [Pictures, pages and diagrams](chat.md#pictures-pages-and-diagrams).
+When the AI makes a picture to show you, the reply shows it from the AI's folder, or from `codex/generated_images/` for a picture the AI generated. Rufi shows nothing from anywhere else. See [How a reply looks](chat.md#how-a-reply-looks).
 
 The AI's folder isn't part of your health record. What you want to keep goes in your record, through the chat, after your yes. The folder isn't in your backups, your export or a move yet.
 

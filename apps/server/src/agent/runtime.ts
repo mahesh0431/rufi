@@ -219,14 +219,10 @@ export const withKeychains = (
       }
     : sandbox;
 
-/**
- * One of Rufi's skills, as the agent reads it: its SKILL.md, by name, and
- * the files beside it.
- */
+/** One of Rufi's skills, as the agent reads it: its SKILL.md, by name. */
 export interface AgentSkill {
   name: string;
   text: string;
-  files: Readonly<Record<string, string>>;
 }
 
 /**

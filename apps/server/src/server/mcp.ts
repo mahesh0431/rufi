@@ -31,8 +31,7 @@ export interface McpCall {
 
 /**
  * A text the endpoint offers to read, whatever the key: a skill, under
- * `skill://<name>/SKILL.md`, and the files beside it (the same texts as the
- * agent's skill files).
+ * `skill://<name>/SKILL.md` (the same text as the agent's skill file).
  */
 export interface McpResource {
   uri: string;
@@ -42,31 +41,17 @@ export interface McpResource {
   text: string;
 }
 
-/** Rufi's skills as the endpoint offers them, each file beside its SKILL.md too. */
+/** Rufi's skills as the endpoint offers them. */
 export const skillResources = (
-  skills: readonly {
-    name: string;
-    description: string;
-    text: string;
-    files: Readonly<Record<string, string>>;
-  }[],
+  skills: readonly { name: string; description: string; text: string }[],
 ): McpResource[] =>
-  skills.flatMap((skill) => [
-    {
-      uri: `skill://${skill.name}/SKILL.md`,
-      name: skill.name,
-      description: skill.description,
-      mimeType: "text/markdown",
-      text: skill.text,
-    },
-    ...Object.entries(skill.files).map(([file, text]) => ({
-      uri: `skill://${skill.name}/${file}`,
-      name: `${skill.name}/${file}`,
-      description: `A file of the ${skill.name} skill, named in its SKILL.md.`,
-      mimeType: file.endsWith(".css") ? "text/css" : "text/plain",
-      text,
-    })),
-  ]);
+  skills.map((skill) => ({
+    uri: `skill://${skill.name}/SKILL.md`,
+    name: skill.name,
+    description: skill.description,
+    mimeType: "text/markdown",
+    text: skill.text,
+  }));
 
 /** What a key opens: a catalog, and how its calls run. */
 export interface McpScope {

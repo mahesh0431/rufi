@@ -704,23 +704,6 @@ describe("How a change of Rufi's rules reaches the AI, on the pinned Codex", () 
         return Promise.resolve();
       },
     },
-    {
-      change: "a file beside a skill only",
-      region: undefined,
-      make: () => {
-        const skill = SKILLS.find((skill) => skill.name === "analysis");
-        if (!skill) throw new Error("no analysis skill");
-        const previous = skill.files;
-        skill.files = {
-          ...previous,
-          "paper.css": `${previous["paper.css"] ?? ""}\n.rufi-paper h3 { margin: 0; }\n`,
-        };
-        restore = () => {
-          skill.files = previous;
-        };
-        return Promise.resolve();
-      },
-    },
   ])(
     "after $change, the complete rules reach the next request without a compaction, and stay after a restart and after Codex compacts",
     { timeout: 180_000 },

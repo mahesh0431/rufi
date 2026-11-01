@@ -211,6 +211,17 @@ interface Turn {
     began: Map<string, number>;
     whole: Map<string, number>;
   };
+  /**
+   * Its text blocks' items, the same way: the blocks streaming now by their
+   * index, how many each message began and finished, and the items that
+   * streamed, so their whole block only ends them.
+   */
+  text: {
+    streaming: Map<number, string>;
+    began: Map<string, number>;
+    whole: Map<string, number>;
+    streamed: Set<string>;
+  };
 }
 
 /**
@@ -222,12 +233,12 @@ type StreamEvent =
   | {
       type: "content_block_start";
       index: number;
-      content_block: { type: string; thinking?: string };
+      content_block: { type: string; thinking?: string; text?: string };
     }
   | {
       type: "content_block_delta";
       index: number;
-      delta: { type: string; thinking?: string };
+      delta: { type: string; thinking?: string; text?: string };
     }
   | { type: "content_block_stop"; index: number }
   | { type: "message_delta" | "message_stop" };
@@ -238,6 +249,9 @@ const isThinking = (type: string | undefined) =>
 /** The item of a message's `n`th thinking block. */
 const thinkingItem = (message: string, n: number) =>
   `${message}:thinking:${String(n)}`;
+
+/** The item of a message's `n`th text block. */
+const textItem = (message: string, n: number) => `${message}:text:${String(n)}`;
 
 /** What the adapter's conversations share: Claude's latest limits. */
 interface Shared {
@@ -315,6 +329,12 @@ async function openConversation(
       stopping: stops > 0,
       uses: new Map(),
       thinking: { streaming: new Map(), began: new Map(), whole: new Map() },
+      text: {
+        streaming: new Map(),
+        began: new Map(),
+        whole: new Map(),
+        streamed: new Set(),
+      },
     };
     kept = true;
     emit({ type: "turnStarted", turn, inputs });
@@ -394,12 +414,30 @@ async function openConversation(
     }
   };
 
-  /** Claude's thinking as it writes it, by the item its whole block will have. */
+  /**
+   * Claude's thinking and text as it writes them, by the item its whole
+   * block will have, so a reply shows as it is written.
+   */
   const streamed = (turn: Turn, event: StreamEvent) => {
-    const { thinking } = turn;
+    const { thinking, text } = turn;
     if (event.type === "message_start") {
       thinking.message = event.message.id;
       thinking.streaming.clear();
+      text.streaming.clear();
+    } else if (
+      event.type === "content_block_start" &&
+      event.content_block.type === "text" &&
+      thinking.message !== undefined
+    ) {
+      const n = text.began.get(thinking.message) ?? 0;
+      text.began.set(thinking.message, n + 1);
+      text.streaming.set(event.index, textItem(thinking.message, n));
+      writes(turn, event.index, event.content_block.text);
+    } else if (
+      event.type === "content_block_delta" &&
+      event.delta.type === "text_delta"
+    ) {
+      writes(turn, event.index, event.delta.text);
     } else if (
       event.type === "content_block_start" &&
       isThinking(event.content_block.type) &&
@@ -430,7 +468,16 @@ async function openConversation(
       });
     } else if (event.type === "content_block_stop") {
       thinking.streaming.delete(event.index);
+      text.streaming.delete(event.index);
     }
+  };
+
+  /** More of a text block as it streams. */
+  const writes = (turn: Turn, index: number, delta: string | undefined) => {
+    const item = turn.text.streaming.get(index);
+    if (item === undefined || !delta) return;
+    turn.text.streamed.add(item);
+    emit({ type: "text", turn: turn.ref, item, delta });
   };
 
   /** What an answer of Claude's holds: its text, thinking and tool calls. */
@@ -443,12 +490,19 @@ async function openConversation(
         turn.thinking.whole.set(id, n + 1);
         item = thinkingItem(id, n);
       }
+      if (id !== undefined && block.type === "text") {
+        const n = turn.text.whole.get(id) ?? 0;
+        turn.text.whole.set(id, n + 1);
+        item = textItem(id, n);
+      }
       if (block.type === "text") {
+        // One that streamed has its text: whole, it only ends.
+        const streamed = turn.text.streamed.delete(item);
         emit({
           type: "text",
           turn: turn.ref,
           item,
-          delta: block.text ?? "",
+          delta: streamed ? "" : (block.text ?? ""),
           done: true,
         });
       } else if (

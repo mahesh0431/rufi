@@ -27,7 +27,6 @@ import { monitorEventLoopDelay } from "node:perf_hooks";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { Entry, Turn } from "@rufi/contracts";
 import type { Brief } from "@rufi/contracts/briefs";
-import { readTrend } from "@rufi/contracts/visuals";
 import { Effect, Exit, Scope } from "effect";
 import { everyTurnAnswered } from "./answered.ts";
 import {
@@ -293,22 +292,6 @@ const replyOf = (snapshot: Snapshot) => {
     .map((e) => e.text)
     .join("\n\n");
 };
-/** Asha's saved results: each one's date, number and second number. */
-function savedValues(home: string) {
-  const store = openReadOnly(databasePath(home));
-  if (!store) throw new Error("no database");
-  const rows = store.db
-    .prepare(
-      "SELECT measured_at AS date, value_number AS number, second_number AS second FROM results WHERE person_id = 'asha' AND removed = 0",
-    )
-    .all() as {
-    date: string | null;
-    number: number | null;
-    second: number | null;
-  }[];
-  store.close();
-  return rows;
-}
 /** Whether Rufi answered a call to the tool so far: its own record of calls. */
 const usedTool = (home: string, tool: string) =>
   calls(home).some((call) => call.tool === tool && call.ok === 1);
@@ -1075,10 +1058,8 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     return { checks: {}, snapshot };
   },
   /**
-   * The analysis story: the AI reads the record and shows a chart in the
-   * reply as trends Rufi draws or a page Rufi serves, not a picture (one
-   * wasn't asked for). Any trend parses whole, and each value it draws is
-   * one Asha has saved.
+   * The analysis story: the AI reads the record and shows a chart in its
+   * OpenUI reply, one of OpenUI's charts, not a picture (none was asked for).
    */
   chart_in_reply: async (api, home) => {
     const c = chat(api);
@@ -1086,58 +1067,15 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
       "Is my fasting glucose linked to my HbA1c over the years? Make a chart and show it here.",
     );
     const snapshot = await c.read();
-    const trends = [
-      ...replyOf(snapshot).matchAll(/```openui-lang\n([\s\S]*?)```/g),
-    ].map((block) => readTrend(block[1] ?? ""));
-    const saved = savedValues(home);
     return {
       checks: {
         read_records: recordReads(home).length > 0,
-        trends_whole: trends.every((trend) => trend.whole),
-        trends_draw_saved_values: trends.every((trend) =>
-          trend.points
-            .filter(
-              (point) =>
-                typeof point["number"] === "number" &&
-                /^\d{4}/.test(String(point["date"])),
-            )
-            .every((point) =>
-              saved.some(
-                (value) =>
-                  (value.date ?? "").startsWith(String(point["date"])) &&
-                  value.number === point["number"] &&
-                  (point["second"] == null || value.second === point["second"]),
-              ),
-            ),
-        ),
       },
       verdicts: [
         {
           check: "shows_a_chart",
           criterion:
-            "The reply shows a chart of fasting glucose and HbA1c over the years as trends drawn in the chat or a page in the chat, not a picture, made from the records read.",
-          evidence: replyOf(snapshot),
-        },
-      ],
-      snapshot,
-    };
-  },
-  /** A page of results, linked with words that are the page's title (not an action). */
-  page_in_reply: async (api, home) => {
-    const c = chat(api);
-    await c.ask(
-      "Make me a page of my lab results that I can show my doctor, and give it to me here.",
-    );
-    const snapshot = await c.read();
-    return {
-      checks: {
-        read_records: recordReads(home).length > 0,
-      },
-      verdicts: [
-        {
-          check: "titles_not_actions",
-          criterion:
-            "The reply links a page, and each link's words are the page's title, not an action such as Open, View or Download.",
+            "The reply is OpenUI Lang (root = Card(...)) that shows fasting glucose and HbA1c over the years in one or more of OpenUI's charts, not a picture, with the values of the records read.",
           evidence: replyOf(snapshot),
         },
       ],

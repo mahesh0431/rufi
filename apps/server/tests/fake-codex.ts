@@ -10,7 +10,8 @@
 // command, "command"
 // starts a long command ("background command": and the turn ends while it
 // runs), "drip" streams its answer in five parts 100 ms
-// apart, "long" streams 200 parts of 1,000 characters, "think" streams a
+// apart, "trickle" streams its answer in parts of 24 characters 60 ms
+// apart, as a reply is written, "long" streams 200 parts of 1,000 characters, "think" streams a
 // reasoning summary (fake-model.ts's THINKING) before it answers, "commentary"
 // writes a progress note (fake-model.ts's NOTE) before it answers ("whole
 // commentary": only when it completes; "cut commentary": half of it, and
@@ -88,6 +89,8 @@ export interface Scenario {
   late?: boolean;
   /** The command each reply runs after its answer, and what it printed (ls). */
   ls?: { command: string; output: string };
+  /** What every turn answers, in place of "ok:<text>". */
+  answer?: string;
   /** A last message that arrives only completed, never streamed. */
   unstreamed?: {
     text: string;
@@ -732,10 +735,19 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
       },
     });
   }
-  if (text.includes("drip") || text.includes("long")) {
+  if (
+    text.includes("drip") ||
+    text.includes("trickle") ||
+    text.includes("long")
+  ) {
+    const reply = scenario.answer ?? `ok:${text}`;
     const parts = text.includes("drip")
       ? ["ok:", "d", "r", "i", "p"]
-      : Array.from({ length: 200 }, (_, i) => String(i % 10).repeat(1_000));
+      : text.includes("trickle")
+        ? Array.from({ length: Math.ceil(reply.length / 24) }, (_, i) =>
+            reply.slice(i * 24, i * 24 + 24),
+          )
+        : Array.from({ length: 200 }, (_, i) => String(i % 10).repeat(1_000));
     event("item/started", {
       item: { id: "item-1", type: "agentMessage", text: "", questions: null },
     });
@@ -744,8 +756,10 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
     for (const delta of parts) {
       if (stopped()) return;
       event("item/agentMessage/delta", { itemId: "item-1", delta });
-      if (text.includes("drip"))
-        await new Promise((resolve) => setTimeout(resolve, 100));
+      if (text.includes("drip") || text.includes("trickle"))
+        await new Promise((resolve) =>
+          setTimeout(resolve, text.includes("drip") ? 100 : 60),
+        );
     }
     event("item/completed", {
       item: {
@@ -760,7 +774,7 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
       thread,
       turnId,
       "item-1",
-      `ok:${text}`,
+      scenario.answer ?? `ok:${text}`,
       text.includes("seeded") ? 3 : 0,
     );
   }

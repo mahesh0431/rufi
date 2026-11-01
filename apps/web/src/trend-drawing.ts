@@ -14,7 +14,7 @@ import type {
 import { printedDate } from "./dates.ts";
 
 /** A calendar date ("2026", "2026-05", "2026-05-20T08:30") as a time to space values by. */
-export function timeOf(date: string): number {
+function timeOf(date: string): number {
   const [year = 0, month = 1, day = 1, hour = 0, minute = 0] = date
     .split(/[-T:]/)
     .map(Number);
@@ -27,7 +27,7 @@ export function timeOf(date: string): number {
  * a trend places. Other words, such as "2026 (date unclear)", stay in the
  * table.
  */
-export const isCalendarDate = (date: string): boolean =>
+const isCalendarDate = (date: string): boolean =>
   /^\d{4}(-\d{2}(-\d{2}(T\d{2}:\d{2})?)?)?$/.test(date) &&
   Number.isFinite(timeOf(date));
 
@@ -50,7 +50,7 @@ type Placed = TrendValue & {
  * The values a chart can place, oldest first: those with a calendar date
  * and a number.
  */
-export function placedOf(values: readonly TrendValue[]): Placed[] {
+function placedOf(values: readonly TrendValue[]): Placed[] {
   return values.filter(
     (value): value is Placed =>
       value.number !== undefined &&

@@ -1,4 +1,4 @@
-// The files a reply shows (docs/adr/0016): pictures and pages the AI made,
+// The files a reply shows (docs/adr/0017): pictures the AI made,
 // from two places only, the AI's folder (where a relative path resolves) and
 // the subtree where Codex saves the images it generates. The screens ask for
 // a file by the path the reply holds and get a short-lived address for that
@@ -21,18 +21,14 @@ import { fileURLToPath } from "node:url";
 /** How long an address for a file works; the screens ask again after. */
 const FILE_URL_MS = 10 * 60_000;
 
-/** The types Rufi shows: pictures inline, pages in a locked frame. */
-const TYPES: Record<string, { type: string; shape: Shape }> = {
-  ".png": { type: "image/png", shape: "picture" },
-  ".jpg": { type: "image/jpeg", shape: "picture" },
-  ".jpeg": { type: "image/jpeg", shape: "picture" },
-  ".gif": { type: "image/gif", shape: "picture" },
-  ".webp": { type: "image/webp", shape: "picture" },
-  ".html": { type: "text/html; charset=utf-8", shape: "page" },
-  ".htm": { type: "text/html; charset=utf-8", shape: "page" },
+/** The pictures Rufi shows, by their type. */
+const TYPES: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
 };
-
-type Shape = "picture" | "page";
 
 /** A file a reply may show, as the disk has it now. */
 interface ShownFile {
@@ -41,7 +37,6 @@ interface ShownFile {
   /** Its name, as the reply wrote it. */
   name: string;
   type: string;
-  shape: Shape;
 }
 
 /**
@@ -125,11 +120,11 @@ export function aiFiles(options: {
     if (!real.some((root) => root !== undefined && under(root, file))) {
       return { refused: true };
     }
-    const found = TYPES[extname(file).toLowerCase()];
+    const type = TYPES[extname(file).toLowerCase()];
     const info = await stat(file).catch(() => undefined);
     if (info === undefined) return { missing: true, path: file };
-    if (!info.isFile() || found === undefined) return { refused: true };
-    return { found: { path: file, name: basename(asked), ...found } };
+    if (!info.isFile() || type === undefined) return { refused: true };
+    return { found: { path: file, name: basename(asked), type } };
   };
 
   return {
