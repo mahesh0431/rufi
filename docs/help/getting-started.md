@@ -114,9 +114,12 @@ Rufi has a light look and a dark look. Choose one in [Settings › Appearance](r
 In [Settings › Appearance](rufi:/settings/appearance) you also choose:
 
 - **Colour:** the background, and the colour of buttons, links, what is selected and your own messages. **White** (the start: a white app with black buttons and blue links), **Blue**, **Periwinkle**, **Plum**, **Ocean**, **Graphite** (almost no colour) or **Sand** (warm, like paper). Each has a light and a dark look, and text stays easy to read in all of them. Rufi AI's replies take its background and its buttons too; a chart's lines, and notes coloured by what they say (such as information or a warning), keep their own colours.
+- **Text size:** **Default**, **Large** or **Larger**, for all of Rufi's text, Rufi AI's replies too. Spacing grows with it, so everything still fits the window.
 - **Rufi's replies:** how a reply of Rufi AI sits in the chat. **Flat** (the start) puts it on the chat's background. **Panel** puts it on its own soft surface, with round corners. **Card** does the same with a thin border. Your messages and agents' messages keep their shape.
 
 Your choices show at once in the Rufi windows or tabs that are open in the same app or browser. A Rufi page open somewhere else, such as the Rufi app when you chose in your browser, shows them when you reload that page. Rufi keeps your choices when it starts again. In the Rufi app, the window around the page, with its sidebar, takes the same light or dark look.
+
+In the Rufi app you can also zoom the whole window: ⌘+ makes everything bigger, ⌘− smaller, and ⌘0 puts it back (**View** › **Zoom In**, **Zoom Out** and **Actual Size**).
 
 ## If you're not signed in
 

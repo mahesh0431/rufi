@@ -305,7 +305,7 @@ test("under reduced motion the dog is still, and its face still changes", async 
   expect(await moving(dog(page))).toBe(0);
 });
 
-test("Settings chooses light, dark or the Mac's, and a colour; every open tab changes at once, and a new tab or a restart starts in them", async ({
+test("Settings chooses light, dark or the Mac's, a colour and a text size; every open tab changes at once, and a new tab or a restart starts in them", async ({
   context,
   page,
   rufi,
@@ -314,8 +314,12 @@ test("Settings chooses light, dark or the Mac's, and a colour; every open tab ch
   // anything paints.
   await context.addInitScript(() => {
     requestAnimationFrame(() => {
-      const { theme = "", colour = "" } = document.documentElement.dataset;
-      sessionStorage.setItem("first-frame", `${theme} ${colour}`);
+      const {
+        theme = "",
+        colour = "",
+        textSize = "",
+      } = document.documentElement.dataset;
+      sessionStorage.setItem("first-frame", `${theme} ${colour} ${textSize}`);
     });
   });
   const firstFrame = (tab: Page) =>
@@ -337,16 +341,28 @@ test("Settings chooses light, dark or the Mac's, and a colour; every open tab ch
 
   await appearance.getByRole("radio", { name: "Dark" }).check();
   await colours.getByRole("radio", { name: "Plum" }).check();
+  await settings
+    .getByRole("radiogroup", { name: "Text size" })
+    .getByRole("radio", { name: "Larger" })
+    .check();
   await expect.poll(theme(page)).toBe("dark");
   await expect.poll(theme(other)).toBe("dark");
   await expect.poll(colour(other)).toBe("plum");
+  // All text grows: the app's and a reply's, from one base size.
+  await expect
+    .poll(() =>
+      other.evaluate(() =>
+        getComputedStyle(document.body).getPropertyValue("font-size"),
+      ),
+    )
+    .toBe("17px");
   await accessible(page);
   const fresh = await context.newPage();
   await fresh.goto((await runningLink(rufi.home)) ?? "");
   await expect(
     fresh.getByRole("heading", { name: "Health record" }),
   ).toBeVisible();
-  expect(await firstFrame(fresh)).toBe("dark plum");
+  expect(await firstFrame(fresh)).toBe("dark plum larger");
 
   await rufi.stop();
   await rufi.start({ port });
@@ -354,7 +370,7 @@ test("Settings chooses light, dark or the Mac's, and a colour; every open tab ch
   await expect(
     page.getByRole("heading", { name: "Health record" }),
   ).toBeVisible();
-  expect(await firstFrame(page)).toBe("dark plum");
+  expect(await firstFrame(page)).toBe("dark plum larger");
 
   // Light stays light on a dark Mac; System follows the Mac again.
   await page.emulateMedia({ colorScheme: "dark" });
