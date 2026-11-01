@@ -226,12 +226,30 @@ CREATE TABLE reports (
   FOREIGN KEY (person_id, document_id) REFERENCES documents (person_id, id)
 ) STRICT;
 
+-- One of a person's tests, such as Creatinine: what their results are
+-- shown under, whatever each lab printed. The AI chooses each result's test
+-- when it saves it, and the test's name and section, in its own words
+-- (docs/adr/0028). Never removed: a test with no current results isn't
+-- shown.
+CREATE TABLE tests (
+  id TEXT PRIMARY KEY,
+  person_id TEXT NOT NULL REFERENCES people (id),
+  name TEXT NOT NULL,          -- the AI's plain name for it, e.g. 'Creatinine'
+  section TEXT,                -- the AI's words, e.g. 'Kidney'; none shows last
+  unit TEXT,                   -- the unit its results' test_number is in, as the AI gave it; none for a test with no unit
+  removed INTEGER NOT NULL DEFAULT 0, -- always 0: a test is never removed
+  UNIQUE (person_id, id)
+) STRICT;
+
 CREATE TABLE results (
   id TEXT PRIMARY KEY,
   person_id TEXT NOT NULL REFERENCES people (id),
   report_id TEXT,        -- null when typed in rather than read from a report
   category TEXT NOT NULL CHECK (category IN ('lab', 'measurement')), -- the AI's choice with the person; the pages filter by it
   test_name TEXT NOT NULL,     -- as printed
+  test_id TEXT NOT NULL,       -- the person's test it belongs to, the AI's choice
+  test_number REAL,            -- the AI's number for it in its test's unit; none: not on the test's line
+  test_second_number REAL,     -- the same for its second number
   value_text TEXT NOT NULL,    -- as printed, e.g. '<5', '6.8', 'Negative'
   comparator TEXT,             -- '<', '<=', '>' or '>=' when printed; '<5' is not 5
   value_number REAL,           -- the plain number, when there is one
@@ -242,13 +260,13 @@ CREATE TABLE results (
   measured_at TEXT,            -- when the sample was taken, or the measurement made (precision date or time)
   entered_at TEXT NOT NULL,    -- when it entered Rufi
   replaces_id TEXT,            -- an amended result points at the one it replaces
-  group_label TEXT,            -- a shared label to join two printed names; printed fields never change
   second_number REAL,          -- a two-value result's second number: a blood pressure '128/84' is 128 and 84
   measured_words TEXT,         -- the words for measured_at: the user's, or the date as printed with its label
   removed INTEGER NOT NULL DEFAULT 0,
   UNIQUE (person_id, id),
   FOREIGN KEY (person_id, report_id) REFERENCES reports (person_id, id),
-  FOREIGN KEY (person_id, replaces_id) REFERENCES results (person_id, id)
+  FOREIGN KEY (person_id, replaces_id) REFERENCES results (person_id, id),
+  FOREIGN KEY (person_id, test_id) REFERENCES tests (person_id, id)
 ) STRICT;
 
 -- One use of a medicine or supplement. Several uses of one medicine can
@@ -732,7 +750,7 @@ CREATE INDEX jobs_by_document ON jobs (person_id, document_id, created_at);
 CREATE INDEX page_copies_by_job ON page_copies (person_id, job_id);
 CREATE INDEX reports_by_document ON reports (person_id, document_id);
 CREATE INDEX results_by_report ON results (person_id, report_id);
-CREATE INDEX results_by_test ON results (person_id, test_name, unit, measured_at);
+CREATE INDEX results_by_test ON results (person_id, test_id, measured_at);
 CREATE INDEX results_by_replaced ON results (person_id, replaces_id); -- current results leave out replaced ones
 CREATE INDEX turns_by_chat ON turns (person_id, chat_id, started_at);
 CREATE INDEX turns_by_status ON turns (status); -- running turns, found at start
@@ -791,4 +809,4 @@ CREATE TABLE agent_cursor (
 ) STRICT;
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 27;
+PRAGMA user_version = 28;

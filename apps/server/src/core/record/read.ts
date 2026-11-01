@@ -38,6 +38,8 @@ function given(field: Field, row: Row): unknown {
       return { kind: row["linked_kind"], id: value };
     case "amount":
       return { value, unit: row[unitColumn(field)] ?? undefined };
+    case "test":
+      return value;
   }
 }
 
@@ -85,12 +87,16 @@ export function fieldsOf(
 
 /**
  * The person's records that aren't removed, by kind; results are in the
- * overview's latest_results, the profile in its own part.
+ * overview's latest_results, the profile in its own part, and tests only
+ * counted.
  */
 export async function currentRecords(store: Store, personId: string) {
   const record: Record<string, unknown> = {};
   for (const kind of KINDS) {
-    if (kind.name === "result" || kind.single) continue;
+    // Results are in latest_results, the tests in get_records.
+    if (kind.name === "result" || kind.name === "test" || kind.single) {
+      continue;
+    }
     const { rows } =
       await sql<Row>`SELECT * FROM ${sql.table(kind.table)} r WHERE person_id = ${personId} AND ${isCurrent(kind, "r")} ORDER BY rowid DESC LIMIT ${RECORDS_SHOWN + 1}`.execute(
         store.query,
@@ -160,6 +166,20 @@ export async function recentSaves(store: Store, personId: string) {
       )
       .orderBy(sql.ref("rowid"))
       .execute();
+    // A record this save added has the added page as a source too: a link
+    // to it, an item saved as another source of it, has only that item's.
+    const added = new Set(
+      changes
+        .filter((change) => change.action === "add")
+        .map((change) => `${change.kind}:${change.record_id}`),
+    );
+    const linkedItems = await store.query
+      .selectFrom("draft_items")
+      .select(["record_id", "document_id", "page"])
+      .where("person_id", "=", personId)
+      .where("operation_id", "=", save.id)
+      .where("saved_as", "=", "another_source")
+      .execute();
     shown.push({
       at: save.created_at,
       // Where it was made: in the chat, or what the person entered in the
@@ -186,12 +206,22 @@ export async function recentSaves(store: Store, personId: string) {
             change.before === null
               ? undefined
               : (JSON.parse(change.before) as Row);
+          const ownLinks =
+            change.action === "link" &&
+            added.has(`${change.kind}:${change.record_id}`);
           const from = sources
             .filter(
               (s) =>
                 s.kind === change.kind &&
                 s.record_id === change.record_id &&
-                (s.removed_by === save.id) === (change.action === "unlink"),
+                (s.removed_by === save.id) === (change.action === "unlink") &&
+                (!ownLinks ||
+                  linkedItems.some(
+                    (item) =>
+                      item.record_id === s.record_id &&
+                      item.document_id === s.document_id &&
+                      item.page === s.page,
+                  )),
             )
             .map((s) =>
               s.visit_id === null

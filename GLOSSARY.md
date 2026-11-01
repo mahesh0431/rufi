@@ -49,7 +49,7 @@ Rufi AI's work on a file once it is read, usually when its reader's result wakes
 _Avoid_: classification, grouping, parsing
 
 **Draft item**:
-One result or measurement Rufi AI drafted from a page copy, with its value as the copy prints it (for a digit the reader marked unclear, Rufi AI's reading) and the words it came from, marks included (**From the page**), waiting for you: not part of your record, so it counts in no Overview or trend until you save it; when the AI gives one in an answer, it says it isn't saved yet. The drafted values are kept beside any change. It points to its document and page, and may be **worth a look**, with Rufi AI's reason (on a reading from an older Rufi, why its reader wasn't sure). It names the reading of the page it was drafted from; one whose page was read again after that reading is out of date and can't be saved. It waits until it is saved (new, as another source of a saved result, or as a correction) or dismissed (set aside, as the document's page says); a dismissed item is never saved.
+One result or measurement Rufi AI drafted from a page copy, with its value as the copy prints it (for a digit the reader marked unclear, Rufi AI's reading) and the words it came from, marks included (**From the page**), waiting for you: not part of your record, so it counts in no Overview or trend until you save it; when the AI gives one in an answer, it says it isn't saved yet. The drafted values are kept beside any change. It points to its document and page, and may be **worth a look**, with Rufi AI's reason (on a reading from an older Rufi, why its reader wasn't sure). It names the reading of the page it was drafted from; one whose page was read again after that reading is out of date and can't be saved. It waits until it is saved (new, as another source of a saved result or of one the same save adds, or as a correction) or dismissed (set aside, as the document's page says); a dismissed item is never saved.
 _Avoid_: pending result, unconfirmed record, extracted row
 
 **Report**:
@@ -57,19 +57,23 @@ A lab or clinic report: one document as Rufi AI sorted it, with who issued it, i
 _Avoid_: lab sheet, test report
 
 **Result**:
-One lab test or measurement, kept exactly as reported or entered: name, value, unit, reference range, the lab's own flag, method or context, and when it was measured at the precision known. Every result has a **category**: it is a lab result or a measurement.
+One lab test or measurement, kept exactly as reported or entered: name, value, unit, reference range, the lab's own flag, method or context, and when it was measured at the precision known. Every result has a **category**: it is a lab result or a measurement. Every result is in one **test**, with its numbers in the test's unit when the AI could give them.
 _Avoid_: reading, lab value
+
+**Test**:
+One of a person's tests, such as Creatinine or Blood pressure: what their results are in, whatever each lab printed, so the values of one test from every lab are together. It has a name, a section (such as Kidney) and the unit its numbers are in, all in the AI's words; its line has every value at its number in that unit. The AI chooses each result's test when it saves the result, with the user, and gives the result's numbers in the test's unit: the printed number when the units mean the same, converted when they don't, none when it can't compare; the printed value stays as it came. Joining two tests, splitting one and renaming are saves in the chat, with a receipt and undo. A test is never removed: one with no results stays, and the AI can use it again. Results saved before Rufi had tests are in one test for each printed name and unit.
+_Avoid_: analyte, biomarker, series, group
 
 **Category**:
 Whether a result is a lab result or a measurement, which decides the page it shows on. The AI chooses it with the user when it saves, never from the test's name or from having a report; an amended result keeps the category of the one it replaces unless the user agrees to another. The user can change it in the chat ("that's a measurement"): the same result moves, with a receipt. Results saved before Rufi had categories count as lab results.
 _Avoid_: type, kind (a kind is a kind of record)
 
 **Lab result**:
-A result of the category lab: a test of a sample, such as blood or urine, from a lab or a clinic, also when the user types it in. The **Lab results** page groups them by report, a report's lab results whole, and the typed ones by day.
+A result of the category lab: a test of a sample, such as blood or urine, from a lab or a clinic, also when the user types it in. The **Lab results** page lists the person's tests, each once with its latest lab result by sample date; a test's page has every value. A report stays whole on its document's page.
 _Avoid_: lab value, test result
 
 **Measurement**:
-A result of the category measurement: a reading of the body, such as blood pressure, pulse, weight, height, temperature or SpO2, typed in or read from a document. The **Measurements** page groups them by the day they were taken, at the precision known. Its date is when it was taken, never a lab's collection date.
+A result of the category measurement: a reading of the body, such as blood pressure, pulse, weight, height, temperature or SpO2, typed in or read from a document. The **Measurements** page groups them by the day they were taken, at the precision known; each is in a test, whose line it is on. Its date is when it was taken, never a lab's collection date.
 _Avoid_: vital, vitals, reading
 
 **As printed**:
@@ -184,7 +188,7 @@ What waits to go to the AI, kept by Rufi with the chat: your messages and Rufi's
 _Avoid_: inbox, outbox
 
 **Waiting messages**:
-What the queue holds, shown in the chat after its last message as soon as you send; you can steer, edit, reorder or remove your messages there. A held one says **Failed** with the error as it came, or **Not sent** with why (Stop cut its start off, or it came from a backup), and goes only when you send it. Signed out, a send takes nothing: the text and chips stay in the box. After a Stop, what waits goes on, in order; a message whose start a Stop cut off is held, **Not sent · Stopped.** After a **restart**, a reply that ran carries on first, then what waits goes on; when the AI stopped carrying on, what waits is held, **Not sent · Stopped after 5 restarts in a row.**, until you send it or a new message. The AI can do the same when you ask, and with what waits for its sub-agents (`waiting_messages`); steering a held one sends it.
+What the queue holds, shown over the bottom of the chat, just above the box, while it waits; you can steer, edit, reorder or remove your messages there. A held one says **Failed** with the error as it came, or **Not sent** with why (Stop cut its start off, or it came from a backup), and goes only when you send it. Signed out, a send takes nothing: the text and chips stay in the box. After a Stop, what waits goes on, in order; a message whose start a Stop cut off is held, **Not sent · Stopped.** After a **restart**, a reply that ran carries on first, then what waits goes on; when the AI stopped carrying on, what waits is held, **Not sent · Stopped after 5 restarts in a row.**, until you send it or a new message. The AI can do the same when you ask, and with what waits for its sub-agents (`waiting_messages`); steering a held one sends it.
 _Avoid_: backlog, pending messages
 
 **Rufi event**:

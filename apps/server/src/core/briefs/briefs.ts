@@ -11,6 +11,7 @@ import { v7 as uuid } from "uuid";
 import { localTime, shownDate } from "../record/dates.ts";
 import {
   KINDS,
+  dateColumn,
   kindNamed,
   visitWords,
   type Kind,
@@ -376,8 +377,8 @@ const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 /** A record in one line: its label, its date and its state. */
 function summary(kind: Kind, row: Row): string {
-  const column = kind.fields[kind.dated]?.column ?? kind.dated;
-  const date = row[column];
+  const column = dateColumn(kind);
+  const date = column === undefined ? undefined : row[column];
   const state = row["status"];
   return [
     // A statement's label carries its date; here it shows once, after it.
