@@ -39,7 +39,14 @@ import {
   useSettings,
   useStatus,
 } from "./reads.ts";
-import { type Group, GROUPS, useSettingsGroup } from "./settings-link.tsx";
+import {
+  type Group,
+  GROUPS,
+  type Save,
+  SettingsSaves,
+  useSavedOnClose,
+  useSettingsGroup,
+} from "./settings-link.tsx";
 import {
   Button,
   ICON,
@@ -70,11 +77,19 @@ export function SettingsDialog() {
       search: (previous) => ({ ...previous, settings: next }),
       replace: true,
     });
+  const [saves] = useState(() => new Map<Save, Group>());
+  // Text not saved yet is saved first; a failed save keeps Settings open at it.
+  const close = async () => {
+    const failed = await Promise.all(
+      [...saves].map(([save, at]) => save().then(() => undefined, () => at)),
+    );
+    show(failed.find((at) => at !== undefined));
+  };
   return (
     <Dialog.Root
       open={group !== undefined}
       onOpenChange={(open) => {
-        if (!open) show(undefined);
+        if (!open) void close();
       }}
     >
       <Dialog.Portal>
@@ -139,7 +154,9 @@ export function SettingsDialog() {
                       {NAMES[id].name}
                     </h3>
                     <div className="flex flex-col gap-6">
-                      <GroupOptions group={id} />
+                      <SettingsSaves value={{ saves, group: id }}>
+                        <GroupOptions group={id} />
+                      </SettingsSaves>
                     </div>
                   </Tabs.Panel>
                 ))}
@@ -290,7 +307,7 @@ function GroupOptions({ group }: { group: Group }) {
 
 /**
  * The user's own words for how replies look and read, saved when they
- * leave the box. Rufi AI reads them with every reply, after Rufi's rules.
+ * leave the box or close Settings. Rufi AI reads them with every reply, after Rufi's rules.
  */
 function ReplyWordsSection() {
   const kept = useSettings().data?.replyWords;
@@ -306,6 +323,11 @@ function ReplyWords({ kept }: { kept: string }) {
   const save = useMutation({
     mutationFn: (replyWords: string) => saveSettings({ replyWords }),
   });
+  // Saved, the settings keep these words (saveSettings).
+  const saveWords = async () => {
+    if (words !== kept) await save.mutateAsync(words);
+  };
+  useSavedOnClose(saveWords);
   return (
     <>
       <textarea
@@ -318,7 +340,8 @@ function ReplyWords({ kept }: { kept: string }) {
           setWords(event.target.value);
         }}
         onBlur={() => {
-          if (words !== (save.variables ?? kept)) save.mutate(words);
+          // A failed save says so below.
+          saveWords().catch(() => undefined);
         }}
         className="w-full resize-y rounded-lg border border-line bg-surface px-2.5 py-2"
       />
