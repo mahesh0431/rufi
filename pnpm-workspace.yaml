@@ -22,6 +22,12 @@ overrides:
   "@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-linux-x64-musl": "-"
   "@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-win32-arm64": "-"
   "@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-win32-x64": "-"
+  # OpenUI's chat state (react-headless 0.18.1) pins @ag-ui/core 0.0.53, which
+  # asks for zod 3, and OpenUI's math in Markdown (react-ui) asks for katex
+  # 0.16: both have advisories fixed only in later versions, Rufi's zod 4.6.7
+  # and katex 0.18.
+  "@ag-ui/core>zod": "4.6.7"
+  katex: "0.18.11"
 
 packageExtensions:
   "@anthropic-ai/claude-agent-sdk":
