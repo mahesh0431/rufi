@@ -50,7 +50,7 @@ export interface Tailscale {
 export type Run = (args: readonly string[]) => Promise<string>;
 
 /** The `tailscale` command found first; ENOENT when there is none. */
-export const runTailscale: Run = async (args) => {
+const runTailscale: Run = async (args) => {
   let missing: unknown;
   for (const command of COMMANDS) {
     try {

@@ -165,7 +165,7 @@ async function pairingLink(
 ) {
   const made = await api("POST", "/api/paired-apps/pairing", { personId });
   expect(made.status).toBe(200);
-  const link = new URL(String((made.body["pairing"] as { link: string }).link));
+  const link = new URL((made.body["pairing"] as { link: string }).link);
   return {
     port: Number(link.port),
     code: new URLSearchParams(link.hash.slice(1)).get("code") ?? "",
@@ -243,7 +243,9 @@ describe("pairing", () => {
 
     const both = await Promise.all([pair(port, code), pair(port, code)]);
 
-    expect(both.map(({ status }) => status).sort()).toEqual([200, 410]);
+    expect(both.map(({ status }) => status).sort((a, b) => a - b)).toEqual([
+      200, 410,
+    ]);
     expect(
       ((await api("GET", "/api/paired-apps")).body["apps"] as unknown[]).length,
     ).toBe(1);
@@ -329,12 +331,11 @@ describe("a paired app's key", () => {
   });
 
   it("opens the door again when Rufi starts with an app paired, on the same port", async () => {
-    let core = await start();
-    const { port, code } = await pairingLink(await settings(core));
+    const { port, code } = await pairingLink(await settings(await start()));
     const key = String((await pair(port, code)).body["key"]);
     await stop();
 
-    core = await start();
+    await start();
 
     expect((await door(port, "GET", "/api/me", { key })).status).toBe(200);
     expect(asked).toEqual([`serve ${String(port)}`]);

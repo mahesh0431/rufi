@@ -30,13 +30,20 @@ export function IPhoneSection() {
   // More than one person: whose record, chosen before pairing.
   const [asking, setAsking] = useState(false);
   const [whose, setWhose] = useState<string>();
-  // The apps paired when the code was made: a new one is the phone that used it.
-  const [before, setBefore] = useState<readonly string[]>();
+  // The code's person, and the apps paired when it was made: a new one is
+  // the phone that used it.
+  const [made, setMade] = useState<{
+    person: string;
+    before: readonly string[];
+  }>();
   const start = useMutation({
     mutationFn: (personId: string) =>
       read(PairedApps, "POST", "/api/paired-apps/pairing", { personId }),
     onSuccess: (state) => {
-      setBefore(paired.data?.apps.map(({ id }) => id) ?? []);
+      setMade({
+        person: state.pairing?.person.name ?? "",
+        before: paired.data?.apps.map(({ id }) => id) ?? [],
+      });
       setAsking(false);
       setWhose(undefined);
       shown(state);
@@ -46,7 +53,7 @@ export function IPhoneSection() {
     mutationFn: () =>
       read(PairedApps, "POST", "/api/paired-apps/pairing/cancel"),
     onSettled: (state) => {
-      setBefore(undefined);
+      setMade(undefined);
       if (state) shown(state);
     },
   });
@@ -145,10 +152,11 @@ export function IPhoneSection() {
           </p>
         )}
       </div>
-      {before !== undefined && (
+      {made !== undefined && (
         <PairingDialog
           state={state}
-          before={before}
+          person={made.person}
+          before={made.before}
           closing={close.isPending}
           close={() => {
             close.mutate();
@@ -243,19 +251,19 @@ function AppLine({ app }: { app: PairedApp }) {
  */
 function PairingDialog({
   state,
+  person,
   before,
   closing,
   close,
 }: {
   state: PairedApps;
+  person: string;
   before: readonly string[];
   closing: boolean;
   close: () => void;
 }) {
   const { pairing } = state;
   const added = state.apps.find(({ id }) => !before.includes(id));
-  // Kept once known: the code is gone when a phone used it.
-  const [person, setPerson] = useState(pairing?.person.name);
   const [picture, setPicture] = useState<string>();
   const [copied, setCopied] = useState<string>();
   const link = pairing?.link;
@@ -269,9 +277,6 @@ function PairingDialog({
       current = false;
     };
   }, [link]);
-  useEffect(() => {
-    if (pairing) setPerson(pairing.person.name);
-  }, [pairing]);
   return (
     <Dialog.Root
       open
@@ -283,7 +288,7 @@ function PairingDialog({
         <Dialog.Backdrop className={BACKDROP} />
         <Dialog.Popup className={PANEL}>
           <Dialog.Title className="text-[0.9375rem] font-semibold">
-            Pair an iPhone{person === undefined ? "" : ` for ${person}`}
+            Pair an iPhone for {person}
           </Dialog.Title>
           {added ? (
             <Dialog.Description role="status">
