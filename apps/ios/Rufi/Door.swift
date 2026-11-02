@@ -70,6 +70,44 @@ nonisolated struct Door: Sendable {
         return opened.url
     }
 
+    /// Fetches one of `document`'s files, as it came, into `staging`; an
+    /// original may be large, so it has 5 minutes.
+    func file(person: String, document: String, file: String, into staging: URL) async throws(Problem) -> URL {
+        let path = ["api", "people", person, "documents", document, "files", file]
+            .map { $0.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(.init(charactersIn: "-_."))) ?? "" }
+            .joined(separator: "/")
+        guard let url = URL(string: "/" + path, relativeTo: origin) else { throw .refused("That file isn't there.") }
+        var request = URLRequest(url: url, timeoutInterval: Self.fileSeconds)
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        let fetched: URL
+        let response: URLResponse
+        do {
+            (fetched, response) = try await Self.files.download(for: request)
+        } catch {
+            throw .unreachable
+        }
+        // At once where Rufi's own cleanup finds it, whatever happens next.
+        let staged = staging.appending(path: UUID().uuidString)
+        do {
+            try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+            try FileManager.default.moveItem(at: fetched, to: staged)
+        } catch {
+            try? FileManager.default.removeItem(at: fetched)
+            throw .refused("Rufi couldn't keep a copy to show. Try again.")
+        }
+        guard let http = response as? HTTPURLResponse else {
+            try? FileManager.default.removeItem(at: staged)
+            throw .unreachable
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let refusal = (try? Data(contentsOf: staged)).flatMap { try? JSONDecoder().decode(Refusal.self, from: $0) }
+            try? FileManager.default.removeItem(at: staged)
+            if http.statusCode == 401, refusal?.problem == "unpaired" { throw .unpaired }
+            throw .refused(refusal?.error ?? "Rufi on your Mac refused (\(http.statusCode)).")
+        }
+        return staged
+    }
+
     /// Unpairs this iPhone on the Mac.
     func unpair() async throws(Problem) {
         struct Nothing: Decodable {}

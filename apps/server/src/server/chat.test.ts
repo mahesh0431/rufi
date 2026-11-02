@@ -2929,6 +2929,8 @@ describe("the chat, on the scripted Codex", () => {
     });
     const c = await newChat();
     await say(c, "Ask two helpers");
+    // Its stop is a reply of its own, not a steer into this one.
+    await ended(c.id);
     const a = ownCall("call-0");
     const b = ownCall("call-1");
     const leaf = `${a}/1/call-0`;
@@ -3171,6 +3173,8 @@ describe("the chat, on the scripted Codex", () => {
     });
     const c = await newChat();
     await say(c, "Ask a helper");
+    // Its next message is a reply of its own, not a steer into this one.
+    await ended(c.id);
     const helper = ownCall("call-0");
     const more = ownCall("call-more");
     const input = () =>
@@ -3328,6 +3332,8 @@ describe("the chat, on the scripted Codex", () => {
     });
     const c = await newChat();
     await say(c, "Ask a helper");
+    // Its next message is a reply of its own, not a steer into this one.
+    await ended(c.id);
     const helper = ownCall("call-start");
     await until(() =>
       Promise.resolve(

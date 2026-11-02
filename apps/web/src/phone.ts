@@ -22,7 +22,14 @@ export type ToApp =
   /** The session has ended: the app opens Rufi again, or says it's unpaired. */
   | { type: "ended" }
   /** Scan: the app's document camera, then it adds the pages to the chat. */
-  | { type: "scan" };
+  | { type: "scan" }
+
+  /** View original: the app fetches the document's files and shows them. */
+  | {
+      type: "original";
+      documentId: string;
+      files: { id: string; name: string }[];
+    };
 
 declare global {
   interface Window {
