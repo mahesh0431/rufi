@@ -138,7 +138,9 @@ protocol NoticeCenter {
 /// notices. A refresh asks for the plan in the phone's own calendar, then
 /// adds or replaces each notice by its id, and only then removes the ones
 /// the plan no longer has, so nothing is ever cleared first. One refresh at
-/// a time; one asked meanwhile runs after it.
+/// a time; one asked meanwhile runs after it. Stopped (unpaired), nothing
+/// more is added: the refresh in flight ends at its next step, and only then
+/// is every notice removed.
 @Observable
 final class Reminders {
     /// The background refresh's task (Info.plist).
@@ -154,8 +156,13 @@ final class Reminders {
     private let now: () -> Date
     private let plan: (String) async throws(Door.Problem) -> ReminderPlan
     private let unpaired: () -> Void
-    private var refreshing = false
+    /// The refresh in flight, joined by a stop.
+    private var running: Task<Void, Never>?
     private var again = false
+    /// Unpaired: this pairing's reminders are over for good.
+    private var stopped = false
+    /// The Mac said this iPhone is unpaired, during the refresh.
+    private var refused = false
 
     /// `plan` asks the Mac for the plan from a day; `unpaired` is told when
     /// the Mac says this iPhone is unpaired.
@@ -174,16 +181,25 @@ final class Reminders {
 
     /// Brings the notices in line with the Mac's plan.
     func refresh() async {
-        if refreshing {
+        guard !stopped else { return }
+        if let running {
             again = true
+            await running.value
             return
         }
-        refreshing = true
-        defer { refreshing = false }
-        repeat {
-            again = false
-            await once()
-        } while again
+        let task = Task {
+            repeat {
+                again = false
+                await once()
+            } while again && !stopped
+        }
+        running = task
+        await task.value
+        running = nil
+        if refused, !stopped {
+            await stop()
+            unpaired()
+        }
     }
 
     /// Reads until when reminders are set, from iOS.
@@ -191,11 +207,15 @@ final class Reminders {
         until = await center.pendingIDs().compactMap { Notices.date(of: $0, calendar: phone) }.max()
     }
 
-    /// Unpaired: every Rufi notice goes, pending and delivered.
-    func clear() async {
+    /// Unpaired: nothing more is added, and once the refresh in flight has
+    /// ended, every Rufi notice goes, pending and delivered.
+    func stop() async {
+        stopped = true
+        await running?.value
         center.removePending(await center.pendingIDs())
         center.removeDelivered(await center.deliveredNotices().map(\.id))
         until = nil
+        ring = nil
     }
 
     private func once() async {
@@ -204,34 +224,47 @@ final class Reminders {
         do {
             plan = try await self.plan(Notices.firstDay(now: now(), calendar: calendar))
         } catch .unpaired {
-            await clear()
-            unpaired()
+            refused = true
             return
         } catch {
             // The Mac out of reach: what is set keeps ringing.
             await load()
             return
         }
+        // Stopped while asking: the answer is the old pairing's.
+        guard !stopped else { return }
         ring = plan.ring
+        let notices = Notices.of(plan, now: now(), calendar: calendar)
+        // What the plan no longer has goes first, so iOS never holds more
+        // than the plan's own 60.
+        let planned = Set(notices.map(\.id) + [Notices.renewal])
+        center.removePending(await center.pendingIDs().filter { !planned.contains($0) })
         var kept: Set<String> = []
         var last: Notice?
-        for notice in Notices.of(plan, now: now(), calendar: calendar) {
+        for notice in notices {
+            guard !stopped else { return }
             // The first iOS refuses ends what is set: until is the one before.
             do { try await center.add(notice) } catch { break }
             kept.insert(notice.id)
             last = notice
         }
-        if let last {
+        if let last, !stopped {
             let renewal = Notices.renewal(after: last, calendar: calendar)
             if (try? await center.add(renewal)) != nil { kept.insert(renewal.id) }
         }
+        guard !stopped else { return }
+        // After a refusal: nothing set beyond it, so the renewal comes first.
         center.removePending(await center.pendingIDs().filter { !kept.contains($0) })
-        // Delivered: a time whose medicines are all logged, and the renewal,
-        // since Rufi was opened.
-        let logged = Dictionary(plan.doses.map { (Notices.dose + $0.at, Set($0.logged)) }) { first, _ in first }
+        // Delivered: one stays while a medicine in it is still due then and
+        // not logged. Logged, stopped, retimed, older than the plan, or the
+        // renewal once Rufi refreshed: it goes. Notification Center isn't the log.
+        var due: [String: Set<String>] = [:]
+        for dose in plan.doses {
+            due[Notices.dose + dose.at, default: []]
+                .formUnion(dose.medicines.map(\.id).filter { !dose.logged.contains($0) })
+        }
         center.removeDelivered(await center.deliveredNotices().filter { notice in
-            notice.id == Notices.renewal
-                || logged[notice.id].map { Set(notice.medicines).isSubset(of: $0) } == true
+            due[notice.id].map { $0.isDisjoint(with: notice.medicines) } ?? true
         }.map(\.id))
         await load()
     }

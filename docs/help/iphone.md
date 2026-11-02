@@ -50,7 +50,7 @@ When that person's reminders ring on the **iPhone** or **Both**, Rufi on the iPh
 
 **Set until.** The iPhone gets its reminders from your Mac for the next week, and the next time after it (so a medicine you take once a month still rings), and keeps them when it can't reach the Mac. **This iPhone** shows until when they are set, for example "Set until Thu 5 Nov, 21:00", and so does **Can't Reach Your Mac**. The iPhone gets them again each time you open Rufi, when you leave it, and now and then in the background when iOS allows. If you don't open Rufi for a week, a last notice, **Open Rufi to keep your reminders coming**, rings a minute after the last one set.
 
-After you change a medicine's times or reminders on the Mac, open Rufi on the iPhone, so it rings the new ones: until then it rings what it had. With Rufi open on the iPhone, it follows at once. A dose you logged, on the iPhone or the Mac, rings no more, and its notice leaves Notification Center the next time the iPhone gets its reminders.
+After you change a medicine's times or reminders on the Mac, open Rufi on the iPhone, so it rings the new ones: until then it rings what it had. With Rufi open on the iPhone, it follows at once. A dose you logged, on the iPhone or the Mac, rings no more, and its notice leaves Notification Center the next time the iPhone gets its reminders, as do notices for a medicine you stopped or retimed, and ones older than yesterday.
 
 If nothing rings, check **This iPhone**: **Notifications** says whether iOS lets Rufi ring, with a way to turn them on.
 

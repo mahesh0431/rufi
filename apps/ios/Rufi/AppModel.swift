@@ -19,6 +19,8 @@ final class AppModel {
     let lock = Lock()
     /// The reminders of the pairing; none while unpaired.
     private(set) var reminders: Reminders?
+    /// The last pairing's reminders being removed: a new pairing waits for it.
+    private var stopping: Task<Void, Never>?
 
     init() {
         // A first launch after installing: a key left from before is removed.
@@ -35,6 +37,7 @@ final class AppModel {
 
     /// Pairs with the link's code; the one line to show when it didn't.
     func pair(_ text: String) async -> String? {
+        await stopping?.value
         guard let link = PairingLink(text) else {
             return "That isn't a Rufi pairing link. Copy it again from Rufi on your Mac."
         }
@@ -87,7 +90,7 @@ final class AppModel {
         if let pairing = Pairing.saved(), let key = Keychain.key() {
             try? await Door(origin: pairing.origin, key: key).unpair()
         }
-        await reminders?.clear()
+        await reminders?.stop()
         forget()
         stage = .pairing
     }
@@ -117,7 +120,7 @@ final class AppModel {
     /// The Mac unpaired this iPhone: its key, pairing and reminders go.
     private func wasUnpaired() {
         let reminders = reminders
-        Task { await reminders?.clear() }
+        stopping = Task { await reminders?.stop() }
         forget()
         stage = .unpaired
     }
