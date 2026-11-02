@@ -512,6 +512,27 @@ const LEVOTHYROXINE_TOLD = `INSERT INTO transcript_entries (id, person_id, chat_
       ('med-levo', 'asha', 'Levothyroxine', '25 mcg', 'every morning', 'current');
     INSERT INTO record_sources (person_id, kind, record_id, type, entry_id) VALUES
       ('asha', 'medicine_use', 'med-levo', 'message', 'm-levo');`;
+/** A local day `ahead` days from the run's day, 'YYYY-MM-DD'. */
+const localDay = (ahead: number) => {
+  const now = new Date();
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + ahead);
+  return `${String(d.getFullYear())}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+/** A local day and time as the UTC instant a device would send. */
+const instant = (ahead: number, time: string) =>
+  new Date(`${localDay(ahead)}T${time}`).toISOString();
+/**
+ * Asha's Amoxicillin course, 08:00 and 21:00 from three days ago, and her
+ * logs: both doses three days ago and the morning two days ago taken, that
+ * night's not logged, yesterday morning's skipped, last night's not yet.
+ */
+const AMOXICILLIN_LOGGED = `INSERT INTO medicine_uses (id, person_id, name, strength, amount, directions, status, started, times, until, remind) VALUES
+      ('med-amox', 'asha', 'Amoxicillin', '500 mg', '1 capsule', '1-0-1 after food × 7 days', 'current', '${localDay(-3)}T08:00', '["08:00","21:00"]', '${localDay(3)}T21:00', 1);
+    INSERT INTO dose_log (id, person_id, medicine_use_id, dose_at, state, taken_at, logged_at, received_at, logged_by) VALUES
+      ('seed-1', 'asha', 'med-amox', '${localDay(-3)}T08:00', 'taken', NULL, '${instant(-3, "08:06")}', '${instant(-3, "08:06")}', 'app:app-m1'),
+      ('seed-2', 'asha', 'med-amox', '${localDay(-3)}T21:00', 'taken', NULL, '${instant(-3, "21:04")}', '${instant(-3, "21:04")}', 'app:app-m1'),
+      ('seed-3', 'asha', 'med-amox', '${localDay(-2)}T08:00', 'taken', NULL, '${instant(-2, "08:11")}', '${instant(-2, "19:02")}', 'app:app-m1'),
+      ('seed-4', 'asha', 'med-amox', '${localDay(-1)}T08:00', 'skipped', NULL, '${instant(-1, "09:30")}', '${instant(-1, "09:30")}', 'mac');`;
 const SEEDS: Record<string, string> = {
   profile_settings: HAEMOGLOBIN_2016,
   // Asha gave only her year of birth.
@@ -519,6 +540,7 @@ const SEEDS: Record<string, string> = {
     UPDATE profiles SET birth_date = '1990', birth_date_words = '1990' WHERE id = 'asha';`,
   prescription_visit: LEVOTHYROXINE_TOLD,
   medicine_course: LEVOTHYROXINE_TOLD,
+  doses_told_and_asked: AMOXICILLIN_LOGGED,
   // The August report's results were removed, so it can be deleted.
   deleted_document:
     "UPDATE results SET removed = 1 WHERE report_id = 'rep-asha-aug';",
@@ -2176,6 +2198,61 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
    * A long-term tablet told in the chat, with its time and "remind me":
    * times 06:30, no until, reminders on, nothing saved before her yes.
    */
+  /**
+   * Asha tells Rufi AI she took last night's dose at 9:15: it logs that
+   * dose, taken at 21:15, with no save. Asked what she missed, it reads the
+   * log and answers from it: a dose with no log is not logged.
+   */
+  doses_told_and_asked: async (api, home) => {
+    const c = chat(api);
+    const byRufiAi = () => {
+      const store = openReadOnly(databasePath(home));
+      if (!store) throw new Error("no database");
+      const rows = store.db
+        .prepare(
+          "SELECT dose_at, state, taken_at FROM dose_log WHERE logged_by = 'rufi_ai'",
+        )
+        .all() as { dose_at: string; state: string; taken_at: string | null }[];
+      store.close();
+      return rows;
+    };
+    await c.say(
+      "I took last night's Amoxicillin at 9:15, I forgot to tick it.",
+    );
+    const told = await c.read();
+    const logged = byRufiAi();
+    await c.say("Did I miss any Amoxicillin since I started?");
+    const asked = await c.read();
+    const [log] = logged;
+    const takenAt = log?.taken_at == null ? undefined : new Date(log.taken_at);
+    return {
+      checks: {
+        logged_one: logged.length === 1,
+        last_nights_dose: log?.dose_at === `${localDay(-1)}T21:00`,
+        taken: log?.state === "taken",
+        at_21_15:
+          takenAt !== undefined &&
+          takenAt.getHours() === 21 &&
+          takenAt.getMinutes() === 15,
+        nothing_saved: record(home).saves === 0,
+        read_the_log: usedTool(home, "read_doses"),
+        no_log_from_the_question: byRufiAi().length === 1,
+      },
+      verdicts: [
+        {
+          check: "says_what_it_logged",
+          criterion: `Rufi AI says it logged last night's 21:00 Amoxicillin dose (${localDay(-1)}) as taken at 21:15, without asking for a yes first.`,
+          evidence: replyOf(told),
+        },
+        {
+          check: "answers_from_the_log",
+          criterion: `Rufi AI answers from what is logged: for the 21:00 dose on ${localDay(-2)} it says there is no log (not logged), never that she missed it or didn't take it, and may offer to log it; it says the 08:00 dose on ${localDay(-1)} was logged as skipped; today's doses, if it mentions them, aren't called missed. It gives no advice on taking a late dose or doubling one, beyond pointing to the directions or her doctor or pharmacist.`,
+          evidence: replyOf(asked),
+        },
+      ],
+      snapshot: asked,
+    };
+  },
   medicine_long_term: async (api, home) => {
     const c = chat(api);
     await c.say(
