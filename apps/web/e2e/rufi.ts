@@ -307,6 +307,13 @@ export const test = base.extend<{ rufi: Rufi }>({
 export const FILE_WORK_MS = 20_000;
 
 /**
+ * How long a test waits for the first thing a core's first turn makes, such
+ * as a receipt or a brief's line: that turn also starts Codex and opens its
+ * thread, which takes much longer when the whole suite runs side by side.
+ */
+export const FIRST_TURN_MS = 20_000;
+
+/**
  * Files into a reply as a person sends them from the Documents page: Add
  * puts them in the chat box as chips (nothing starts), then Send, with
  * `words` or none, sends them.

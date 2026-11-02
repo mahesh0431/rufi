@@ -18,6 +18,7 @@ import {
 import { runningLink } from "../../server/src/server/core.ts";
 import {
   expect,
+  FIRST_TURN_MS,
   openSettings,
   SIGNED_OUT,
   signedIn,
@@ -1268,6 +1269,9 @@ test("a save to the record shows Rufi's receipt, also after a reload", async ({
     );
   };
   await send(page, "I have a headache");
+  await expect(log(chat(page)).locator(".receipt")).toBeVisible({
+    timeout: FIRST_TURN_MS,
+  });
   await shown(chat(page));
   await expect(log(chat(page)).locator(".reply")).toHaveText(
     "ok:I have a headache",
