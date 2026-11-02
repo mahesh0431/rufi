@@ -101,7 +101,7 @@ One medicine at one of its times on one local day: Metformin at 21:00 on 2 Nov. 
 _Avoid_: intake, administration
 
 **Dose log**:
-What the person said happened to a dose: taken, skipped, or an earlier log taken back (Undo). Kept as it came, outside the record, and never changed; the latest log decides a dose's state. A dose with no log is **not logged**, never missed. A medicine's **Doses** shows its log.
+What the person said happened to a dose: taken, skipped, or an earlier log taken back (Undo). Kept as it came, outside the record, and never changed; the latest log decides a dose's state. A dose with no log is **not logged**, never missed. Logged on Today, or by telling Rufi AI. A medicine's **Doses** shows its log.
 _Avoid_: adherence, compliance, missed dose, intake record
 
 **Visit**:

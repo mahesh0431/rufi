@@ -2726,6 +2726,98 @@
       ]
     },
     {
+      "name": "rufi.read_doses",
+      "description": "The active person's dose log: what they logged for each dose of their medicines on the local days from to to (at most 62 days), of one medicine or all, as the rows came, by dose, then in the order logged. A row's state is taken, skipped, or cleared (an earlier log taken back with Undo); a dose's state is its last row. Each row has its dose (dose_at), when the user said they took it (taken_at, only when said), when it was logged (logged_at) and when Rufi got it (arrived_at: later when it waited on their iPhone), all local, and where: mac (Today on the Mac), iphone, or rufi_ai (you, with log_dose). Also medicines: each one's fields as save_changes takes them, as they are now (its times, days, started, until, status, remind): with medicine, that one; else the current medicines with times and every medicine in the rows. Times may have changed since a past day, and Rufi works out no doses for past days: a dose with no row is not logged. Read only. Rufi chooses the person, not you.",
+      "callers": "model",
+      "readOnly": true,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "A local day, 'YYYY-MM-DD'."
+          },
+          "to": {
+            "type": "string",
+            "description": "A local day, 'YYYY-MM-DD'."
+          },
+          "medicine": {
+            "type": "string",
+            "description": "Only this medicine use's logs: its id, from get_overview or get_records."
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "from": "2026-10-27",
+          "to": "2026-11-02"
+        },
+        {
+          "from": "2026-11-01",
+          "to": "2026-11-02",
+          "medicine": "0199a0f2-0000-7000-8000-00000000000d"
+        }
+      ]
+    },
+    {
+      "name": "rufi.log_dose",
+      "description": "Logs what the user told you happened to one dose of one of their medicines: taken, skipped, or cleared (takes back the dose's earlier log, as Undo on Today does). Only on the user's own word in this chat; when it's unclear which medicine or which dose, ask first. dose_at is the dose as the medicine's times had it that day; taken_at only with taken, when they said when. The log is kept as given, outside the health record: no receipt, and no log is ever changed or removed; to correct one, log the dose again (its last log decides) or clear it. Answers with the log; the same call again logs nothing more. Rufi chooses the person, not you.",
+      "callers": "model",
+      "readOnly": false,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "medicine": {
+            "type": "string",
+            "description": "The medicine use's id, from get_overview or get_records."
+          },
+          "dose_at": {
+            "type": "string",
+            "description": "The dose: its local date and one of the medicine's times, 'YYYY-MM-DDTHH:MM'."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "taken",
+              "skipped",
+              "cleared"
+            ],
+            "description": "taken, skipped, or cleared: takes back the dose's earlier log, as Undo does."
+          },
+          "taken_at": {
+            "type": "string",
+            "description": "Only with taken: when the user said they took it, local 'YYYY-MM-DDTHH:MM'."
+          }
+        },
+        "required": [
+          "medicine",
+          "dose_at",
+          "state"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "medicine": "0199a0f2-0000-7000-8000-00000000000d",
+          "dose_at": "2026-11-02T21:00",
+          "state": "taken",
+          "taken_at": "2026-11-02T21:15"
+        },
+        {
+          "medicine": "0199a0f2-0000-7000-8000-00000000000d",
+          "dose_at": "2026-11-03T08:00",
+          "state": "skipped"
+        }
+      ]
+    },
+    {
       "name": "rufi.show_face",
       "description": "Shows a face on Rufi, the dog at the top of the app's sidebar, from this call until your next reply starts: question (you ask the user to decide something), found (you found something worth a look), tip (you give a hint), playful (a light moment), alert (you bring up something new). Optional and playful, about the conversation: most replies need none, and the last call in a reply wins. Never use it to react to a health value or result. It changes nothing and answers ok.",
       "callers": "model",

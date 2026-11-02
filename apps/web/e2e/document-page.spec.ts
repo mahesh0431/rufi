@@ -648,3 +648,54 @@ test("once every result was saved, the page and the list say so, and still do af
   await expect(page.locator(".receipt")).toHaveCount(1);
   await check();
 });
+
+/** When a draft's result was collected, as the reader writes it. */
+const DATE = JSON.stringify({ ...COLLECTED });
+
+// On a touch screen, as on the iPhone: its buttons are 44 px wide.
+test.describe("on a touch screen", () => {
+  test.use({ hasTouch: true });
+
+  test("in a page 390 px wide, a read report's results each show their buttons without scrolling sideways, and Ask Rufi adds the result", async ({
+    page,
+    rufi,
+  }) => {
+    await rufi.family(`
+      INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, created_at)
+        VALUES ('job-aug', 'asha', 'document_read', 'doc-asha-aug', 'done', 1, '[1,2]', '2026-10-01T09:00:00Z');
+      UPDATE document_pages SET state = 'read', entry_job_id = 'job-aug'
+        WHERE document_id = 'doc-asha-aug';
+      UPDATE documents SET version = 1, kind = 'lab_report', issuer = 'Sunrise Labs', date = '2026-08-12'
+        WHERE id = 'doc-asha-aug';
+      INSERT INTO draft_items (id, person_id, document_id, page, seq, job_id, kind, version, fields, original, quote, created_at)
+      SELECT 'drf-' || n, 'asha', 'doc-asha-aug', 1, n, 'job-aug', 'lab_result', 1, f, f,
+        json_extract(f, '$.test_name') || ' | ' || json_extract(f, '$.value_text'), '2026-10-01T09:00:00Z'
+      FROM (
+        SELECT 1 AS n, json_set(json('{"test_name":"Haemoglobin","value_text":"13.2","unit":"g/dL","reference_range":"12.0-15.5"}'), '$.date', json('${DATE}')) AS f
+        UNION SELECT 2, json_set(json('{"test_name":"Platelet count","value_text":"2.1","unit":"lakh/µL","reference_range":"1.5-4.1"}'), '$.date', json('${DATE}'))
+        UNION SELECT 3, json_set(json('{"test_name":"Thyroid stimulating hormone","value_text":"4.6","unit":"mIU/L","reference_range":"0.4-4.0","flag_text":"High"}'), '$.date', json('${DATE}'))
+      );
+    `);
+    await rufi.start();
+    // 390 px of page beside the 240 px sidebar: the phone's width.
+    await page.setViewportSize({ width: 630, height: 844 });
+    await page.goto(rufi.link());
+    await page.getByRole("link", { name: "Documents" }).click();
+    await page.getByRole("link", { name: "Sunrise Labs August.pdf" }).click();
+    const result = page
+      .getByRole("row")
+      .filter({ hasText: "Thyroid stimulating hormone" });
+    await result
+      .getByRole("button", { name: "Thyroid stimulating hormone" })
+      .scrollIntoViewIfNeeded();
+    const ask = result.getByRole("button", { name: "Ask Rufi" });
+    await expect(ask).toBeInViewport({ ratio: 1 });
+    await ask.click();
+    await page.getByRole("button", { name: /^Open the chat/ }).click();
+    await expect(
+      page
+        .getByRole("list", { name: "Added to this message" })
+        .getByRole("listitem"),
+    ).toContainText([/Thyroid stimulating hormone/]);
+  });
+});

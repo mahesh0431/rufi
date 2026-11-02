@@ -127,3 +127,21 @@ test("keeps a log whose send got no answer through another page and a reload, an
   await expect(doses).toContainText("Today21:00 taken 12:00 (Mac)");
   await expect(doses).not.toContainText("12:01");
 });
+
+test("a dose told to Rufi AI with no time it was taken says only that it was taken", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family(
+    `UPDATE medicine_uses SET times = '["08:00","21:00"]', remind = 1 WHERE id = 'med-a1';
+    INSERT INTO dose_log (id, person_id, medicine_use_id, dose_at, state, taken_at, logged_at, received_at, logged_by)
+      VALUES ('agent-1/1/c-1', 'asha', 'med-a1', '2026-11-02T08:00', 'taken', NULL, '${new Date(2026, 10, 2, 10).toISOString()}', '${new Date(2026, 10, 2, 10).toISOString()}', 'rufi_ai');`,
+  );
+  await rufi.start({ now: () => NOON.toISOString() });
+  const here = await medicines(page, rufi.link());
+  await expect(here.dose("08:00")).toContainText("Taken · Rufi AI");
+  await page.getByRole("button", { name: "Metformin 500 mg" }).click();
+  await expect(page.getByRole("region", { name: /^Doses/ })).toContainText(
+    "Today08:00 taken (told Rufi AI)",
+  );
+});

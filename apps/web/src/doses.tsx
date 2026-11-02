@@ -17,13 +17,14 @@ const LATE_MS = 5 * 60_000;
 const isoDay = (at: Date) =>
   `${String(at.getFullYear())}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
 
-/** "21:00 taken at 21:15 (told Rufi AI)", "08:00 taken 08:12 (iPhone, arrived 19:02)". */
+/** "21:00 taken 21:15 (told Rufi AI)", "08:00 taken 08:12 (iPhone, arrived 19:02)", "08:00 taken (told Rufi AI)". */
 function words(row: DoseLogRow): string {
   const what =
     row.state === "taken"
-      ? row.takenAt === undefined
-        ? `taken ${clockTime(row.loggedAt)}`
-        : `taken at ${clockTime(row.takenAt)}`
+      ? // Without when it was taken, only that it was.
+        row.takenAt === undefined
+        ? "taken"
+        : `taken ${clockTime(row.takenAt)}`
       : row.state === "skipped"
         ? "skipped"
         : "undone";
