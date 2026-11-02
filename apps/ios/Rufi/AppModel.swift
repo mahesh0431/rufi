@@ -23,6 +23,8 @@ final class AppModel {
             Keychain.forget()
             UserDefaults.standard.set(true, forKey: "installed")
         }
+        // Copies of originals left from a Rufi that ended while showing one.
+        Originals.shown.deleteAll()
         if let pairing = Pairing.saved(), let key = Keychain.key() {
             stage = .open(shell(pairing, key))
         }

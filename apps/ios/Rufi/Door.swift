@@ -70,11 +70,48 @@ nonisolated struct Door: Sendable {
         return opened.url
     }
 
+    /// Fetches one of `document`'s files, as it came, into a temporary file;
+    /// an original may be large, so it has 5 minutes.
+    func file(person: String, document: String, file: String) async throws(Problem) -> URL {
+        let path = ["api", "people", person, "documents", document, "files", file]
+            .map { $0.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(.init(charactersIn: "-_."))) ?? "" }
+            .joined(separator: "/")
+        guard let url = URL(string: "/" + path, relativeTo: origin) else { throw .refused("That file isn't there.") }
+        var request = URLRequest(url: url, timeoutInterval: Self.fileSeconds)
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        let fetched: URL
+        let response: URLResponse
+        do {
+            (fetched, response) = try await Self.files.download(for: request)
+        } catch {
+            throw .unreachable
+        }
+        guard let http = response as? HTTPURLResponse else { throw .unreachable }
+        guard (200..<300).contains(http.statusCode) else {
+            let refusal = (try? Data(contentsOf: fetched)).flatMap { try? JSONDecoder().decode(Refusal.self, from: $0) }
+            try? FileManager.default.removeItem(at: fetched)
+            if http.statusCode == 401, refusal?.problem == "unpaired" { throw .unpaired }
+            throw .refused(refusal?.error ?? "Rufi on your Mac refused (\(http.statusCode)).")
+        }
+        return fetched
+    }
+
     /// Unpairs this iPhone on the Mac.
     func unpair() async throws(Problem) {
         struct Nothing: Decodable {}
         let _: Nothing = try await Self.call(origin: origin, key: key, method: "POST", path: "/api/unpair", body: [:])
     }
+
+    /// How long an original may take to come, as the screens give a file.
+    static let fileSeconds: TimeInterval = 5 * 60
+
+    private static let files: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = fileSeconds
+        configuration.timeoutIntervalForResource = fileSeconds
+        configuration.waitsForConnectivity = false
+        return URLSession(configuration: configuration, delegate: NoRedirects(), delegateQueue: nil)
+    }()
 
     private static let session: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral

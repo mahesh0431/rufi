@@ -43,6 +43,7 @@ import type { BoxChip } from "./draft.ts";
 import { messageOf, retain } from "./live.ts";
 import { askRufi } from "./panel.ts";
 import { PageImage } from "./page-image.tsx";
+import { onPhone, tell } from "./phone.ts";
 import { documentPath, pagePath } from "./pages.ts";
 import { queries, useDocumentItems, useDocuments } from "./reads.ts";
 import {
@@ -233,7 +234,14 @@ function Checking({
         <Button
           icon={FileText}
           onClick={() => {
-            setOriginal(true);
+            // On a phone, the app shows it in Quick Look.
+            if (onPhone) {
+              tell({
+                type: "original",
+                documentId: document.id,
+                files: document.files.map(({ id, name }) => ({ id, name })),
+              });
+            } else setOriginal(true);
           }}
         >
           View original

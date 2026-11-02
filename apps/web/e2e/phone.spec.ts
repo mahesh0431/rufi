@@ -3,6 +3,7 @@
 // marks it before it loads (<html data-place="phone">), and a stand-in for
 // the app keeps what the page tells it. The app itself is tested in
 // apps/ios.
+import type { Page } from "@playwright/test";
 import { expect, test } from "./rufi.ts";
 
 declare global {
@@ -17,12 +18,11 @@ declare global {
   }
 }
 
-test("in the iPhone app, a page shows alone, a link goes to the app, and the app opens it", async ({
-  page,
-  rufi,
-}) => {
-  await rufi.family();
-  await rufi.start();
+/**
+ * The page as the app marks it before it loads, with a stand-in for the app
+ * that keeps what the page tells it (`window.told`).
+ */
+async function asPhone(page: Page) {
   await page.route(
     (url) => url.pathname === "/",
     async (route) => {
@@ -42,6 +42,15 @@ test("in the iPhone app, a page shows alone, a link goes to the app, and the app
       },
     };
   });
+}
+
+test("in the iPhone app, a page shows alone, a link goes to the app, and the app opens it", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family();
+  await rufi.start();
+  await asPhone(page);
   const told = () => page.evaluate(() => window.told);
 
   await page.goto(rufi.link());
@@ -78,4 +87,28 @@ test("in the iPhone app, a page shows alone, a link goes to the app, and the app
     title: "Lab results",
   });
   await expect(page.getByRole("main")).toContainText("HbA1c");
+});
+
+test("in the iPhone app, View original asks the app to show the document's file", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family();
+  await rufi.start();
+  await asPhone(page);
+  await page.goto(rufi.link());
+  await page.evaluate(() => {
+    const app = window as unknown as { rufi: { open: (path: string) => void } };
+    app.rufi.open("/people/asha/documents/doc-asha-aug");
+  });
+  await page.getByRole("button", { name: "View original" }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.told))
+    .toContainEqual({
+      type: "original",
+      documentId: "doc-asha-aug",
+      files: [{ id: expect.any(String), name: "Sunrise Labs August.pdf" }],
+    });
+  // The app shows it; the page opens no viewer of its own.
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });

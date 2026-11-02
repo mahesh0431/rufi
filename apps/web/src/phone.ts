@@ -19,7 +19,13 @@ export type ToApp =
   /** A page has drawn: the app's bar takes its title. */
   | { type: "page"; path: string; title: string }
   /** The session has ended: the app opens Rufi again, or says it's unpaired. */
-  | { type: "ended" };
+  | { type: "ended" }
+  /** View original: the app fetches the document's files and shows them. */
+  | {
+      type: "original";
+      documentId: string;
+      files: { id: string; name: string }[];
+    };
 
 declare global {
   interface Window {
