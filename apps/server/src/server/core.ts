@@ -50,6 +50,7 @@ import {
 import { SKILLS } from "../core/skills/skills.ts";
 import { backupsPath } from "../core/store/backup.ts";
 import { devices as openDevices } from "../core/devices/devices.ts";
+import { pairedApps } from "../core/paired/paired-apps.ts";
 import {
   holdRufiLock,
   readJson,
@@ -67,6 +68,8 @@ import { aiFiles } from "./files.ts";
 import { mcpEndpoint, mcpKeys, skillResources } from "./mcp.ts";
 import { startRufiAi } from "./rufi-ai.ts";
 import { converter as openConverter } from "./converter.ts";
+import { remote as openRemote } from "./remote.ts";
+import { tailscale, type Tailscale } from "./tailscale.ts";
 import { secret, sessions } from "./session.ts";
 import { agentRuns, subAgents } from "./sub-agents.ts";
 import { keptSignIns, signInFlow, type ProviderSignIn } from "./signin.ts";
@@ -101,6 +104,8 @@ export interface CoreOptions {
    * due; the Mac's clock when not given.
    */
   now?: () => string;
+  /** Tailscale, for the remote door; the Mac's own `tailscale` when not given. */
+  tailscale?: Tailscale;
 }
 
 /** What `pnpm start` reads to reach the running Rufi; there while it runs. */
@@ -418,6 +423,26 @@ export const startCore = (options: CoreOptions) =>
       (opened) => Effect.promise(() => opened.close()),
     );
 
+    // The remote door, open at the start when an app is paired; closed
+    // before the record it reads.
+    const door = yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        openRemote({
+          apps: pairedApps(
+            writer,
+            options.now ?? (() => new Date().toISOString()),
+          ),
+          people: () => transcripts.people(),
+          setting: transcripts.setting,
+          saveSetting: transcripts.saveSetting,
+          tailscale: options.tailscale ?? tailscale(),
+          log,
+        }),
+      ),
+      (opened) => Effect.promise(() => opened.close()),
+    );
+    yield* attempt(() => door.start());
+
     const access = sessions();
     const launcher = secret();
     // The token is in the fragment: the browser never sends it in a request.
@@ -508,6 +533,7 @@ export const startCore = (options: CoreOptions) =>
         generated: generatedImages(home),
       }),
       signIn,
+      remote: door,
       launcher,
       launchUrl,
       ...(options.screens !== undefined && { screens: options.screens }),

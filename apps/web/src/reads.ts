@@ -11,6 +11,7 @@ import {
 } from "@rufi/contracts";
 import { BriefPage } from "@rufi/contracts/briefs";
 import { DeviceData } from "@rufi/contracts/devices";
+import { PairedApps } from "@rufi/contracts/remote";
 import {
   type InstructionPartId,
   Instructions,
@@ -150,6 +151,14 @@ export const useDevices = () =>
   });
 
 /** Where Rufi keeps its data; it changes only while Rufi isn't running. */
+/** Settings › iPhone: often while a code waits for a phone, to see it pair. */
+export const usePairedApps = () =>
+  useQuery({
+    queryKey: ["paired-apps"],
+    queryFn: () => read(PairedApps, "GET", "/api/paired-apps"),
+    refetchInterval: (query) => (query.state.data?.pairing ? 2_000 : 60_000),
+  });
+
 export const useDataFolder = () =>
   useQuery({
     queryKey: ["data-folder"],

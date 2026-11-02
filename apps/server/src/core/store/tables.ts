@@ -130,6 +130,7 @@ export interface Tables {
     name: string;
     created_at: string;
     last_batch_at: string | null;
+    paired_app_id: string | null;
   };
   device_values: {
     person_id: string;
@@ -304,6 +305,16 @@ export interface Tables {
     why: string | null;
     saved_at: string;
     sorted_at: string | null;
+  };
+  paired_apps: {
+    id: string;
+    person_id: string;
+    kind: string;
+    name: string;
+    key_sha256: string;
+    paired_at: string;
+    revoked_at: string | null;
+    last_seen_at: string | null;
   };
   people: {
     id: string;
