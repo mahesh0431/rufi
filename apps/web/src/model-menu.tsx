@@ -19,6 +19,7 @@ import { createContext, Fragment, type RefObject, useContext } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
 import { request } from "./api.ts";
+import { onPhone } from "./phone.ts";
 import { chatPath, type Live } from "./live.ts";
 import { useStatus } from "./reads.ts";
 import { ICON } from "./ui.tsx";
@@ -123,12 +124,15 @@ export function ModelMenu({
                       </Menu.RadioItem>
                     ))}
                     {out(provider) && (
+                      // On a phone, sign-in is on the Mac: said, not a link.
                       <Menu.Item
-                        className={`${ITEM} text-accent-ink`}
+                        disabled={onPhone}
+                        className={`${ITEM} ${onPhone ? "text-muted" : "text-accent-ink"}`}
                         onClick={() => void navigate({ to: "/sign-in" })}
                       >
                         <LogIn size={ICON} aria-hidden />
                         {SIGN_IN[provider]}
+                        {onPhone && " on your Mac"}
                       </Menu.Item>
                     )}
                   </Fragment>

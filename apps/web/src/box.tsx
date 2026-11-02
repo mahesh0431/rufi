@@ -38,6 +38,7 @@ import { type RefObject, useEffect, useState } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
 import { ApiError, request } from "./api.ts";
+import { onPhone } from "./phone.ts";
 import { AttachButton, AttachStatus } from "./attach.tsx";
 import { boxFor } from "./boxes.ts";
 import { ChipView } from "./chips.tsx";
@@ -374,15 +375,19 @@ export function Box({
           className="flex items-center gap-1.5 px-3.5 pb-2 text-muted"
         >
           {why}
-          {(why === SIGNED_OUT || why === CLAUDE_SIGNED_OUT) && (
-            <Button
-              look="quiet"
-              icon={LogIn}
-              onClick={() => void navigate({ to: "/sign-in" })}
-            >
-              Sign in
-            </Button>
-          )}
+          {(why === SIGNED_OUT || why === CLAUDE_SIGNED_OUT) &&
+            // On a phone, sign-in is on the Mac.
+            (onPhone ? (
+              <b className="font-medium text-ink">Sign in on your Mac.</b>
+            ) : (
+              <Button
+                look="quiet"
+                icon={LogIn}
+                onClick={() => void navigate({ to: "/sign-in" })}
+              >
+                Sign in
+              </Button>
+            ))}
         </p>
       )}
     </form>

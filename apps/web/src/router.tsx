@@ -379,6 +379,13 @@ const signIn = createRoute({
   getParentRoute: () => root,
   path: "/sign-in",
   component: function SignInPage() {
+    if (onPhone) {
+      return (
+        <p className="mx-auto max-w-[620px] px-gutter py-8">
+          Sign in to ChatGPT or Claude in Rufi on your Mac, in Settings.
+        </p>
+      );
+    }
     return (
       <div className="mx-auto flex max-w-[620px] flex-col gap-8 px-6 py-8">
         <section>

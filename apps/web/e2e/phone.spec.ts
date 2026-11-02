@@ -3,7 +3,8 @@
 // marks it before it loads (<html data-place="phone">), and a stand-in for
 // the app keeps what the page tells it. The app itself is tested in
 // apps/ios.
-import { expect, test } from "./rufi.ts";
+import type { Page } from "@playwright/test";
+import { expect, SIGNED_OUT, test } from "./rufi.ts";
 
 declare global {
   interface Window {
@@ -17,12 +18,11 @@ declare global {
   }
 }
 
-test("in the iPhone app, a page shows alone, a link goes to the app, and the app opens it", async ({
-  page,
-  rufi,
-}) => {
-  await rufi.family();
-  await rufi.start();
+/**
+ * The page as the app marks it before it loads, with a stand-in for the app
+ * that keeps what the page tells it (`window.told`).
+ */
+async function asPhone(page: Page) {
   await page.route(
     (url) => url.pathname === "/",
     async (route) => {
@@ -42,6 +42,15 @@ test("in the iPhone app, a page shows alone, a link goes to the app, and the app
       },
     };
   });
+}
+
+test("in the iPhone app, a page shows alone, a link goes to the app, and the app opens it", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family();
+  await rufi.start();
+  await asPhone(page);
   const told = () => page.evaluate(() => window.told);
 
   await page.goto(rufi.link());
@@ -78,4 +87,28 @@ test("in the iPhone app, a page shows alone, a link goes to the app, and the app
     title: "Lab results",
   });
   await expect(page.getByRole("main")).toContainText("HbA1c");
+});
+
+test("in the iPhone app, signed out on the Mac, the chat says to sign in there and keeps the words", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family();
+  rufi.codex = SIGNED_OUT;
+  await rufi.start();
+  await asPhone(page);
+  await page.goto(rufi.link());
+  await page.evaluate(() => {
+    const app = window as unknown as { rufi: { open: (path: string) => void } };
+    app.rufi.open("/people/asha/chat");
+  });
+  const box = page.getByRole("textbox", { name: "Message to Rufi" });
+  await box.fill("How is my HbA1c?");
+  await box.press("Enter");
+  await expect(page.getByRole("alert")).toHaveText(
+    "You're signed out. Sign in with ChatGPT to chat.Sign in on your Mac.",
+  );
+  await expect(box).toHaveValue("How is my HbA1c?");
+  // No way into the Mac's sign-in, which a phone can't open.
+  await expect(page.getByRole("button", { name: "Sign in" })).toHaveCount(0);
 });
