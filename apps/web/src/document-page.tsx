@@ -100,7 +100,15 @@ export function DocumentPage({
     );
   }
   if (!document || items.data === undefined) return null;
-  return <Checking person={person} document={document} items={items.data} />;
+  // A container: in a page narrower than 640 px (a phone) the document grows
+  // with what it holds and scrolls as one, its page image first. It holds
+  // the whole document at every width, so the page's room under the chat bar
+  // stays after the document's footer.
+  return (
+    <div className="@container flex min-h-full flex-col">
+      <Checking person={person} document={document} items={items.data} />
+    </div>
+  );
 }
 
 /** A document not in the list: deleted, or never added. */
@@ -179,12 +187,12 @@ function Checking({
   ].join(" · ");
 
   return (
-    <div className="flex h-full min-h-[420px] flex-col">
+    <div className="flex min-h-[420px] flex-1 flex-col @max-[640px]:flex-none">
       <div className="flex flex-wrap items-center gap-2.5 px-5 pt-3.5 pb-2.5">
         {/* The name and its lines keep room to read; in a small window the
             actions go below them. */}
         <div className="min-w-0 flex-1 basis-80">
-          <h2 className="truncate">
+          <h2 className="truncate @max-[640px]:whitespace-normal @max-[640px]:wrap-anywhere">
             <b className="text-[0.875rem]">{name}</b>{" "}
             <span className="text-muted">· {about}</span>
           </h2>
@@ -247,10 +255,12 @@ function Checking({
         />
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-4 px-5 pb-3.5 md:flex-row">
+      {/* Side by side, the two parts fill the room and scroll inside it: their
+          size doesn't count towards the page's (contain: size). */}
+      <div className="flex min-h-0 flex-1 flex-col gap-4 px-5 pb-3.5 @min-[640px]:flex-row @min-[640px]:contain-size @max-[640px]:flex-none">
         <section
           aria-label="Items"
-          className="flex min-h-0 min-w-0 flex-[1.15] flex-col overflow-hidden rounded-xl border border-line bg-surface"
+          className="flex min-h-0 min-w-0 flex-[1.15] flex-col overflow-hidden rounded-xl border border-line bg-surface @max-[640px]:flex-none"
         >
           <div className="flex items-center gap-2.5 border-b border-line px-3 py-2">
             <label className="flex items-center gap-1.5">
@@ -400,20 +410,35 @@ function Items({
       </p>
     );
   }
+  // In a page narrower than 640 px, each item stacks: its name, then its
+  // value, range and marks, then its buttons. The roles are written out:
+  // WebKit drops a table's when its parts change display.
   return (
-    <table className="w-full border-collapse">
-      <thead>
-        <tr className="text-left text-xs text-muted">
-          <th className="sticky top-0 bg-surface px-2.5 py-1.5 font-normal">
+    <table role="table" className="w-full border-collapse @max-[640px]:block">
+      <thead className="@max-[640px]:hidden">
+        <tr role="row" className="text-left text-xs text-muted">
+          <th
+            role="columnheader"
+            className="sticky top-0 bg-surface px-2.5 py-1.5 font-normal"
+          >
             Test
           </th>
-          <th className="sticky top-0 bg-surface px-2.5 py-1.5 font-normal">
+          <th
+            role="columnheader"
+            className="sticky top-0 bg-surface px-2.5 py-1.5 font-normal"
+          >
             Value
           </th>
-          <th className="sticky top-0 bg-surface px-2.5 py-1.5 font-normal">
+          <th
+            role="columnheader"
+            className="sticky top-0 bg-surface px-2.5 py-1.5 font-normal"
+          >
             Range
           </th>
-          <th className="sticky top-0 bg-surface px-2.5 py-1.5 font-normal">
+          <th
+            role="columnheader"
+            className="sticky top-0 bg-surface px-2.5 py-1.5 font-normal"
+          >
             <span className="sr-only">Marks</span>
           </th>
         </tr>
@@ -421,11 +446,16 @@ function Items({
       {shownPages.map((page) => {
         const mine = items.filter((i) => i.page === page.position);
         return (
-          <tbody key={page.position}>
-            <tr>
+          <tbody
+            key={page.position}
+            role="rowgroup"
+            className="@max-[640px]:block"
+          >
+            <tr role="row" className="@max-[640px]:block">
               <td
+                role="cell"
                 colSpan={4}
-                className="border-t border-line bg-side px-2.5 py-1 text-xs text-muted"
+                className="border-t border-line bg-side px-2.5 py-1 text-xs text-muted @max-[640px]:block"
               >
                 <b className="font-semibold text-ink">Page {page.position}</b>
                 {" · "}
@@ -500,14 +530,16 @@ function Row({
   const { fields } = item;
   const fixes = fixesOf(item);
   const done = item.status !== "pending";
-  const cell = "border-t border-line px-2.5 py-1.5 align-top";
+  const cell =
+    "border-t border-line px-2.5 py-1.5 align-top @max-[640px]:border-t-0 @max-[640px]:p-0";
   return (
     <>
       <tr
+        role="row"
         onClick={select}
-        className={`group cursor-pointer ${selected ? "bg-accent-soft" : "hover:bg-page"} ${done ? "text-muted" : ""}`}
+        className={`group cursor-pointer ${selected ? "bg-accent-soft" : "hover:bg-page"} ${done ? "text-muted" : ""} @max-[640px]:flex @max-[640px]:flex-wrap @max-[640px]:items-baseline @max-[640px]:gap-x-1.5 @max-[640px]:border-t @max-[640px]:border-line @max-[640px]:px-2.5 @max-[640px]:py-2`}
       >
-        <td className={cell}>
+        <td role="cell" className={`${cell} @max-[640px]:basis-full`}>
           <button
             type="button"
             aria-pressed={selected}
@@ -540,14 +572,23 @@ function Row({
           )}
           <ReaderRead item={item} />
         </td>
-        <td className={`${cell} whitespace-nowrap`}>
+        <td role="cell" className={`${cell} whitespace-nowrap`}>
           {fields.value_text}
           {fields.unit ? ` ${fields.unit}` : ""}
         </td>
-        <td className={`${cell} whitespace-nowrap`}>
+        <td
+          role="cell"
+          className={`${cell} whitespace-nowrap ${fields.reference_range ? "@max-[640px]:text-muted @max-[640px]:before:mr-1.5 @max-[640px]:before:content-['·']" : "@max-[640px]:hidden"}`}
+        >
+          {fields.reference_range && (
+            <span className="hidden @max-[640px]:inline">Range </span>
+          )}
           {fields.reference_range ?? ""}
         </td>
-        <td className={`${cell} text-right whitespace-nowrap`}>
+        <td
+          role="cell"
+          className={`${cell} text-right whitespace-nowrap @max-[640px]:mt-1 @max-[640px]:flex @max-[640px]:basis-full @max-[640px]:flex-wrap @max-[640px]:items-center @max-[640px]:gap-1.5 @max-[640px]:text-left @max-[640px]:whitespace-normal`}
+        >
           {fields.flag_text && <Tag>{fields.flag_text}</Tag>}
           {fields.column === "earlier" && <Tag>earlier</Tag>}
           {fixes.length > 0 && <Tag strong>fixed by you</Tag>}
@@ -574,8 +615,12 @@ function Row({
         </td>
       </tr>
       {fixing && (
-        <tr>
-          <td colSpan={4} className="bg-accent-soft px-2.5 pt-1 pb-2.5">
+        <tr role="row" className="@max-[640px]:block">
+          <td
+            role="cell"
+            colSpan={4}
+            className="bg-accent-soft px-2.5 pt-1 pb-2.5 @max-[640px]:block"
+          >
             <FixForm
               personId={personId}
               documentId={documentId}
@@ -760,7 +805,7 @@ function PageView({
   return (
     <section
       aria-label="Page"
-      className="flex min-h-[320px] min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-surface"
+      className="flex min-h-[320px] min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-surface @max-[640px]:order-first @max-[640px]:flex-none"
     >
       <div className="flex items-center gap-2 border-b border-line px-3 py-1.5">
         <IconButton

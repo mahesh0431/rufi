@@ -175,6 +175,15 @@ html {
   font-size: calc(16px * 17 / 13);
 }
 
+/* The chat page's sides: 2.5rem in a page 640 px wide or more (the Mac's
+   look), narrowing to 1rem at 400 px (a phone). A percentage of the page's
+   own width, not the window's, so a narrow pane beside the sidebar narrows
+   too; with no container, OpenUI's full-screen parts inside still cover the
+   window. */
+@utility px-gutter {
+  padding-inline: clamp(1rem, calc(1rem + (100% - 400px) * 0.1), 2.5rem);
+}
+
 html,
 body,
 #root {
@@ -369,9 +378,16 @@ body {
 .ask-rufi-tip {
   visibility: hidden;
 }
-.ask-rufi:is(:hover, :focus-visible) .ask-rufi-tip {
+/* Not on a touch screen's hover, which stays after a tap. */
+.ask-rufi:focus-visible .ask-rufi-tip {
   visibility: visible;
   transition: visibility 0s 250ms;
+}
+@media (hover: hover) {
+  .ask-rufi:hover .ask-rufi-tip {
+    visibility: visible;
+    transition: visibility 0s 250ms;
+  }
 }
 @media (hover: none) {
   .ask-rufi {
