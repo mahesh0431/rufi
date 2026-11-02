@@ -26,7 +26,7 @@ import {
   type Instructions,
 } from "@rufi/contracts/instructions";
 import { KeepValues, type DeviceData } from "@rufi/contracts/devices";
-import { StartPairing } from "@rufi/contracts/remote";
+import { StartPairing, type Me } from "@rufi/contracts/remote";
 import { createReadStream } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { Readable } from "node:stream";
@@ -167,6 +167,8 @@ export function api(deps: ApiDeps): App {
     return c.json({ url: deps.launchUrl() });
   });
 
+  const read = settingsReads(deps);
+
   app.use("/api/*", async (c: Context, next: Next) => {
     if (
       !deps.sessions.verify(getCookie(c, cookie()), c.req.header(PROOF_HEADER))
@@ -176,53 +178,8 @@ export function api(deps: ApiDeps): App {
     await next();
   });
 
-  /** The chosen appearance; system until one is chosen. */
-  const appearance = async (): Promise<Appearance> =>
-    Schema.decodeUnknownOption(Appearance)(
-      await transcripts.setting("appearance"),
-    ).pipe(Option.getOrElse(() => "system" as const));
-  /** The chosen colour theme; White until one is chosen. */
-  const colour = async (): Promise<Colour> =>
-    Schema.decodeUnknownOption(Colour)(
-      await transcripts.setting("colour"),
-    ).pipe(Option.getOrElse(() => "white" as const));
-  /** How a reply sits in the chat; flat until another is chosen. */
-  const replyShape = async (): Promise<ReplyShape> =>
-    Schema.decodeUnknownOption(ReplyShape)(
-      await transcripts.setting("reply_shape"),
-    ).pipe(Option.getOrElse(() => "flat" as const));
-  /** The size of Rufi's text; default until another is chosen. */
-  const textSize = async (): Promise<TextSize> =>
-    Schema.decodeUnknownOption(TextSize)(
-      await transcripts.setting("text_size"),
-    ).pipe(Option.getOrElse(() => "default" as const));
-  const settings = async (c: Context): Promise<Settings> => {
-    const known = emergencyFor(await transcripts.setting("emergency_region"));
-    const chosen = await appearance();
-    const { replies } = await toldOf(transcripts.setting);
-    c.header(APPEARANCE_HEADER, chosen);
-    return {
-      appearance: chosen,
-      colour: await colour(),
-      replyShape: await replyShape(),
-      textSize: await textSize(),
-      replyStyle: replies.style,
-      replyWords: replies.words,
-      // Open while the AI works, until another is chosen.
-      activity: Schema.decodeUnknownOption(ActivityShown)(
-        await transcripts.setting("activity"),
-      ).pipe(Option.getOrElse(() => "working" as const)),
-      // Into the running reply, until another is chosen.
-      whileReplying: Schema.decodeUnknownOption(WhileReplying)(
-        await transcripts.setting("while_replying"),
-      ).pipe(Option.getOrElse(() => "steer" as const)),
-      continuesAfterRestart: await continuesAfterRestart(transcripts.setting),
-      emergencyRegion: known?.region ?? null,
-      emergency: known ? { name: known.name, number: known.number } : null,
-      regions: emergencyRegions(),
-      deviceKeepValues: await deps.devices.keep(),
-    };
-  };
+  // Where the screens run: on the Mac, every person and Rufi's own pages.
+  app.get("/api/me", (c) => c.json({ place: "mac" } satisfies Me));
 
   app.get("/api/people", async (c) =>
     c.json({ people: await transcripts.people() }),
@@ -277,7 +234,7 @@ export function api(deps: ApiDeps): App {
     return c.json(await firstRun());
   });
 
-  app.get("/api/settings", async (c) => c.json(await settings(c)));
+  app.get("/api/settings", async (c) => c.json(await read.settings(c)));
   app.put("/api/settings", async (c) => {
     const changed = await body(c, SaveSettings);
     const region = changed.emergencyRegion;
@@ -324,7 +281,7 @@ export function api(deps: ApiDeps): App {
       await deps.devices.setKeep(changed.deviceKeepValues);
       deps.devices.cleanSoon();
     }
-    return c.json(await settings(c));
+    return c.json(await read.settings(c));
   });
 
   // What Rufi AI is told, in its parts (Settings › Advanced): each the
@@ -489,7 +446,8 @@ export function api(deps: ApiDeps): App {
     });
   });
 
-  personRoutes(app, deps, adds);
+  // What a person does here is the Mac's.
+  personRoutes(app, deps, adds, () => "mac");
 
   // A file a reply shows, by its address from /api/files; checked again now.
   // Never cached as unchanging: a reply shows the file as it is now.
@@ -511,12 +469,84 @@ export function api(deps: ApiDeps): App {
     return c.body(new Uint8Array(bytes));
   });
 
-  // The screens: every page path that isn't the API.
+  screensRoute(app, deps.screens, read);
+
+  return app;
+}
+
+/** Rufi's settings as the screens read them, on either listener. */
+export function settingsReads(
+  deps: Pick<ApiDeps, "transcripts"> & {
+    devices: Pick<ApiDeps["devices"], "keep">;
+  },
+) {
+  const { transcripts } = deps;
+  /** The chosen appearance; system until one is chosen. */
+  const appearance = async (): Promise<Appearance> =>
+    Schema.decodeUnknownOption(Appearance)(
+      await transcripts.setting("appearance"),
+    ).pipe(Option.getOrElse(() => "system" as const));
+  /** The chosen colour theme; White until one is chosen. */
+  const colour = async (): Promise<Colour> =>
+    Schema.decodeUnknownOption(Colour)(
+      await transcripts.setting("colour"),
+    ).pipe(Option.getOrElse(() => "white" as const));
+  /** How a reply sits in the chat; flat until another is chosen. */
+  const replyShape = async (): Promise<ReplyShape> =>
+    Schema.decodeUnknownOption(ReplyShape)(
+      await transcripts.setting("reply_shape"),
+    ).pipe(Option.getOrElse(() => "flat" as const));
+  /** The size of Rufi's text; default until another is chosen. */
+  const textSize = async (): Promise<TextSize> =>
+    Schema.decodeUnknownOption(TextSize)(
+      await transcripts.setting("text_size"),
+    ).pipe(Option.getOrElse(() => "default" as const));
+  const settings = async (c: Context): Promise<Settings> => {
+    const known = emergencyFor(await transcripts.setting("emergency_region"));
+    const chosen = await appearance();
+    const { replies } = await toldOf(transcripts.setting);
+    c.header(APPEARANCE_HEADER, chosen);
+    return {
+      appearance: chosen,
+      colour: await colour(),
+      replyShape: await replyShape(),
+      textSize: await textSize(),
+      replyStyle: replies.style,
+      replyWords: replies.words,
+      // Open while the AI works, until another is chosen.
+      activity: Schema.decodeUnknownOption(ActivityShown)(
+        await transcripts.setting("activity"),
+      ).pipe(Option.getOrElse(() => "working" as const)),
+      // Into the running reply, until another is chosen.
+      whileReplying: Schema.decodeUnknownOption(WhileReplying)(
+        await transcripts.setting("while_replying"),
+      ).pipe(Option.getOrElse(() => "steer" as const)),
+      continuesAfterRestart: await continuesAfterRestart(transcripts.setting),
+      emergencyRegion: known?.region ?? null,
+      emergency: known ? { name: known.name, number: known.number } : null,
+      regions: emergencyRegions(),
+      deviceKeepValues: await deps.devices.keep(),
+    };
+  };
+  return { appearance, colour, replyShape, textSize, settings };
+}
+
+export type SettingsReads = ReturnType<typeof settingsReads>;
+
+/**
+ * The screens: every page path that isn't the API, on either listener.
+ * They hold no health data.
+ */
+export function screensRoute(
+  app: App,
+  screens: string | undefined,
+  read: SettingsReads,
+): void {
   app.get("*", async (c) => {
-    if (c.req.path.startsWith("/api/") || deps.screens === undefined) {
+    if (c.req.path.startsWith("/api/") || screens === undefined) {
       throw new HttpError(404, "Not found.");
     }
-    const found = await screen(deps.screens, c.req.path);
+    const found = await screen(screens, c.req.path);
     if (!found) throw new HttpError(404, "Not found.");
     c.header("Content-Type", found.type);
     c.header(
@@ -528,19 +558,17 @@ export function api(deps: ApiDeps): App {
       // shape, so
       // public/theme.js and the tokens paint them first time, and the app's
       // window takes the appearance from the header.
-      const chosen = await appearance();
+      const chosen = await read.appearance();
       c.header(APPEARANCE_HEADER, chosen);
       return c.body(
         found.body
           .toString("utf8")
           .replace(
             "<html",
-            `<html data-appearance="${chosen}" data-colour="${await colour()}" data-reply-shape="${await replyShape()}" data-text-size="${await textSize()}"`,
+            `<html data-appearance="${chosen}" data-colour="${await read.colour()}" data-reply-shape="${await read.replyShape()}" data-text-size="${await read.textSize()}"`,
           ),
       );
     }
     return c.body(new Uint8Array(found.body));
   });
-
-  return app;
 }

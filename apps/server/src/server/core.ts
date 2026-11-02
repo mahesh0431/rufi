@@ -61,8 +61,9 @@ import {
 } from "../platform/files.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import { agentsPath } from "./agents.ts";
-import { api, LAUNCHER_HEADER } from "./api.ts";
+import { api, LAUNCHER_HEADER, settingsReads } from "./api.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
+import type { PersonDeps } from "./person-routes.ts";
 import { claudeEnvironment, claudeFolder } from "../agent/claude/executable.ts";
 import { prepareClaudePlugin } from "../agent/claude/session.ts";
 import { generatedImages } from "../agent/codex/settings.ts";
@@ -254,6 +255,13 @@ export const startCore = (options: CoreOptions) =>
     yield* Effect.addFinalizer(() =>
       Effect.promise(() => Promise.allSettled(answering)),
     );
+    /** An answer of either listener, finished before Rufi lets the folder go. */
+    const working = (answer: Promise<Response>) => {
+      const done = () => answering.delete(answer);
+      answering.add(answer);
+      answer.then(done, done);
+      return answer;
+    };
     const transcripts = openTranscripts(writer, options.now);
     const drafts = openDrafts(writer, options.now);
     const queue = chatQueue(writer, options.now);
@@ -431,26 +439,6 @@ export const startCore = (options: CoreOptions) =>
       (opened) => Effect.promise(() => opened.close()),
     );
 
-    // The remote door, open at the start when an app is paired; closed
-    // before the record it reads.
-    const door = yield* Effect.acquireRelease(
-      Effect.sync(() =>
-        openRemote({
-          apps: pairedApps(
-            writer,
-            options.now ?? (() => new Date().toISOString()),
-          ),
-          people: () => transcripts.people(),
-          setting: transcripts.setting,
-          saveSetting: transcripts.saveSetting,
-          tailscale: options.tailscale ?? tailscale(),
-          log,
-        }),
-      ),
-      (opened) => Effect.promise(() => opened.close()),
-    );
-    yield* attempt(() => door.start());
-
     const access = sessions();
     const launcher = secret();
     // The token is in the fragment: the browser never sends it in a request.
@@ -464,12 +452,12 @@ export const startCore = (options: CoreOptions) =>
       readings,
       gate,
     );
-    const app = api({
+    // A person's routes, on both listeners.
+    const person: PersonDeps = {
+      doses,
       transcripts,
       drafts,
       chat,
-      sessions: access,
-      port: () => port,
       overview: async (personId) => {
         const overview = await record.overview(personId);
         if (!overview) throw new Error("The person isn't in the record.");
@@ -503,6 +491,61 @@ export const startCore = (options: CoreOptions) =>
       },
       brief: async (personId, briefId) =>
         reader && (await readBrief(reader.query, personId, briefId)),
+      documents: personDocuments,
+      deletions: deletions({
+        store: writer,
+        home,
+        gate,
+        event: chat.event,
+        changed: readings.changed,
+        log,
+        ...(options.now && { now: options.now }),
+      }),
+      readings,
+      agents: agentSystem.logs,
+      items: draftItems(writer, readings.changed),
+      pages: pageService,
+      reminders: {
+        read: async (personId) => {
+          const found = (
+            await remindersOf((reader ?? writer).query, [personId])
+          ).get(personId);
+          if (!found) throw new Error("The person isn't in the record.");
+          return found;
+        },
+        save: (personId, choice) =>
+          saveReminders(writer.query, personId, choice),
+      },
+      log,
+      ...(options.behindMax !== undefined && { behindMax: options.behindMax }),
+    };
+    // The remote door, open at the start when an app is paired; closed
+    // before the record it reads.
+    const door = yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        openRemote({
+          apps: pairedApps(
+            writer,
+            options.now ?? (() => new Date().toISOString()),
+          ),
+          people: () => transcripts.people(),
+          setting: transcripts.setting,
+          saveSetting: transcripts.saveSetting,
+          tailscale: options.tailscale ?? tailscale(),
+          working,
+          person,
+          read: settingsReads({ transcripts, devices: deviceData }),
+          account,
+          ...(options.screens !== undefined && { screens: options.screens }),
+          log,
+        }),
+      ),
+      (opened) => Effect.promise(() => opened.close()),
+    );
+    const app = api({
+      ...person,
+      sessions: access,
+      port: () => port,
       account,
       backups,
       devices: {
@@ -519,32 +562,6 @@ export const startCore = (options: CoreOptions) =>
           Promise.reject(new Error("Finder isn't offered here.")),
       },
       exportZip: (signal) => exportZip(home, new Date(), gate, signal),
-      documents: personDocuments,
-      deletions: deletions({
-        store: writer,
-        home,
-        gate,
-        event: chat.event,
-        changed: readings.changed,
-        log,
-        ...(options.now && { now: options.now }),
-      }),
-      readings,
-      agents: agentSystem.logs,
-      items: draftItems(writer, readings.changed),
-      pages: pageService,
-      doses,
-      reminders: {
-        read: async (personId) => {
-          const found = (
-            await remindersOf((reader ?? writer).query, [personId])
-          ).get(personId);
-          if (!found) throw new Error("The person isn't in the record.");
-          return found;
-        },
-        save: (personId, choice) =>
-          saveReminders(writer.query, personId, choice),
-      },
       files: aiFiles({
         folder: aiSandbox(home).folder,
         generated: generatedImages(home),
@@ -554,8 +571,6 @@ export const startCore = (options: CoreOptions) =>
       launcher,
       launchUrl,
       ...(options.screens !== undefined && { screens: options.screens }),
-      log,
-      ...(options.behindMax !== undefined && { behindMax: options.behindMax }),
     });
     // Outside the screens' checks: the agent sends no Origin, and each
     // endpoint has its own (server/mcp.ts).
@@ -576,13 +591,11 @@ export const startCore = (options: CoreOptions) =>
               {
                 fetch: (request, env) => {
                   const endpoint = mcp[new URL(request.url).pathname];
-                  const answer = Promise.resolve(
-                    endpoint ? endpoint(request) : app.fetch(request, env),
+                  return working(
+                    Promise.resolve(
+                      endpoint ? endpoint(request) : app.fetch(request, env),
+                    ),
                   );
-                  const done = () => answering.delete(answer);
-                  answering.add(answer);
-                  answer.then(done, done);
-                  return answer;
                 },
                 hostname: "127.0.0.1",
                 port: options.port ?? 0,
@@ -619,6 +632,7 @@ export const startCore = (options: CoreOptions) =>
     );
     yield* attempt(() => agentSystem.agents.dispatch({ continues }));
     convertLoop.start();
+    yield* attempt(() => door.start());
     yield* Effect.acquireRelease(
       attempt(() => writePrivateJson(coreFile(home), { port, launcher })),
       () => Effect.promise(() => rm(coreFile(home), { force: true })),

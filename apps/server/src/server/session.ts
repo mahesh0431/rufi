@@ -66,3 +66,77 @@ export function sessions(now: () => number = Date.now) {
       (proofs.get(hash(session))?.has(hash(proof)) ?? false),
   };
 }
+
+/** A paired app's launch link works once, and only for this long. */
+const APP_LAUNCH_MS = 60_000;
+
+/**
+ * The remote door's sessions (docs/adr/0032): the same two proofs, each
+ * launch and session owned by one paired app. Each launch makes a new
+ * session; one session per app, so a new one ends the app's old one. A
+ * cookie the browser sends is never reused.
+ */
+export function appSessions(now: () => number = Date.now) {
+  const launches = new Map<string, { app: string; expires: number }>();
+  // session hash -> its app and its tab proof's hash
+  const live = new Map<string, { app: string; proof: string }>();
+  const current = new Map<string, string>(); // app -> its session's hash
+
+  /** Ends the app's session; the hash it had, for what it has open. */
+  const endSession = (app: string): string | undefined => {
+    const ended = current.get(app);
+    if (ended !== undefined) live.delete(ended);
+    current.delete(app);
+    return ended;
+  };
+
+  return {
+    /** A fresh single-use launch token for `app`. */
+    launch: (app: string): string => {
+      const value = token();
+      launches.set(hash(value), { app, expires: now() + APP_LAUNCH_MS });
+      return value;
+    },
+
+    /** The app a launch token is for, used up at once; none when unknown, used or expired. */
+    take: (launch: string): string | undefined => {
+      const key = hash(launch);
+      const found = launches.get(key);
+      launches.delete(key); // single use, even when expired
+      return found && found.expires >= now() ? found.app : undefined;
+    },
+
+    /**
+     * A new session for `app`, with its tab proof; `ended` is the old
+     * session's hash, whose open requests end.
+     */
+    start: (app: string) => {
+      const ended = endSession(app);
+      const session = token();
+      const proof = token();
+      live.set(hash(session), { app, proof: hash(proof) });
+      current.set(app, hash(session));
+      return { session, proof, ended };
+    },
+
+    /** The app and session both proofs belong to; none when they don't. */
+    verify: (
+      session: string | undefined,
+      proof: string | undefined,
+    ): { app: string; session: string } | undefined => {
+      if (session === undefined || proof === undefined) return undefined;
+      const found = live.get(hash(session));
+      return found?.proof === hash(proof)
+        ? { app: found.app, session: hash(session) }
+        : undefined;
+    },
+
+    /** Ends the app's launches and session: it was unpaired. */
+    end: (app: string): void => {
+      for (const [key, launch] of launches) {
+        if (launch.app === app) launches.delete(key);
+      }
+      endSession(app);
+    },
+  };
+}
