@@ -11,8 +11,8 @@
 //
 // <folder> keeps the authority between runs (ca.pem, to add to the
 // Simulator) and each run's data folder. It prints Rufi's link for this
-// Mac's browser: Settings › iPhone › Pair an iPhone makes the pairing link.
-// Ctrl-C stops it. It proves the app against the door's real code; it can't
+// Mac's browser, and a new one at each `kill -USR1 <its pid>`: Settings ›
+// iPhone › Pair an iPhone makes the pairing link. Ctrl-C stops it. It proves the app against the door's real code; it can't
 // prove Tailscale on the Mac or the iPhone, or a tailnet certificate.
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -156,7 +156,7 @@ const tailscale: Tailscale = {
   off: async (port) => {
     const server = served.get(port);
     served.delete(port);
-    await new Promise((resolve) => server?.close(resolve) ?? resolve(null));
+    if (server) await new Promise((closed) => server.close(closed));
   },
   check: async (origin, answers) => {
     const { port } = new URL(origin);
@@ -192,6 +192,9 @@ await rufi.start({ scenario: { answer: REPLY }, tailscale });
 console.log(`The Simulator trusts ${ca} once added to it.`);
 console.log("Rufi on this Mac (its link works once):");
 console.log(rufi.link());
+process.on("SIGUSR1", () => {
+  console.log(rufi.link());
+});
 process.on("SIGINT", () => {
   void Promise.all([...served.keys()].map((port) => tailscale.off(port)))
     .then(() => rufi.close())
