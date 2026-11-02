@@ -15,7 +15,7 @@ Rufi on your iPhone opens your own record from Rufi on your Mac, through Tailsca
 3. Rufi sets up Tailscale for it and checks that it can reach itself through Tailscale. Then it shows a QR code and **Copy link**.
 4. On the iPhone, open Rufi and tap **Scan Code** to scan it, or copy the link on the Mac and tap **Paste**. The code works once, for 10 minutes. When the phone has paired, Settings says **Paired: Asha's iPhone, for Asha**.
 5. The iPhone says which Mac it paired with and whose record it opens. Tap **Continue**.
-6. It offers **Lock Rufi** (below), then **Turn On Reminders**, which asks iOS to let Rufi send notifications. **Not Now** skips either; both are in **This iPhone** later.
+6. It offers **Lock Rufi** (below), then **Turn On Reminders** (you can log each dose from a reminder), which asks iOS to let Rufi send notifications. **Not Now** skips either; both are in **This iPhone** later.
 
 **Close** before a phone pairs ends the code. Each paired iPhone has its own line: its name, whose record, when it paired, and when Rufi last saw it.
 
@@ -50,6 +50,16 @@ When that person's reminders ring on the **iPhone** or **Both**, Rufi on the iPh
 - They are **Time Sensitive**, so a Focus doesn't hold them back. To change that, open Settings › Notifications › Rufi on the iPhone.
 - Tap a notice to open Rufi at **Medicines**, after Lock Rufi.
 
+### Log a dose from a reminder
+
+Touch and hold a reminder, then tap **Taken** or **Skipped**. It needs the iPhone unlocked, not Lock Rufi, and works with Rufi closed. A paired Apple Watch shows the same.
+
+- **Taken** or **Skipped** logs every medicine on that reminder. To log only one, tap the reminder: Rufi opens at **Medicines**, where **Today** logs each on its own.
+- The log goes to your Mac at once and shows on its **Today** as, for example, **Taken 21:02 · iPhone**. If the Mac can't be reached, the iPhone keeps it and sends it the next time Rufi reaches the Mac (when you open it, or in the background). It is never counted twice, even when it is sent again.
+- To change a log, use **Undo** on Today.
+
+**Not on your Mac yet.** Doses you logged that your Mac doesn't have yet are listed in **This iPhone**, with how many on **Can't Reach Your Mac**. Swipe one left to **Discard** it: it is never sent. If your Mac refuses one, it says so there and isn't sent again. They stay if the iPhone is unpaired: they are sent only when you pair again for the same person with Rufi on the same Mac, and never to another pairing. Until then they show on the unpaired screen, and Lock Rufi stays on while any wait. Deleting the app deletes them.
+
 **Set until.** The iPhone gets its reminders from your Mac for the next week, and the next time after it (so a medicine you take once a month still rings), and keeps them when it can't reach the Mac. **This iPhone** shows until when they are set, for example "Set until Thu 5 Nov, 21:00", and so does **Can't Reach Your Mac**. The iPhone gets them again each time you open Rufi, when you leave it, and now and then in the background when iOS allows. If you don't open Rufi for a week, a last notice, **Open Rufi to keep your reminders coming**, rings a minute after the last one set.
 
 After you change a medicine's times or reminders on the Mac, open Rufi on the iPhone, so it rings the new ones: until then it rings what it had. With Rufi open on the iPhone, it follows at once. A dose you logged, on the iPhone or the Mac, rings no more, and its notice leaves Notification Center the next time the iPhone gets its reminders, as do notices for a medicine you stopped or retimed, and ones older than yesterday.
@@ -65,6 +75,7 @@ In **This iPhone** › **Apple Health**, connect Apple Health, see your latest r
 - Its key, in the iPhone's keychain, on this iPhone only.
 - Which Mac it paired with and whose record it opens, and whether Lock Rufi is on.
 - Its medicine reminders for the next week, as iOS notices: the times and the medicines, whatever a notice shows.
+- Doses you logged that aren't on your Mac yet: each medicine's name and strength, the dose's time, taken or skipped, and which Mac and person it is for. They aren't in the iPhone's backups.
 - For Apple Health: where each kind of heart data was sent up to (Apple's bookmark, not the values), and when the last sync was and how many readings it sent.
 
 Nothing of your record, chat, documents or heart data is kept by Rufi on the iPhone (your heart data stays in Apple Health, where it was): pages are shown while Rufi is open and gone when it closes, and an original you view is a temporary copy, deleted when you close it (or the next time Rufi starts, if it was closed while showing one); scanned pages go straight to your Mac without being saved on the iPhone. Deleting the app deletes all of this; to use Rufi on that iPhone again, pair it again.
@@ -79,7 +90,7 @@ If the iPhone says to update Rufi on your iPhone or on your Mac so they match, t
 
 On the Mac: click **Unpair** on its line, then **Unpair** again. From then on it can't open Rufi, and anything it has open ends at once. What it sent stays on your Mac. If you lose your phone, unpair it here. When it was that person's last iPhone, their reminders ring on the Mac. Reminders already on the iPhone can still ring until it next reaches your Mac, at most a week. The next time Rufi on that iPhone reaches the Mac, it removes its reminders and says it was unpaired, with **Pair Again**.
 
-On the iPhone: in **This iPhone**, tap **Unpair This iPhone**, then confirm. A sync running stops first. The iPhone forgets its key and its Apple Health bookmarks, removes its reminders, and the Mac stops letting it in.
+On the iPhone: in **This iPhone**, tap **Unpair This iPhone**, then confirm. A sync running stops first. The iPhone forgets its key and its Apple Health bookmarks, removes its reminders, and the Mac stops letting it in. Doses not on your Mac yet stay (see [Log a dose from a reminder](#log-a-dose-from-a-reminder)).
 
 When nothing is paired and no code is waiting, Rufi stops listening for phones and removes its Tailscale route.
 

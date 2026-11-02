@@ -54,6 +54,15 @@ struct ThisIPhoneView: View {
                     } else {
                         LabeledContent("Set until", value: "Nothing set")
                     }
+                    if !app.outbox.logs.isEmpty {
+                        NavigationLink {
+                            List { UnsentSection(outbox: app.outbox, pairing: pairing) }
+                                .navigationTitle("Not on Your Mac Yet")
+                                .navigationBarTitleDisplayMode(.inline)
+                        } label: {
+                            LabeledContent("Not on your Mac yet", value: "\(app.outbox.logs.count)")
+                        }
+                    }
                 } header: {
                     Text("Reminders")
                 } footer: {

@@ -257,6 +257,10 @@ _Avoid_: alert, push
 A medicine's notices at its times, on or off for each medicine, set in the chat. Where they ring (iPhone, Mac or both) and what a notice shows (the time, how many, or which ones) is the person's **reminder setting**, on the Medicines page. Follow-ups have notices, not reminders.
 _Avoid_: alarm, alert
 
+**Unsent logs**:
+Dose logs made from a reminder on a paired iPhone that the Mac hasn't acknowledged yet, kept on the iPhone with the pairing they were made under, and sent again under their own ids only to that person on that Mac's folder. Shown under **Not on your Mac yet**.
+_Avoid_: queue, pending logs, offline logs
+
 **Reminder plan**:
 The doses with reminders on for the days a paired iPhone asks for, worked out on the Mac and rung by the iPhone as its own notices, one per time. **Set until** is the last dose time the iPhone has set; a **renewal notice** rings a minute after it.
 _Avoid_: schedule, sync

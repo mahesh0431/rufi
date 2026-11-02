@@ -41,6 +41,8 @@ nonisolated struct Notice: Equatable, Sendable {
     let at: DateComponents
     /// The medicines it reminds of; none for the renewal.
     let medicines: [String]
+    /// How each is named in a log: "Amoxicillin 500 mg".
+    var labels: [String] = []
 }
 
 extension Calendar {
@@ -79,7 +81,8 @@ nonisolated enum Notices {
             case .names: ("\(time) · \(what)", medicines.map(label).joined(separator: "\n"))
             }
             return (date, Notice(id: Self.dose + dose.at, title: title, body: body, at: at,
-                                 medicines: medicines.map(\.id)))
+                                 medicines: medicines.map(\.id),
+                                 labels: medicines.map { [$0.name, $0.strength].compactMap(\.self).joined(separator: " ") }))
         }
         return due.sorted { $0.0 < $1.0 }.prefix(times).map(\.1)
     }
@@ -218,6 +221,31 @@ final class Reminders {
         ring = nil
     }
 
+    /// A medicine on a notice, as its log names it.
+    struct Logging: Equatable, Sendable {
+        let id: String
+        let label: String
+    }
+
+    /// Taken or Skipped on the notice `id`: one log per medicine, the whole
+    /// group kept in the outbox before the notice goes. The outbox sends them.
+    func log(_ state: UnsentLog.State, notice id: String, medicines: [Logging], pairing: Pairing,
+             into outbox: Outbox) throws {
+        guard !stopped, id.hasPrefix(Notices.dose), !medicines.isEmpty else { return }
+        let at = String(id.dropFirst(Notices.dose.count))
+        // As the Mac takes an instant: "2026-11-02T15:32:00.000Z".
+        let instant = ISO8601DateFormatter()
+        instant.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let loggedAt = instant.string(from: now())
+        try outbox.add(medicines.map { medicine in
+            UnsentLog(id: UUID().uuidString.lowercased(), made: .init(pairing), medicine: medicine.id,
+                      label: medicine.label, doseAt: at, state: state, loggedAt: loggedAt,
+                      // Taken when tapped, as on Today.
+                      takenAt: state == .taken ? loggedAt : nil)
+        })
+        center.removeDelivered([id])
+    }
+
     private func once() async {
         let calendar = phone
         let plan: ReminderPlan
@@ -278,8 +306,15 @@ struct SystemCenter: NoticeCenter {
 
     /// The categories Rufi's notices use; set at launch.
     static func register() {
+        // Taken and Skipped need the iPhone unlocked, not Rufi's own lock.
+        let actions = [
+            UNNotificationAction(identifier: UnsentLog.State.taken.rawValue, title: "Taken",
+                                 options: [.authenticationRequired], icon: .init(systemImageName: "checkmark")),
+            UNNotificationAction(identifier: UnsentLog.State.skipped.rawValue, title: "Skipped",
+                                 options: [.authenticationRequired], icon: .init(systemImageName: "xmark")),
+        ]
         UNUserNotificationCenter.current().setNotificationCategories([
-            UNNotificationCategory(identifier: "dose", actions: [], intentIdentifiers: [],
+            UNNotificationCategory(identifier: "dose", actions: actions, intentIdentifiers: [],
                                    hiddenPreviewsBodyPlaceholder: "Medicine reminder", options: []),
         ])
     }
@@ -292,7 +327,7 @@ struct SystemCenter: NoticeCenter {
         if notice.id != Notices.renewal { content.categoryIdentifier = "dose" }
         content.interruptionLevel = .timeSensitive
         content.sound = .default
-        content.userInfo = ["medicines": notice.medicines]
+        content.userInfo = ["medicines": notice.medicines, "labels": notice.labels]
         let trigger = UNCalendarNotificationTrigger(dateMatching: notice.at, repeats: false)
         try await center.add(UNNotificationRequest(identifier: notice.id, content: content, trigger: trigger))
     }
@@ -308,7 +343,8 @@ struct SystemCenter: NoticeCenter {
     func deliveredNotices() async -> [Notice] {
         await center.deliveredNotifications().map { delivered in
             Notice(id: delivered.request.identifier, title: "", body: "", at: DateComponents(),
-                   medicines: delivered.request.content.userInfo["medicines"] as? [String] ?? [])
+                   medicines: delivered.request.content.userInfo["medicines"] as? [String] ?? [],
+                   labels: delivered.request.content.userInfo["labels"] as? [String] ?? [])
         }
     }
 

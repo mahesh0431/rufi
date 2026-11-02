@@ -7,6 +7,7 @@ import VisionKit
 struct PairingView: View {
     let app: AppModel
     @State private var scanning = false
+    @State private var unsent = false
     @State private var problem: String?
     @State private var pairing = false
 
@@ -38,9 +39,25 @@ struct PairingView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+            if !app.outbox.logs.isEmpty {
+                Button(UnsentSection.count(app.outbox.logs.count)) { unsent = true }
+                    .font(.footnote)
+            }
         }
         .padding(24)
         .disabled(pairing)
+        .sheet(isPresented: $unsent) {
+            NavigationStack {
+                List { UnsentSection(outbox: app.outbox, pairing: nil) }
+                    .navigationTitle("Not on Your Mac Yet")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done", systemImage: "checkmark") { unsent = false }
+                        }
+                    }
+            }
+        }
         .fullScreenCover(isPresented: $scanning) {
             ScannerView { text in
                 scanning = false
@@ -73,7 +90,7 @@ struct PairedView: View {
                 .foregroundStyle(.tint)
             if askingReminders {
                 Text("Medicine Reminders").font(.title.bold())
-                Text("Rufi can remind you at your medicines' times.")
+                Text("Rufi can remind you at your medicines' times, and you can log each dose from the reminder.")
                     .multilineTextAlignment(.center).foregroundStyle(.secondary)
                 Spacer()
                 Button("Turn On Reminders", systemImage: "bell") {
@@ -150,13 +167,18 @@ struct UnpairedView: View {
     let app: AppModel
 
     var body: some View {
-        ContentUnavailableView {
-            Label("Unpaired", systemImage: "iphone.slash")
-        } description: {
-            Text("This iPhone was unpaired on your Mac. Pair again to open Rufi here. Rufi's reminders were removed from this iPhone.")
-        } actions: {
-            Button("Pair Again", systemImage: "qrcode") { app.pairAgain() }
-                .buttonStyle(.glassProminent)
+        VStack {
+            ContentUnavailableView {
+                Label("Unpaired", systemImage: "iphone.slash")
+            } description: {
+                Text("This iPhone was unpaired on your Mac. Pair again to open Rufi here. Rufi's reminders were removed from this iPhone.")
+            } actions: {
+                Button("Pair Again", systemImage: "qrcode") { app.pairAgain() }
+                    .buttonStyle(.glassProminent)
+            }
+            if !app.outbox.logs.isEmpty {
+                List { UnsentSection(outbox: app.outbox, pairing: nil) }
+            }
         }
     }
 }

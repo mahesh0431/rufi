@@ -130,6 +130,45 @@ nonisolated struct Door: Sendable {
         return staged
     }
 
+    /// What the Mac did with a dose log.
+    enum Logged: Equatable, Sendable {
+        /// Stored, or it had this very log already (sent again).
+        case stored
+        /// Refused, in its words: another log under this id, or a medicine
+        /// that isn't the person's. Sending it again changes nothing.
+        case refused(String)
+    }
+
+    /// Sends one dose log to its person's log on the Mac, under its own id.
+    /// The Mac out of reach, or failing: `unreachable`, for the next time.
+    func log(_ log: UnsentLog) async throws(Problem) -> Logged {
+        var body = [
+            "id": log.id, "medicineUseId": log.medicine, "doseAt": log.doseAt,
+            "state": log.state.rawValue, "loggedAt": log.loggedAt,
+        ]
+        if let takenAt = log.takenAt { body["takenAt"] = takenAt }
+        var request = URLRequest(url: origin.appending(path: "\(Self.people)/\(log.made.person)/doses"))
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONEncoder().encode(body)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await Self.session.data(for: request)
+        } catch {
+            throw .unreachable
+        }
+        guard let http = response as? HTTPURLResponse else { throw .unreachable }
+        let refusal = try? JSONDecoder().decode(Refusal.self, from: data)
+        switch http.statusCode {
+        case 200..<300: return .stored
+        case 401 where refusal?.problem == "unpaired": throw .unpaired
+        case 400, 404, 409: return .refused(refusal?.error ?? "Rufi on your Mac refused this log.")
+        default: throw .unreachable
+        }
+    }
+
     /// What the Mac said of a batch it took.
     enum Received: Sendable {
         case gotIt
