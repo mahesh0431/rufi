@@ -112,6 +112,8 @@ export function remote(deps: RemoteDeps): Remote {
   const sessions = appSessions();
   const askers = new WeakMap<Request, Asker>();
   const answering = new Set<Answering>();
+  /** Apps unpaired while Rufi runs: a request let in just before still ends. */
+  const unpairedApps = new Set<string>();
   /** The cookie of the door's sessions, named for its port. */
   const cookie = () => `rufi_${String(port ?? 0)}`;
   const doorOrigin = () => `https://${host ?? ""}`;
@@ -134,6 +136,7 @@ export function remote(deps: RemoteDeps): Remote {
 
   /** Ends the app's launches, its session and what it has open: unpaired. */
   const ended = (app: string, except?: Socket) => {
+    unpairedApps.add(app);
     sessions.end(app);
     cut(app, except ? { except } : {});
   };
@@ -294,6 +297,17 @@ export function remote(deps: RemoteDeps): Remote {
     c.env.outgoing.once("close", () => {
       answering.delete(open);
     });
+    // Unpaired, or its session replaced, while this request was being let
+    // in: it ends now, as those already open did.
+    const still =
+      found.session === undefined
+        ? !unpairedApps.has(found.app.id)
+        : sessions.verify(getCookie(c, cookie()), c.req.header(PROOF_HEADER))
+            ?.session === found.session;
+    if (!still) {
+      answering.delete(open);
+      throw unpaired();
+    }
     await next();
   });
 
