@@ -72,17 +72,15 @@ jobs:
       - uses: ./.github/actions/setup
       - run: pnpm exec vitest run apps/server/src/server/capture.test.ts apps/desktop/scripts/bundle-icon.test.ts
 
-  # The iPhone app's Swift tests (apps/ios), on an iOS Simulator with Xcode 27.
+  # The iPhone app's Swift tests (apps/ios), on an iOS 27.0 Simulator with
+  # Xcode 27.0, as on the Mac it is built on (the xcode-27 image has it).
   ios:
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Xcode 27
-        run: |
-          sudo xcode-select -s "$(ls -d /Applications/Xcode_27*.app | sort -V | tail -1)"
-          xcodebuild -version
-      - run: xcodebuild test -project apps/ios/Rufi.xcodeproj -scheme Rufi -destination "platform=iOS Simulator,name=iPhone 17" CODE_SIGNING_ALLOWED=NO
+      - run: sudo xcode-select -s /Applications/Xcode_27.0.app && xcodebuild -version
+      - run: xcodebuild test -project apps/ios/Rufi.xcodeproj -scheme Rufi -destination "platform=iOS Simulator,OS=27.0,name=iPhone 17" CODE_SIGNING_ALLOWED=NO
 
   # The gate branch protection asks for. It always runs, so it is never
   # skipped (a skipped required check counts as passed).
