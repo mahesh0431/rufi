@@ -168,7 +168,7 @@ async function claimDoses(
       .execute();
     if (now.getTime() - dose.getTime() <= LATE_MS) {
       const text = (name: string) =>
-        typeof row[name] === "string" ? (row[name] as string) : undefined;
+        typeof row[name] === "string" ? row[name] : undefined;
       // "Amoxicillin 500 mg · 1 capsule", as Today names it.
       const label = [
         [text("name"), text("strength")].filter(Boolean).join(" "),

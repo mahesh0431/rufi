@@ -2,9 +2,11 @@
 // just became due or overdue, and which medicines' dose time just came, when
 // that Rufi is ready, every minute and when the Mac wakes (main.ts), and
 // tells each person with one Mac notice for follow-ups and one for
-// medicines. Rufi marks them as told; the app only gets counts, a time and a
-// person id, never a title or a name. Best effort: a notice that fails isn't
-// tried again, and Needs you and Today in Rufi still show them.
+// medicines, only when their reminders ring on the Mac. Rufi marks them as
+// told; the app gets counts, a time and a person id, never a title, and a
+// medicine's name only when the person chose Which ones. Best effort: a
+// notice that fails isn't tried again, and Needs you and Today in Rufi
+// still show them.
 import type { PersonNotices } from "@rufi/contracts/app";
 
 /** How often the app asks: a medicine's 21:00 is told at 21:00. */
@@ -58,9 +60,24 @@ export function noticeTimer({
 
 const many = (n: number) => (n === 1 ? "follow-up is" : "follow-ups are");
 
-/** A medicines notice's text: a count and a time, never a name. */
-export function medicinesText({ medicines, at }: PersonNotices): string {
+/**
+ * A medicines notice's text, as the person chose (Medicines › Reminders):
+ * the time ("Medicines at 21:00"), how many ("2 medicines at 21:00"), or
+ * which ones ("21:00 · 2 medicines", then each on its own line).
+ */
+export function medicinesText({
+  medicines,
+  at,
+  show,
+  names,
+}: PersonNotices): string {
   const what = `${String(medicines)} ${medicines === 1 ? "medicine" : "medicines"}`;
+  if (show === "time") {
+    return at === undefined ? "Medicines are due" : `Medicines at ${at}`;
+  }
+  if (show === "names" && names !== undefined) {
+    return [at === undefined ? what : `${at} · ${what}`, ...names].join("\n");
+  }
   if (at !== undefined) return `${what} at ${at}`;
   return `${what} ${medicines === 1 ? "is" : "are"} due`;
 }

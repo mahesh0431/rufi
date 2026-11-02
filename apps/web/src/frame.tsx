@@ -27,6 +27,7 @@ import {
   Syringe,
 } from "lucide-react";
 import type { Person } from "@rufi/contracts";
+import { RemindersMenu } from "./reminders.tsx";
 import { type ReactNode, useEffect } from "react";
 import { useConnection } from "./api.ts";
 import { Dog } from "./dog.tsx";
@@ -240,6 +241,11 @@ export function Frame() {
                           : (TITLES[pathname.split("/")[1] ?? ""] ??
                             "Overview")}
           </h1>
+          {kind === "medicine_use" && person && connection !== "ended" && (
+            <div className="ml-auto">
+              <RemindersMenu personId={person.id} />
+            </div>
+          )}
         </header>
         <Offline shown={connection === "offline"} />
         {/* With the bar, the page ends above the room it floats in, so it

@@ -28,6 +28,8 @@ import {
   RecordPage,
   Doses,
   type LogDose,
+  Reminders,
+  type SaveReminders,
   TestPage,
   Today,
 } from "@rufi/contracts/record";
@@ -260,12 +262,39 @@ export const useDoses = (
 export const logDose = (personId: string, log: LogDose) =>
   request("POST", `${personPath(personId)}/doses`, log);
 
-/** What shows a person's doses reads again: Today and the dose log. */
+/**
+ * What shows a person's doses reads again: Today, the dose log and the
+ * reminder setting.
+ */
 export const dosesChanged = (personId: string) =>
   Promise.all([
     queries.invalidateQueries({ queryKey: ["record", personId, "today"] }),
     queries.invalidateQueries({ queryKey: ["doses", personId] }),
+    queries.invalidateQueries({ queryKey: ["reminders", personId] }),
   ]);
+
+/** The person's reminder setting, as it applies now. */
+export const useReminders = (personId: string) =>
+  useQuery({
+    queryKey: ["reminders", personId],
+    refetchOnWindowFocus: true,
+    queryFn: () => read(Reminders, "GET", `${personPath(personId)}/reminders`),
+  });
+
+/** Keeps the person's two choices; the setting as it applies after. */
+export const saveReminders = async (
+  personId: string,
+  choice: SaveReminders,
+) => {
+  const saved = await read(
+    Reminders,
+    "PUT",
+    `${personPath(personId)}/reminders`,
+    choice,
+  );
+  queries.setQueryData(["reminders", personId], saved);
+  return saved;
+};
 
 /** A kind's page of the person's record: groups, newest first, more as asked. */
 export const useRecordPages = (personId: string, kind: PageKind) =>
