@@ -85,7 +85,9 @@ export function RowBreak() {
  * Each of a row's later parts, by its classes in a stacked row: after the
  * first line, a dot before each but the first shown, an empty one hidden.
  */
-export function laterParts(parts: readonly unknown[]): string[] {
+export function laterParts<const T extends readonly unknown[]>(
+  parts: T,
+): { [K in keyof T]: string } {
   let shown = false;
   return parts.map((part) => {
     if (part === undefined || part === null || part === "" || part === false) {
@@ -94,7 +96,7 @@ export function laterParts(parts: readonly unknown[]): string[] {
     const classes = `@max-[640px]:order-3 ${shown ? DOT : ""}`;
     shown = true;
     return classes;
-  });
+  }) as { [K in keyof T]: string };
 }
 
 /**
