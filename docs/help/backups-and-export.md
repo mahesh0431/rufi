@@ -129,6 +129,8 @@ Rufi checks the export against your record and your documents before it gives it
 
 The `results` table holds your lab results and measurements; its `category` column says which each one is, `lab` or `measurement`.
 
+What you logged for your [doses](record.md#doses) is in `dose_log`, each log as you made it: `taken`, `skipped` or `cleared` (an undo). A dose's state is its log with the latest `logged_at`.
+
 Your [device data](device-data.md) is in the export too: `device_values` holds the values, and `device_types` says what each `type` is, with its unit and LOINC code. In `device_batches`, `body` is each batch exactly as it came, as base64 of its gzip.
 
 In the export, a document's file is named by its fingerprint, with its type: for example `files/7f4a…8b54.pdf`. The `document_pages` table says which document and page each file is, and the name it had when you added it.

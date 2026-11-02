@@ -27,6 +27,7 @@ import { askRufi } from "./panel.ts";
 import { useRecordDetail, useRecordPages, useTestPage } from "./reads.ts";
 import { Trend } from "./trend.tsx";
 import { lineOf, lineOfPage, lineTitle } from "./trend-drawing.ts";
+import { MedicineDoses } from "./doses.tsx";
 import { MedicinesToday, Reminders, untilWords } from "./today.tsx";
 import { Button, buttonLook, EmptyState, ICON, Problem } from "./ui.tsx";
 
@@ -556,7 +557,12 @@ export function RowDetail({
     isBad(version) ? "Can't show this row." : cellsOf(version).title;
   return (
     <div className="border-t border-line px-3 pt-1 pb-3">
-      {row.kind === "medicine_use" && <MedicineTiming row={row} />}
+      {row.kind === "medicine_use" && (
+        <>
+          <MedicineTiming row={row} />
+          <MedicineDoses personId={personId} medicine={row} />
+        </>
+      )}
       {row.kind === "result" && (
         <p className="pt-2 text-muted">
           {[

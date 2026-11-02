@@ -25,7 +25,7 @@ export class IdTaken extends Error {
 }
 
 /** Who logged a dose: 'mac', 'rufi_ai' or 'app:<paired app id>'. */
-export type LoggedBy = string;
+type LoggedBy = string;
 
 type Row = Tables["dose_log"];
 
