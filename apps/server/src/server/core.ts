@@ -424,26 +424,6 @@ export const startCore = (options: CoreOptions) =>
       (opened) => Effect.promise(() => opened.close()),
     );
 
-    // The remote door, open at the start when an app is paired; closed
-    // before the record it reads.
-    const door = yield* Effect.acquireRelease(
-      Effect.sync(() =>
-        openRemote({
-          apps: pairedApps(
-            writer,
-            options.now ?? (() => new Date().toISOString()),
-          ),
-          people: () => transcripts.people(),
-          setting: transcripts.setting,
-          saveSetting: transcripts.saveSetting,
-          tailscale: options.tailscale ?? tailscale(),
-          log,
-        }),
-      ),
-      (opened) => Effect.promise(() => opened.close()),
-    );
-    yield* attempt(() => door.start());
-
     const access = sessions();
     const launcher = secret();
     // The token is in the fragment: the browser never sends it in a request.
