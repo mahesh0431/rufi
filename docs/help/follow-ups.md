@@ -89,12 +89,12 @@ When you don't get a notice:
 
 ### Medicine reminders
 
-A medicine with reminders on gets a notice at each of its times (see [Medicines](record.md#medicines)). It shows only Rufi, how many medicines and the time, for example:
+A medicine with reminders on gets a notice at each of its times, on the Mac when that person's reminders ring on the **Mac** or **Both** (see [Reminders](record.md#reminders)). What it shows is the person's choice there; at **How many**, the start:
 
 - **Rufi** · 1 medicine at 21:00
 - **Rufi** · 2 medicines at 08:00
 
-It never names the medicine or the person. Click it to open that person's Medicines page at **Today**. A notice only tells you it's time to check your medicine in Rufi: follow your directions.
+At **Just the time** it says "Medicines at 21:00". Only at **Which ones** does it name the medicines, each with its strength and amount, under "21:00 · 2 medicines". It never names the person. Click it to open that person's Medicines page at **Today**. A notice only tells you it's time to check your medicine in Rufi: follow your directions.
 
 - Each dose gets one notice, also after Rufi starts again. A new course's first dose gets one too.
 - If Rufi wasn't running or your Mac slept at that time, the notice comes when Rufi is back, if that is within an hour of the dose; later than that, none comes, and the next dose has its own. Today still lists the time.

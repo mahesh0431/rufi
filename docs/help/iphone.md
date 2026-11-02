@@ -21,9 +21,11 @@ Rufi's iPhone app isn't ready yet. Pairing works on the Mac today, so the app ca
 
 A paired iPhone opens only that person's record, for good. To open another person's record, pair again for them.
 
+Pairing sets that person's medicine reminders to ring on the iPhone. Until the iPhone app is ready, nothing rings there: to keep notices on the Mac, choose **Mac** or **Both** under **Reminders** on the Medicines page (see [Reminders](record.md#reminders)).
+
 ## Unpair
 
-Click **Unpair** on its line, then **Unpair** again. From then on it can't open Rufi. What it sent stays on your Mac. If you lose your phone, unpair it here.
+Click **Unpair** on its line, then **Unpair** again. From then on it can't open Rufi. What it sent stays on your Mac. If you lose your phone, unpair it here. When it was that person's last iPhone, their reminders ring on the Mac again.
 
 When nothing is paired and no code is waiting, Rufi stops listening for phones and removes its Tailscale route.
 

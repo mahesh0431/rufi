@@ -126,7 +126,12 @@ Only doses at a medicine's times can be logged for now; a medicine you take only
 
 ### Reminders
 
-With **reminders on** for a medicine, the Rufi app shows a notice on your Mac at its times, only while the app is open (see [Medicine reminders](follow-ups.md#medicine-reminders)). Reminders are off until you ask for them in the chat, for example "remind me". Say "stop reminding me about it" to turn them off; its times stay, and Today still lists it.
+With **reminders on** for a medicine, you get a notice at its times (see [Medicine reminders](follow-ups.md#medicine-reminders)). Reminders are off until you ask for them in the chat, for example "remind me". Say "stop reminding me about it" to turn them off; its times stay, and Today still lists it.
+
+**Reminders**, with the bell, at the top of the Medicines page, sets how all of this person's reminders work. A choice is kept as you click it:
+
+- **A reminder shows:** **Just the time** ("Medicines at 21:00"), **How many** ("2 medicines at 21:00"), or **Which ones** ("21:00 · 2 medicines", then each medicine's name, strength and amount). It starts at **How many**.
+- **Where reminders ring:** **iPhone**, **Mac** (while the Rufi app is open), or **Both**. It shows only once an iPhone is paired for this person (see [iPhone](iphone.md)); until then, reminders ring on the Mac. Pairing an iPhone sets it to **iPhone**; unpairing the last one sets it back to **Mac**.
 
 ### When a course ends
 

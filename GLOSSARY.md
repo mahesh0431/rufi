@@ -254,7 +254,7 @@ The Mac notification the Rufi app shows when a person's follow-ups become due or
 _Avoid_: alert, push
 
 **Reminder**:
-A medicine's notices at its times, on or off for each medicine, set in the chat. Follow-ups have notices, not reminders.
+A medicine's notices at its times, on or off for each medicine, set in the chat. Where they ring (iPhone, Mac or both) and what a notice shows (the time, how many, or which ones) is the person's **reminder setting**, on the Medicines page. Follow-ups have notices, not reminders.
 _Avoid_: alarm, alert
 
 **Visit brief**:
