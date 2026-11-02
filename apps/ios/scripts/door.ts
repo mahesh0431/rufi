@@ -33,7 +33,7 @@ import type { Tailscale } from "../../server/src/server/tailscale.ts";
 const REPLY = [
   "Your **HbA1c** was 6.8 % on 12 Aug 2026, above the 4.0–5.6 range.",
   "",
-  "[See your HbA1c results](/people/asha/tests/tst-hba1c) · [What HbA1c measures](https://example.com/hba1c)",
+  "[See your HbA1c results](rufi:/tests/tst-hba1c) · [What HbA1c measures](https://example.com/hba1c)",
 ].join("\n");
 
 const run = promisify(execFile);
