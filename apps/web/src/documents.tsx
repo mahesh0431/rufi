@@ -24,7 +24,7 @@ import { askRufi, openPanel } from "./panel.ts";
 import { printedDate, printedDay } from "./dates.ts";
 import { useDocuments } from "./reads.ts";
 import { openReading, RetryButton } from "./reading.tsx";
-import { Button, EmptyState, IconButton, Problem } from "./ui.tsx";
+import { Button, DOT, EmptyState, IconButton, Problem } from "./ui.tsx";
 
 const KINDS: readonly { id: DocumentKind; name: string }[] = [
   { id: "lab_report", name: "Lab reports" },
@@ -260,9 +260,6 @@ function Status({
   );
 }
 
-/** In a stacked row, the dot before a line's later part. */
-const DOT = "@max-[640px]:before:mr-1.5 @max-[640px]:before:content-['·']";
-
 function List({
   personId,
   documents,
@@ -349,6 +346,7 @@ function List({
                       <Status personId={personId} document={document} />
                       {document.status !== "reading" && (
                         <AskRufi
+                          tipAfter
                           className="ml-auto"
                           onClick={() => {
                             askRufi(personId, [

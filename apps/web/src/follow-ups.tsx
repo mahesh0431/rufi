@@ -20,7 +20,15 @@ import { printedDate } from "./dates.ts";
 import { askRufi } from "./panel.ts";
 import { cellsOf, chipOf, pageOf, RowDetail, rowElementId } from "./record.tsx";
 import { useFollowUps, useRecordDetail } from "./reads.ts";
-import { EmptyState, Problem } from "./ui.tsx";
+import {
+  EmptyState,
+  laterParts,
+  NARROW_END,
+  NARROW_FIRST,
+  NARROW_ROW,
+  Problem,
+  RowBreak,
+} from "./ui.tsx";
 
 type Group = FollowUps["groups"][number]["group"];
 
@@ -139,7 +147,8 @@ export function FollowUpsPage({
     );
   }
   return (
-    <div className="mx-auto max-w-[790px] px-6 py-8">
+    // A container: below 640 px of page its rows stack (FollowUpView).
+    <div className="@container mx-auto max-w-[790px] px-6 py-8">
       <p className="mb-5 text-muted">
         What to do, and when. Changes start in the chat: <b>Ask Rufi</b> on a
         row.
@@ -209,15 +218,19 @@ function FollowUpView({
     );
   }
   const closed = group === "done" || group === "dropped";
+  const due = whenDue(group, row.due, now);
+  // Below 640 px: what to do, what it is about, and Ask Rufi, then whether
+  // it was done and when it is due.
+  const [state, when] = laterParts([closed, due]);
   return (
     <li
       id={rowElementId(row.kind, row.id)}
       className="border-t border-line first:border-t-0"
     >
       <div
-        className={`group grid items-center gap-3 px-3 py-2 ${closed ? "grid-cols-[1fr_auto_minmax(13rem,auto)_auto]" : "grid-cols-[1fr_minmax(13rem,auto)_auto]"} ${open ? "bg-accent-soft" : "hover:bg-side"}`}
+        className={`group grid items-center gap-3 px-3 py-2 ${closed ? "grid-cols-[1fr_auto_minmax(13rem,auto)_auto]" : "grid-cols-[1fr_minmax(13rem,auto)_auto]"} ${NARROW_ROW} ${open ? "bg-accent-soft" : "hover:bg-side"}`}
       >
-        <span className="min-w-0">
+        <span className={`min-w-0 ${NARROW_FIRST}`}>
           <button
             type="button"
             aria-expanded={open}
@@ -239,15 +252,17 @@ function FollowUpView({
             </span>
           )}
         </span>
-        {closed && <span>{group === "done" ? "Done" : "Dropped"}</span>}
-        <span className="whitespace-nowrap text-muted">
-          {whenDue(group, row.due, now)}
-        </span>
+        {closed && (
+          <span className={state}>{group === "done" ? "Done" : "Dropped"}</span>
+        )}
+        <span className={`whitespace-nowrap text-muted ${when}`}>{due}</span>
         <AskRufi
+          className={NARROW_END}
           onClick={() => {
             onAsk(row);
           }}
         />
+        <RowBreak />
       </div>
       {open && <RowDetail personId={personId} row={row} />}
     </li>

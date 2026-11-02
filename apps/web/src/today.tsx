@@ -266,9 +266,12 @@ export function MedicinesToday({
           {today.doses.map((dose) => {
             const { at, past, medicine } = dose;
             return (
+              // Below 640 px of page: the time, the medicine and Ask Rufi,
+              // then its amount and directions, then what was logged and
+              // its buttons; whether it reminds is on the medicine's row.
               <li
                 key={`${today.day}T${at}:${medicine.id}`}
-                className={`grid grid-cols-[48px_1.2fr_2fr_224px_auto_auto] items-center gap-2 border-t border-line px-3 py-2 first:border-t-0 ${past ? "text-muted" : ""}`}
+                className={`grid grid-cols-[48px_1.2fr_2fr_224px_auto_auto] items-center gap-2 border-t border-line px-3 py-2 first:border-t-0 @max-[640px]:grid-cols-[48px_1fr_auto] @max-[640px]:gap-y-0 ${past ? "text-muted" : ""}`}
               >
                 <span className="font-semibold tabular-nums">
                   {at}
@@ -277,7 +280,7 @@ export function MedicinesToday({
                 <span className="min-w-0 font-semibold">
                   {[medicine.name, medicine.strength].filter(Boolean).join(" ")}
                 </span>
-                <span className="min-w-0 text-muted">
+                <span className="min-w-0 text-muted @max-[640px]:col-span-2 @max-[640px]:col-start-2 @max-[640px]:row-start-2">
                   {[
                     medicine.amount,
                     medicine.directions,
@@ -286,9 +289,14 @@ export function MedicinesToday({
                     .filter(Boolean)
                     .join(" · ")}
                 </span>
-                <DoseLogged personId={personId} day={today.day} dose={dose} />
-                <Reminders on={medicine.remind} />
+                <div className="@max-[640px]:col-span-2 @max-[640px]:col-start-2 @max-[640px]:row-start-3 @max-[640px]:[&>span]:justify-start">
+                  <DoseLogged personId={personId} day={today.day} dose={dose} />
+                </div>
+                <span className="@max-[640px]:hidden">
+                  <Reminders on={medicine.remind} />
+                </span>
                 <AskRufi
+                  className="@max-[640px]:col-start-3 @max-[640px]:row-span-2 @max-[640px]:row-start-1 @max-[640px]:self-start"
                   onClick={() => {
                     onAsk(medicine);
                   }}

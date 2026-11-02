@@ -55,6 +55,48 @@ type Look = NonNullable<VariantProps<typeof buttonLook>["look"]>;
 /** The one icon size, before a label or alone. */
 export const ICON = 16;
 
+/*
+ * A row in a page narrower than 640 px (a phone; each page is a container):
+ * its name and its button on the first line, then RowBreak, then its other
+ * parts on one line, a dot between them (laterParts). On the Mac's wider
+ * page the same parts are the row's grid columns.
+ */
+export const NARROW_ROW =
+  "@max-[640px]:flex @max-[640px]:flex-wrap @max-[640px]:items-center @max-[640px]:gap-x-1.5 @max-[640px]:gap-y-0.5";
+/** The row's name, first: it takes the first line's room. */
+export const NARROW_FIRST = "@max-[640px]:min-w-0 @max-[640px]:flex-1";
+/** What ends the first line, such as Ask Rufi. */
+export const NARROW_END = "@max-[640px]:order-1";
+/** In a stacked row, the dot before a line's later part. */
+export const DOT =
+  "@max-[640px]:before:mr-1.5 @max-[640px]:before:content-['·']";
+
+/** Ends a stacked row's first line; nothing on a wider page. */
+export function RowBreak() {
+  return (
+    <span
+      aria-hidden
+      className="hidden @max-[640px]:order-2 @max-[640px]:block @max-[640px]:basis-full"
+    />
+  );
+}
+
+/**
+ * Each of a row's later parts, by its classes in a stacked row: after the
+ * first line, a dot before each but the first shown, an empty one hidden.
+ */
+export function laterParts(parts: readonly unknown[]): string[] {
+  let shown = false;
+  return parts.map((part) => {
+    if (part === undefined || part === null || part === "" || part === false) {
+      return "@max-[640px]:hidden";
+    }
+    const classes = `@max-[640px]:order-3 ${shown ? DOT : ""}`;
+    shown = true;
+    return classes;
+  });
+}
+
 /**
  * A button with a label. `busy`: what it is doing ("Backing up…"), in place
  * of the label, with a spinner; it can't be pressed again meanwhile.

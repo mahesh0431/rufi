@@ -29,7 +29,18 @@ import { Trend } from "./trend.tsx";
 import { lineOf, lineOfPage, lineTitle } from "./trend-drawing.ts";
 import { MedicineDoses } from "./doses.tsx";
 import { MedicinesToday, Reminders, untilWords } from "./today.tsx";
-import { Button, buttonLook, EmptyState, ICON, Problem } from "./ui.tsx";
+import {
+  Button,
+  buttonLook,
+  EmptyState,
+  ICON,
+  laterParts,
+  NARROW_END,
+  NARROW_FIRST,
+  NARROW_ROW,
+  Problem,
+  RowBreak,
+} from "./ui.tsx";
 
 /** The pages, in the sidebar's order, by their title: results have two. */
 export const KIND_TITLES: Record<PageKind, string> = {
@@ -362,7 +373,8 @@ export function RecordPage({
     />
   );
   return (
-    <div className="mx-auto max-w-[790px] px-6 py-8">
+    // A container: below 640 px of page its rows stack (RowView, Today).
+    <div className="@container mx-auto max-w-[790px] px-6 py-8">
       {kind === "medicine_use" && (
         <MedicinesToday
           personId={person.id}
@@ -453,20 +465,28 @@ function RowView({
   }
   const cells = cellsOf(row, groupDate);
   const result = cells.value !== undefined;
+  // Below 640 px: its name and Ask Rufi, then the rest on one line; its
+  // small trend is on its test's page.
+  const [value, detail, status, date] = laterParts([
+    cells.value,
+    cells.detail,
+    cells.status,
+    cells.date,
+  ]);
   return (
     <li
       id={rowElementId(row.kind, row.id)}
       className="border-t border-line first:border-t-0"
     >
       <div
-        className={`group grid items-center gap-2 px-3 py-2 ${result ? "grid-cols-[1.1fr_0.9fr_96px_0.8fr_0.8fr_0.7fr_auto]" : "grid-cols-[1.4fr_1fr_0.8fr_1fr_auto]"} ${open ? "bg-accent-soft" : "hover:bg-side"}`}
+        className={`group grid items-center gap-2 px-3 py-2 ${result ? "grid-cols-[1.1fr_0.9fr_96px_0.8fr_0.8fr_0.7fr_auto]" : "grid-cols-[1.4fr_1fr_0.8fr_1fr_auto]"} ${NARROW_ROW} ${open ? "bg-accent-soft" : "hover:bg-side"}`}
       >
         {row.kind === "visit" ? (
           // A visit has a page of its own: the doctor's words and what came from it.
           <Link
             to="/people/$personId/visits/$visitId"
             params={{ personId, visitId: row.id }}
-            className="min-w-0 text-left font-semibold"
+            className={`min-w-0 text-left font-semibold ${NARROW_FIRST}`}
           >
             {cells.title}
           </Link>
@@ -475,7 +495,7 @@ function RowView({
             type="button"
             aria-expanded={open}
             onClick={onOpen}
-            className="min-w-0 text-left font-semibold"
+            className={`min-w-0 text-left font-semibold ${NARROW_FIRST}`}
           >
             {cells.name ?? cells.title}
             {cells.note !== undefined && (
@@ -483,24 +503,25 @@ function RowView({
             )}
           </button>
         )}
-        {result && <span>{cells.value}</span>}
+        {result && <span className={value}>{cells.value}</span>}
         {result && (
-          <span>
+          <span className="@max-[640px]:hidden">
             {trend && row.kind === "result" && (
               <Trend mini title={row.test} values={lineOf(trend)} />
             )}
           </span>
         )}
-        <span className="text-muted">{cells.detail}</span>
-        <span>{cells.status}</span>
-        <span className="text-muted">{cells.date}</span>
-        <span className="text-right">
+        <span className={`text-muted ${detail}`}>{cells.detail}</span>
+        <span className={status}>{cells.status}</span>
+        <span className={`text-muted ${date}`}>{cells.date}</span>
+        <span className={`text-right ${NARROW_END}`}>
           <AskRufi
             onClick={() => {
               onAsk(row);
             }}
           />
         </span>
+        <RowBreak />
       </div>
       {open && row.kind !== "visit" && (
         <RowDetail personId={personId} row={row} />

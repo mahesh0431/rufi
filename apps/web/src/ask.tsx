@@ -31,8 +31,16 @@ const DARK = face("inkApricot");
 
 export function AskRufi({
   className,
+  tipAfter = false,
   ...props
-}: Omit<ComponentProps<"button">, "children">) {
+}: Omit<ComponentProps<"button">, "children"> & {
+  /**
+   * In a page narrower than 640 px it sits at the left of its row (a
+   * document, a read result): its tip shows on its right. Elsewhere it ends
+   * its row, and the tip shows on its left.
+   */
+  tipAfter?: boolean;
+}) {
   return (
     <button
       type="button"
@@ -51,11 +59,9 @@ export function AskRufi({
           <Plus size={8} strokeWidth={4} />
         </span>
       </span>
-      {/* In a page narrower than 640 px its buttons sit at the left of a
-          row: the tip shows on the right. */}
       <span
         aria-hidden
-        className="ask-rufi-tip pointer-events-none absolute top-1/2 right-full mr-1.5 -translate-y-1/2 @max-[640px]:right-auto @max-[640px]:left-full @max-[640px]:mr-0 @max-[640px]:ml-1.5 rounded-md bg-surface px-2 py-0.5 text-xs font-normal whitespace-nowrap text-muted shadow-menu"
+        className={`ask-rufi-tip pointer-events-none absolute top-1/2 right-full mr-1.5 -translate-y-1/2 rounded-md bg-surface px-2 py-0.5 text-xs font-normal whitespace-nowrap text-muted shadow-menu ${tipAfter ? "@max-[640px]:right-auto @max-[640px]:left-full @max-[640px]:mr-0 @max-[640px]:ml-1.5" : ""}`}
       >
         {TIP}
       </span>

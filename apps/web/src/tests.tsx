@@ -22,7 +22,15 @@ import {
 } from "./record.tsx";
 import { Trend } from "./trend.tsx";
 import { lineOf, lineOfPage, lineTitle, onTheLine } from "./trend-drawing.ts";
-import { EmptyState, Problem } from "./ui.tsx";
+import {
+  EmptyState,
+  laterParts,
+  NARROW_END,
+  NARROW_FIRST,
+  NARROW_ROW,
+  Problem,
+  RowBreak,
+} from "./ui.tsx";
 
 /** The heading of the tests with no section. */
 const NO_SECTION = "Other tests";
@@ -42,7 +50,8 @@ export function LabResultsPage({ person }: { person: Person }) {
   }
   const { sections, trends } = lab.data;
   return (
-    <div className="mx-auto max-w-[790px] px-6 py-8">
+    // A container: below 640 px of page its rows stack (TestRow).
+    <div className="@container mx-auto max-w-[790px] px-6 py-8">
       <p className="mb-3 text-muted">
         Each test once, with its latest value as printed. Changes start in the
         chat: <b className="font-semibold">Ask Rufi</b> on a row.
@@ -106,10 +115,20 @@ function TestLine({
     );
   }
   const cells = cellsOf(latest);
+  // Below 640 px: the test and Ask Rufi, then its latest value and the rest
+  // on one line; its small trend is on its page.
+  const [value, detail, status, date] = laterParts([
+    cells.value,
+    cells.detail,
+    cells.status,
+    cells.date,
+  ]);
   return (
     <li className="border-t border-line first:border-t-0">
-      <div className="group grid grid-cols-[1.1fr_0.9fr_96px_0.8fr_0.8fr_0.7fr_auto] items-center gap-2 px-3 py-2 hover:bg-side">
-        <span className="min-w-0">
+      <div
+        className={`group grid grid-cols-[1.1fr_0.9fr_96px_0.8fr_0.8fr_0.7fr_auto] items-center gap-2 px-3 py-2 hover:bg-side ${NARROW_ROW}`}
+      >
+        <span className={`min-w-0 ${NARROW_FIRST}`}>
           <Link
             to="/people/$personId/tests/$testId"
             params={{ personId, testId: row.id }}
@@ -119,27 +138,28 @@ function TestLine({
           </Link>
           <span className="block text-xs text-muted">{values(test.count)}</span>
         </span>
-        <span>
+        <span className={value}>
           {cells.value}
           {cells.note !== undefined && (
             <span className="text-muted"> {cells.note}</span>
           )}
         </span>
-        <span>
+        <span className="@max-[640px]:hidden">
           {trend && (
             <Trend mini title={lineTitle(row)} values={lineOf(trend)} />
           )}
         </span>
-        <span className="text-muted">{cells.detail}</span>
-        <span>{cells.status}</span>
-        <span className="text-muted">{cells.date}</span>
-        <span className="text-right">
+        <span className={`text-muted ${detail}`}>{cells.detail}</span>
+        <span className={status}>{cells.status}</span>
+        <span className={`text-muted ${date}`}>{cells.date}</span>
+        <span className={`text-right ${NARROW_END}`}>
           <AskRufi
             onClick={() => {
               askRufi(personId, [chipOf(row)]);
             }}
           />
         </span>
+        <RowBreak />
       </div>
     </li>
   );
@@ -186,7 +206,8 @@ export function TestPage({
     );
   }
   return (
-    <div className="mx-auto max-w-[790px] px-6 py-8">
+    // A container: below 640 px of page its values stack (ValueRow).
+    <div className="@container mx-auto max-w-[790px] px-6 py-8">
       <div className="mb-3.5">
         <h2 className="flex items-start gap-3 text-[1.375rem] font-bold">
           <span className="min-w-0 flex-1">{test.name}</span>
@@ -281,23 +302,32 @@ function ValueLine({
   }
   const cells = cellsOf(row);
   const converted = inTestUnit(row, unit);
+  const source =
+    report === null ? "Typed in the chat" : (report.issuer ?? "A report");
+  // Below 640 px: its date and value, then the rest on one line.
+  const [test, from, range, status] = laterParts([
+    row.test,
+    source,
+    cells.detail,
+    cells.status,
+  ]);
   return (
     <li
       id={rowElementId("result", row.id)}
       className="border-t border-line first:border-t-0"
     >
       <div
-        className={`grid grid-cols-[0.8fr_0.9fr_1fr_1fr_0.8fr_0.9fr] items-center gap-2 px-3 py-2 ${open ? "bg-accent-soft" : "hover:bg-side"}`}
+        className={`grid grid-cols-[0.8fr_0.9fr_1fr_1fr_0.8fr_0.9fr] items-center gap-2 px-3 py-2 ${NARROW_ROW} ${open ? "bg-accent-soft" : "hover:bg-side"}`}
       >
         <button
           type="button"
           aria-expanded={open}
           onClick={onOpen}
-          className="min-w-0 text-left font-semibold"
+          className={`min-w-0 text-left font-semibold ${NARROW_FIRST}`}
         >
           {dated(row.measured) ?? "No date"}
         </button>
-        <span>
+        <span className={`${NARROW_END} @max-[640px]:text-right`}>
           {cells.value}
           {converted !== undefined && (
             <span className="block text-xs text-muted">= {converted}</span>
@@ -306,19 +336,16 @@ function ValueLine({
             <span className="block text-xs text-muted">Not drawn</span>
           )}
         </span>
-        <span>
+        <span className={test}>
           {row.test}
           {cells.note !== undefined && (
             <span className="text-muted"> {cells.note}</span>
           )}
         </span>
-        <span className="text-muted">
-          {report === null
-            ? "Typed in the chat"
-            : (report.issuer ?? "A report")}
-        </span>
-        <span className="text-muted">{cells.detail}</span>
-        <span>{cells.status}</span>
+        <span className={`text-muted ${from}`}>{source}</span>
+        <span className={`text-muted ${range}`}>{cells.detail}</span>
+        <span className={status}>{cells.status}</span>
+        <RowBreak />
       </div>
       {open && <RowDetail personId={personId} row={row} overTime={false} />}
     </li>
