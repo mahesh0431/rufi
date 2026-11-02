@@ -1,13 +1,14 @@
-// Follow-up notices (docs/adr/0012): the app asks the Rufi it runs which
-// follow-ups just became due or overdue, when that Rufi is ready, every 15
-// minutes and when the Mac wakes (main.ts), and tells each person with one
-// Mac notice. Rufi marks them as told; the app only gets counts and a person
-// id, never a title or a name. Best effort: a notice that fails isn't tried
-// again, and Needs you in Rufi still shows the follow-ups.
+// Notices (docs/adr/0012): the app asks the Rufi it runs which follow-ups
+// just became due or overdue, and which medicines' dose time just came, when
+// that Rufi is ready, every minute and when the Mac wakes (main.ts), and
+// tells each person with one Mac notice for follow-ups and one for
+// medicines. Rufi marks them as told; the app only gets counts, a time and a
+// person id, never a title or a name. Best effort: a notice that fails isn't
+// tried again, and Needs you and Today in Rufi still show them.
 import type { PersonNotices } from "@rufi/contracts/app";
 
-/** How often the app asks. */
-const EVERY_MS = 15 * 60_000;
+/** How often the app asks: a medicine's 21:00 is told at 21:00. */
+const EVERY_MS = 60_000;
 
 export interface NoticeTimer {
   /** Asks now, unless a claim still waits for its answer. */
@@ -36,7 +37,9 @@ export function noticeTimer({
     claim()
       .then((people) => {
         for (const person of people) {
-          if (person.due + person.overdue > 0) tell(person);
+          if (person.due + person.overdue + person.medicines > 0) {
+            tell(person);
+          }
         }
       }, failed)
       .finally(() => {
@@ -54,6 +57,13 @@ export function noticeTimer({
 }
 
 const many = (n: number) => (n === 1 ? "follow-up is" : "follow-ups are");
+
+/** A medicines notice's text: a count and a time, never a name. */
+export function medicinesText({ medicines, at }: PersonNotices): string {
+  const what = `${String(medicines)} ${medicines === 1 ? "medicine" : "medicines"}`;
+  if (at !== undefined) return `${what} at ${at}`;
+  return `${what} ${medicines === 1 ? "is" : "are"} due`;
+}
 
 /** A notice's text: counts only, nothing else about the person's health. */
 export function noticeText({ due, overdue }: PersonNotices): string {

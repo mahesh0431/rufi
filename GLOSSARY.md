@@ -85,8 +85,16 @@ A result the lab issued again, replacing an earlier version; its value or any ot
 _Avoid_: corrected, updated, overwritten
 
 **Medicine use**:
-One medicine or supplement the person takes or took, in one way (a morning and a night dose are two), with its status: taking now, paused, stopped or completed. It becomes one only on the person's word; a medicine a doctor proposed is in the visit's words until then. The **Medicines** page.
+One medicine or supplement the person takes or took, in one way (1 tablet in the morning and half at night are two; the same amount twice a day is one, with two times), with its status: taking now, paused, stopped or completed, its directions, and when it is taken: its times of day, which days, and until when (the last dose of a course). It becomes one only on the person's word; a medicine a doctor proposed is in the visit's words until then. The **Medicines** page.
 _Avoid_: prescription (that is a paper), medication list, drug
+
+**Directions**:
+How to take a medicine, exactly as the paper or the person said it: "1-0-1 after food × 5 days", "SOS for fever". Rufi AI works out the times from them with the person; code never reads them.
+_Avoid_: schedule, sig, dosage instructions
+
+**Today**:
+The top of the Medicines page: each current medicine's doses on the Mac's day, by time. A past time is only "earlier today", never taken or missed.
+_Avoid_: schedule, plan, checklist
 
 **Visit**:
 One care event that happened, with its kind in the person's words, such as a clinic, dental or lab visit, a phone call or a stay in hospital (admitted and discharged). It keeps the doctor's words as written, the medicines proposed included, and its paper's page as its source; the records saved from it cite it. A visit to come is a follow-up. A **prescription** is a kind of document: the paper from a visit, not a record of its own.
@@ -234,8 +242,12 @@ Something to come back to: what, for whom, when (a date, a rough date, "at the n
 _Avoid_: reminder, task, to-do
 
 **Notice**:
-The Mac notification the Rufi app shows when a person's follow-ups become due or overdue: Rufi and a count only, never a name or what the follow-up is. One per state; its click opens Follow-ups.
-_Avoid_: alert, reminder, push
+The Mac notification the Rufi app shows when a person's follow-ups become due or overdue, or a medicine's dose time comes: Rufi, a count and, for medicines, the time, never a name or what it is. A follow-up's opens Follow-ups; a medicine's opens Today.
+_Avoid_: alert, push
+
+**Reminder**:
+A medicine's notices at its times, on or off for each medicine, set in the chat. Follow-ups have notices, not reminders.
+_Avoid_: alarm, alert
 
 **Visit brief**:
 A dated summary the AI writes for a doctor's visit from the saved record only, with the records it rests on as its sources. It never changes; when a later save changes the record, its page says so.

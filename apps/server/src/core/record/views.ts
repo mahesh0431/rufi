@@ -25,6 +25,7 @@ import type {
   ShownRow,
   TestPage,
   Tile,
+  Today,
   WaitingDocument,
 } from "@rufi/contracts/record";
 import type { DocumentSummary } from "@rufi/contracts/documents";
@@ -42,6 +43,8 @@ import {
   type Kind,
   type Row,
 } from "./kinds.ts";
+import { daysWords, dosesOn, laterDose, timingOf } from "../timing/doses.ts";
+import { localTime } from "./dates.ts";
 import { classify, dueSpan } from "./due.ts";
 import { changed, fieldsOf, isCurrent } from "./read.ts";
 
@@ -206,6 +209,11 @@ function shown(kind: Kind, row: Row): ShownRow {
     ...fieldsOf(kind, row),
     ...(typeof row["asserted"] === "string" && { asserted: row["asserted"] }),
     ...(typeof row["cited"] === "number" && { cited: row["cited"] }),
+    // A medicine's days in plain words, beside the rule as saved.
+    ...(kind.name === "medicine_use" &&
+      typeof row["days"] === "string" && {
+        days_words: daysWords(row["days"]),
+      }),
   };
   // Fields the row doesn't have are left out, not sent as undefined.
   const decoded = Schema.decodeUnknownResult(RecordRow)(
@@ -855,6 +863,43 @@ async function followUps(
   });
 }
 
+/**
+ * Today: the doses on the local day of `now` of the person's medicines
+ * taken now with times, reminders on or off, every one of them (no pages).
+ * Start, until and days bound them as for the notices (../timing).
+ */
+async function today(db: Db, personId: string, now: Date): Promise<Today> {
+  const kind = kindOf("medicine_use");
+  const { rows } = await sql<Row>`SELECT r.* FROM medicine_uses r
+    WHERE r.person_id = ${personId} AND ${isCurrent(kind, "r")}
+      AND r.status = 'current' AND r.times IS NOT NULL
+    ORDER BY r.rowid`.execute(db);
+  const doses: Today["doses"][number][] = [];
+  let upcoming = false;
+  for (const row of rows) {
+    const medicine = shown(kind, row);
+    if (medicine.kind !== "medicine_use" || "problem" in medicine) continue;
+    const timing = timingOf(row);
+    for (const dose of dosesOn(timing, now)) {
+      doses.push({
+        at: localTime(dose.toISOString()).slice(11),
+        past: dose < now,
+        medicine,
+      });
+    }
+    upcoming ||= laterDose(timing, now);
+  }
+  return {
+    day: localTime(now.toISOString()).slice(0, 10),
+    doses: doses.toSorted(
+      (a, b) =>
+        a.at.localeCompare(b.at) ||
+        a.medicine.name.localeCompare(b.medicine.name),
+    ),
+    upcoming,
+  };
+}
+
 /** Whether follow-ups in this group show in Needs you. */
 const isNeed = (group: FollowUpGroup): group is FollowUpNeed["state"] =>
   group === "overdue" || group === "due" || group === "coming_up";
@@ -954,6 +999,8 @@ export function recordViews(store: Store, now: () => Date = () => new Date()) {
           groups: [...groups].map(([group, rows]) => ({ group, rows })),
         };
       }),
+    /** The person's doses today, for the Medicines page. */
+    today: (personId: string) => read((db) => today(db, personId, now())),
     page: (personId: string, kind: PageKind, after?: string) =>
       read((db) => page(db, personId, kind, after)),
     labResults: (personId: string) => read((db) => labResults(db, personId)),

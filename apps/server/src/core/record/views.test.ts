@@ -838,3 +838,71 @@ describe("follow-ups", () => {
     expect(overview?.openFollowUps).toBe(7);
   });
 });
+
+describe("today", () => {
+  it("lists each current medicine's doses on the day, by time, with reminders on or off; stopped, paused, removed and others' are left out", async () => {
+    store.db
+      .exec(`INSERT INTO medicine_uses (id, person_id, name, strength, amount, directions, status, times, days, started, until, remind, removed) VALUES
+      ('m-amox', 'asha', 'Amoxicillin', '500 mg', '1 capsule', '1-0-1 after food × 5 days', 'current', '["08:00","21:00"]', NULL, '2026-11-01T21:00', '2026-11-06T08:00', 1, 0),
+      ('m-iron', 'asha', 'Iron', '100 mg', NULL, 'once daily', 'current', '["08:00"]', NULL, NULL, NULL, 0, 0),
+      ('m-vitd', 'asha', 'Vitamin D', '60000 IU', NULL, 'every Sunday', 'current', '["09:00"]', 'FREQ=WEEKLY;BYDAY=SU', NULL, NULL, 1, 0),
+      ('m-stop', 'asha', 'Ibuprofen', '400 mg', NULL, 'twice a day', 'stopped', '["08:00"]', NULL, NULL, NULL, 1, 0),
+      ('m-pause', 'asha', 'Folic acid', '5 mg', NULL, 'once daily', 'paused', '["08:00"]', NULL, NULL, NULL, 1, 0),
+      ('m-gone', 'asha', 'Cetirizine', '10 mg', NULL, 'at night', 'current', '["22:00"]', NULL, NULL, NULL, 1, 1),
+      ('m-ravi', 'ravi', 'Amlodipine', '5 mg', NULL, 'once daily', 'current', '["07:00"]', NULL, NULL, NULL, 1, 0);`);
+    const on = async (now: Date, person = "asha") => {
+      const today = await recordViews(reader, () => now).today(person);
+      return {
+        day: today.day,
+        doses: today.doses.map((d) => [
+          d.at,
+          d.medicine.name,
+          d.past,
+          d.medicine.remind,
+        ]),
+        upcoming: today.upcoming,
+      };
+    };
+
+    // Monday noon: the morning doses are past.
+    expect(await on(new Date(2026, 10, 2, 12))).toEqual({
+      day: "2026-11-02",
+      doses: [
+        ["08:00", "Amoxicillin", true, true],
+        ["08:00", "Iron", true, false],
+        ["21:00", "Amoxicillin", false, true],
+      ],
+      upcoming: true,
+    });
+    // The course's last day keeps its last dose; the day after, it is gone.
+    expect((await on(new Date(2026, 10, 6, 20))).doses).toEqual([
+      ["08:00", "Amoxicillin", true, true],
+      ["08:00", "Iron", true, false],
+    ]);
+    expect((await on(new Date(2026, 10, 7, 7))).doses).toEqual([
+      ["08:00", "Iron", false, false],
+    ]);
+    expect((await on(new Date(2026, 10, 8, 7))).doses).toEqual([
+      ["08:00", "Iron", false, false],
+      ["09:00", "Vitamin D", false, true],
+    ]);
+    // Only the route's person.
+    expect((await on(new Date(2026, 10, 2, 12), "ravi")).doses).toEqual([
+      ["07:00", "Amlodipine", true, true],
+    ]);
+
+    // With only the weekly one left, a Tuesday has nothing, and a later dose.
+    store.db.exec(
+      "UPDATE medicine_uses SET status = 'completed' WHERE id IN ('m-amox', 'm-iron')",
+    );
+    expect(await on(new Date(2026, 10, 10, 9))).toEqual({
+      day: "2026-11-10",
+      doses: [],
+      upcoming: true,
+    });
+    store.db.exec(
+      "UPDATE medicine_uses SET status = 'stopped' WHERE id = 'm-vitd'",
+    );
+    expect((await on(new Date(2026, 10, 10, 9))).upcoming).toBe(false);
+  });
+});

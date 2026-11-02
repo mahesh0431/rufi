@@ -40,6 +40,8 @@ function given(field: Field, row: Row): unknown {
       return { value, unit: row[unitColumn(field)] ?? undefined };
     case "test":
       return value;
+    case "times":
+      return typeof value === "string" ? (JSON.parse(value) as unknown) : value;
   }
 }
 

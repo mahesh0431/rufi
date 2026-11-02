@@ -761,6 +761,7 @@ export async function saveChanges(
       .execute();
   }
   await checkAmendments(trx, where.personId, written);
+  checkReminders(written);
   if (
     planned.some(
       (c) => c.kind.name === "allergy" || c.kind.name === "none_known",
@@ -986,6 +987,28 @@ async function checkAmendments(
       })),
     );
   }
+}
+
+/**
+ * Checks each medicine as written, after its change is merged with what was
+ * stored: reminders need times.
+ */
+function checkReminders(written: readonly Written[]): void {
+  const missing = written.filter(
+    ({ kind, after }) =>
+      kind.name === "medicine_use" &&
+      after["remind"] === 1 &&
+      after["times"] === null,
+  );
+  if (missing.length === 0) return;
+  throw new SaveRefused(
+    "Nothing was saved.",
+    missing.map(({ kind, after }) => ({
+      path: "changes",
+      got: kind.label(after),
+      fix: "Reminders need times: turn reminders off too, or keep the times.",
+    })),
+  );
 }
 
 /** Why a result can't be amended by a new one. */
@@ -1400,7 +1423,12 @@ const storedOf = (field: Field, row: Row) =>
 function shownField(field: Field, row: Row, links: Links): string | undefined {
   const value = row[field.column];
   if (value === null || value === undefined) return undefined;
+  if (field.said) return field.said(value);
   switch (field.type) {
+    case "times":
+      return typeof value === "string"
+        ? (JSON.parse(value) as string[]).join(", ")
+        : undefined;
     case "boolean":
       return value === 1 ? "yes" : "no";
     case "due":
@@ -1512,6 +1540,13 @@ function receiptText(written: readonly Written[], links: Links): string {
       if (action === "add") {
         const now = shownField(field, after, links);
         if (now === undefined || now === "unknown") continue;
+        // A yes or no that is always known says only a yes when added.
+        if (
+          field.type === "boolean" &&
+          field.notNull &&
+          after[field.column] === 0
+        )
+          continue;
         if (kind.inLabel.includes(key)) continue;
         // A number in the test's unit shows where it isn't the printed one.
         const printedAs = {

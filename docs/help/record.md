@@ -94,6 +94,31 @@ A removed record isn't shown, and neither is a result that an amended result rep
 
 If Rufi can't show a stored record, its row says **Can't show this row**. The rest of the page still shows.
 
+## Medicines
+
+A medicine keeps its **directions** exactly as the paper or you said them, such as "1-0-1 after food × 5 days" or "once daily". Beside them, Rufi keeps when you take it: its **times** of day, which **days** (every day unless you said otherwise, such as every Sunday), and **until** when, the last dose of a course. Rufi AI works these out with you in the chat: it says what it understood, such as "a morning and a night dose, 08:00 and 21:00; the last dose on the morning of 6 Nov", and saves them only after your yes. A medicine you take only when needed ("SOS") keeps its directions with no times.
+
+The Medicines page lists each medicine with its amount, directions and times. Open one to see **Directions**, **Times**, **Days**, **Until** and **Reminders**, then its sources and history.
+
+### Today
+
+**Today**, at the top of the Medicines page, shows what you take today, by time: each medicine taken now that has times, with its amount, directions, the last day of a course, and whether its reminders are on. A time already past today is greyed; that means only "earlier today", not taken or missed. Rufi doesn't track what you took.
+
+- On a day with nothing to take, such as a weekly medicine's other days, it says **Nothing to take today.**
+- On a course's last day, its last dose stays there, greyed, for the rest of the day; from the next day it isn't listed.
+- A medicine you stopped, paused or finished isn't listed. One with reminders off is.
+- Today changes by itself within a minute when a time passes or a new day starts.
+
+To change a time, the days or the reminders, use **Ask Rufi** on the row, or tell the AI, for example "move my thyroid tablet to 6:00".
+
+### Reminders
+
+With **reminders on** for a medicine, the Rufi app shows a notice on your Mac at its times, only while the app is open (see [Medicine reminders](follow-ups.md#medicine-reminders)). Reminders are off until you ask for them in the chat, for example "remind me". Say "stop reminding me about it" to turn them off; its times stay, and Today still lists it.
+
+### When a course ends
+
+After a course's last dose, its reminders stop by themselves. The medicine stays **Taking now** in your health record until you say otherwise: the next time Rufi AI reads your medicines, it asks whether you finished it, and marks it completed when you say yes. If you stop early, tell the AI ("I stopped the antibiotic"): its reminders stop at once.
+
 ## A visit
 
 A visit is one time you saw a doctor: at a clinic, online (a video or phone call), at home, or a stay in hospital. It keeps what the doctor wrote or said, as written, also the medicines you didn't take. You save one in the chat: send its prescription or discharge summary, or tell the AI about the visit (see [A visit's paper](documents.md#a-visits-paper)).

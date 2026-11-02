@@ -86,7 +86,7 @@ INSERT INTO record_sources (person_id, kind, record_id, type, document_id, page)
   ('ravi', 'result', 'res-r2', 'document_page', 'doc-ravi-jul', 1);
 
 -- Records from before Rufi kept their source (none given).
-INSERT INTO medicine_uses (id, person_id, name, strength, amount, schedule, route, purpose, status, started, started_words) VALUES
+INSERT INTO medicine_uses (id, person_id, name, strength, amount, directions, route, purpose, status, started, started_words) VALUES
   ('med-a1', 'asha', 'Metformin', '500 mg', '1 tablet', 'twice a day', 'by mouth', 'blood sugar', 'current', '2024-03', NULL),
   ('med-a2', 'asha', 'Creatine', '5 g', NULL, 'every morning', NULL, NULL, 'current', '2026-06', NULL),
   ('med-r1', 'ravi', 'Atorvastatin', '10 mg', '1 tablet', 'at night', 'by mouth', 'cholesterol', 'current', '2026-07', NULL);

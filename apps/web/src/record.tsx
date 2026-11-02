@@ -8,6 +8,7 @@
 // page stays.
 import type { Person } from "@rufi/contracts";
 import type {
+  MedicineUseRow,
   PageKind,
   RecordChange,
   RecordGroup,
@@ -18,7 +19,7 @@ import type {
 } from "@rufi/contracts/record";
 import { Link } from "@tanstack/react-router";
 import { ArrowUpRight, ChevronDown } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { AskRufi, AskRufiEmpty } from "./ask.tsx";
 import { printedDate, printedTime } from "./dates.ts";
 import type { BoxChip } from "./draft.ts";
@@ -26,6 +27,7 @@ import { askRufi } from "./panel.ts";
 import { useRecordDetail, useRecordPages, useTestPage } from "./reads.ts";
 import { Trend } from "./trend.tsx";
 import { lineOf, lineOfPage, lineTitle } from "./trend-drawing.ts";
+import { MedicinesToday, Reminders, untilWords } from "./today.tsx";
 import { Button, buttonLook, EmptyState, ICON, Problem } from "./ui.tsx";
 
 /** The pages, in the sidebar's order, by their title: results have two. */
@@ -145,7 +147,9 @@ export function cellsOf(row: RecordRow, groupDate?: string): Cells {
     case "medicine_use":
       return {
         title: join(row.name, row.strength),
-        detail: [row.amount, row.schedule].filter(Boolean).join(" · "),
+        detail: [row.amount, row.directions, row.times?.join(", ")]
+          .filter(Boolean)
+          .join(" · "),
         status: STATUS[row.status] ?? "",
         date: span(row.started, row.ended) ?? "",
       };
@@ -358,6 +362,14 @@ export function RecordPage({
   );
   return (
     <div className="mx-auto max-w-[790px] px-6 py-8">
+      {kind === "medicine_use" && (
+        <MedicinesToday
+          personId={person.id}
+          onAsk={(medicine) => {
+            askRufi(person.id, [chipOf(medicine)]);
+          }}
+        />
+      )}
       {days && (
         <p className="mb-3 text-muted">
           By the day they were taken, newest first. Changes start in the chat:{" "}
@@ -505,6 +517,7 @@ function valueOf(value: unknown): string {
   if (typeof value === "object" && "kind" in value) return "another record";
   if (value === "next_visit") return "the next visit";
   if (typeof value === "boolean") return value ? "yes" : "no";
+  if (Array.isArray(value)) return value.join(", ");
   return typeof value === "string" || typeof value === "number"
     ? String(value)
     : JSON.stringify(value);
@@ -543,6 +556,7 @@ export function RowDetail({
     isBad(version) ? "Can't show this row." : cellsOf(version).title;
   return (
     <div className="border-t border-line px-3 pt-1 pb-3">
+      {row.kind === "medicine_use" && <MedicineTiming row={row} />}
       {row.kind === "result" && (
         <p className="pt-2 text-muted">
           {[
@@ -665,6 +679,28 @@ export function RowDetail({
         <OverTime personId={personId} testId={row.in_test} />
       )}
     </div>
+  );
+}
+
+/** An opened medicine's directions and the timing beside them. */
+function MedicineTiming({ row }: { row: MedicineUseRow }) {
+  const timed = row.times !== undefined;
+  const facts: [string, ReactNode][] = [
+    ["Directions", row.directions ?? "Not known"],
+    ["Times", row.times?.join(", ") ?? "Not set"],
+    ["Days", row.days_words ?? row.days ?? (timed ? "Every day" : "Not set")],
+    ["Until", untilWords(row.until)?.replace(/^until /, "") ?? "No end set"],
+    ["Reminders", <Reminders key="reminders" on={row.remind} />],
+  ];
+  return (
+    <dl className="grid grid-cols-[96px_1fr] gap-x-3 gap-y-0.5 pt-2">
+      {facts.map(([name, value]) => (
+        <Fragment key={name}>
+          <dt className="text-muted">{name}</dt>
+          <dd>{value}</dd>
+        </Fragment>
+      ))}
+    </dl>
   );
 }
 

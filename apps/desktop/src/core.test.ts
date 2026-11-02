@@ -17,7 +17,7 @@ process.send({ type: "owned", url: "http://127.0.0.1:9/#launch=test" });
 let claims = 0;
 process.on("message", (message) => {
   if (message.type === "claim-notices" && ++claims > 1) {
-    process.send({ type: "notices", people: [{ personId: "asha", due: 1, overdue: 0 }] });
+    process.send({ type: "notices", people: [{ personId: "asha", due: 1, overdue: 0, medicines: 0 }] });
   }
 });
 process.on("disconnect", () => process.exit(0));
@@ -40,7 +40,7 @@ it("a claim the Rufi never answers ends at its deadline, and the next claim is a
   await ended;
 
   await expect(rufi.notices()).resolves.toEqual([
-    { personId: "asha", due: 1, overdue: 0 },
+    { personId: "asha", due: 1, overdue: 0, medicines: 0 },
   ]);
   await rufi.stop();
 });

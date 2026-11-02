@@ -26,6 +26,7 @@ import {
   RecordDetail,
   RecordPage,
   TestPage,
+  Today,
 } from "@rufi/contracts/record";
 import { Schema } from "effect";
 import {
@@ -206,6 +207,19 @@ export const useFollowUps = (personId: string) =>
     refetchOnWindowFocus: true,
     refetchInterval: CLOCK_MS,
     queryFn: () => read(FollowUps, "GET", `${personPath(personId)}/follow-ups`),
+  });
+
+/**
+ * The person's medicine doses today, read again as Follow-ups is, so a past
+ * time mutes and a new day starts within a minute; a save reads it again
+ * with the record.
+ */
+export const useToday = (personId: string) =>
+  useQuery({
+    queryKey: ["record", personId, "today"],
+    refetchOnWindowFocus: true,
+    refetchInterval: CLOCK_MS,
+    queryFn: () => read(Today, "GET", `${personPath(personId)}/today`),
   });
 
 /** A kind's page of the person's record: groups, newest first, more as asked. */

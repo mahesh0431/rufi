@@ -3,6 +3,7 @@
 // the others stay unknown. One list, so the save, its receipt and the
 // overview read every kind the same way.
 import { Schema } from "effect";
+import { daysWords } from "../timing/doses.ts";
 import { dateProblem, shownDate } from "./dates.ts";
 
 const Text = (max: number) =>
@@ -24,6 +25,15 @@ const DateSaid = Schema.Struct({
       "The words the date came from, as the user or the document said them: 'last Monday', 'since 2019', 'December'.",
   }),
 }).annotate({ identifier: "DateSaid" });
+
+/** A local time of day, 24 h: '08:00', '21:30'. */
+const Time = Schema.String.check(
+  Schema.makeFilter((text: string) =>
+    /^([01]\d|2[0-3]):[0-5]\d$/.test(text)
+      ? undefined
+      : "Use HH:MM, a local time of day on the 24-hour clock: 08:00, 21:30.",
+  ),
+).annotate({ identifier: "Time" });
 
 /** Which message of the user's a change rests on: a change's and a fix's source. */
 export const Position = Schema.Int.check(Schema.isGreaterThan(0)).annotate({
@@ -59,9 +69,22 @@ export interface Field {
    * `<column>_words`; a due date or 'next_visit'; a link to another record
    * in linked_kind and linked_id; a number with its unit in
    * `<column>_unit`; one of the person's tests, by its id or the ref of a
-   * test the same save adds, in its column.
+   * test the same save adds, in its column; times of day as a JSON array,
+   * sorted and each once.
    */
-  type: "value" | "boolean" | "date" | "due" | "link" | "amount" | "test";
+  type:
+    | "value"
+    | "boolean"
+    | "date"
+    | "due"
+    | "link"
+    | "amount"
+    | "test"
+    | "times";
+  /** What the save tool's description says it takes, when its type doesn't say. */
+  takes?: string;
+  /** How a receipt says its stored value, when not as stored. */
+  said?: (stored: unknown) => string;
   /** Where a date's words are kept, when not in `<column>_words`. */
   wordsColumn?: string;
   /** The AI must give it when adding, and can't forget it. */
@@ -178,7 +201,21 @@ export const KINDS: readonly Kind[] = [
       name: required(text("name")),
       strength: text("strength"),
       amount: text("amount"),
-      schedule: text("schedule"),
+      // As printed or said, whole; the timing beside it is Rufi AI's
+      // reading of it with the person (docs/adr/0031).
+      directions: text("directions"),
+      times: {
+        column: "times",
+        shown: "times",
+        input: Schema.Array(Time).check(Schema.isMinLength(1)),
+        type: "times",
+      },
+      days: {
+        ...text("days"),
+        takes:
+          ' (an RFC 5545 rule for the days: "FREQ=WEEKLY;BYDAY=SU", "DTSTART;VALUE=DATE:20261101\\nRRULE:FREQ=DAILY;INTERVAL=2"; none: every day)',
+        said: (stored) => daysWords(String(stored)) ?? String(stored),
+      },
       route: text("route"),
       purpose: text("purpose"),
       status: state("status", [
@@ -189,7 +226,16 @@ export const KINDS: readonly Kind[] = [
         "unknown",
       ]),
       started: date("started", "start"),
+      until: date("until", "until"),
       ended: date("ended", "end"),
+      remind: {
+        column: "remind",
+        shown: "reminders",
+        input: Schema.Boolean,
+        type: "boolean",
+        notNull: true,
+        said: (stored) => (stored === 1 ? "on" : "off"),
+      },
     },
     label: (row) => join(row["name"], row["strength"]),
     inLabel: ["name", "strength"],
@@ -544,6 +590,13 @@ export function columnsOf(field: Field, value: unknown): Row {
     case "test":
       // A ref stays as given until the save writes the test it names.
       return { [field.column]: value };
+    case "times":
+      return {
+        [field.column]:
+          value === null
+            ? null
+            : JSON.stringify([...new Set(value as string[])].toSorted()),
+      };
   }
 }
 

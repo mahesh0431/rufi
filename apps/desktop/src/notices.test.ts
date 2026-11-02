@@ -10,8 +10,9 @@ it("claims once at a time, and claims again after a failed claim", async () => {
     () => Promise.reject(new Error("Rufi didn't answer in time.")),
     () =>
       Promise.resolve([
-        { personId: "asha", due: 1, overdue: 2 },
-        { personId: "ravi", due: 0, overdue: 0 },
+        { personId: "asha", due: 1, overdue: 2, medicines: 0 },
+        { personId: "ravi", due: 0, overdue: 0, medicines: 0 },
+        { personId: "mira", due: 0, overdue: 0, medicines: 1, at: "21:00" },
       ]),
   ];
   let claims = 0;
@@ -40,6 +41,9 @@ it("claims once at a time, and claims again after a failed claim", async () => {
 
   await expect
     .poll(() => told)
-    .toEqual([{ personId: "asha", due: 1, overdue: 2 }]);
+    .toEqual([
+      { personId: "asha", due: 1, overdue: 2, medicines: 0 },
+      { personId: "mira", due: 0, overdue: 0, medicines: 1, at: "21:00" },
+    ]);
   timer.stop();
 });

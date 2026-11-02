@@ -11,13 +11,17 @@ import { Schema } from "effect";
 export const APPEARANCE_HEADER = "x-rufi-appearance";
 
 /**
- * One person's follow-ups that just became due or overdue, as counts: the
- * app shows them as a Mac notice. No title or name ever goes in one.
+ * One person's follow-ups that just became due or overdue, and medicines
+ * whose dose time just came, as counts: the app shows each as a Mac notice.
+ * No title or name ever goes in one. `at`: the medicines' time, when they
+ * share one ('21:00').
  */
 export const PersonNotices = Schema.Struct({
   personId: Schema.String,
   due: Schema.Int,
   overdue: Schema.Int,
+  medicines: Schema.Int,
+  at: Schema.optionalKey(Schema.String),
 });
 export type PersonNotices = typeof PersonNotices.Type;
 
@@ -41,7 +45,7 @@ export type ToApp = typeof ToApp.Type;
 
 /**
  * What the app asks an owned Rufi: a fresh link, for a new window; or the
- * follow-up notices due now (docs/adr/0012), which Rufi marks as told.
+ * follow-up and medicine notices due now (docs/adr/0012), which Rufi marks as told.
  */
 export const FromApp = Schema.Union([
   Schema.Struct({ type: Schema.Literal("link") }),

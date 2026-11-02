@@ -1,5 +1,5 @@
 // The Rufi app: Mac windows around Rufi's screens, the core as a child
-// process (core.ts), and follow-up notices (notices.ts). It holds no Rufi
+// process (core.ts), and notices for follow-ups and medicines (notices.ts). It holds no Rufi
 // logic and imports neither the core's nor the screens' code. ⌘W closes a
 // window and Rufi keeps running; ⌘Q stops what the app started. `pnpm
 // desktop` starts it (scripts/desktop.ts).
@@ -19,7 +19,7 @@ import {
 } from "electron";
 import type { PersonNotices } from "@rufi/contracts/app";
 import { core, CoreError } from "./core.ts";
-import { noticeText, noticeTimer } from "./notices.ts";
+import { medicinesText, noticeText, noticeTimer } from "./notices.ts";
 import { followAppearance, lockDown, openWindow } from "./window.ts";
 
 // The dog, from the brand package: the Dock's icon while Rufi runs.
@@ -108,16 +108,29 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 /**
- * One neutral Mac notice for a person: counts only, no name or title. Its
- * click opens that person's Follow-ups.
+ * Neutral Mac notices for a person: one for follow-ups, which opens their
+ * Follow-ups, and one for medicines, which opens their Medicines page, with
+ * Today at its top. Counts and a time only, no name or title.
  */
 function tell(person: PersonNotices): void {
+  const page = `/people/${encodeURIComponent(person.personId)}`;
+  if (person.due + person.overdue > 0) {
+    notify(noticeText(person), `${page}/follow-ups`);
+  }
+  if (person.medicines > 0) {
+    // Today is the top of the Medicines page.
+    notify(medicinesText(person), `${page}/record/medicine_use`);
+  }
+}
+
+/** One notice; its click opens `path`. */
+function notify(body: string, path: string): void {
   if (!Notification.isSupported()) return;
-  const notice = new Notification({ title: "Rufi", body: noticeText(person) });
+  const notice = new Notification({ title: "Rufi", body });
   shown.add(notice);
   notice.on("click", () => {
     shown.delete(notice);
-    showFollowUps(person.personId);
+    showPage(path);
   });
   notice.on("close", () => {
     shown.delete(notice);
@@ -125,10 +138,9 @@ function tell(person: PersonNotices): void {
   notice.show();
 }
 
-/** Brings Rufi's window to the front on a person's Follow-ups, or opens one there. */
-function showFollowUps(personId: string): void {
+/** Brings Rufi's window to the front on `path`, or opens one there. */
+function showPage(path: string): void {
   if (!app.isReady() || quitting || failing) return;
-  const path = `/people/${encodeURIComponent(personId)}/follow-ups`;
   const open = BrowserWindow.getAllWindows()[0];
   if (open === undefined) {
     opening ??= newWindow(path).finally(() => {

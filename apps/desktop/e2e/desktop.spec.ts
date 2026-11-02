@@ -436,7 +436,7 @@ test.describe("stopping", () => {
   });
 });
 
-test.describe("follow-up notices", () => {
+test.describe("notices", () => {
   /** Asha, with a follow-up that was due last year. */
   async function overdue(desktop: Desktop): Promise<void> {
     await mkdir(desktop.home, { recursive: true });
@@ -511,6 +511,43 @@ test.describe("follow-up notices", () => {
     // In the same session, the page reads Asha's follow-ups.
     await expect(page.getByRole("region", { name: /^Overdue/ })).toContainText(
       "Recheck HbA1c",
+    );
+  });
+
+  test("tells a medicine's dose time by count and time only; its click opens Today on Medicines", async ({
+    desktop,
+  }) => {
+    // Asha's tablet with reminders on, its time this minute.
+    const now = new Date();
+    const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    await mkdir(desktop.home, { recursive: true });
+    const store = openWritable(databasePath(desktop.home));
+    store.db.exec(await readFile(FAMILY, "utf8"));
+    store.db.exec(FIRST_RUN_DONE);
+    store.db
+      .prepare(
+        "INSERT INTO medicine_uses (id, person_id, name, strength, directions, status, times, remind) VALUES ('m-levo', 'asha', 'Levothyroxine', '25 mcg', 'once daily', 'current', ?, 1)",
+      )
+      .run(JSON.stringify([time]));
+    store.close();
+    await familyFiles(desktop.home);
+    const app = await desktop.launch();
+    const page = await app.electron.firstWindow();
+    await page.getByRole("link", { name: "Documents" }).click();
+
+    await expect
+      .poll(() => app.told)
+      .toEqual([
+        {
+          kind: "notice",
+          value: { title: "Rufi", body: `1 medicine at ${time}` },
+        },
+      ]);
+    await click(app);
+
+    await expect(page).toHaveURL(/\/people\/asha\/record\/medicine_use$/);
+    await expect(page.getByRole("region", { name: /^Today/ })).toContainText(
+      "Levothyroxine 25 mcg",
     );
   });
 });
