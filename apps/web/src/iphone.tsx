@@ -3,7 +3,11 @@
 // up Tailscale and shows a code, as a QR code and a link, that works once
 // for 10 minutes. Phones are for your own record only for now.
 import { Dialog } from "@base-ui/react/dialog";
-import { PairedApps, type PairedApp } from "@rufi/contracts/remote";
+import {
+  PairedApps,
+  type PairedApp,
+  type Pairing,
+} from "@rufi/contracts/remote";
 import { useMutation } from "@tanstack/react-query";
 import { Check, Copy, Plus, Unlink, X } from "lucide-react";
 import { toDataURL } from "qrcode";
@@ -16,6 +20,13 @@ import { Button, Problem, Section } from "./ui.tsx";
 const PANEL =
   "fixed top-1/2 left-1/2 z-50 flex w-[420px] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 flex-col gap-3 rounded-[14px] bg-surface p-[18px] shadow-menu outline-none";
 const BACKDROP = "fixed inset-0 z-50 bg-ink/25";
+
+/**
+ * How long Pair an iPhone may take: two Tailscale commands, its check
+ * through Serve (30 s, for the first certificate), and the clean-up after a
+ * failure.
+ */
+const PAIRING_MS = 60_000;
 
 const OWN_RECORD =
   "Pair a phone for your own record only for now: Rufi AI on the phone can read every person's files in this folder.";
@@ -30,28 +41,41 @@ export function IPhoneSection() {
   // More than one person: whose record, chosen before pairing.
   const [asking, setAsking] = useState(false);
   const [whose, setWhose] = useState<string>();
-  // The code's person, and the apps paired when it was made: a new one is
-  // the phone that used it.
+  // The code this window made, and the apps paired then: a new one for its
+  // person is the phone that used it.
   const [made, setMade] = useState<{
-    person: string;
+    code: Pairing;
     before: readonly string[];
   }>();
   const start = useMutation({
+    // Rufi sets up Tailscale first, and checks it can reach itself through
+    // it: that can take most of a minute the first time.
     mutationFn: (personId: string) =>
-      read(PairedApps, "POST", "/api/paired-apps/pairing", { personId }),
+      read(
+        PairedApps,
+        "POST",
+        "/api/paired-apps/pairing",
+        { personId },
+        PAIRING_MS,
+      ),
     onSuccess: (state) => {
-      setMade({
-        person: state.pairing?.person.name ?? "",
-        before: paired.data?.apps.map(({ id }) => id) ?? [],
-      });
+      if (state.pairing) {
+        setMade({
+          code: state.pairing,
+          before: paired.data?.apps.map(({ id }) => id) ?? [],
+        });
+      }
       setAsking(false);
       setWhose(undefined);
       shown(state);
     },
   });
+  // Only this window's code ends: another window may have made a newer one.
   const close = useMutation({
-    mutationFn: () =>
-      read(PairedApps, "POST", "/api/paired-apps/pairing/cancel"),
+    mutationFn: async (live: boolean) =>
+      live
+        ? read(PairedApps, "POST", "/api/paired-apps/pairing/cancel")
+        : undefined,
     onSettled: (state) => {
       setMade(undefined);
       if (state) shown(state);
@@ -155,11 +179,11 @@ export function IPhoneSection() {
       {made !== undefined && (
         <PairingDialog
           state={state}
-          person={made.person}
+          code={made.code}
           before={made.before}
           closing={close.isPending}
-          close={() => {
-            close.mutate();
+          close={(live) => {
+            close.mutate(live);
           }}
         />
       )}
@@ -246,55 +270,60 @@ function AppLine({ app }: { app: PairedApp }) {
 }
 
 /**
- * The code, as a QR code and a link, until a phone uses it; then who it
- * paired. Closing it ends the code.
+ * This window's code, as a QR code and a link, until a phone uses it; then
+ * who it paired. A code replaced from another window, or expired, isn't
+ * shown: the dialog never shows a code for anyone but the person it names.
+ * Closing it ends the code.
  */
 function PairingDialog({
   state,
-  person,
+  code,
   before,
   closing,
   close,
 }: {
   state: PairedApps;
-  person: string;
+  code: Pairing;
   before: readonly string[];
   closing: boolean;
-  close: () => void;
+  close: (live: boolean) => void;
 }) {
-  const { pairing } = state;
-  const added = state.apps.find(({ id }) => !before.includes(id));
+  const live = state.pairing?.link === code.link;
+  const added = live
+    ? undefined
+    : state.apps.find(
+        ({ id, person }) =>
+          !before.includes(id) && person.id === code.person.id,
+      );
   const [picture, setPicture] = useState<string>();
   const [copied, setCopied] = useState<string>();
-  const link = pairing?.link;
   useEffect(() => {
-    if (link === undefined) return;
     let current = true;
-    void toDataURL(link, { margin: 1, width: 440 }).then((url) => {
+    void toDataURL(code.link, { margin: 1, width: 440 }).then((url) => {
       if (current) setPicture(url);
     });
     return () => {
       current = false;
     };
-  }, [link]);
+  }, [code.link]);
   return (
     <Dialog.Root
       open
       onOpenChange={(next) => {
-        if (!next) close();
+        if (!next) close(live);
       }}
     >
       <Dialog.Portal>
         <Dialog.Backdrop className={BACKDROP} />
         <Dialog.Popup className={PANEL}>
           <Dialog.Title className="text-[0.9375rem] font-semibold">
-            Pair an iPhone for {person}
+            Pair an iPhone for {code.person.name}
           </Dialog.Title>
           {added ? (
             <Dialog.Description role="status">
               Paired: {added.name}, for {added.person.name}
             </Dialog.Description>
-          ) : pairing ? (
+          ) : live ? (
             <>
               {picture !== undefined && (
                 <img
@@ -311,20 +340,21 @@ function PairingDialog({
             </>
           ) : (
             <Dialog.Description role="alert">
-              This code has expired. Make a new one with Pair an iPhone.
+              This code has expired or was replaced by a newer one. Make a new
+              one with Pair an iPhone.
             </Dialog.Description>
           )}
           <div className="flex items-center justify-end gap-2">
-            {copied !== undefined && !added && (
+            {copied !== undefined && live && (
               <span role="status" className="text-xs text-muted">
                 {copied}
               </span>
             )}
-            {pairing && !added && (
+            {live && (
               <Button
                 icon={Copy}
                 onClick={() => {
-                  navigator.clipboard.writeText(pairing.link).then(
+                  navigator.clipboard.writeText(code.link).then(
                     () => {
                       setCopied("Copied");
                     },
@@ -341,7 +371,9 @@ function PairingDialog({
               look={added ? "main" : "plain"}
               icon={added ? Check : X}
               busy={closing && "Closing…"}
-              onClick={close}
+              onClick={() => {
+                close(live);
+              }}
             >
               {added ? "Done" : "Close"}
             </Button>

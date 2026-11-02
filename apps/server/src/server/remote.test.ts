@@ -417,6 +417,25 @@ describe("pairing", () => {
     await expect(pair(port, code)).rejects.toThrow();
   });
 
+  it("removes its Serve route when Rufi quits with a code and no app, and at the next start after a crash", async () => {
+    await pairingLink(await settings(await start()));
+    await stop();
+    expect(asked).toHaveLength(2);
+    const [served, removed] = asked;
+    expect(removed).toBe(served?.replace("serve", "off"));
+
+    // A Rufi that stopped without its clean-up left its route.
+    const store = openWritable(databasePath(home));
+    store.db.exec(
+      "INSERT INTO settings (key, value) VALUES ('remote.served', '47860')",
+    );
+    store.close();
+    await start();
+    expect(asked.at(-1)).toBe("off 47860");
+    await stop();
+    expect(asked.filter((step) => step === "off 47860")).toHaveLength(1);
+  });
+
   it("shows Tailscale's line and no code when a step fails, and leaves nothing open", async () => {
     const core = await start(
       standIn({

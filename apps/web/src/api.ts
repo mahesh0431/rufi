@@ -72,12 +72,16 @@ interface Answer {
  * A request and its whole answer, body included, within the deadline; it
  * gives up then, or when the session ends.
  */
-async function fetchInTime(path: string, init: RequestInit): Promise<Answer> {
+async function fetchInTime(
+  path: string,
+  init: RequestInit,
+  deadline = DEADLINE_MS,
+): Promise<Answer> {
   // A timer, not AbortSignal.timeout, so a test's clock can drive it.
   const late = new AbortController();
   const timer = setTimeout(() => {
     late.abort();
-  }, DEADLINE_MS);
+  }, deadline);
   try {
     const response = await fetch(path, {
       ...init,
@@ -161,16 +165,22 @@ export async function request(
   method: "GET" | "POST" | "PUT" | "DELETE",
   path: string,
   body?: unknown,
+  /** How long the core may take: 15 s unless the work needs longer. */
+  deadline?: number,
 ): Promise<unknown> {
   await session;
   const headers = headersFor(body);
   let answer: Answer;
   try {
-    answer = await fetchInTime(path, {
-      method,
-      headers,
-      ...(body !== undefined && { body: JSON.stringify(body) }),
-    });
+    answer = await fetchInTime(
+      path,
+      {
+        method,
+        headers,
+        ...(body !== undefined && { body: JSON.stringify(body) }),
+      },
+      deadline,
+    );
   } catch (error) {
     if (!ending.signal.aborted) setConnection("offline");
     throw new ApiError(0, "Rufi can't be reached.", undefined, {
@@ -259,8 +269,12 @@ export async function read<S extends Schema.Codec<unknown, unknown>>(
   method: "GET" | "POST" | "PUT",
   path: string,
   body?: unknown,
+  /** How long the core may take: 15 s unless the work needs longer. */
+  deadline?: number,
 ): Promise<S["Type"]> {
-  return Schema.decodeUnknownSync(schema)(await request(method, path, body));
+  return Schema.decodeUnknownSync(schema)(
+    await request(method, path, body, deadline),
+  );
 }
 
 /**
