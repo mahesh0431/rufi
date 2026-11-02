@@ -107,7 +107,7 @@ The Medicines page lists each medicine with its amount, directions and times. Op
 - Click **Taken** or **Skipped** on a dose to log it. It then says, for example, **Taken 21:02 · Mac**: when you logged it, and where. You can log a dose before its time too.
 - Click **Undo** to take a log back; the dose shows **Taken** and **Skipped** again.
 - A dose you didn't log has its buttons and nothing else: Rufi never calls it missed.
-- If Rufi couldn't tell whether a log arrived, the dose says **Not sure it was logged**. Click **Try again**: Rufi sends the same log, so it is never counted twice.
+- If Rufi couldn't tell whether a log arrived, the dose says **Not sure it was logged**, also after you open another page or reload this window. Click **Try again**: Rufi sends the same log, as you made it, so it is never counted twice.
 - Another window open on Rufi shows a log at once.
 - On a day with nothing to take, such as a weekly medicine's other days, it says **Nothing to take today.**
 - On a course's last day, its last dose stays there, greyed, for the rest of the day; from the next day it isn't listed.

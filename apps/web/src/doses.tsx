@@ -3,9 +3,8 @@
 // words. Nothing is worked out from the times: a dose with no log has no
 // row, and nothing is counted, coloured or called missed.
 import type { DoseLogRow, MedicineUseRow } from "@rufi/contracts/record";
-import { useState } from "react";
 import { dayLine } from "./dates.ts";
-import { useDoses } from "./reads.ts";
+import { useDoses, useToday } from "./reads.ts";
 import { clockTime, loggedWhere } from "./today.tsx";
 import { Problem } from "./ui.tsx";
 
@@ -43,11 +42,19 @@ export function MedicineDoses({
   personId: string;
   medicine: MedicineUseRow;
 }) {
-  // The days as the medicine opened; opening it again moves them on.
-  const [now] = useState(() => new Date());
-  const first = new Date(now);
-  first.setDate(now.getDate() - (DAYS - 1));
-  const read = useDoses(personId, medicine.id, isoDay(first), isoDay(now));
+  // The Mac's day, as Today has it: it moves on at midnight and when the
+  // window comes back, and the days shown with it.
+  const day = useToday(personId).data?.day;
+  const [y = 0, m = 1, d = 1] = (day ?? "").split("-").map(Number);
+  const now = new Date(y, m - 1, d);
+  const first = new Date(y, m - 1, d - (DAYS - 1));
+  const read = useDoses(
+    personId,
+    medicine.id,
+    isoDay(first),
+    isoDay(now),
+    day !== undefined,
+  );
   const rows = read.data?.doses;
   // Only a medicine with times has doses to log; one logged before keeps them.
   if (medicine.times === undefined && (rows?.length ?? 0) === 0) return null;

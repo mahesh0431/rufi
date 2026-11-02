@@ -226,16 +226,19 @@ export const useToday = (personId: string) =>
 
 /**
  * The person's dose log for one medicine on the local days `from` to `to`;
- * read again when the `doses` stream line says it changed.
+ * read again when the `doses` stream line says it changed, and once
+ * `enabled` (the days are known).
  */
 export const useDoses = (
   personId: string,
   medicineId: string,
   from: string,
   to: string,
+  enabled: boolean,
 ) =>
   useQuery({
     queryKey: ["doses", personId, medicineId, from, to],
+    enabled,
     queryFn: () =>
       read(
         Doses,
