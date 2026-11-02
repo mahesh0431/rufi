@@ -57,7 +57,8 @@ function Choice({ name, detail }: { name: string; detail: string }) {
 }
 
 export function RemindersMenu({ personId }: { personId: string }) {
-  const setting = useReminders(personId).data;
+  const reminders = useReminders(personId);
+  const setting = reminders.data;
   const [problem, setProblem] = useState<string>();
   const choose = (choice: Partial<Pick<Reminders, "show" | "ring">>) => {
     if (!setting) return;
@@ -70,7 +71,14 @@ export function RemindersMenu({ personId }: { personId: string }) {
     });
   };
   return (
-    <Menu.Root modal={false}>
+    <Menu.Root
+      modal={false}
+      // Read again as it opens: pairing or unpairing in Settings, over
+      // this page, changes where reminders can ring.
+      onOpenChange={(open) => {
+        if (open) void reminders.refetch();
+      }}
+    >
       <Menu.Trigger
         disabled={setting === undefined}
         className={buttonLook({ look: "quiet" })}

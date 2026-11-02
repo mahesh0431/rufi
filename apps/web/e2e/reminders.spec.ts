@@ -7,7 +7,7 @@ import {
   databasePath,
   openWritable,
 } from "../../server/src/core/store/database.ts";
-import { expect, test } from "./rufi.ts";
+import { expect, openSettings, test } from "./rufi.ts";
 
 const medicines = async (page: Page, link: string) => {
   await page.goto(link);
@@ -58,4 +58,26 @@ test("keeps what a reminder shows as picked, and where it rings once an iPhone i
   await page.reload();
   await page.getByRole("button", { name: "Reminders" }).click();
   await expect(choice(page, "Both")).toBeChecked();
+  await page.keyboard.press("Escape");
+
+  // She unpairs it in Settings, over this page: the menu, opened again,
+  // no longer offers where reminders ring.
+  const iphone = await openSettings(page, "iPhone");
+  await iphone.getByRole("button", { name: "Unpair" }).click();
+  await page
+    .getByRole("dialog", { name: "Unpair Asha's iPhone?" })
+    .getByRole("button", { name: "Unpair" })
+    .click();
+  await expect(iphone).not.toContainText("Asha's iPhone");
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Reminders" }).click();
+  await expect(menu(page)).not.toContainText("Where reminders ring");
+  await page.keyboard.press("Escape");
+
+  // A person who isn't in the record has no reminders to set.
+  await page.goto(
+    new URL("/people/missing-person/record/medicine_use", page.url()).href,
+  );
+  await expect(page.getByText("There is no page here")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Reminders" })).toHaveCount(0);
 });

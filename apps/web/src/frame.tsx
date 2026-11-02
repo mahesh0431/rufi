@@ -108,10 +108,11 @@ export function Frame() {
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
-  // The person whose page this is; elsewhere, the first person.
+  // The person whose page this is; elsewhere, the first person, for
+  // navigation only: what acts on a person needs the page's own.
   const people = usePeople().data;
-  const person =
-    people?.find((p) => p.id === personAt(pathname)) ?? people?.[0];
+  const pagePerson = people?.find((p) => p.id === personAt(pathname));
+  const person = pagePerson ?? people?.[0];
   const onChat = isChatPage(pathname);
   const settingsGroup = useSettingsGroup();
   const settingsOpen = settingsGroup !== undefined;
@@ -241,9 +242,9 @@ export function Frame() {
                           : (TITLES[pathname.split("/")[1] ?? ""] ??
                             "Overview")}
           </h1>
-          {kind === "medicine_use" && person && connection !== "ended" && (
+          {kind === "medicine_use" && pagePerson && connection !== "ended" && (
             <div className="ml-auto">
-              <RemindersMenu personId={person.id} />
+              <RemindersMenu personId={pagePerson.id} />
             </div>
           )}
         </header>

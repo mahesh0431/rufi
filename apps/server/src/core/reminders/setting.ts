@@ -1,4 +1,4 @@
-// Each person's reminder setting (docs/adr/0031, amended): what a medicine
+// Each person's reminder setting (docs/adr/0012, amended): what a medicine
 // reminder shows and where it rings. Only the person's choices are kept,
 // in reminder_settings; what applies is worked out here. Reminders ring on
 // the Mac until the person chooses otherwise, and always while no iPhone is
