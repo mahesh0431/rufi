@@ -26,6 +26,8 @@ export function converter(deps: {
   // A clean-up asked for now (a shorter "Keep values"), and one running.
   const clean = { asked: false, running: false };
   const cleanAsked = () => clean.asked;
+  // A batch came in: convert now, without waiting for the idle minute.
+  let due = false;
 
   const rest = (ms: number) =>
     new Promise<void>((resolve) => {
@@ -36,7 +38,7 @@ export function converter(deps: {
         resolve();
       }
       wakeUp = done;
-      if (stop.signal.aborted || clean.asked) done();
+      if (stop.signal.aborted || clean.asked || due) done();
     });
 
   const forever = async () => {
@@ -61,6 +63,7 @@ export function converter(deps: {
           if (gone.values + gone.batches > 0)
             deps.log("devices.cleaned", { count: gone.values + gone.batches });
         }
+        due = false;
         while (!stopped()) {
           const step = await deps.devices.convertNext();
           trouble = null;
@@ -93,6 +96,11 @@ export function converter(deps: {
     /** "Keep values" got shorter: clean up now, in the background. */
     cleanSoon: () => {
       clean.asked = true;
+      wakeUp?.();
+    },
+    /** A batch was stored: convert it now, not after the idle minute. */
+    convertSoon: () => {
+      due = true;
       wakeUp?.();
     },
     /** Whether a clean-up is asked for or running. */

@@ -4,7 +4,8 @@
 // Mac's tailnet name as Host, and who is asking. Each route is in one
 // class: public (the screens' files), a pairing code, a launch token, the
 // app's key, or the key or the app's session; everything else is 404, and
-// so is another person's route. It runs while an app is paired or a
+// so is another person's route. A paired app's Apple Health batches come in
+// by its key only, into its own device source under its person. It runs while an app is paired or a
 // pairing code is live. A pairing code lives in memory only: single use,
 // 10 minutes, one at a time.
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
@@ -15,6 +16,7 @@ import {
   OpenRequest,
   PairRequest,
   REMOTE_API,
+  type BatchAnswer,
   type Opened,
   type Paired,
   type PairedApps as Listed,
@@ -23,6 +25,7 @@ import {
 } from "@rufi/contracts/remote";
 import { Hono, type Context, type Next } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
+import { failureReason, type Receipt } from "../core/devices/devices.ts";
 import type { KeyHolder, PairedApps } from "../core/paired/paired-apps.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import { PROOF_HEADER, screensRoute, type SettingsReads } from "./api.ts";
@@ -57,6 +60,11 @@ export interface RemoteDeps {
   working: (answer: Promise<Response>) => Promise<Response>;
   /** A person's routes, as the screens have them. */
   person: PersonDeps;
+  /**
+   * Stores a batch from `app` as it came, in the app's own device source
+   * under its person, and has it converted soon.
+   */
+  receive: (app: KeyHolder, bytes: Uint8Array) => Promise<Receipt>;
   /** Rufi's settings, as the screens read them. */
   read: SettingsReads;
   /** The sign-ins, as the screens read them. */
@@ -360,6 +368,41 @@ export function remote(deps: RemoteDeps): Remote {
     ended(app.id, c.env.incoming.socket);
     void inTurn(() => settle());
     return c.json({});
+  });
+
+  // Apple Health batches, by the app's key: the person is the app's, never
+  // the batch's (ADR 0023).
+  door.post("/api/batches", async (c) => {
+    const app = byKey(c);
+    const bytes = new Uint8Array(await c.req.arrayBuffer());
+    let receipt: Receipt;
+    try {
+      receipt = await deps.receive(app, bytes);
+    } catch (error) {
+      const reason = failureReason(error);
+      log("remote.batch", { answer: "couldnt_store", reason });
+      return c.json(
+        {
+          problem: "couldnt_store",
+          reason,
+          error:
+            "Rufi on your Mac couldn't store this. Look at Settings › Data › Device data on your Mac.",
+        },
+        503,
+      );
+    }
+    log("remote.batch", { answer: receipt.answer, count: bytes.byteLength });
+    if (receipt.answer === "refused") {
+      return c.json(
+        {
+          answer: "refused",
+          problems: receipt.problems,
+          error: `Rufi on your Mac refused a batch (${receipt.problems.join(", ")}). Update Rufi on your iPhone (or on your Mac) so they match.`,
+        } satisfies BatchAnswer,
+        422,
+      );
+    }
+    return c.json({ answer: receipt.answer } satisfies BatchAnswer);
   });
 
   // What a person does here is their paired app's.

@@ -720,3 +720,91 @@ describe("Asha's fictional heart rate", () => {
     ).toMatchObject({ values: 20 });
   });
 });
+
+describe("the iPhone's batch", () => {
+  it("converts as the iPhone encodes it: single values, one without its place, a workout's readings, and a deletion", async () => {
+    const bytes = await readFile(
+      join(
+        import.meta.dirname,
+        "../../../tests/fixtures/device/phone-batch.json",
+      ),
+    );
+    // The value the iPhone's batch takes back, sent before.
+    await got(
+      phone,
+      page("asha-phone:0", [
+        {
+          id: "A5E1C0DE-0099-4000-8000-000000000099",
+          type: "HKQuantityTypeIdentifierHeartRate",
+          value: 80,
+          unit: "count/min",
+          start: "2026-10-21T00:00:00.000Z",
+          end: "2026-10-21T00:00:00.000Z",
+        },
+      ]),
+    );
+    await got(phone, bytes);
+    await convertAll();
+
+    expect(
+      (await device.sources()).find((one) => one.id === phone),
+    ).toMatchObject({ values: 3, skipped: 0, waiting: 0 });
+    expect(
+      rows(
+        "SELECT external_id, value, start_at, end_at, utc_offset, time_zone, device, context, series, removed_at FROM device_values ORDER BY external_id",
+      ),
+    ).toEqual([
+      {
+        external_id: "A5E1C0DE-0001-4000-8000-000000000001",
+        value: 64,
+        start_at: "2026-10-21T01:30:00.000Z",
+        end_at: "2026-10-21T01:30:00.000Z",
+        utc_offset: 330,
+        time_zone: "Asia/Kolkata",
+        device: "Apple Watch",
+        context: '{"HKMetadataKeyHeartRateMotionContext":1}',
+        series: null,
+        removed_at: null,
+      },
+      {
+        external_id: "A5E1C0DE-0002-4000-8000-000000000002",
+        value: 71.5,
+        start_at: "2026-10-21T04:12:30.250Z",
+        end_at: "2026-10-21T04:12:30.250Z",
+        utc_offset: null,
+        time_zone: null,
+        device: "Apple Watch",
+        context: '{"HKMetadataKeyHeartRateMotionContext":0}',
+        series: null,
+        removed_at: null,
+      },
+      {
+        external_id: "A5E1C0DE-0003-4000-8000-000000000003",
+        value: 120,
+        start_at: "2026-10-21T12:00:00.000Z",
+        end_at: "2026-10-21T12:00:15.000Z",
+        utc_offset: 330,
+        time_zone: "Asia/Kolkata",
+        device: "Apple Watch",
+        context: '{"HKMetadataKeyHeartRateMotionContext":2}',
+        series:
+          '[{"start_at":"2026-10-21T12:00:00.000Z","end_at":"2026-10-21T12:00:05.000Z","value":115},' +
+          '{"start_at":"2026-10-21T12:00:05.000Z","end_at":"2026-10-21T12:00:10.000Z","value":125},' +
+          '{"start_at":"2026-10-21T12:00:10.000Z","end_at":"2026-10-21T12:00:15.000Z","value":120}]',
+        removed_at: null,
+      },
+      {
+        external_id: "A5E1C0DE-0099-4000-8000-000000000099",
+        value: 80,
+        start_at: "2026-10-21T00:00:00.000Z",
+        end_at: "2026-10-21T00:00:00.000Z",
+        utc_offset: null,
+        time_zone: null,
+        device: null,
+        context: null,
+        series: null,
+        removed_at: T0,
+      },
+    ]);
+  });
+});

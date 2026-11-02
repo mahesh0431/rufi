@@ -19,9 +19,12 @@ final class AppModel {
     let lock: Lock
     /// Dose logs not on the Mac yet; kept through unpairing.
     let outbox: Outbox
+    /// Apple Health sync for the pairing; none while unpaired.
+    private(set) var health: HealthSync?
     /// The reminders of the pairing; none while unpaired.
     private(set) var reminders: Reminders?
-    /// The last pairing's reminders being removed: a new pairing waits for it.
+    /// The last pairing's reminders being removed and its sync settling: a
+    /// new pairing waits for it.
     private var stopping: Task<Void, Never>?
     /// Rufi's scene is active.
     var active = true
@@ -40,6 +43,7 @@ final class AppModel {
         Originals.shown.deleteAll()
         if let pairing = Pairing.saved(), let key = Keychain.key() {
             reminders = newReminders(pairing, key)
+            health = newHealth(pairing, key)
             // Paired, but the lock's offer wasn't answered: it comes again.
             stage = UserDefaults.standard.bool(forKey: "setup.done") ? .open(shell(pairing, key)) : .paired(pairing)
         }
@@ -58,6 +62,7 @@ final class AppModel {
                                   mac: paired.mac, folder: paired.folder)
             pairing.save()
             reminders = newReminders(pairing, paired.key)
+            health = newHealth(pairing, paired.key)
             stage = .paired(pairing)
             return nil
         } catch .codeExpired {
@@ -130,8 +135,10 @@ final class AppModel {
         if case let .open(shell) = stage { Task { await shell.show(.medicines) } }
     }
 
-    /// Unpairs here, on the Mac too when it answers; its reminders go.
+    /// Unpairs here, on the Mac too when it answers; its reminders go. A
+    /// sync settles first, so none of its batches meets the unpaired key.
     func unpair() async {
+        await health?.end()
         if let pairing = Pairing.saved(), let key = Keychain.key() {
             try? await Door(origin: pairing.origin, key: key).unpair()
         }
@@ -162,10 +169,26 @@ final class AppModel {
         }
     }
 
-    /// The Mac unpaired this iPhone: its key, pairing and reminders go.
+    private func newHealth(_ pairing: Pairing, _ key: String) -> HealthSync {
+        HealthSync(reader: HealthReader(), door: Door(origin: pairing.origin, key: key),
+                   memory: HealthMemory(defaults: .standard, app: pairing.app)) { [weak self] in
+            self?.wasUnpaired()
+        }
+    }
+
+    /// The Mac unpaired this iPhone: its key and pairing go; its reminders
+    /// are removed, then its sync settles and its bookmarks go. A new
+    /// pairing waits for both.
     private func wasUnpaired() {
         let reminders = reminders
-        stopping = Task { await reminders?.stop() }
+        let health = health
+        // Told twice (the reminders and a sync both heard it): after the first.
+        let before = stopping
+        stopping = Task {
+            await before?.value
+            await reminders?.stop()
+            await health?.end()
+        }
         forget()
         stage = .unpaired
     }
@@ -177,5 +200,6 @@ final class AppModel {
         // Logs still waiting are shown only behind the lock: it stays.
         if outbox.logs.isEmpty { lock.forget() }
         reminders = nil
+        health = nil
     }
 }

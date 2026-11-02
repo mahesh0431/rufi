@@ -19,3 +19,5 @@ A person's devices measure things (their resting heart rate each day, later thei
 **Retention is the only deletion.** One setting for the whole data folder (30 days, 12 months or forever; forever by default), by each value's start. A shorter time says what it deletes and deletes only once confirmed. A converted batch goes 30 days after it was converted, unless it has skipped items.
 
 The reason: device data is many values no one confirms, and the source is its truth; keeping it apart lets it come in without a chat and leaves the record's guarantees as they are. The cost: device data has no receipts or undo, a deletion the source dropped before sending is missed, and a value with no time zone has no local day.
+
+**2 Nov 2026: a paired iPhone sends its batches.** It sends them through the remote door (`POST /api/batches`, [ADR 0032](0032-paired-apps-reach-rufi-through-the-remote-door.md)). Its source is made at its first batch under the paired app's person, bound to the app by `(person_id, paired_app_id)`; the person still comes from the source, never the batch.

@@ -340,6 +340,40 @@ export function devices(store: Store, now: () => string) {
     },
 
     /**
+     * The Apple Health source of a paired app, under the app's person: the
+     * one made at its first batch, or made now, named as the app is.
+     */
+    appSource: (app: { id: string; personId: string }): Promise<string> =>
+      db.transaction().execute(async (trx) => {
+        const had = await trx
+          .selectFrom("device_sources")
+          .select("id")
+          .where("person_id", "=", app.personId)
+          .where("paired_app_id", "=", app.id)
+          .executeTakeFirst();
+        if (had !== undefined) return had.id;
+        const { name } = await trx
+          .selectFrom("paired_apps")
+          .select("name")
+          .where("person_id", "=", app.personId)
+          .where("id", "=", app.id)
+          .executeTakeFirstOrThrow();
+        const id = uuid();
+        await trx
+          .insertInto("device_sources")
+          .values({
+            id,
+            person_id: app.personId,
+            system: "apple_health",
+            name,
+            created_at: now(),
+            paired_app_id: app.id,
+          })
+          .execute();
+        return id;
+      }),
+
+    /**
      * Stores a batch as it came, waiting to be converted; or says it has it,
      * or refuses it with every problem and stores nothing. It doesn't look
      * inside the items.

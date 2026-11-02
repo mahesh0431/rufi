@@ -1,6 +1,6 @@
 # iPhone
 
-Rufi on your iPhone opens your own record from Rufi on your Mac, through Tailscale. You pair it once in [Settings › iPhone](rufi:/settings/iphone). This page says what pairing needs, how to pair, what the iPhone shows and keeps, how its medicine reminders work, how to unpair, and what to do when something fails.
+Rufi on your iPhone opens your own record from Rufi on your Mac, through Tailscale, and sends your heart data from Apple Health to it. You pair it once in [Settings › iPhone](rufi:/settings/iphone). This page says what pairing needs, how to pair, what the iPhone shows and keeps, how its medicine reminders work, how to unpair, and what to do when something fails.
 
 ## What pairing needs
 
@@ -66,14 +66,19 @@ After you change a medicine's times or reminders on the Mac, open Rufi on the iP
 
 If nothing rings, check **This iPhone**: **Notifications** says whether iOS lets Rufi ring, with a way to turn them on.
 
+## Apple Health
+
+In **This iPhone** › **Apple Health**, connect Apple Health, see your latest resting heart rate and heart rate, and tap **Sync for Asha** (with the paired person's name) to send your heart data to Rufi on your Mac. See [Device data](device-data.md#apple-health-from-your-iphone) for how it works and what each line means.
+
 ## What the iPhone keeps
 
 - Its key, in the iPhone's keychain, on this iPhone only.
 - Which Mac it paired with and whose record it opens, and whether Lock Rufi is on.
 - Its medicine reminders for the next week, as iOS notices: the times and the medicines, whatever a notice shows.
 - Doses you logged that aren't on your Mac yet: each medicine's name and strength, the dose's time, taken or skipped, and which Mac and person it is for. They aren't in the iPhone's backups.
+- For Apple Health: where each kind of heart data was sent up to (Apple's bookmark, not the values), and when the last sync was and how many readings it sent.
 
-Nothing of your record, chat or documents is kept on the iPhone: pages are shown while Rufi is open and gone when it closes, and an original you view is a temporary copy, deleted when you close it (or the next time Rufi starts, if it was closed while showing one); scanned pages go straight to your Mac without being saved on the iPhone. Deleting the app deletes all of this; to use Rufi on that iPhone again, pair it again.
+Nothing of your record, chat, documents or heart data is kept by Rufi on the iPhone (your heart data stays in Apple Health, where it was): pages are shown while Rufi is open and gone when it closes, and an original you view is a temporary copy, deleted when you close it (or the next time Rufi starts, if it was closed while showing one); scanned pages go straight to your Mac without being saved on the iPhone. Deleting the app deletes all of this; to use Rufi on that iPhone again, pair it again.
 
 ## When your Mac can't be reached
 
@@ -85,7 +90,7 @@ If the iPhone says to update Rufi on your iPhone or on your Mac so they match, t
 
 On the Mac: click **Unpair** on its line, then **Unpair** again. From then on it can't open Rufi, and anything it has open ends at once. What it sent stays on your Mac. If you lose your phone, unpair it here. When it was that person's last iPhone, their reminders ring on the Mac. Reminders already on the iPhone can still ring until it next reaches your Mac, at most a week. The next time Rufi on that iPhone reaches the Mac, it removes its reminders and says it was unpaired, with **Pair Again**.
 
-On the iPhone: in **This iPhone**, tap **Unpair This iPhone**, then confirm. The iPhone forgets its key, removes its reminders, and the Mac stops letting it in. Doses not on your Mac yet stay (see [Log a dose from a reminder](#log-a-dose-from-a-reminder)).
+On the iPhone: in **This iPhone**, tap **Unpair This iPhone**, then confirm. A sync running stops first. The iPhone forgets its key and its Apple Health bookmarks, removes its reminders, and the Mac stops letting it in. Doses not on your Mac yet stay (see [Log a dose from a reminder](#log-a-dose-from-a-reminder)).
 
 When nothing is paired and no code is waiting, Rufi stops listening for phones and removes its Tailscale route.
 
