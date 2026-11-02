@@ -26,7 +26,7 @@ const MAX_ADD_BYTES = 256 * 1024 * 1024;
 const ADD_PATH = /^\/api\/people\/[^/]+\/documents$/;
 
 export class HttpError extends Error {
-  readonly status: 400 | 401 | 403 | 404 | 409 | 413 | 500 | 502;
+  readonly status: 400 | 401 | 403 | 404 | 409 | 410 | 413 | 500 | 502;
   /** More of the answer, beside the error. */
   readonly more: Record<string, unknown>;
   constructor(

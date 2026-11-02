@@ -687,6 +687,23 @@ CREATE TABLE briefs (
   FOREIGN KEY (person_id, id) REFERENCES transcript_entries (person_id, id) DEFERRABLE INITIALLY DEFERRED
 ) STRICT;
 
+-- Paired apps (docs/adr/0032): an app, such as Rufi on an iPhone, given its
+-- own key for one person for good. Whoever holds the key acts as that
+-- person, and only that person: the person comes only from this row, never
+-- from what a request says. The Mac keeps only the key's hash. Revoked:
+-- unpaired from either side, or by a restore; a revoked app never matches.
+CREATE TABLE paired_apps (
+  id TEXT PRIMARY KEY,         -- UUIDv7
+  person_id TEXT NOT NULL REFERENCES people (id),
+  kind TEXT NOT NULL CHECK (kind IN ('iphone')),
+  name TEXT NOT NULL,          -- as the app gave it: 'Asha's iPhone'
+  key_sha256 TEXT NOT NULL UNIQUE, -- hex of the key's SHA-256
+  paired_at TEXT NOT NULL,
+  revoked_at TEXT,
+  last_seen_at TEXT,           -- the key's last use, at most once a minute
+  UNIQUE (person_id, id)
+) STRICT;
+
 -- Device data (docs/adr/0023): what a person's devices and apps measured,
 -- kept outside the record, with no chat and no save. A device source is a
 -- connection ("Apple Health on Asha's iPhone"), bound to one person for good:
@@ -698,8 +715,10 @@ CREATE TABLE device_sources (
   name TEXT NOT NULL,          -- as given
   created_at TEXT NOT NULL,
   last_batch_at TEXT,          -- the last batch received: kept here, since batches go
+  paired_app_id TEXT,          -- the paired app that sends it, of the same person; none for the import command's
   UNIQUE (person_id, id),
-  UNIQUE (person_id, id, system)
+  UNIQUE (person_id, id, system),
+  FOREIGN KEY (person_id, paired_app_id) REFERENCES paired_apps (person_id, id)
 ) STRICT;
 
 -- One page a source sent, its bytes exactly as they came (gzip), and its
@@ -829,4 +848,4 @@ CREATE TABLE agent_cursor (
 ) STRICT;
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 30;
+PRAGMA user_version = 31;
