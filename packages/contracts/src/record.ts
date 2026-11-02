@@ -476,10 +476,73 @@ export const FollowUps = Schema.Struct({
 });
 export type FollowUps = typeof FollowUps.Type;
 
+/** A dose: its local date and time, 'YYYY-MM-DDTHH:MM'. */
+const DoseAt = Schema.String.check(
+  Schema.isPattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),
+);
+/** A moment in UTC, ISO 8601 with seconds: '2026-11-02T15:32:00.000Z'. */
+const Instant = Schema.String.check(
+  Schema.isPattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?Z$/),
+);
+
+/** What the person said happened to a dose; cleared is an undo. */
+export const DoseState = Schema.Literals(["taken", "skipped", "cleared"]);
+export type DoseState = typeof DoseState.Type;
+
+/**
+ * A dose log, as the device it was made on sends it (docs/adr/0033). The
+ * id is made there and kept across a retry: the same log again is taken
+ * once. `takenAt`, only with taken: when it was taken, when said.
+ */
+export const LogDose = Schema.Struct({
+  id: Schema.String.check(
+    Schema.isTrimmed(),
+    Schema.isMinLength(1),
+    Schema.isMaxLength(200),
+  ),
+  medicineUseId: Schema.String,
+  doseAt: DoseAt,
+  state: DoseState,
+  loggedAt: Instant,
+  takenAt: Schema.optionalKey(Instant),
+});
+export type LogDose = typeof LogDose.Type;
+
+/**
+ * Who logged a dose, as stored: 'mac' (Rufi's screens on the Mac),
+ * 'rufi_ai', or 'app:<paired app id>'.
+ */
+const LoggedBy = Schema.String;
+
+/** One row of the dose log, as it came, with the medicine it is for. */
+export const DoseLogRow = Schema.Struct({
+  id: Schema.String,
+  /** The medicine as it is now: also a stopped or removed one. */
+  medicine: Schema.Struct({
+    id: Schema.String,
+    name: Schema.String,
+    strength: Text,
+  }),
+  doseAt: DoseAt,
+  state: DoseState,
+  takenAt: Schema.optionalKey(Instant),
+  loggedAt: Instant,
+  /** When Rufi stored it: later than loggedAt when it waited on a phone. */
+  receivedAt: Schema.String,
+  by: LoggedBy,
+});
+export type DoseLogRow = typeof DoseLogRow.Type;
+
+/** The dose log's rows on some days, by dose, then in the order logged. */
+export const Doses = Schema.Struct({ doses: Schema.Array(DoseLogRow) });
+export type Doses = typeof Doses.Type;
+
 /**
  * Today on the Medicines page: each current medicine's doses on the Mac's
- * local day, by time, then name. A past dose is only earlier today, never
- * taken or skipped. `upcoming`: a dose of one of them falls after today.
+ * local day, by time, then name. A past dose is only earlier today. A
+ * dose's `logged` is its latest log, taken or skipped; with none, or an
+ * undo last, it is not logged. `upcoming`: a dose of one of them falls
+ * after today.
  */
 export const Today = Schema.Struct({
   day: RecordDate,
@@ -488,6 +551,14 @@ export const Today = Schema.Struct({
       at: Schema.String,
       past: Schema.Boolean,
       medicine: MedicineUseRow,
+      logged: Schema.optionalKey(
+        Schema.Struct({
+          state: Schema.Literals(["taken", "skipped"]),
+          takenAt: Schema.optionalKey(Instant),
+          loggedAt: Instant,
+          by: LoggedBy,
+        }),
+      ),
     }),
   ),
   upcoming: Schema.Boolean,

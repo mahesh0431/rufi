@@ -398,6 +398,8 @@ export const StreamLine = Schema.Union([
   Schema.Struct({ type: Schema.Literal("documents") }),
   /** The chat's sub-agents did something; read what shows them again. */
   Schema.Struct({ type: Schema.Literal("agents") }),
+  /** The person's dose log changed; read Today and their doses again. */
+  Schema.Struct({ type: Schema.Literal("doses") }),
   /** Nothing happened for a while; the stream is still open. */
   Schema.Struct({ type: Schema.Literal("ping") }),
 ]);

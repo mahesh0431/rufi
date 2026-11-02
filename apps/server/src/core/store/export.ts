@@ -319,6 +319,9 @@ record, your chat, your documents and Rufi's settings, as Rufi stored it.
   \`device_types\`, which gives its name, unit (UCUM) and LOINC code; a
   value with \`removed_at\` was deleted at its source. \`device_sources\` is
   each connected device and whose it is.
+- \`dose_log\`: what you logged for each dose of a medicine, outside your
+  record, each log as you made it: \`taken\`, \`skipped\` or \`cleared\`
+  (an undo). A dose's state is its log with the latest \`logged_at\`.
 - \`device_batches\`: each batch a device sent, kept for a while: \`body\` is
   the batch exactly as it came, as base64 of gzip of its JSON.
 - \`device_types\`: Rufi's list of what device values measure. Not a table

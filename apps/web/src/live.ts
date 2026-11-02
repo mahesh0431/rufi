@@ -8,7 +8,7 @@ import { Page, Queue, StreamLine } from "@rufi/contracts";
 import { Schema } from "effect";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import { ApiError, read, stream } from "./api.ts";
-import { queries } from "./reads.ts";
+import { dosesChanged, queries } from "./reads.ts";
 import {
   addOlder,
   apply,
@@ -144,6 +144,10 @@ function open(personId: string): Opened {
       void queries.invalidateQueries({ queryKey: ["agents", personId] });
       return;
     }
+    if (line.type === "doses") {
+      void dosesChanged(personId);
+      return;
+    }
     const next = apply(store.getState(), line);
     if (line.type === "snapshot") {
       // A reconnect: the latest page only; an older page on its way is dropped.
@@ -153,6 +157,7 @@ function open(personId: string): Opened {
       // not on the latest page: everything that shows saved data reads again,
       // and what the sub-agents did.
       recordChanged();
+      void dosesChanged(personId);
       void queries.invalidateQueries({ queryKey: ["agents", personId] });
     } else {
       store.setState({ ...next, status: "open" });
