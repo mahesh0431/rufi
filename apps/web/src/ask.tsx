@@ -40,7 +40,7 @@ export function AskRufi({
       {...ASKS}
       {...props}
       className={twMerge(
-        "ask-rufi relative inline-flex size-8 shrink-0 items-center justify-center rounded-full",
+        "ask-rufi relative inline-flex size-8 shrink-0 items-center justify-center rounded-full pointer-coarse:min-h-[44px] pointer-coarse:min-w-[44px]",
         className,
       )}
     >

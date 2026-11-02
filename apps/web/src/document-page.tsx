@@ -100,7 +100,13 @@ export function DocumentPage({
     );
   }
   if (!document || items.data === undefined) return null;
-  return <Checking person={person} document={document} items={items.data} />;
+  // A container: in a page narrower than 640 px (a phone) the document grows
+  // with what it holds and scrolls as one, its page image first.
+  return (
+    <div className="@container h-full">
+      <Checking person={person} document={document} items={items.data} />
+    </div>
+  );
 }
 
 /** A document not in the list: deleted, or never added. */
@@ -179,12 +185,12 @@ function Checking({
   ].join(" · ");
 
   return (
-    <div className="flex h-full min-h-[420px] flex-col">
+    <div className="flex h-full min-h-[420px] flex-col @max-[640px]:h-auto">
       <div className="flex flex-wrap items-center gap-2.5 px-5 pt-3.5 pb-2.5">
         {/* The name and its lines keep room to read; in a small window the
             actions go below them. */}
         <div className="min-w-0 flex-1 basis-80">
-          <h2 className="truncate">
+          <h2 className="truncate @max-[640px]:whitespace-normal @max-[640px]:wrap-anywhere">
             <b className="text-[0.875rem]">{name}</b>{" "}
             <span className="text-muted">· {about}</span>
           </h2>
@@ -247,10 +253,10 @@ function Checking({
         />
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-4 px-5 pb-3.5 md:flex-row">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 px-5 pb-3.5 @min-[640px]:flex-row @max-[640px]:flex-none">
         <section
           aria-label="Items"
-          className="flex min-h-0 min-w-0 flex-[1.15] flex-col overflow-hidden rounded-xl border border-line bg-surface"
+          className="flex min-h-0 min-w-0 flex-[1.15] flex-col overflow-hidden rounded-xl border border-line bg-surface @max-[640px]:flex-none"
         >
           <div className="flex items-center gap-2.5 border-b border-line px-3 py-2">
             <label className="flex items-center gap-1.5">
@@ -760,7 +766,7 @@ function PageView({
   return (
     <section
       aria-label="Page"
-      className="flex min-h-[320px] min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-surface"
+      className="flex min-h-[320px] min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-surface @max-[640px]:order-first @max-[640px]:flex-none"
     >
       <div className="flex items-center gap-2 border-b border-line px-3 py-1.5">
         <IconButton

@@ -50,12 +50,13 @@ export function ChipView({
       )}
       {onRemove ? (
         // The one smaller button: a chip is a word in the message, and a
-        // full-size button would make every chip a row of its own.
+        // full-size button would make every chip a row of its own. On a
+        // touch screen it keeps its size and takes touches 10 px around it.
         <IconButton
           label={`Take ${label} out of the message`}
           icon={X}
           onClick={onRemove}
-          className="size-6"
+          className="relative size-6 pointer-coarse:min-h-0 pointer-coarse:min-w-0 pointer-coarse:after:absolute pointer-coarse:after:-inset-2.5"
         />
       ) : (
         <span className="w-1" />

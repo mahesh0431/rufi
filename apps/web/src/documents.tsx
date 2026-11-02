@@ -62,7 +62,7 @@ export function DocumentsPage({ person }: { person: Person }) {
 
   return (
     <div
-      // A container: below 40rem of page the list stacks (List).
+      // A container: below 640 px of page the list stacks (List).
       className="@container relative mx-auto min-h-full max-w-[880px] px-6 py-8"
       onDragOver={(event: DragEvent) => {
         if (!event.dataTransfer.types.includes("Files")) return;
@@ -261,7 +261,7 @@ function Status({
 }
 
 /** In a stacked row, the dot before a line's later part. */
-const DOT = "@max-[40rem]:before:mr-1.5 @max-[40rem]:before:content-['·']";
+const DOT = "@max-[640px]:before:mr-1.5 @max-[640px]:before:content-['·']";
 
 function List({
   personId,
@@ -274,16 +274,16 @@ function List({
     <>
       {/* The name keeps a minimum width and the dates one line; the status
           asks for room for one line and wraps first. In a page narrower than
-          40rem (a phone) each document stacks: its name, then kind, date and
+          640 px (a phone) each document stacks: its name, then kind, date and
           when it was added on one line, then its status and actions. The
           roles are written out because WebKit drops a table's roles when its
           parts change display. */}
       <div className="overflow-x-auto rounded-xl border border-line bg-surface px-3">
         <table
           role="table"
-          className="w-full border-collapse @max-[40rem]:block"
+          className="w-full border-collapse @max-[640px]:block"
         >
-          <thead className="@max-[40rem]:hidden">
+          <thead className="@max-[640px]:hidden">
             <tr className="text-left text-xs text-muted [&>th]:pr-2.5">
               <th className="py-2 font-normal">Document</th>
               <th className="py-2 font-normal">Kind</th>
@@ -292,7 +292,7 @@ function List({
               <th className="w-[376px] py-2 font-normal">Status</th>
             </tr>
           </thead>
-          <tbody role="rowgroup" className="@max-[40rem]:block">
+          <tbody role="rowgroup" className="@max-[640px]:block">
             {documents.map((document) => {
               const { name, more } = describe(document);
               const Icon =
@@ -303,9 +303,9 @@ function List({
                 <tr
                   key={document.id}
                   role="row"
-                  className="group border-t border-line hover:bg-side [&>td]:pr-2.5 [&>td:last-child]:pr-0 @max-[40rem]:flex @max-[40rem]:flex-wrap @max-[40rem]:items-baseline @max-[40rem]:gap-x-1.5 @max-[40rem]:py-2.5 @max-[40rem]:first:border-t-0 @max-[40rem]:[&>td]:py-0 @max-[40rem]:[&>td]:pr-0"
+                  className="group border-t border-line hover:bg-side [&>td]:pr-2.5 [&>td:last-child]:pr-0 @max-[640px]:flex @max-[640px]:flex-wrap @max-[640px]:items-baseline @max-[640px]:gap-x-1.5 @max-[640px]:py-2.5 @max-[640px]:first:border-t-0 @max-[640px]:[&>td]:py-0 @max-[640px]:[&>td]:pr-0"
                 >
-                  <td role="cell" className="py-2.5 @max-[40rem]:basis-full">
+                  <td role="cell" className="py-2.5 @max-[640px]:basis-full">
                     <Link
                       to="/people/$personId/documents/$documentId"
                       params={{ personId, documentId: document.id }}
@@ -322,27 +322,27 @@ function List({
                   </td>
                   <td
                     role="cell"
-                    className={`py-2.5 text-muted @max-[40rem]:ml-6 ${document.kind ? "" : "@max-[40rem]:hidden"}`}
+                    className={`py-2.5 text-muted @max-[640px]:ml-6 ${document.kind ? "" : "@max-[640px]:hidden"}`}
                   >
                     {document.kind ? KIND_NAMES[document.kind] : "—"}
                   </td>
                   <td
                     role="cell"
-                    className={`py-2.5 whitespace-nowrap text-muted ${!document.date ? "@max-[40rem]:hidden" : document.kind ? DOT : "@max-[40rem]:ml-6"}`}
+                    className={`py-2.5 whitespace-nowrap text-muted ${!document.date ? "@max-[640px]:hidden" : document.kind ? DOT : "@max-[640px]:ml-6"}`}
                   >
                     {document.date ? printedDate(document.date) : "—"}
                   </td>
                   <td
                     role="cell"
-                    className={`py-2.5 whitespace-nowrap @max-[40rem]:text-muted ${document.kind || document.date ? DOT : "@max-[40rem]:ml-6"}`}
+                    className={`py-2.5 whitespace-nowrap @max-[640px]:text-muted ${document.kind || document.date ? DOT : "@max-[640px]:ml-6"}`}
                   >
                     {/* Without the column's heading, the words say what it is. */}
-                    <span className="hidden @max-[40rem]:inline">Added </span>
+                    <span className="hidden @max-[640px]:inline">Added </span>
                     {printedDay(document.addedAt)}
                   </td>
                   <td
                     role="cell"
-                    className="py-2.5 @max-[40rem]:mt-1.5 @max-[40rem]:ml-6 @max-[40rem]:basis-full"
+                    className="py-2.5 @max-[640px]:mt-1.5 @max-[640px]:ml-6 @max-[640px]:basis-full"
                   >
                     {/* The status, then what can be done: on one line when there is room. */}
                     <div className="flex flex-wrap items-center gap-1">
