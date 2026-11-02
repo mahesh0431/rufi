@@ -131,7 +131,7 @@ With **reminders on** for a medicine, you get a notice at its times (see [Medici
 **Reminders**, with the bell, at the top of the Medicines page, sets how all of this person's reminders work. A choice is kept as you click it:
 
 - **A reminder shows:** **Just the time** ("Medicines at 21:00"), **How many** ("2 medicines at 21:00"), or **Which ones** ("21:00 · 2 medicines", then each medicine's name, strength and amount). It starts at **How many**.
-- **Where reminders ring:** **iPhone**, **Mac** (while the Rufi app is open), or **Both**. It starts at **Mac**, and shows only once an iPhone is paired for this person (see [iPhone](iphone.md)); with no iPhone paired, reminders ring on the Mac. Rufi's iPhone app isn't ready yet: reminders ring on the iPhone once it is.
+- **Where reminders ring:** **iPhone**, **Mac** (while the Rufi app is open), or **Both**. It shows only once an iPhone is paired for this person: pairing their first iPhone sets **iPhone**, and with no iPhone paired, reminders ring on the Mac (see [Medicine reminders on the iPhone](iphone.md#medicine-reminders-on-the-iphone)).
 
 ### When a course ends
 

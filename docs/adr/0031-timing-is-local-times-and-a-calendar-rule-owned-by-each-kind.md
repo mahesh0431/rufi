@@ -2,6 +2,8 @@
 
 **Date:** 1 Nov 2026 · **Status:** accepted
 
+**Amended 2 Nov 2026:** a paired iPhone rings a person's reminders from a plan the Mac works out with this module for calendar days in the iPhone's own calendar, each dose a local date-time with no time zone, so a time rings at that time where the phone is. Where reminders ring is the person's choice (iPhone, Mac or both), and a notice may name the medicines when they chose Which ones.
+
 A medicine keeps its **directions** as printed or said ("1-0-1 after food × 5 days"), and beside them the timing Rufi can use, in four values on `medicine_uses`: `times`, the local times of day (a JSON array of `"HH:MM"`, sorted, each once); `days`, an RFC 5545 rule for the days only (none: every day); its start (`started`) and `until`, the last dose, both in Rufi's date shapes at the precision said. Rufi AI turns the directions into timing with the person and saves it after their yes; code never reads the directions. `schedule` became `directions` (migration 30), in history too, so an old change's reverse still saves.
 
 - **Each kind owns its timing.** There is no generic schedules table: a follow-up's rough month, a medicine course and a weekly job mean different things, each with its own table and its own notice marker. Recurring follow-ups, routines and Rufi's own scheduled work can take the same shape later.
