@@ -56,10 +56,9 @@ if (!existsSync(ca)) {
   await run("openssl", [
     "req",
     "-x509",
+    "-sha256",
     "-newkey",
-    "ec",
-    "-pkeyopt",
-    "ec_paramgen_curve:prime256v1",
+    "rsa:2048",
     "-nodes",
     "-days",
     "365",
@@ -82,9 +81,7 @@ await run("sh", [
 await run("openssl", [
   "req",
   "-newkey",
-  "ec",
-  "-pkeyopt",
-  "ec_paramgen_curve:prime256v1",
+  "rsa:2048",
   "-nodes",
   "-subj",
   `/CN=${address}`,
@@ -96,6 +93,7 @@ await run("openssl", [
 await run("openssl", [
   "x509",
   "-req",
+  "-sha256",
   "-in",
   csr,
   "-CA",
@@ -188,7 +186,21 @@ const tailscale: Tailscale = {
 
 const rufi = new Rufi(await mkdtemp(join(folder, "data-")));
 await rufi.family();
-await rufi.start({ scenario: { answer: REPLY }, tailscale });
+/** Each step of the stand-in, and what failed, in this script's output. */
+const said = Object.fromEntries(
+  Object.entries(tailscale).map(([step, does]) => [
+    step,
+    async (...args: never[]) => {
+      try {
+        return await (does as (...a: never[]) => Promise<unknown>)(...args);
+      } catch (error) {
+        console.error(`tailscale ${step} failed:`, error);
+        throw error;
+      }
+    },
+  ]),
+) as unknown as Tailscale;
+await rufi.start({ scenario: { answer: REPLY }, tailscale: said });
 console.log(`The Simulator trusts ${ca} once added to it.`);
 console.log("Rufi on this Mac (its link works once):");
 console.log(rufi.link());
