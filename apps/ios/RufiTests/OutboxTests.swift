@@ -114,4 +114,12 @@ struct OutboxTests {
 
         #expect(Outbox(file: file).logs.map(\.id) == ["d-2"])
     }
+
+    @Test func waitingLogsAreKeptOutOfTheIPhonesBackups() throws {
+        let file = Self.file()
+        try Outbox(file: file).add([Self.log("d-1")])
+
+        let folder = try file.deletingLastPathComponent().resourceValues(forKeys: [.isExcludedFromBackupKey])
+        #expect(folder.isExcludedFromBackup == true)
+    }
 }

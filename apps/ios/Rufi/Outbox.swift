@@ -52,9 +52,10 @@ nonisolated struct UnsentLog: Codable, Equatable, Identifiable, Sendable {
 /// person on the same Mac's folder, or discarded.
 @Observable
 final class Outbox {
-    /// In Application Support, readable after the first unlock since a
-    /// restart, so a reminder's Taken works while the iPhone is locked.
-    static let file = URL.applicationSupportDirectory.appending(path: "unsent-logs.json")
+    /// In a folder of its own in Application Support, kept out of the
+    /// iPhone's backups, readable after the first unlock since a restart, so
+    /// a reminder's Taken works while the iPhone is locked.
+    static let file = URL.applicationSupportDirectory.appending(path: "Outbox/unsent-logs.json")
 
     private(set) var logs: [UnsentLog]
     private let file: URL
@@ -118,7 +119,12 @@ final class Outbox {
     }
 
     private func write(_ logs: [UnsentLog]) throws {
-        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        // The folder, not the file: each write replaces the file.
+        var folder = file.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        var away = URLResourceValues()
+        away.isExcludedFromBackup = true
+        try folder.setResourceValues(away)
         try JSONEncoder().encode(logs).write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 }

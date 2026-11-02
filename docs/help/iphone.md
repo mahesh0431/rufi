@@ -71,7 +71,7 @@ If nothing rings, check **This iPhone**: **Notifications** says whether iOS lets
 - Its key, in the iPhone's keychain, on this iPhone only.
 - Which Mac it paired with and whose record it opens, and whether Lock Rufi is on.
 - Its medicine reminders for the next week, as iOS notices: the times and the medicines, whatever a notice shows.
-- Doses you logged that aren't on your Mac yet: each medicine's name and strength, the dose's time, taken or skipped, and which Mac and person it is for.
+- Doses you logged that aren't on your Mac yet: each medicine's name and strength, the dose's time, taken or skipped, and which Mac and person it is for. They aren't in the iPhone's backups.
 
 Nothing of your record, chat or documents is kept on the iPhone: pages are shown while Rufi is open and gone when it closes, and an original you view is a temporary copy, deleted when you close it (or the next time Rufi starts, if it was closed while showing one); scanned pages go straight to your Mac without being saved on the iPhone. Deleting the app deletes all of this; to use Rufi on that iPhone again, pair it again.
 
