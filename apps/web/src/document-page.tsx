@@ -101,9 +101,11 @@ export function DocumentPage({
   }
   if (!document || items.data === undefined) return null;
   // A container: in a page narrower than 640 px (a phone) the document grows
-  // with what it holds and scrolls as one, its page image first.
+  // with what it holds and scrolls as one, its page image first. It holds
+  // the whole document at every width, so the page's room under the chat bar
+  // stays after the document's footer.
   return (
-    <div className="@container h-full">
+    <div className="@container flex min-h-full flex-col">
       <Checking person={person} document={document} items={items.data} />
     </div>
   );
@@ -185,7 +187,7 @@ function Checking({
   ].join(" · ");
 
   return (
-    <div className="flex h-full min-h-[420px] flex-col @max-[640px]:h-auto">
+    <div className="flex min-h-[420px] flex-1 flex-col @max-[640px]:flex-none">
       <div className="flex flex-wrap items-center gap-2.5 px-5 pt-3.5 pb-2.5">
         {/* The name and its lines keep room to read; in a small window the
             actions go below them. */}
@@ -253,7 +255,9 @@ function Checking({
         />
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-4 px-5 pb-3.5 @min-[640px]:flex-row @max-[640px]:flex-none">
+      {/* Side by side, the two parts fill the room and scroll inside it: their
+          size doesn't count towards the page's (contain: size). */}
+      <div className="flex min-h-0 flex-1 flex-col gap-4 px-5 pb-3.5 @min-[640px]:flex-row @min-[640px]:contain-size @max-[640px]:flex-none">
         <section
           aria-label="Items"
           className="flex min-h-0 min-w-0 flex-[1.15] flex-col overflow-hidden rounded-xl border border-line bg-surface @max-[640px]:flex-none"
