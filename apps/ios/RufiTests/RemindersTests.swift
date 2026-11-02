@@ -20,6 +20,8 @@ struct RemindersTests {
         var refuses: Set<String> = []
         /// Holds the next add until opened, then lets it finish.
         var gate: Gate?
+        /// Runs as delivered notices are removed.
+        var removing: (([String]) -> Void)?
 
         func add(_ notice: Notice) async throws {
             if let held = gate {
@@ -36,7 +38,10 @@ struct RemindersTests {
         func pendingIDs() async -> [String] { Array(pending.keys) }
         func removePending(_ ids: [String]) { for id in ids { pending[id] = nil } }
         func deliveredNotices() async -> [Notice] { delivered }
-        func removeDelivered(_ ids: [String]) { delivered.removeAll { ids.contains($0.id) } }
+        func removeDelivered(_ ids: [String]) {
+            removing?(ids)
+            delivered.removeAll { ids.contains($0.id) }
+        }
     }
 
     static func reminders(_ center: StandInCenter, doses: [Dose], ring: ReminderPlan.Ring = .iphone,
@@ -214,5 +219,26 @@ struct RemindersTests {
 
         #expect(Array(center.pending.keys) == ["dose:2026-11-02T21:00"])
         #expect(reminders.until == Self.calendar.date(from: DateComponents(year: 2026, month: 11, day: 2, hour: 21)))
+    }
+
+    @Test func takenOnANoticeWritesItsWholeGroupToTheOutboxBeforeTheNoticeGoes() throws {
+        let center = StandInCenter()
+        let notice = Self.notice("2026-11-02T21:00", ["mu-amox", "mu-met"])
+        center.delivered = [notice]
+        let file = OutboxTests.file()
+        let outbox = Outbox(file: file)
+        var kept: [UnsentLog] = []
+        center.removing = { _ in kept = Outbox(file: file).logs }
+
+        try Self.reminders(center, doses: []).log(.taken, notice: notice.id,
+            medicines: [.init(id: "mu-amox", label: "Amoxicillin 500 mg"), .init(id: "mu-met", label: "Metformin 500 mg")],
+            pairing: OutboxTests.pairing, into: outbox)
+
+        #expect(kept.map(\.medicine) == ["mu-amox", "mu-met"])
+        #expect(kept.allSatisfy { $0.doseAt == "2026-11-02T21:00" && $0.state == .taken && $0.made == .init(OutboxTests.pairing) })
+        #expect(Set(kept.map(\.id)).count == 2)
+        // 13:10 in India, as the Mac takes an instant.
+        #expect(kept.first?.loggedAt == "2026-11-02T07:40:00.000Z")
+        #expect(center.delivered.isEmpty)
     }
 }

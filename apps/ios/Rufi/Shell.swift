@@ -326,7 +326,7 @@ struct ShellView: View {
 
     @ViewBuilder
     private func page(_ screen: Screen, root: Bool) -> some View {
-        ScreenView(shell: shell, screen: screen, until: app.reminders?.until)
+        ScreenView(shell: shell, screen: screen, until: app.reminders?.until, unsent: app.outbox.logs.count)
             .navigationTitle(shell.title(screen))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -355,13 +355,15 @@ struct ScreenView: View {
     let screen: Screen
     /// Until when reminders are set on this iPhone.
     let until: Date?
+    /// Dose logs not on the Mac yet.
+    let unsent: Int
 
     var body: some View {
         ZStack {
             Color(.systemBackground).ignoresSafeArea(.container)
             switch shell.state {
             case .unreachable:
-                CantReachView(until: until) { Task { await shell.reopen() } }
+                CantReachView(until: until, unsent: unsent) { Task { await shell.reopen() } }
             case let .problem(words):
                 ContentUnavailableView("Rufi Can't Open", systemImage: "exclamationmark.triangle", description: Text(words))
             case .opening, .open:
@@ -385,6 +387,7 @@ struct ScreenView: View {
 /// when the reminders already here ring.
 struct CantReachView: View {
     let until: Date?
+    let unsent: Int
     let retry: () -> Void
 
     var body: some View {
@@ -395,6 +398,7 @@ struct CantReachView: View {
             if let until {
                 Text("Reminders set on this iPhone until \(until.reminderWords).")
             }
+            if unsent > 0 { Text(UnsentSection.count(unsent)) }
         } actions: {
             Button("Try Again", systemImage: "arrow.clockwise", action: retry)
                 .buttonStyle(.borderedProminent)

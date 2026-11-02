@@ -63,9 +63,14 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         [.banner, .list, .sound]
     }
 
-    /// A reminder tapped: Rufi opens at Medicines, after the lock.
+    /// A reminder tapped: Rufi opens at Medicines, after the lock. Taken or
+    /// Skipped on it: logged, with Rufi closed too.
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        if response.actionIdentifier == UNNotificationDefaultActionIdentifier { app.openMedicines() }
+        if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
+            app.openMedicines()
+        } else if let state = UnsentLog.State(rawValue: response.actionIdentifier) {
+            await app.log(state, notice: response.notification)
+        }
     }
 
     /// The background refresh: the reminders, then the next one asked for.

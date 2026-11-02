@@ -104,7 +104,7 @@ The Medicines page lists each medicine with its amount, directions and times. Op
 
 **Today**, at the top of the Medicines page, shows what you take today, by time: each medicine taken now that has times, with its amount, directions, the last day of a course, whether its reminders are on, and what you logged for that dose. A time already past today is greyed; that means only "earlier today".
 
-- Click **Taken** or **Skipped** on a dose to log it. It then says, for example, **Taken 21:02 · Mac**: when you took it, and where it was logged. A dose you told Rufi AI about without saying when says only **Taken · Rufi AI**. You can log a dose before its time too.
+- Click **Taken** or **Skipped** on a dose to log it. It then says, for example, **Taken 21:02 · Mac**: when you took it, and where it was logged (**iPhone** for a reminder's **Taken** on your iPhone, see [iPhone](iphone.md#log-a-dose-from-a-reminder)). A dose you told Rufi AI about without saying when says only **Taken · Rufi AI**. You can log a dose before its time too.
 - Click **Undo** to take a log back; the dose shows **Taken** and **Skipped** again.
 - A dose you didn't log has its buttons and nothing else: Rufi never calls it missed.
 - If Rufi couldn't tell whether a log arrived, the dose says **Not sure it was logged**, also after you open another page or reload this window. Click **Try again**: Rufi sends the same log, as you made it, so it is never counted twice.

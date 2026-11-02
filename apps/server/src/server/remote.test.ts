@@ -770,7 +770,7 @@ describe("Rufi stopping", () => {
 });
 
 describe("a dose logged through the door", () => {
-  it("is kept as the paired app's, by key or by its session", async () => {
+  it("is kept as the paired app's, by key or by its session; sent again from a new pairing for the same person, it is stored once", async () => {
     const store = openWritable(databasePath(home));
     store.db.exec(`
       INSERT INTO medicine_uses (id, person_id, name, status, times, remind)
@@ -778,7 +778,8 @@ describe("a dose logged through the door", () => {
     `);
     store.close();
     const core = await start();
-    const { port, key, id } = await paired(await settings(core));
+    const api = await settings(core);
+    const { port, key, id } = await paired(api);
     const page = await webView(port, await launchOf(port, key));
     const dose = (doseId: string, doseAt: string) => ({
       id: doseId,
@@ -796,6 +797,21 @@ describe("a dose logged through the door", () => {
         (await door(port, "POST", "/api/people/asha/doses", by, log)).status,
       ).toBe(201);
     }
+    // Its answer was lost, then the iPhone was unpaired and paired again:
+    // the new key sends the same log, which the Mac already has.
+    await api("POST", `/api/paired-apps/${id}/unpair`);
+    const again = await paired(api);
+    expect(
+      (
+        await door(
+          again.port,
+          "POST",
+          "/api/people/asha/doses",
+          { key: again.key },
+          dose("d-key", "2026-11-02T08:00"),
+        )
+      ).status,
+    ).toBe(200);
 
     await stop();
     const db = new DatabaseSync(databasePath(home), { readOnly: true });

@@ -17,6 +17,8 @@ final class AppModel {
 
     private(set) var stage: Stage = .pairing
     let lock = Lock()
+    /// Dose logs not on the Mac yet; kept through unpairing.
+    let outbox = Outbox()
     /// The reminders of the pairing; none while unpaired.
     private(set) var reminders: Reminders?
     /// The last pairing's reminders being removed: a new pairing waits for it.
@@ -81,9 +83,44 @@ final class AppModel {
         _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
     }
 
-    /// Brings the reminders in line with the Mac's plan.
+    /// Sends the dose logs waiting for this pairing, then brings the
+    /// reminders in line with the Mac's plan, which lists them as logged.
     func refresh() async {
+        await sendUnsent()
         await reminders?.refresh()
+    }
+
+    /// Taken or Skipped on a reminder: the group is kept in the outbox, the
+    /// notice goes, then the logs are sent and the reminders follow.
+    func log(_ state: UnsentLog.State, notice: UNNotification) async {
+        guard let pairing = Pairing.saved(), let reminders else { return }
+        let info = notice.request.content.userInfo
+        let ids = info["medicines"] as? [String] ?? []
+        let labels = info["labels"] as? [String] ?? []
+        let medicines = ids.enumerated().map { index, id in
+            Reminders.Logging(id: id, label: labels.indices.contains(index) ? labels[index] : "A medicine")
+        }
+        do {
+            try reminders.log(state, notice: notice.request.identifier, medicines: medicines, pairing: pairing,
+                              into: outbox)
+        } catch {
+            // The outbox's file couldn't be written: nothing was kept. The
+            // dose shows not logged on Today, where it can be logged.
+            return
+        }
+        await refresh()
+    }
+
+    /// The logs waiting for this pairing go to the Mac; the rest stay.
+    private func sendUnsent() async {
+        guard reminders != nil, let pairing = Pairing.saved(), let key = Keychain.key() else { return }
+        let door = Door(origin: pairing.origin, key: key)
+        do {
+            try await outbox.send(to: pairing, door.log)
+        } catch {
+            // Only `unpaired` comes here: the logs stay, behind the lock.
+            wasUnpaired()
+        }
     }
 
     /// A reminder was tapped: Medicines, after the lock.
@@ -135,7 +172,8 @@ final class AppModel {
         Keychain.forget()
         Pairing.forget()
         UserDefaults.standard.removeObject(forKey: "setup.done")
-        lock.forget()
+        // Logs still waiting are shown only behind the lock: it stays.
+        if outbox.logs.isEmpty { lock.forget() }
         reminders = nil
     }
 }
