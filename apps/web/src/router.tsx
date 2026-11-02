@@ -20,6 +20,7 @@ import { FollowUpsPage } from "./follow-ups.tsx";
 import { Frame } from "./frame.tsx";
 import { HelpPage } from "./help-page.tsx";
 import { OverviewPage } from "./overview.tsx";
+import { onPhone, phoneHistory } from "./phone.ts";
 import { isPageKind, pageOf, RecordPage } from "./record.tsx";
 import { usePeople, useRecordDetail } from "./reads.ts";
 import { settingsSearch } from "./settings-link.tsx";
@@ -378,6 +379,13 @@ const signIn = createRoute({
   getParentRoute: () => root,
   path: "/sign-in",
   component: function SignInPage() {
+    if (onPhone) {
+      return (
+        <p className="mx-auto max-w-[620px] px-gutter py-8">
+          Sign in to ChatGPT or Claude in Rufi on your Mac, in Settings.
+        </p>
+      );
+    }
     return (
       <div className="mx-auto flex max-w-[620px] flex-col gap-8 px-6 py-8">
         <section>
@@ -415,6 +423,13 @@ const helpPage = createRoute({
 });
 
 export const router = createRouter({
+  // On a phone, the app's tabs and stacks hold the pages (phone.ts); a page
+  // opened again scrolls back to where it was.
+  ...(onPhone && {
+    history: phoneHistory(),
+    scrollRestoration: true,
+    getScrollRestorationKey: (location) => location.pathname,
+  }),
   routeTree: root.addChildren([
     home,
     chat,

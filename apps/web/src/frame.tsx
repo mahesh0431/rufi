@@ -2,7 +2,8 @@
 // kind), the toolbar, the chat bar at the bottom right of the pages where
 // you read your health, and what the connection to Rufi is doing. It holds
 // the person's live stream on every page, so a save shows wherever you are.
-// It stays when a page fails. Until first run is known to be done, it shows
+// It stays when a page fails. In Rufi's iPhone app it is the page alone,
+// under the app's own bars (phone.ts). Until first run is known to be done, it shows
 // first run only, over the whole window, whatever the address.
 import {
   Link,
@@ -29,7 +30,7 @@ import {
 import type { Person } from "@rufi/contracts";
 import { RemindersMenu } from "./reminders.tsx";
 import { type ReactNode, useEffect } from "react";
-import { useConnection } from "./api.ts";
+import { type Connection, useConnection } from "./api.ts";
 import { Dog } from "./dog.tsx";
 import { useAppearance } from "./appearance.tsx";
 import { CHAT_TITLE, ChatDock } from "./chat.tsx";
@@ -38,6 +39,7 @@ import { AgentSheet } from "./agents.tsx";
 import { FirstRun } from "./first-run.tsx";
 import { retain } from "./live.ts";
 import { resetPanel } from "./panel.ts";
+import { onPhone, tell } from "./phone.ts";
 import { SidebarDog } from "./sidebar-dog.tsx";
 import { isPageKind, KIND_TITLES } from "./record.tsx";
 import { SettingsDialog } from "./settings.tsx";
@@ -99,6 +101,19 @@ const hasBar = (pathname: string) =>
   isVisitPage(pathname) ||
   isTestPage(pathname);
 
+/** The title of the page at the address, as its bar shows it. */
+function titleOf(pathname: string): string {
+  const kind = recordKind(pathname);
+  if (isChatPage(pathname)) return CHAT_TITLE;
+  if (kind !== undefined) return KIND_TITLES[kind];
+  if (isFollowUpsPage(pathname)) return "Follow-ups";
+  if (isDocumentsPage(pathname)) return "Documents";
+  if (isBriefPage(pathname)) return "Visit brief";
+  if (isVisitPage(pathname)) return "Visit";
+  if (isTestPage(pathname)) return "Test";
+  return TITLES[pathname.split("/")[1] ?? ""] ?? "Overview";
+}
+
 export function Frame() {
   useAppearance();
   const connection = useConnection();
@@ -113,12 +128,11 @@ export function Frame() {
   const people = usePeople().data;
   const pagePerson = people?.find((p) => p.id === personAt(pathname));
   const person = pagePerson ?? people?.[0];
-  const onChat = isChatPage(pathname);
+  const kind = recordKind(pathname);
   const settingsGroup = useSettingsGroup();
   const settingsOpen = settingsGroup !== undefined;
   const bar =
     person !== undefined && connection !== "ended" && hasBar(pathname);
-  const kind = recordKind(pathname);
   // Their stream on every page: a save, an undo or a reading shows at once.
   const streaming = welcomed && connection !== "ended" ? person?.id : undefined;
   useEffect(
@@ -138,6 +152,7 @@ export function Frame() {
     if (elsewhere) void navigate({ to: "/", replace: true });
   }, [elsewhere, navigate]);
 
+  if (onPhone) return <PhoneFrame connection={connection} />;
   if (!welcomed) {
     return (
       <div className="flex h-full flex-col bg-page">
@@ -225,22 +240,7 @@ export function Frame() {
           className="flex h-[52px] shrink-0 items-center border-b border-line bg-page/80 px-5 backdrop-blur"
         >
           <h1 className="truncate text-[0.9375rem] font-semibold">
-            {onChat
-              ? CHAT_TITLE
-              : kind !== undefined
-                ? KIND_TITLES[kind]
-                : isFollowUpsPage(pathname)
-                  ? "Follow-ups"
-                  : isDocumentsPage(pathname)
-                    ? "Documents"
-                    : isBriefPage(pathname)
-                      ? "Visit brief"
-                      : isVisitPage(pathname)
-                        ? "Visit"
-                        : isTestPage(pathname)
-                          ? "Test"
-                          : (TITLES[pathname.split("/")[1] ?? ""] ??
-                            "Overview")}
+            {titleOf(pathname)}
           </h1>
           {kind === "medicine_use" && pagePerson && connection !== "ended" && (
             <div className="ml-auto">
@@ -326,6 +326,52 @@ function RecordNav({ person }: { person: Person }) {
         },
       )}
       <div className="h-3" />
+    </>
+  );
+}
+
+/**
+ * The frame in the iPhone app (phone.ts): the page alone, under the app's
+ * bars, padded by how much they cover. The app's bar takes each page's
+ * title. The chat scrolls inside its own page, with its box at the bottom.
+ */
+function PhoneFrame({ connection }: { connection: Connection }) {
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
+  const path = useRouterState({
+    select: (state) => state.location.pathname + state.location.searchStr,
+  });
+  const title = titleOf(pathname);
+  useEffect(() => {
+    tell({ type: "page", path, title });
+  }, [path, title]);
+  const ended = connection === "ended";
+  useEffect(() => {
+    if (ended) tell({ type: "ended" });
+  }, [ended]);
+  return (
+    <>
+      {connection === "offline" && (
+        <p
+          role="status"
+          className="fixed inset-x-0 top-(--bar-top) z-10 bg-accent-soft px-4 py-2 text-accent-ink"
+        >
+          Can't reach your Mac. Checking again every few seconds.
+        </p>
+      )}
+      <main
+        className={
+          isChatPage(pathname)
+            ? "h-full"
+            : "min-h-full pt-(--bar-top) pb-(--bar-bottom)"
+        }
+      >
+        {/* Ended: the app opens Rufi again, or says this iPhone is unpaired. */}
+        {!ended && <Outlet />}
+      </main>
+      <ReadingSheet />
+      <AgentSheet />
     </>
   );
 }

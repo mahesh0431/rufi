@@ -15,6 +15,7 @@ import { Box } from "./box.tsx";
 import { liveStore, loadOlder, retain } from "./live.ts";
 import { Menus } from "./model-menu.tsx";
 import { chatPage, isSmall, openPanel, usePanel } from "./panel.ts";
+import { onPhone } from "./phone.ts";
 import { TranscriptView } from "./transcript.tsx";
 import { IconButton } from "./ui.tsx";
 import { FloatingWaiting } from "./waiting.tsx";
@@ -214,8 +215,9 @@ export function ChatPage({ person }: { person: Person }) {
   const menus = useRef<HTMLDivElement | null>(null);
   const [room, setRoom] = useState(0);
 
+  // On a phone, the keyboard waits for a tap in the box.
   useEffect(() => {
-    field.current?.focus();
+    if (!onPhone) field.current?.focus();
   }, [person.id]);
   // ⌘J goes to the box.
   useEffect(() => {
@@ -240,10 +242,10 @@ export function ChatPage({ person }: { person: Person }) {
           personId={person.id}
           onOlder={() => void loadOlder(person.id)}
           className="flex-1 overflow-auto"
-          inner="mx-auto max-w-[760px] px-gutter py-6"
+          inner="mx-auto max-w-[760px] px-gutter py-6 phone:pt-[calc(var(--bar-top)+1.5rem)]"
           room={room}
         />
-        <div className="mx-auto w-full max-w-[760px] px-gutter pb-1">
+        <div className="mx-auto w-full max-w-[760px] px-gutter pb-1 phone:pb-(--bar-bottom)">
           <div className="relative">
             <FloatingWaiting
               live={live}

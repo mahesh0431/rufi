@@ -6,12 +6,13 @@
 // are chosen, and every open page shows a new choice at once.
 import type { Colour } from "@rufi/contracts";
 import { useEffect } from "react";
+import { onPhone } from "./phone.ts";
 import { SettingChoice, useChoice } from "./choice.tsx";
 import { useSettings } from "./reads.ts";
 
 /**
  * Shows the chosen appearance, colour, reply shape and text size on this
- * page, as they change.
+ * page, as they change; on a phone, only the colour and reply shape.
  */
 export function useAppearance(): void {
   const settings = useSettings().data;
@@ -21,9 +22,12 @@ export function useAppearance(): void {
   const size = settings?.textSize;
   useEffect(() => {
     const root = document.documentElement.dataset;
-    if (chosen !== undefined) root["appearance"] = chosen;
     if (colour !== undefined) root["colour"] = colour;
     if (shape !== undefined) root["replyShape"] = shape;
+    // On a phone, the iPhone's appearance and Text Size (public/theme.js,
+    // styles.css).
+    if (onPhone) return;
+    if (chosen !== undefined) root["appearance"] = chosen;
     if (size !== undefined) root["textSize"] = size;
   }, [chosen, colour, shape, size]);
 }

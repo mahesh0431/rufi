@@ -40,6 +40,11 @@
   "packageManager": "pnpm@12.8.1",
   "knip": {
     "workspaces": {
+      ".": {
+        "entry": [
+          "apps/ios/scripts/*.ts"
+        ]
+      },
       "apps/server": {
         "entry": [
           "scripts/*.ts",

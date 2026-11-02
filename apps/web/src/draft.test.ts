@@ -197,6 +197,66 @@ describe("the box's draft", () => {
   });
 });
 
+describe("words that couldn't be saved", () => {
+  it("come back first in a new page, as when the session ends while Rufi is away, and are saved then", async () => {
+    const stored = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        stored.set(key, value);
+      },
+      removeItem: (key: string) => {
+        stored.delete(key);
+      },
+    };
+    const chip = {
+      pointer: { type: "document", id: "doc-1" },
+      label: "Sunrise Labs August.pdf",
+      detail: "Lab report",
+    } as const;
+    const first = core(editable("Is my"));
+    first.api.storage = storage;
+    const box = draftBox(first.api);
+    await settle();
+    box.append("Is my HbA1c better?", [chip]);
+    await settle();
+    first.saves()[0]?.fail(new Error("Rufi can't be reached."));
+    await settle();
+
+    // A new session's page: the Mac still has the older draft.
+    const next = core(editable("Is my"));
+    next.api.storage = storage;
+    const reloaded = draftBox(next.api);
+    await settle();
+    expect(reloaded.store.getState()).toMatchObject({
+      text: "Is my\n\nIs my HbA1c better?",
+      refs: [chip],
+    });
+    expect(next.saves()[0]?.body).toEqual({
+      text: "Is my\n\nIs my HbA1c better?",
+      refs: [{ type: "document", id: "doc-1" }],
+    });
+    next.saves()[0]?.answer({
+      text: "Is my\n\nIs my HbA1c better?",
+      refs: [
+        {
+          ref: { type: "document", id: "doc-1", version: 1 },
+          label: chip.label,
+          detail: chip.detail,
+        },
+      ],
+    });
+    await settle();
+
+    // Saved: a page after that reads the Mac's draft again.
+    const after = core(editable("From the Mac"));
+    after.api.storage = storage;
+    const later = draftBox(after.api);
+    await settle();
+    expect(later.store.getState().text).toBe("From the Mac");
+  });
+});
+
 describe("the box's chips", () => {
   const doc = {
     pointer: { type: "document", id: "doc-1" },

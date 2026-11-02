@@ -5,6 +5,7 @@
 import { create } from "zustand/react";
 import { boxFor } from "./boxes.ts";
 import type { BoxChip, BoxState } from "./draft.ts";
+import { onPhone } from "./phone.ts";
 
 export const usePanel = create<{
   /** The panel is open over the page. */
@@ -44,9 +45,12 @@ export const resetPanel = () => {
   }));
 };
 
-/** Too small for the panel next to the page: the chat opens as the page. */
+/**
+ * Too small for the panel next to the page, or on a phone: the chat opens as
+ * the page.
+ */
 export const isSmall = () =>
-  matchMedia("(max-width: 799px), (max-height: 499px)").matches;
+  onPhone || matchMedia("(max-width: 799px), (max-height: 499px)").matches;
 
 /** The page of a person's chat. */
 export const chatPage = (personId: string) =>
