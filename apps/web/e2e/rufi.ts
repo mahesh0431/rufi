@@ -82,6 +82,8 @@ export class Rufi {
    * through Serve reaches the door as Serve would.
    */
   readonly tailscale: string[] = [];
+  /** While set, the check through Serve waits for it: a slow first certificate. */
+  holdCheck: Promise<unknown> | undefined;
   #scope: Scope.Closeable | undefined;
   #core: Core | undefined;
   #model: FakeModel | undefined;
@@ -182,6 +184,7 @@ export class Rufi {
         return Promise.resolve();
       },
       check: async (origin, answers) => {
+        await this.holdCheck;
         const { host, port } = new URL(origin);
         const response = await new Promise<Response>((resolve, reject) => {
           const sent = request(

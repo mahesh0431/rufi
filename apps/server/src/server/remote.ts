@@ -26,6 +26,8 @@ const CODE_MS = 10 * 60 * 1000;
 /** The door's address and port, kept at a pairing, so Serve's route and the apps' links stay. */
 const HOST_SETTING = "remote.host";
 const PORT_SETTING = "remote.port";
+/** The port Rufi asked Serve to pass on: its own route, removed when nothing needs it. */
+const SERVED_SETTING = "remote.served";
 
 const hashOf = (text: string) => createHash("sha256").update(text).digest();
 
@@ -34,7 +36,8 @@ export interface RemoteDeps {
   /** The people in the record, for whose record a code opens. */
   people: () => Promise<readonly { id: string; displayName: string }[]>;
   setting: (key: string) => Promise<string | undefined>;
-  saveSetting: (key: string, value: string) => Promise<void>;
+  /** Saves a setting; null removes it. */
+  saveSetting: (key: string, value: string | null) => Promise<void>;
   tailscale: Tailscale;
   log: Log;
 }
@@ -220,21 +223,30 @@ export function remote(deps: RemoteDeps): Remote {
     });
   };
 
+  /** Whether nothing needs the door: no app paired, no code live or being used. */
+  const unneeded = async () =>
+    !code && pairing === 0 && (await apps.list()).length === 0;
+
+  /** Removes Rufi's own Serve route, when it set one; no other. */
+  const unserve = async () => {
+    const served = Number(await deps.setting(SERVED_SETTING));
+    if (!Number.isInteger(served) || served <= 0) return;
+    try {
+      await deps.tailscale.off(served);
+      await deps.saveSetting(SERVED_SETTING, null);
+    } catch (error) {
+      log("remote.failed", { error: errorCode(error) });
+    }
+  };
+
   /**
-   * With no app paired and no code live, the door closes and Serve stops;
-   * `cut` ends its open answers too (unpaired on the Mac).
+   * With no app paired and no code live, the door closes and its Serve
+   * route goes; `cut` ends its open answers too (unpaired on the Mac).
    */
   const settle = async (cut = false) => {
-    if (code || pairing > 0 || !server || (await apps.list()).length > 0) {
-      return;
-    }
-    const was = port;
+    if (!(await unneeded())) return;
     await shut(cut);
-    if (was !== undefined) {
-      await deps.tailscale.off(was).catch((error: unknown) => {
-        log("remote.failed", { error: errorCode(error) });
-      });
-    }
+    await unserve();
   };
 
   const savedPort = async () => {
@@ -245,7 +257,11 @@ export function remote(deps: RemoteDeps): Remote {
   return {
     start: () =>
       inTurn(async () => {
-        if ((await apps.list()).length === 0) return;
+        // Nothing paired: a route left by a Rufi that stopped mid-pairing goes.
+        if ((await apps.list()).length === 0) {
+          await unserve();
+          return;
+        }
         host = await deps.setting(HOST_SETTING);
         await open(await savedPort()).catch((error: unknown) => {
           // Rufi runs on; Settings › iPhone says what to do.
@@ -278,6 +294,7 @@ export function remote(deps: RemoteDeps): Remote {
           host = `${name}:${String(at)}`;
           await deps.saveSetting(HOST_SETTING, host);
           await deps.tailscale.serve(at);
+          await deps.saveSetting(SERVED_SETTING, String(at));
           await deps.tailscale.check(`https://${host}`, async (response) => {
             const answer = (await response.json()) as { problem?: unknown };
             return response.status === 410 && answer.problem === "code_expired";
@@ -325,9 +342,12 @@ export function remote(deps: RemoteDeps): Remote {
       return revoked;
     },
 
+    // Quitting: with an app paired, Serve's route stays for the next start;
+    // with none, it goes.
     close: () =>
       inTurn(async () => {
         dropCode();
+        if (await unneeded()) await unserve();
         await shut(true);
       }),
   };
