@@ -378,9 +378,16 @@ body {
 .ask-rufi-tip {
   visibility: hidden;
 }
-.ask-rufi:is(:hover, :focus-visible) .ask-rufi-tip {
+/* Not on a touch screen's hover, which stays after a tap. */
+.ask-rufi:focus-visible .ask-rufi-tip {
   visibility: visible;
   transition: visibility 0s 250ms;
+}
+@media (hover: hover) {
+  .ask-rufi:hover .ask-rufi-tip {
+    visibility: visible;
+    transition: visibility 0s 250ms;
+  }
 }
 @media (hover: none) {
   .ask-rufi {
