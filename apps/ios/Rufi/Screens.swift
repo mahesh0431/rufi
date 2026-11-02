@@ -87,11 +87,15 @@ final class Screens: NSObject {
 
     /// The phone's marks and values, for the next page and the one open.
     private func mark() {
+        // In a block of its own: run again on the same page, it declares
+        // nothing twice.
         let values = """
-            const style = document.documentElement.style;
-            style.setProperty("--ios-body", "\(body)px");
-            style.setProperty("--bar-top", "\(top)px");
-            style.setProperty("--bar-bottom", "\(bottom)px");
+            {
+              const style = document.documentElement.style;
+              style.setProperty("--ios-body", "\(body)px");
+              style.setProperty("--bar-top", "\(top)px");
+              style.setProperty("--bar-bottom", "\(bottom)px");
+            }
             """
         let controller = view.configuration.userContentController
         controller.removeAllUserScripts()

@@ -24,7 +24,8 @@ final class AppModel {
             UserDefaults.standard.set(true, forKey: "installed")
         }
         if let pairing = Pairing.saved(), let key = Keychain.key() {
-            stage = .open(shell(pairing, key))
+            // Paired, but the lock's offer wasn't answered: it comes again.
+            stage = UserDefaults.standard.bool(forKey: "setup.done") ? .open(shell(pairing, key)) : .paired(pairing)
         }
     }
 
@@ -52,9 +53,10 @@ final class AppModel {
         }
     }
 
-    /// After the setup: Rufi opens.
+    /// After the setup, with the lock on or Not Now chosen: Rufi opens.
     func finishSetup() {
         guard case let .paired(pairing) = stage, let key = Keychain.key() else { return }
+        UserDefaults.standard.set(true, forKey: "setup.done")
         stage = .open(shell(pairing, key))
     }
 
@@ -81,6 +83,7 @@ final class AppModel {
     private func forget() {
         Keychain.forget()
         Pairing.forget()
+        UserDefaults.standard.removeObject(forKey: "setup.done")
         lock.forget()
     }
 }
