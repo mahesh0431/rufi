@@ -11,7 +11,7 @@ import {
 } from "@rufi/contracts";
 import { BriefPage } from "@rufi/contracts/briefs";
 import { DeviceData } from "@rufi/contracts/devices";
-import { PairedApps } from "@rufi/contracts/remote";
+import { Me, PairedApps } from "@rufi/contracts/remote";
 import {
   type InstructionPartId,
   Instructions,
@@ -53,10 +53,28 @@ export const queries = new QueryClient({
   },
 });
 
+/**
+ * Where the screens run: on the Mac, or on a paired phone for one person.
+ * It doesn't change while the page is open.
+ */
+const me = () =>
+  queries.query({
+    queryKey: ["me"],
+    queryFn: () => read(Me, "GET", "/api/me"),
+    staleTime: Infinity,
+  });
+
+/** The people in the record; on a phone, only its person. */
 export const usePeople = () =>
   useQuery({
     queryKey: ["people"],
-    queryFn: async () => (await read(People, "GET", "/api/people")).people,
+    queryFn: async () => {
+      const where = await me();
+      if (where.place === "phone") {
+        return [{ id: where.person.id, displayName: where.person.name }];
+      }
+      return (await read(People, "GET", "/api/people")).people;
+    },
   });
 
 export const useSettings = () =>
@@ -118,11 +136,17 @@ export const useStatus = () =>
     queryFn: () => read(Status, "GET", "/api/status"),
   });
 
-/** The first step of the first run not done yet, kept by the core. */
+/**
+ * The first step of the first run not done yet, kept by the core. A phone
+ * opens a record the Mac has set up: done.
+ */
 export const useFirstRun = () =>
   useQuery({
     queryKey: ["first-run"],
-    queryFn: () => read(FirstRun, "GET", "/api/first-run"),
+    queryFn: async (): Promise<FirstRun> =>
+      (await me()).place === "phone"
+        ? { step: "done" }
+        : read(FirstRun, "GET", "/api/first-run"),
   });
 
 /**

@@ -1,23 +1,34 @@
 // The remote door (docs/adr/0032): a second listener, on 127.0.0.1 at a port
 // of its own, that paired apps reach through Tailscale Serve. It has the
 // shared protections of every listener (http.ts) with its own checks: the
-// Mac's tailnet name as Host, and who is asking. It runs while an app is
-// paired or a pairing code is live. A pairing code lives in memory only:
-// single use, 10 minutes, one at a time.
+// Mac's tailnet name as Host, and who is asking. Each route is in one
+// class: public (the screens' files), a pairing code, a launch token, the
+// app's key, or the key or the app's session; everything else is 404, and
+// so is another person's route. It runs while an app is paired or a
+// pairing code is live. A pairing code lives in memory only: single use,
+// 10 minutes, one at a time.
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import type { AddressInfo } from "node:net";
-import { serve, type ServerType } from "@hono/node-server";
+import type { AddressInfo, Socket } from "node:net";
+import { serve, type HttpBindings, type ServerType } from "@hono/node-server";
+import type { Status } from "@rufi/contracts";
 import {
+  OpenRequest,
   PairRequest,
   REMOTE_API,
+  type Opened,
   type Paired,
   type PairedApps as Listed,
   type Pairing,
+  type PhoneMe,
 } from "@rufi/contracts/remote";
-import { Hono, type Context } from "hono";
+import { Hono, type Context, type Next } from "hono";
+import { getCookie, setCookie } from "hono/cookie";
 import type { KeyHolder, PairedApps } from "../core/paired/paired-apps.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
+import { PROOF_HEADER, screensRoute, type SettingsReads } from "./api.ts";
 import { body, HttpError, shared, type App } from "./http.ts";
+import { personRoutes, type PersonDeps } from "./person-routes.ts";
+import { appSessions } from "./session.ts";
 import { TailscaleProblem, type Tailscale } from "./tailscale.ts";
 
 /** How long a pairing code works. */
@@ -39,6 +50,19 @@ export interface RemoteDeps {
   /** Saves a setting; null removes it. */
   saveSetting: (key: string, value: string | null) => Promise<void>;
   tailscale: Tailscale;
+  /**
+   * Keeps each answer in the core's work: Rufi finishes it before closing
+   * the record and letting the data folder go, as the screens' answers.
+   */
+  working: (answer: Promise<Response>) => Promise<Response>;
+  /** A person's routes, as the screens have them. */
+  person: PersonDeps;
+  /** Rufi's settings, as the screens read them. */
+  read: SettingsReads;
+  /** The sign-ins, as the screens read them. */
+  account: () => Promise<Status>;
+  /** The built screens' folder; none in tests that only use the API. */
+  screens?: string;
   log: Log;
 }
 
@@ -60,6 +84,22 @@ export interface Remote {
   close: () => Promise<void>;
 }
 
+/** A request on the door. */
+type DoorContext = Context<{ Bindings: HttpBindings }>;
+
+/** Who is asking: the app, and its session when not by its key. */
+interface Asker {
+  app: KeyHolder;
+  session: string | undefined;
+}
+
+/** A request being answered, to end at once when its app or session ends. */
+interface Answering {
+  app: string;
+  session: string | undefined;
+  socket: Socket;
+}
+
 interface Code {
   hash: Buffer;
   person: { id: string; name: string };
@@ -77,6 +117,37 @@ export function remote(deps: RemoteDeps): Remote {
   let trouble: string | null = null;
   /** Codes taken whose app isn't written yet: the door stays open for them. */
   let pairing = 0;
+  const sessions = appSessions();
+  const askers = new WeakMap<Request, Asker>();
+  const answering = new Set<Answering>();
+  /** Apps unpaired while Rufi runs: a request let in just before still ends. */
+  const unpairedApps = new Set<string>();
+  /** The cookie of the door's sessions, named for its port. */
+  const cookie = () => `rufi_${String(port ?? 0)}`;
+  const doorOrigin = () => `https://${host ?? ""}`;
+
+  /**
+   * Ends at once what `app` (or only its `session`) has open, its streams
+   * too, but not `except`: the request asking.
+   */
+  const cut = (
+    app: string,
+    { session, except }: { session?: string; except?: Socket } = {},
+  ) => {
+    for (const open of answering) {
+      if (open.app !== app || open.socket === except) continue;
+      if (session !== undefined && open.session !== session) continue;
+      answering.delete(open);
+      open.socket.destroy();
+    }
+  };
+
+  /** Ends the app's launches, its session and what it has open: unpaired. */
+  const ended = (app: string, except?: Socket) => {
+    unpairedApps.add(app);
+    sessions.end(app);
+    cut(app, except ? { except } : {});
+  };
 
   // Opening, closing and Serve's route change one at a time.
   let line: Promise<unknown> = Promise.resolve();
@@ -101,27 +172,32 @@ export function remote(deps: RemoteDeps): Remote {
     return live;
   };
 
-  /** The app whose key the request carries; 401 when none is paired. */
-  const keyHolder = async (c: Context): Promise<KeyHolder> => {
-    const key = /^Bearer (\S+)$/.exec(c.req.header("authorization") ?? "")?.[1];
-    const found = key === undefined ? undefined : await apps.byKey(key);
-    if (!found) {
-      log("remote.refused", { reason: "key" });
-      throw new HttpError(
-        401,
-        "This app isn't paired with Rufi any more. Pair it again.",
-        { problem: "unpaired" },
-      );
-    }
-    await apps.seen(found);
+  const unpaired = () =>
+    new HttpError(
+      401,
+      "This app isn't paired with Rufi any more. Pair it again.",
+      { problem: "unpaired" },
+    );
+
+  /** Who is asking, as the door's middleware found them. */
+  const asker = (c: Context): Asker => {
+    const found = askers.get(c.req.raw);
+    if (!found) throw unpaired();
     return found;
+  };
+
+  /** Only by the app's key: a session can't. */
+  const byKey = (c: Context): KeyHolder => {
+    const found = asker(c);
+    if (found.session !== undefined) throw new HttpError(404, "Not found.");
+    return found.app;
   };
 
   /** The Mac's name for the app: the first part of its tailnet name. */
   const mac = () => (host ?? "").split(".")[0] ?? "";
 
   const door: App = new Hono();
-  shared(door, {
+  const { adds } = shared(door, {
     log,
     // Only by the Mac's tailnet name, as Serve passes it on; a page may
     // call only from the door's own origin.
@@ -159,31 +235,148 @@ export function remote(deps: RemoteDeps): Remote {
     return c.json({ ...added, mac: mac() } satisfies Paired);
   });
 
-  door.get("/api/me", async (c) => {
-    const app = await keyHolder(c);
-    return c.json({
-      person: app.person,
-      mac: mac(),
-      folder: (await apps.folder()) ?? "",
-      place: "phone",
-      api: REMOTE_API,
+  // The app's web view swaps a launch token for a new session of that app.
+  door.post("/api/session", async (c) => {
+    if (c.req.header("origin") !== doorOrigin()) {
+      log("remote.refused", { reason: "origin" });
+      throw new HttpError(403, "That request didn't come from Rufi.");
+    }
+    const { launch } = (await c.req.json().catch(() => ({}))) as {
+      launch?: unknown;
+    };
+    const appId =
+      typeof launch === "string" ? sessions.take(launch) : undefined;
+    const app = appId === undefined ? undefined : await apps.byId(appId);
+    if (!app) {
+      throw new HttpError(
+        401,
+        "This Rufi link has expired or was already used. Open Rufi again.",
+      );
+    }
+    const started = sessions.start(app.id);
+    if (started.ended !== undefined) cut(app.id, { session: started.ended });
+    setCookie(c, cookie(), started.session, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "Strict",
+      path: "/",
     });
+    return c.json({ proof: started.proof });
   });
 
-  // The app unpairs itself; the door closes after this answer if it was the last.
+  // Every other API route: the app's key, or the cookie and tab proof of
+  // its session, read fresh on each request. A session's change needs the
+  // door's own page as Origin.
+  door.use("/api/*", async (c: DoorContext, next: Next) => {
+    const key = /^Bearer (\S+)$/.exec(c.req.header("authorization") ?? "")?.[1];
+    let found: Asker | undefined;
+    if (key !== undefined) {
+      const app = await apps.byKey(key);
+      found = app && { app, session: undefined };
+    } else {
+      const session = sessions.verify(
+        getCookie(c, cookie()),
+        c.req.header(PROOF_HEADER),
+      );
+      if (
+        session &&
+        c.req.method !== "GET" &&
+        c.req.method !== "HEAD" &&
+        c.req.header("origin") !== doorOrigin()
+      ) {
+        log("remote.refused", { reason: "origin" });
+        throw new HttpError(403, "That request didn't come from Rufi.");
+      }
+      const app = session && (await apps.byId(session.app));
+      found = app && { app, session: session.session };
+    }
+    if (!found) {
+      log("remote.refused", { reason: "key" });
+      throw unpaired();
+    }
+    await apps.seen(found.app);
+    askers.set(c.req.raw, found);
+    const open: Answering = {
+      app: found.app.id,
+      session: found.session,
+      socket: c.env.incoming.socket,
+    };
+    answering.add(open);
+    c.env.outgoing.once("close", () => {
+      answering.delete(open);
+    });
+    // Unpaired, or its session replaced, while this request was being let
+    // in: it ends now, as those already open did.
+    const still =
+      found.session === undefined
+        ? !unpairedApps.has(found.app.id)
+        : sessions.verify(getCookie(c, cookie()), c.req.header(PROOF_HEADER))
+            ?.session === found.session;
+    if (!still) {
+      answering.delete(open);
+      throw unpaired();
+    }
+    await next();
+  });
+
+  // Only the app's own person: another's is not there.
+  door.use("/api/people/:personId/*", async (c: DoorContext, next: Next) => {
+    if (c.req.param("personId") !== asker(c).app.person.id) {
+      throw new HttpError(404, "Not found.");
+    }
+    await next();
+  });
+
+  door.get("/api/me", (c) => {
+    const { app } = asker(c);
+    return apps.folder().then((folder) =>
+      c.json({
+        person: app.person,
+        mac: mac(),
+        folder: folder ?? "",
+        place: "phone",
+        api: REMOTE_API,
+      } satisfies PhoneMe),
+    );
+  });
+  door.get("/api/settings", async (c) => c.json(await deps.read.settings(c)));
+  door.get("/api/status", async (c) => c.json(await deps.account()));
+
+  // The app's web view opens Rufi's screens with a launch link, never its key.
+  door.post("/api/open", async (c) => {
+    const app = byKey(c);
+    const { path } = await body(c, OpenRequest);
+    log("remote.opened");
+    return c.json({
+      url: `${doorOrigin()}${path}#launch=${sessions.launch(app.id)}`,
+    } satisfies Opened);
+  });
+
+  // The app unpairs itself: what else it has open ends now, this answer
+  // goes, and the door closes after it if it was the last.
   door.post("/api/unpair", async (c) => {
-    const app = await keyHolder(c);
+    const app = byKey(c);
     if (await apps.revoke(app.id)) log("remote.unpaired");
+    ended(app.id, c.env.incoming.socket);
     void inTurn(() => settle());
     return c.json({});
   });
+
+  // What a person does here is their paired app's.
+  personRoutes(door, deps.person, adds, (c) => `app:${asker(c).app.id}`);
+  screensRoute(door, deps.screens, deps.read);
 
   /** Listens on `at` (0: a free port, then kept); the port it got. */
   const open = async (at: number): Promise<number> => {
     if (server && port !== undefined) return port;
     const started = await new Promise<ServerType>((resolve, reject) => {
       const listening = serve(
-        { fetch: door.fetch, hostname: "127.0.0.1", port: at },
+        {
+          fetch: (request, env) =>
+            deps.working(Promise.resolve(door.fetch(request, env))),
+          hostname: "127.0.0.1",
+          port: at,
+        },
         () => {
           resolve(listening);
         },
@@ -338,6 +531,7 @@ export function remote(deps: RemoteDeps): Remote {
     unpair: async (appId) => {
       const revoked = await apps.revoke(appId);
       if (revoked) log("remote.unpaired");
+      ended(appId);
       await inTurn(() => settle(true));
       return revoked;
     },

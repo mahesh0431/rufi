@@ -23,6 +23,30 @@ export type PairedApps = ReturnType<typeof pairedApps>;
 
 export function pairedApps(store: Store, now: () => string) {
   const { query } = store;
+  const holder = async (
+    by: "paired_apps.key_sha256" | "paired_apps.id",
+    value: string,
+  ): Promise<KeyHolder | undefined> => {
+    const row = await query
+      .selectFrom("paired_apps")
+      .innerJoin("people", "people.id", "paired_apps.person_id")
+      .select([
+        "paired_apps.id",
+        "paired_apps.person_id",
+        "people.display_name",
+        "paired_apps.last_seen_at",
+      ])
+      .where(by, "=", value)
+      .where("paired_apps.revoked_at", "is", null)
+      .executeTakeFirst();
+    return (
+      row && {
+        id: row.id,
+        person: { id: row.person_id, name: row.display_name },
+        lastSeenAt: row.last_seen_at,
+      }
+    );
+  };
   return {
     /**
      * Pairs a new app for `personId`, in one transaction with the folder's
@@ -69,27 +93,10 @@ export function pairedApps(store: Store, now: () => string) {
     },
 
     /** The app `key` belongs to; none when it is unknown or revoked. */
-    byKey: async (key: string): Promise<KeyHolder | undefined> => {
-      const row = await query
-        .selectFrom("paired_apps")
-        .innerJoin("people", "people.id", "paired_apps.person_id")
-        .select([
-          "paired_apps.id",
-          "paired_apps.person_id",
-          "people.display_name",
-          "paired_apps.last_seen_at",
-        ])
-        .where("paired_apps.key_sha256", "=", hashOf(key))
-        .where("paired_apps.revoked_at", "is", null)
-        .executeTakeFirst();
-      return (
-        row && {
-          id: row.id,
-          person: { id: row.person_id, name: row.display_name },
-          lastSeenAt: row.last_seen_at,
-        }
-      );
-    },
+    byKey: (key: string) => holder("paired_apps.key_sha256", hashOf(key)),
+
+    /** The app, read fresh; none when it is unknown or revoked. */
+    byId: (id: string) => holder("paired_apps.id", id),
 
     /** Marks the app seen now, at most once a minute. */
     seen: async (app: KeyHolder) => {
