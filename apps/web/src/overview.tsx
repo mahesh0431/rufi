@@ -15,7 +15,7 @@ import { askRufi } from "./panel.ts";
 import { KIND_TITLES } from "./record.tsx";
 import { useOverview } from "./reads.ts";
 import { Receipt } from "./transcript.tsx";
-import { buttonLook, ICON, Problem } from "./ui.tsx";
+import { buttonLook, ICON, Problem, TOUCH_LINK } from "./ui.tsx";
 
 export function OverviewPage({ person }: { person: Person }) {
   const overview = useOverview(person.id);
@@ -164,7 +164,7 @@ export function OverviewPage({ person }: { person: Person }) {
                     <Link
                       to="/people/$personId/record/$kind"
                       params={{ personId: person.id, kind: tile.kind }}
-                      className="hover:text-ink hover:underline"
+                      className={`hover:text-ink hover:underline ${TOUCH_LINK}`}
                     >
                       {KIND_TITLES[tile.kind]}
                     </Link>
