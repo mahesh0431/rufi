@@ -292,7 +292,7 @@ export function MedicinesToday({
                 <div className="@max-[640px]:col-span-2 @max-[640px]:col-start-2 @max-[640px]:row-start-3 @max-[640px]:[&>span]:justify-start">
                   <DoseLogged personId={personId} day={today.day} dose={dose} />
                 </div>
-                <span className="@max-[640px]:hidden">
+                <span className="contents @max-[640px]:hidden">
                   <Reminders on={medicine.remind} />
                 </span>
                 <AskRufi
