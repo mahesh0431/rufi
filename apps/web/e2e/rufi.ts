@@ -3,6 +3,7 @@
 // Codex instead of the real one, or the real Codex binary on a local fake
 // model. Nothing here reaches OpenAI.
 import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Provider, ProviderStatus } from "@rufi/contracts";
@@ -37,10 +38,17 @@ import {
   type Core,
 } from "../../server/src/server/core.ts";
 import type { ProviderSignIn } from "../../server/src/server/signin.ts";
+import {
+  TailscaleProblem,
+  type Tailscale,
+} from "../../server/src/server/tailscale.ts";
 
 const SERVER = join(import.meta.dirname, "../../server");
 const FAKE = join(SERVER, "tests/fake-codex.ts");
 const SCREENS = join(import.meta.dirname, "../dist");
+
+/** The Mac's name on the tailnet, as the stand-in Tailscale gives it. */
+export const TAILNET_NAME = "asha-mbp.tail1234.ts.net";
 
 /** A provider's sign-in status: signed out. */
 export const SIGNED_OUT: ProviderStatus = {
@@ -68,6 +76,12 @@ export class Rufi {
   readonly signIns: PromiseWithResolvers<undefined>[] = [];
   /** The folders Show in Finder was asked to show; no Finder opens. */
   readonly shown: string[] = [];
+  /**
+   * What Tailscale was asked ("serve <port>", "off <port>"). No real
+   * `tailscale` runs: Rufi gets a Mac signed in with HTTPS on, and the check
+   * through Serve reaches the door as Serve would.
+   */
+  readonly tailscale: string[] = [];
   #scope: Scope.Closeable | undefined;
   #core: Core | undefined;
   #model: FakeModel | undefined;
@@ -147,11 +161,52 @@ export class Rufi {
             return Promise.resolve();
           },
         },
+        tailscale: this.#tailscale(),
         ...(port !== undefined && { port }),
         ...(options.now !== undefined && { now: options.now }),
       }).pipe(Scope.provide(scope)),
     );
     return this.#core;
+  }
+
+  /** Tailscale on a Mac named asha-mbp on its tailnet. */
+  #tailscale(): Tailscale {
+    return {
+      name: () => Promise.resolve(TAILNET_NAME),
+      serve: (port) => {
+        this.tailscale.push(`serve ${String(port)}`);
+        return Promise.resolve();
+      },
+      off: (port) => {
+        this.tailscale.push(`off ${String(port)}`);
+        return Promise.resolve();
+      },
+      check: async (origin, answers) => {
+        const { host, port } = new URL(origin);
+        const response = await new Promise<Response>((resolve, reject) => {
+          const sent = request(
+            {
+              host: "127.0.0.1",
+              port: Number(port),
+              method: "POST",
+              path: "/api/pair",
+              headers: { host, "content-type": "application/json" },
+            },
+            (answer) => {
+              let text = "";
+              answer.setEncoding("utf8");
+              answer.on("data", (chunk: string) => (text += chunk));
+              answer.on("end", () => {
+                resolve(new Response(text, { status: answer.statusCode }));
+              });
+            },
+          );
+          sent.on("error", reject);
+          sent.end(JSON.stringify({ code: "check", name: "check" }));
+        });
+        if (!(await answers(response))) throw new TailscaleProblem("no");
+      },
+    };
   }
 
   /** A provider's sign-in as the test says it stands. */

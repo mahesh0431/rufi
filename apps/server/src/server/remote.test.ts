@@ -263,7 +263,7 @@ describe("pairing", () => {
       ((await api("GET", "/api/paired-apps")).body["apps"] as unknown[]).length,
     ).toBe(0);
     // Closing the pairing: no code, no app, so Serve stops and the door closes.
-    await api("DELETE", "/api/paired-apps/pairing");
+    await api("POST", "/api/paired-apps/pairing/cancel");
     expect(asked).toEqual([`serve ${String(port)}`, `off ${String(port)}`]);
     await expect(pair(port, code)).rejects.toThrow();
   });

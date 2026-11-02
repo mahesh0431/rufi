@@ -399,7 +399,7 @@ export function api(deps: ApiDeps): App {
     await deps.remote.pair(personId);
     return c.json(await deps.remote.state());
   });
-  app.delete("/api/paired-apps/pairing", async (c) => {
+  app.post("/api/paired-apps/pairing/cancel", async (c) => {
     await deps.remote.cancel();
     return c.json(await deps.remote.state());
   });
