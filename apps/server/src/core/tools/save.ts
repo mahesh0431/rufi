@@ -91,7 +91,7 @@ ${FIELDS}`,
           fields: {
             name: "Magnesium",
             strength: "200 mg",
-            schedule: "at night",
+            directions: "at night",
             status: "current",
             started: { date: "2026-09-28", words: "last Monday" },
           },

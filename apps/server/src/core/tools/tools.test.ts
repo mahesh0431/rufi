@@ -1003,7 +1003,12 @@ describe("tools.json", () => {
       expect(tool.examples.length).toBeGreaterThan(0);
       for (const example of tool.examples) {
         expect(
-          Result.isSuccess(Schema.decodeUnknownResult(tool.input)(example)),
+          // As the caller decodes: a field the input doesn't have is refused.
+          Result.isSuccess(
+            Schema.decodeUnknownResult(tool.input, {
+              onExcessProperty: "error",
+            })(example),
+          ),
         ).toBe(true);
       }
     }

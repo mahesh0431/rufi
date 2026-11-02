@@ -2137,11 +2137,12 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     await c.say("Saw Dr Rao today, here is the prescription.", [
       chipOf("document", doc),
     ]);
-    const proposed = await c.read();
     const savedBefore = record(home).saves;
     await c.say(
       "Yes, I'm taking it, starting tomorrow morning. 8 in the morning and 9 at night, and remind me. Save the visit too.",
     );
+    // Its proposal with her times and the last dose it counted.
+    const timed = await c.read();
     await yesIfAsked(c, home);
     const snapshot = await c.read();
     const amoxicillin = record(home).medicines.find((m) =>
@@ -2157,17 +2158,15 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         two_times: amoxicillin?.["times"] === '["08:00","21:00"]',
         every_day: amoxicillin?.["days"] === null,
         starts_tomorrow: String(amoxicillin?.["started"]).startsWith(day(1)),
-        last_dose_after_5_days: String(amoxicillin?.["until"]).startsWith(
-          day(5),
-        ),
+        // From tomorrow 08:00, the tenth dose is the night of day 5.
+        last_dose_the_tenth: amoxicillin?.["until"] === `${day(5)}T21:00`,
         reminders_on: amoxicillin?.["remind"] === 1,
       },
       verdicts: [
         {
           check: "proposes_times_and_the_last_dose_and_asks",
-          criterion:
-            "In its reply to the prescription, Rufi AI keeps the directions as printed (1-0-1 after food × 5 days), says it means a morning and a night dose, asks when Asha starts, which times suit her and whether to remind her, and saves nothing yet.",
-          evidence: replyOf(proposed),
+          criterion: `Before saving, Rufi AI's proposal with Asha's times keeps the directions as printed (1-0-1 after food × 5 days), gives 08:00 and 21:00 every day from tomorrow morning (${day(1)}), says the last dose is the night of ${day(5)} at 21:00, says it will remind her on this Mac at those times, and asks her to confirm.`,
+          evidence: replyOf(timed),
         },
       ],
       snapshot,
