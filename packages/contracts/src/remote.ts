@@ -67,11 +67,36 @@ export type Paired = typeof Paired.Type;
 export const REMOTE_API = 1;
 
 /** `GET /api/me` on the door: who the key or session acts as. */
-export const Me = Schema.Struct({
+export const PhoneMe = Schema.Struct({
   person: Person,
   mac: Schema.String,
   folder: Schema.String,
   place: Schema.Literal("phone"),
   api: Schema.Number,
 });
+export type PhoneMe = typeof PhoneMe.Type;
+
+/**
+ * `GET /api/me`: where the screens run. On the Mac they show every person
+ * and Rufi's own pages; on the phone, only the paired person's.
+ */
+export const Me = Schema.Union([
+  Schema.Struct({ place: Schema.Literal("mac") }),
+  PhoneMe,
+]);
 export type Me = typeof Me.Type;
+
+/**
+ * `POST /api/open` on the door, with the app's key: a launch link that
+ * opens Rufi's screens at `path`, once, within 60 seconds.
+ */
+export const OpenRequest = Schema.Struct({
+  path: Schema.String.check(
+    Schema.isPattern(/^\/(?!\/)[^\s#]*$/),
+    Schema.isMaxLength(2000),
+  ),
+});
+export type OpenRequest = typeof OpenRequest.Type;
+
+export const Opened = Schema.Struct({ url: Schema.String });
+export type Opened = typeof Opened.Type;

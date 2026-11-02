@@ -1,10 +1,14 @@
-// The remote door as a paired app and Settings › iPhone meet it: the core
-// started on a fictional data folder, with Tailscale stood in for (no real
-// `tailscale` runs), its check reaching the door as Serve would.
-import { mkdtemp } from "node:fs/promises";
+// The remote door as a paired app, its web view and Settings › iPhone meet
+// it: the core started on a fictional data folder, with Tailscale stood in
+// for (no real `tailscale` runs), its check reaching the door as Serve would.
+import { randomUUID } from "node:crypto";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { request as httpRequest, type IncomingMessage } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
+import { DatabaseSync } from "node:sqlite";
+import { setTimeout as sleep } from "node:timers/promises";
 import { Effect, Exit, Scope } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { codexAdapter } from "../agent/codex/adapter.ts";
@@ -29,6 +33,8 @@ beforeEach(async () => {
   const store = openWritable(databasePath(home));
   store.db.exec(`
     INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional'), ('ravi', 'Ravi Fictional');
+    INSERT INTO chats (id, person_id, created_at) VALUES
+      ('c-asha', 'asha', '2026-10-04T09:00:00Z'), ('c-ravi', 'ravi', '2026-10-04T09:00:00Z');
   `);
   store.close();
 });
@@ -52,7 +58,8 @@ function call(
 ): Promise<Reply> {
   return new Promise((resolve, reject) => {
     const req = httpRequest(
-      { host: "127.0.0.1", port, method, path, headers },
+      // A connection of its own: one a refusal (413) closed is never reused.
+      { host: "127.0.0.1", port, method, path, headers, agent: false },
       (res) => {
         let text = "";
         res.setEncoding("utf8");
@@ -105,7 +112,10 @@ const standIn = (more: Partial<Tailscale> = {}): Tailscale => ({
   ...more,
 });
 
-async function start(tailscale: Tailscale = standIn()): Promise<Core> {
+async function start(
+  tailscale: Tailscale = standIn(),
+  screens?: string,
+): Promise<Core> {
   const opened = await Effect.runPromise(Scope.make());
   const core = await Effect.runPromise(
     startCore({
@@ -121,6 +131,7 @@ async function start(tailscale: Tailscale = standIn()): Promise<Core> {
       ],
       log: (event) => logged.push(event),
       tailscale,
+      ...(screens !== undefined && { screens }),
     }).pipe(Scope.provide(opened)),
   );
   scope = opened;
@@ -194,6 +205,142 @@ const door = (
 
 const pair = (port: number, code: string) =>
   door(port, "POST", "/api/pair", {}, { code, name: "Asha's iPhone" });
+
+/** An app paired for `personId`: the door's port, its key and its id. */
+async function paired(
+  api: Awaited<ReturnType<typeof settings>>,
+  personId = "asha",
+) {
+  const { port, code } = await pairingLink(api, personId);
+  const answer = (await pair(port, code)).body;
+  return {
+    port,
+    key: String(answer["key"]),
+    id: (answer["app"] as { id: string }).id,
+  };
+}
+
+/** The launch token of a link the app asked for with its key. */
+async function launchOf(port: number, key: string, path = "/") {
+  const opened = await door(port, "POST", "/api/open", { key }, { path });
+  expect(opened.status).toBe(200);
+  const url = new URL(String(opened.body["url"]));
+  expect(`${url.origin}${url.pathname}`).toBe(
+    `https://${NAME}:${String(port)}${path}`,
+  );
+  return new URLSearchParams(url.hash.slice(1)).get("launch") ?? "";
+}
+
+/**
+ * The app's web view swapping a launch for its session, sending `cookie`
+ * if its cookie jar has one: the headers its page then sends.
+ */
+async function webView(port: number, launch: string, cookie?: string) {
+  const origin = `https://${NAME}:${String(port)}`;
+  const swapped = await door(
+    port,
+    "POST",
+    "/api/session",
+    { origin, ...(cookie !== undefined && { cookie }) },
+    { launch },
+  );
+  const set = swapped.headers["set-cookie"]?.[0] ?? "";
+  return {
+    status: swapped.status,
+    set,
+    headers: {
+      origin,
+      cookie: set.split(";")[0] ?? "",
+      [PROOF_HEADER]: String(swapped.body["proof"]),
+    },
+  };
+}
+
+/** A live chat stream through the door: whether it ended, and a way to hang up. */
+function stream(
+  port: number,
+  path: string,
+  { key, ...headers }: Record<string, string>,
+) {
+  const lines: unknown[] = [];
+  const ended = Promise.withResolvers<undefined>();
+  let status = 0;
+  const done = () => {
+    ended.resolve(undefined);
+  };
+  const req = httpRequest(
+    {
+      host: "127.0.0.1",
+      port,
+      path,
+      headers: {
+        host: `${NAME}:${String(port)}`,
+        ...(key !== undefined && { authorization: `Bearer ${key}` }),
+        ...headers,
+      },
+    },
+    (res) => {
+      status = res.statusCode ?? 0;
+      createInterface({ input: res })
+        .on("line", (line) => lines.push(line))
+        .on("error", done);
+      res.on("close", done);
+      res.on("error", done);
+    },
+  );
+  req.on("error", done);
+  req.end();
+  return {
+    lines,
+    ended: ended.promise,
+    status: () => status,
+    hangUp: () => {
+      req.destroy();
+    },
+  };
+}
+
+/**
+ * The answer to a body over 1 MB. It is sent and then held open: the door
+ * refuses as soon as it has read past the limit, and closes, so nothing may
+ * still be writing then.
+ */
+function tooLarge(port: number): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(
+      {
+        host: "127.0.0.1",
+        port,
+        method: "POST",
+        path: "/api/pair",
+        headers: {
+          host: `${NAME}:${String(port)}`,
+          "content-type": "application/json",
+        },
+        agent: false,
+      },
+      (res) => {
+        resolve(res.statusCode ?? 0);
+        res.resume();
+        req.destroy();
+      },
+    );
+    req.on("error", reject);
+    req.write(`{"code":"${"x".repeat(1024 * 1024 + 1)}`);
+  });
+}
+
+/** Whether `promise` settles within `ms`. */
+const within = (promise: Promise<unknown>, ms: number) =>
+  Promise.race([promise.then(() => true), sleep(ms).then(() => false)]);
+
+async function until(ready: () => boolean, ms = 5_000): Promise<void> {
+  const end = Date.now() + ms;
+  while (!ready()) {
+    if (Date.now() > end) throw new Error("timed out waiting");
+    await sleep(20);
+  }
+}
 
 describe("pairing", () => {
   it("pairs once for the person chosen; the key reads who it is, and the same code again makes nothing", async () => {
@@ -372,27 +519,252 @@ describe("the door", () => {
       "frame-ancestors 'none'",
     );
 
-    const large = await door(
-      port,
-      "POST",
-      "/api/pair",
-      {},
-      JSON.stringify({ code: "x".repeat(1024 * 1024), name: "Asha's iPhone" }),
-    );
-    expect(large.status).toBe(413);
+    expect(await tooLarge(port)).toBe(413);
 
     for (const [method, path] of [
       ["GET", "/api/people"],
-      ["GET", "/api/settings"],
+      ["PUT", "/api/settings"],
+      ["GET", "/api/first-run"],
+      ["GET", "/api/instructions"],
+      ["GET", "/api/signin"],
       ["GET", "/api/paired-apps"],
       ["POST", "/api/paired-apps/pairing"],
       ["GET", "/api/backups"],
+      ["GET", "/api/devices"],
+      ["GET", "/api/data-folder"],
       ["GET", "/api/export"],
+      ["GET", "/api/files?path=a.png"],
       ["POST", "/api/launch"],
-      ["GET", "/api/people/asha/overview"],
     ] as const) {
       expect((await door(port, method, path, { key })).status).toBe(404);
     }
     expect(logged).toContain("remote.refused");
+  });
+});
+
+describe("a person's routes through the door", () => {
+  // Never delete: a paired app reaches only its own person.
+  it("refuse another person's id with 404, by key or session, and change nothing", async () => {
+    const core = await start();
+    const { port, key } = await paired(await settings(core));
+    const page = await webView(port, await launchOf(port, key));
+
+    // Asha's own: a read.
+    expect(
+      (await door(port, "GET", "/api/people/asha/overview", { key })).status,
+    ).toBe(200);
+    for (const by of [{ key }, page.headers]) {
+      for (const [method, path, body] of [
+        ["GET", "/api/people/ravi/overview", undefined],
+        ["GET", "/api/people/ravi/chat", undefined],
+        [
+          "POST",
+          "/api/people/ravi/chat/messages",
+          { id: randomUUID(), text: "What does my report say?" },
+        ],
+        ["POST", "/api/people/ravi/documents", {}],
+      ] as const) {
+        expect((await door(port, method, path, by, body)).status).toBe(404);
+      }
+      const watched = stream(port, "/api/people/ravi/chat/stream", by);
+      await watched.ended;
+      expect(watched.status()).toBe(404);
+    }
+    await stop();
+    const db = new DatabaseSync(databasePath(home), { readOnly: true });
+    try {
+      for (const table of ["chat_queue", "turns", "documents"]) {
+        expect(
+          db
+            .prepare(
+              `SELECT count(*) AS n FROM ${table} WHERE person_id = 'ravi'`,
+            )
+            .get(),
+        ).toEqual({ n: 0 });
+      }
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("the app's sessions", () => {
+  let screens: string;
+  beforeEach(async () => {
+    screens = join(home, "..", `${String(Date.now())}-dist`);
+    await mkdir(screens, { recursive: true });
+    await writeFile(
+      join(screens, "index.html"),
+      '<!doctype html><html lang="en"><p>Rufi',
+    );
+  });
+
+  // Never delete: a launch and a session belong to one app.
+  it("open cold from a launch link: the screens, a session, then the person's reads", async () => {
+    const core = await start(standIn(), screens);
+    const { port, key } = await paired(await settings(core));
+
+    const shell = await door(port, "GET", "/chat");
+    expect(shell.status).toBe(200);
+    expect(shell.headers["content-security-policy"]).toContain(
+      "default-src 'self'",
+    );
+    const launch = await launchOf(port, key, "/chat");
+    const page = await webView(port, launch);
+    expect(page.status).toBe(200);
+    expect(page.set).toMatch(new RegExp(`^rufi_${String(port)}=`));
+    expect(page.set).toContain("Secure");
+    expect(page.set).toContain("HttpOnly");
+    expect(page.set).toContain("SameSite=Strict");
+
+    const me = await door(port, "GET", "/api/me", page.headers);
+    expect(me.body).toMatchObject({
+      person: { id: "asha", name: "Asha Fictional" },
+      place: "phone",
+    });
+    for (const path of [
+      "/api/settings",
+      "/api/status",
+      "/api/people/asha/overview",
+    ]) {
+      expect((await door(port, "GET", path, page.headers)).status).toBe(200);
+    }
+    // A change needs the door's own page as Origin.
+    const { origin: _origin, ...noOrigin } = page.headers;
+    expect(
+      (
+        await door(port, "PUT", "/api/people/asha/chat/draft", noOrigin, {
+          text: "Hello",
+        })
+      ).status,
+    ).toBe(403);
+    // A session can't do what only the key may.
+    expect(
+      (await door(port, "POST", "/api/open", page.headers, { path: "/" }))
+        .status,
+    ).toBe(404);
+    expect(
+      (
+        await door(
+          port,
+          "POST",
+          "/api/open",
+          { key },
+          {
+            path: "//elsewhere.example/",
+          },
+        )
+      ).status,
+    ).toBe(400);
+  });
+
+  it("take a launch once, within 60 seconds, and never one made before unpairing", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const core = await start();
+    const api = await settings(core);
+    const { port, key, id } = await paired(api);
+
+    const launch = await launchOf(port, key);
+    expect((await webView(port, launch)).status).toBe(200);
+    expect((await webView(port, launch)).status).toBe(401);
+
+    const late = await launchOf(port, key);
+    vi.setSystemTime(Date.now() + 61_000);
+    expect((await webView(port, late)).status).toBe(401);
+
+    const before = await launchOf(port, key);
+    // A second app keeps the door open after the first is unpaired.
+    await paired(api, "ravi");
+    await api("POST", `/api/paired-apps/${id}/unpair`);
+    expect((await webView(port, before)).status).toBe(401);
+  });
+
+  it("give two apps in one cookie jar two sessions, each reaching only its own person", async () => {
+    const core = await start();
+    const api = await settings(core);
+    const asha = await paired(api, "asha");
+    const ravi = await paired(api, "ravi");
+    const { port } = asha;
+
+    const first = await webView(port, await launchOf(port, asha.key));
+    // The jar sends Asha's cookie with Ravi's launch: never reused.
+    const second = await webView(
+      port,
+      await launchOf(port, ravi.key),
+      first.headers.cookie,
+    );
+    expect(second.headers.cookie).not.toBe(first.headers.cookie);
+
+    const reads = async (headers: Record<string, string>) => [
+      (await door(port, "GET", "/api/people/asha/overview", headers)).status,
+      (await door(port, "GET", "/api/people/ravi/overview", headers)).status,
+    ];
+    expect(await reads(first.headers)).toEqual([200, 404]);
+    expect(await reads(second.headers)).toEqual([404, 200]);
+    // One app's cookie with the other's proof belongs to neither.
+    expect(
+      await reads({ ...first.headers, cookie: second.headers.cookie }),
+    ).toEqual([401, 401]);
+  });
+
+  it("end the app's old session when it opens a new one, its open stream too", async () => {
+    const core = await start();
+    const { port, key } = await paired(await settings(core));
+    const old = await webView(port, await launchOf(port, key));
+    const watched = stream(port, "/api/people/asha/chat/stream", old.headers);
+    await until(() => watched.lines.length > 0);
+
+    const fresh = await webView(port, await launchOf(port, key));
+
+    expect(await within(watched.ended, 2_000)).toBe(true);
+    expect(
+      (await door(port, "GET", "/api/people/asha/overview", old.headers))
+        .status,
+    ).toBe(401);
+    expect(
+      (await door(port, "GET", "/api/people/asha/overview", fresh.headers))
+        .status,
+    ).toBe(200);
+  });
+});
+
+describe("unpairing", () => {
+  // Never delete: unpair ends the app's sessions and streams at once.
+  it("ends that app's open streams, and its reconnect gets 401; another app's goes on", async () => {
+    const core = await start();
+    const api = await settings(core);
+    const asha = await paired(api, "asha");
+    const ravi = await paired(api, "ravi");
+    const { port } = asha;
+    const ashaPage = await webView(port, await launchOf(port, asha.key));
+    const raviPage = await webView(port, await launchOf(port, ravi.key));
+    const ashas = stream(
+      port,
+      "/api/people/asha/chat/stream",
+      ashaPage.headers,
+    );
+    const ravis = stream(
+      port,
+      "/api/people/ravi/chat/stream",
+      raviPage.headers,
+    );
+    await until(() => ashas.lines.length > 0 && ravis.lines.length > 0);
+
+    await api("POST", `/api/paired-apps/${asha.id}/unpair`);
+
+    expect(await within(ashas.ended, 2_000)).toBe(true);
+    const again = stream(
+      port,
+      "/api/people/asha/chat/stream",
+      ashaPage.headers,
+    );
+    await again.ended;
+    expect(again.status()).toBe(401);
+    expect(await within(ravis.ended, 300)).toBe(false);
+    expect(
+      (await door(port, "GET", "/api/people/ravi/overview", raviPage.headers))
+        .status,
+    ).toBe(200);
+    ravis.hangUp();
   });
 });

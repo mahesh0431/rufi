@@ -59,8 +59,9 @@ import {
 } from "../platform/files.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import { agentsPath } from "./agents.ts";
-import { api, LAUNCHER_HEADER } from "./api.ts";
+import { api, LAUNCHER_HEADER, settingsReads } from "./api.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
+import type { PersonDeps } from "./person-routes.ts";
 import { claudeEnvironment, claudeFolder } from "../agent/claude/executable.ts";
 import { prepareClaudePlugin } from "../agent/claude/session.ts";
 import { generatedImages } from "../agent/codex/settings.ts";
@@ -423,26 +424,6 @@ export const startCore = (options: CoreOptions) =>
       (opened) => Effect.promise(() => opened.close()),
     );
 
-    // The remote door, open at the start when an app is paired; closed
-    // before the record it reads.
-    const door = yield* Effect.acquireRelease(
-      Effect.sync(() =>
-        openRemote({
-          apps: pairedApps(
-            writer,
-            options.now ?? (() => new Date().toISOString()),
-          ),
-          people: () => transcripts.people(),
-          setting: transcripts.setting,
-          saveSetting: transcripts.saveSetting,
-          tailscale: options.tailscale ?? tailscale(),
-          log,
-        }),
-      ),
-      (opened) => Effect.promise(() => opened.close()),
-    );
-    yield* attempt(() => door.start());
-
     const access = sessions();
     const launcher = secret();
     // The token is in the fragment: the browser never sends it in a request.
@@ -459,12 +440,11 @@ export const startCore = (options: CoreOptions) =>
       readings,
       gate,
     );
-    const app = api({
+    // A person's routes, on both listeners.
+    const person: PersonDeps = {
       transcripts,
       drafts,
       chat,
-      sessions: access,
-      port: () => port,
       overview: async (personId) => {
         const overview = await record.overview(personId);
         if (!overview) throw new Error("The person isn't in the record.");
@@ -498,6 +478,49 @@ export const startCore = (options: CoreOptions) =>
       },
       brief: async (personId, briefId) =>
         reader && (await readBrief(reader.query, personId, briefId)),
+      documents: personDocuments,
+      deletions: deletions({
+        store: writer,
+        home,
+        gate,
+        event: chat.event,
+        changed: readings.changed,
+        log,
+        ...(options.now && { now: options.now }),
+      }),
+      readings,
+      agents: agentSystem.logs,
+      items: draftItems(writer, readings.changed),
+      pages: pageService,
+      log,
+      ...(options.behindMax !== undefined && { behindMax: options.behindMax }),
+    };
+    // The remote door, open at the start when an app is paired; closed
+    // before the record it reads.
+    const door = yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        openRemote({
+          apps: pairedApps(
+            writer,
+            options.now ?? (() => new Date().toISOString()),
+          ),
+          people: () => transcripts.people(),
+          setting: transcripts.setting,
+          saveSetting: transcripts.saveSetting,
+          tailscale: options.tailscale ?? tailscale(),
+          person,
+          read: settingsReads({ transcripts, devices: deviceData }),
+          account,
+          ...(options.screens !== undefined && { screens: options.screens }),
+          log,
+        }),
+      ),
+      (opened) => Effect.promise(() => opened.close()),
+    );
+    const app = api({
+      ...person,
+      sessions: access,
+      port: () => port,
       account,
       backups,
       devices: {
@@ -514,20 +537,6 @@ export const startCore = (options: CoreOptions) =>
           Promise.reject(new Error("Finder isn't offered here.")),
       },
       exportZip: (signal) => exportZip(home, new Date(), gate, signal),
-      documents: personDocuments,
-      deletions: deletions({
-        store: writer,
-        home,
-        gate,
-        event: chat.event,
-        changed: readings.changed,
-        log,
-        ...(options.now && { now: options.now }),
-      }),
-      readings,
-      agents: agentSystem.logs,
-      items: draftItems(writer, readings.changed),
-      pages: pageService,
       files: aiFiles({
         folder: aiSandbox(home).folder,
         generated: generatedImages(home),
@@ -537,8 +546,6 @@ export const startCore = (options: CoreOptions) =>
       launcher,
       launchUrl,
       ...(options.screens !== undefined && { screens: options.screens }),
-      log,
-      ...(options.behindMax !== undefined && { behindMax: options.behindMax }),
     });
     // Outside the screens' checks: the agent sends no Origin, and each
     // endpoint has its own (server/mcp.ts).
@@ -602,6 +609,7 @@ export const startCore = (options: CoreOptions) =>
     );
     yield* attempt(() => agentSystem.agents.dispatch({ continues }));
     convertLoop.start();
+    yield* attempt(() => door.start());
     yield* Effect.acquireRelease(
       attempt(() => writePrivateJson(coreFile(home), { port, launcher })),
       () => Effect.promise(() => rm(coreFile(home), { force: true })),
