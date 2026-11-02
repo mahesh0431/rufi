@@ -4,14 +4,18 @@
 // plays no part. Only current medicines with reminders on and times, their
 // doses worked out by ../timing/doses.ts, as Today and the Mac's notices
 // are; each time lists the medicines whose dose is logged already, so the
-// app leaves them out. Nothing about the app is read or kept here.
+// app leaves them out. After the days comes the first time any of them is
+// due next, so nothing falls between the plan's last time and the next
+// dose not in it: a monthly medicine outside the week still rings, and the
+// app's renewal comes before anything it wasn't given. Nothing about the
+// app is read or kept here.
 import type { ReminderPlan } from "@rufi/contracts/record";
 import { sql, type Kysely } from "kysely";
 import { doseKey, latestLogs } from "../doses/log.ts";
 import { localTime } from "../record/dates.ts";
 import { remindersOf } from "./setting.ts";
 import type { Tables } from "../store/tables.ts";
-import { dosesOn, timingOf } from "../timing/doses.ts";
+import { dosesOn, nextDose, timingOf } from "../timing/doses.ts";
 
 type Medicine = ReminderPlan["doses"][number]["medicines"][number];
 
@@ -32,16 +36,29 @@ export async function reminderPlan(
     ORDER BY m.rowid`.execute(db);
   const [year = 0, month = 1, date = 1] = from.split("-").map(Number);
   const dayOf = (n: number) => new Date(year, month - 1, date + n);
-  const last = localTime(dayOf(days - 1).toISOString()).slice(0, 10);
-  const logs = await latestLogs(db, personId, `${from}T00:00`, `${last}T23:59`);
+  // The first time after the days that any medicine is due, and who then.
+  const after = rows.map((row) => nextDose(timingOf(row), dayOf(days)));
+  const next = Math.min(
+    ...after.map((dose) => dose?.getTime() ?? Number.POSITIVE_INFINITY),
+  );
+  const last = Number.isFinite(next)
+    ? localTime(new Date(next).toISOString())
+    : `${localTime(dayOf(days - 1).toISOString()).slice(0, 10)}T23:59`;
+  const logs = await latestLogs(db, personId, `${from}T00:00`, last);
 
   const byTime = new Map<string, { medicines: Medicine[]; logged: string[] }>();
-  for (let n = 0; n < days; n++) {
-    for (const row of rows) {
+  for (let n = 0; n <= days; n++) {
+    for (const [index, row] of rows.entries()) {
       const id = String(row["id"]);
       const text = (name: string) =>
         typeof row[name] === "string" ? row[name] : undefined;
-      for (const dose of dosesOn(timingOf(row), dayOf(n))) {
+      const doses =
+        n < days
+          ? dosesOn(timingOf(row), dayOf(n))
+          : after[index]?.getTime() === next
+            ? [new Date(next)]
+            : [];
+      for (const dose of doses) {
         const at = localTime(dose.toISOString());
         const time = byTime.get(at) ?? { medicines: [], logged: [] };
         byTime.set(at, time);

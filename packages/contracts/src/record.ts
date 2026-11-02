@@ -567,8 +567,9 @@ export type SaveReminders = typeof SaveReminders.Type;
 /**
  * A person's reminder plan: the doses with reminders on for the calendar
  * days a paired app asked for, in its own calendar, grouped by local time
- * ('YYYY-MM-DDTHH:MM'). `logged`: the medicines whose dose at that time is
- * already taken or skipped. The app rings what is left, where `ring` says.
+ * ('YYYY-MM-DDTHH:MM'), then the first time after those days any of them is
+ * due. `logged`: the medicines whose dose at that time is already taken or
+ * skipped. The app rings what is left, where `ring` says.
  */
 export const ReminderPlan = Schema.Struct({
   show: ReminderShow,

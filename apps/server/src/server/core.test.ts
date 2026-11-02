@@ -1851,7 +1851,7 @@ describe("the reminder setting", () => {
 });
 
 describe("the reminder plan", () => {
-  it("gives the doses with reminders on for the days asked, whatever the Mac's own day: by time, each with its medicines and those already logged", async () => {
+  it("gives the doses with reminders on for the days asked, whatever the Mac's own day, then the next time after them: by time, each with its medicines and those already logged; a monthly medicine's next dose comes beyond the days", async () => {
     const store = openWritable(databasePath(home));
     try {
       store.db.exec(
@@ -1866,7 +1866,7 @@ describe("the reminder plan", () => {
       store.db.exec(`
         UPDATE medicine_uses SET times = '["08:00","21:00"]', remind = 1 WHERE id = 'med-a1';
         UPDATE medicine_uses SET times = '["08:00"]', remind = 0 WHERE id = 'med-a2';
-        UPDATE medicine_uses SET times = '["21:00"]', remind = 1 WHERE id = 'med-r1';
+        UPDATE medicine_uses SET times = '["21:00"]', days = 'FREQ=MONTHLY;BYMONTHDAY=20', remind = 1 WHERE id = 'med-r1';
         INSERT INTO medicine_uses (id, person_id, name, strength, amount, status, times, remind, until) VALUES
           ('med-a3', 'asha', 'Amoxicillin', '500 mg', '1 capsule', 'current', '["08:00","21:00"]', 1, '2026-11-03T08:00'),
           ('med-a4', 'asha', 'Ibuprofen', '400 mg', NULL, 'stopped', '["13:00"]', 1, NULL);
@@ -1957,8 +1957,32 @@ describe("the reminder plan", () => {
         { at: "2026-11-03T21:00", medicines: [metformin], logged: [] },
         { at: "2026-11-04T08:00", medicines: [metformin], logged: [] },
         { at: "2026-11-04T21:00", medicines: [metformin], logged: [] },
+        // The first time after the days: nothing falls between.
+        { at: "2026-11-05T08:00", medicines: [metformin], logged: [] },
       ],
     });
+    // Ravi's monthly medicine falls outside the week: its next dose comes.
+    expect(
+      (
+        await page.api(
+          "GET",
+          "/api/people/ravi/reminders/plan?from=2026-11-01&days=8",
+        )
+      ).body["doses"],
+    ).toEqual([
+      {
+        at: "2026-11-20T21:00",
+        medicines: [
+          {
+            id: "med-r1",
+            name: "Atorvastatin",
+            strength: "10 mg",
+            amount: "1 tablet",
+          },
+        ],
+        logged: [],
+      },
+    ]);
     for (const range of [
       "?from=2026-11-02&days=0",
       "?from=2026-11-02&days=15",
