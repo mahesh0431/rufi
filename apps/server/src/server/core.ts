@@ -38,6 +38,7 @@ import type { FolderSource } from "../core/store/data-folder.ts";
 import { openRecord } from "../core/store/install.ts";
 import { claimNotices } from "../core/record/notices.ts";
 import { recordViews, waiting } from "../core/record/views.ts";
+import { doseLog } from "../core/doses/log.ts";
 import { changeProfile, readProfile } from "../core/record/profile.ts";
 import { localTime } from "../core/record/dates.ts";
 import { pages } from "../core/documents/pages.ts";
@@ -433,6 +434,7 @@ export const startCore = (options: CoreOptions) =>
     const clock = () =>
       options.now === undefined ? new Date() : new Date(options.now());
     const record = recordViews(reader ?? writer, clock);
+    const doses = doseLog(writer, clock);
     const personDocuments = documents(
       writer,
       home,
@@ -442,6 +444,7 @@ export const startCore = (options: CoreOptions) =>
     );
     // A person's routes, on both listeners.
     const person: PersonDeps = {
+      doses,
       transcripts,
       drafts,
       chat,

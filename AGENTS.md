@@ -18,7 +18,7 @@ A family's health record on their Mac, with an AI that reads their documents and
 - Tests meet the `tdd` skill's bar and never show a window or take the focus.
 - Don't test purely visual sizes, colours, wrapping or layout (a screenshot shows them); the wording of copy, skills or tool descriptions; code restated (its constants, a copied list, its logic mirrored) or only wired; the words of an AI reply. Behaviour, so tested: a control visible to keyboard users and reachable by the pointer, and accessibility (axe, keyboard, reduced motion).
 - A flaky test is fixed at its cause, never retried.
-- Never delete: live safety tests, person scope (device data's and the remote door's too), the door's app-bound sessions and unpairing, private-log, file-serving, backup/restore/export, migration and upgrade, the device type key guard, capture and Codex protocol tests.
+- Never delete: live safety tests, person scope (device data's and the remote door's too), the door's app-bound sessions and unpairing, private-log, file-serving, backup/restore/export, migration and upgrade, the device type key guard, the dose log's replay tests, capture and Codex protocol tests.
 
 ## Code
 
@@ -38,6 +38,7 @@ A family's health record on their Mac, with an AI that reads their documents and
 - A schema change is a migration; a shipped one never changes (ADR 0011).
 - Backups are checked; restore never writes over anything (ADR 0008).
 - Values are stored as printed.
+- A dose log is never changed or removed; an undo is a new log, and the same id is taken once (ADR 0033).
 - Device data: the person comes from its source, never the batch; a batch is converted whole or not at all, in arrival order per person and system; a shipped device type key is never removed or renamed, and its meaning and unit never change (ADR 0023).
 - Paired apps: the person comes only from the app's key; the record keeps only the key's hash; the remote door keeps the shared protections and answers only its listed routes and its own person's, the rest 404; a pairing code is single use; a launch and a session belong to one app, and unpairing ends its sessions and streams at once (ADR 0032).
 

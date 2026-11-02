@@ -26,6 +26,8 @@ import {
   type SaveProfile,
   RecordDetail,
   RecordPage,
+  Doses,
+  type LogDose,
   TestPage,
   Today,
 } from "@rufi/contracts/record";
@@ -36,7 +38,7 @@ import {
   useInfiniteQuery,
   useQuery,
 } from "@tanstack/react-query";
-import { read } from "./api.ts";
+import { read, request } from "./api.ts";
 
 export const queries = new QueryClient({
   defaultOptions: {
@@ -254,6 +256,40 @@ export const useToday = (personId: string) =>
     refetchInterval: CLOCK_MS,
     queryFn: () => read(Today, "GET", `${personPath(personId)}/today`),
   });
+
+/**
+ * The person's dose log for one medicine on the local days `from` to `to`;
+ * read again when the `doses` stream line says it changed, and once
+ * `enabled` (the days are known).
+ */
+export const useDoses = (
+  personId: string,
+  medicineId: string,
+  from: string,
+  to: string,
+  enabled: boolean,
+) =>
+  useQuery({
+    queryKey: ["doses", personId, medicineId, from, to],
+    enabled,
+    queryFn: () =>
+      read(
+        Doses,
+        "GET",
+        `${personPath(personId)}/doses?from=${from}&to=${to}&medicine=${encodeURIComponent(medicineId)}`,
+      ),
+  });
+
+/** Logs a dose; the core's answer, or why not (`ApiError`). */
+export const logDose = (personId: string, log: LogDose) =>
+  request("POST", `${personPath(personId)}/doses`, log);
+
+/** What shows a person's doses reads again: Today and the dose log. */
+export const dosesChanged = (personId: string) =>
+  Promise.all([
+    queries.invalidateQueries({ queryKey: ["record", personId, "today"] }),
+    queries.invalidateQueries({ queryKey: ["doses", personId] }),
+  ]);
 
 /** A kind's page of the person's record: groups, newest first, more as asked. */
 export const useRecordPages = (personId: string, kind: PageKind) =>

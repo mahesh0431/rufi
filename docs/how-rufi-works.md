@@ -237,6 +237,8 @@ Codex and Claude each sign in by themselves, and keep and renew their own sign-i
 
 Due and overdue are worked out from a follow-up's date, at the precision the person gave it (`core/record/due.ts`). A medicine's doses are worked out from its times, its days (an RFC 5545 rule, given to rrule.js as calendar days only), its start and its until (`core/timing/doses.ts`); Today on the Medicines page (`GET /api/people/:personId/today`) and the notice claim both use it. See [ADR 0031](adr/0031-timing-is-local-times-and-a-calendar-rule-owned-by-each-kind.md).
 
+The **dose log** (`core/doses/log.ts`, [ADR 0033](adr/0033-doses-are-logged-outside-the-record.md)) keeps what the person said happened to each dose, outside the record, in `dose_log`: a row is only ever added. `POST /api/people/:personId/doses` stores a log once per id (the same log again is 200, another under that id 409); `GET …/doses?from&to` gives the rows for up to 62 days. Today shows each dose's latest log by `logged_at`. Each stored log sends `doses` on the person's chat stream, and the screens read Today and the log again.
+
 The Rufi app asks the core for notices as it starts, every minute and when the Mac wakes, and claims each one so it shows once: a follow-up once per state, a medicine with reminders on its latest dose since the last one handled, or since the save that last changed it, only within 60 minutes. Nothing runs in the core in the background. See [ADR 0012](adr/0012-follow-up-notices-are-claimed-through-the-app-channel.md).
 
 ## Logs
