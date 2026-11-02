@@ -179,6 +179,17 @@ export interface Tables {
     sent_at: string | null;
     reader_agent: string | null;
   };
+  dose_log: {
+    id: string;
+    person_id: string;
+    medicine_use_id: string;
+    dose_at: string;
+    state: string;
+    taken_at: string | null;
+    logged_at: string;
+    received_at: string;
+    logged_by: string;
+  };
   draft_items: {
     id: string;
     person_id: string;
