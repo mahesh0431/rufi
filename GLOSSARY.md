@@ -390,6 +390,14 @@ _Avoid_: server, tunnel, API (for the door itself)
 Giving an app its key: the Mac shows a code, as a QR code and the same link, that works once, for 10 minutes; the app scans or pastes it.
 _Avoid_: linking, registering
 
+**Lock Rufi**:
+On the iPhone, Face ID or the iPhone's passcode before Rufi shows anything, when it opens and after more than a minute away. It hides what is shown; the key stays on the iPhone.
+_Avoid_: PIN, app lock
+
+**Phone mode**:
+Rufi's screens inside the iPhone app: the page alone, under the iPhone's own tab bar and title bar, at the iPhone's text size. A link goes through the app, which opens the page on top or in its tab.
+_Avoid_: mobile site, responsive mode
+
 ## Keeping your data safe
 
 **Backup**:

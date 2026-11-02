@@ -10,6 +10,8 @@ A family's health record on their Mac, with an AI that reads their documents and
 - After changing `schema.sql`, a tool or the Codex pin, run `pnpm db:types`, `pnpm tools:json` or `pnpm codex:types`.
 - After changing `apps/server/src/agent/claude/` or the Claude Agent SDK pin, run `pnpm claude:live`: it checks the Claude installed on this Mac, with fictional data (CI has no Claude).
 - By hand, always set `RUFI_HOME` to a fictional data folder; without it Rufi opens the person's real `~/.rufi`.
+- The iPhone app (`apps/ios`, Xcode 27): `xcodebuild test -project apps/ios/Rufi.xcodeproj -scheme Rufi -destination "platform=iOS Simulator,name=iPhone 17"`. For it in the Simulator, `node apps/ios/scripts/door.ts <folder>` runs Rufi with fictional data and a door on this Mac; never run `tailscale serve` or change Tailscale's settings.
+- Agents use only the iOS Simulator, with fictional data; a real iPhone is the person's. Builds for their iPhone go through the `publish-ios-private-ipa` skill.
 
 ## Tests
 
