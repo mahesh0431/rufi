@@ -280,7 +280,7 @@ export function MedicinesToday({
                 <span className="min-w-0 font-semibold">
                   {[medicine.name, medicine.strength].filter(Boolean).join(" ")}
                 </span>
-                <span className="min-w-0 text-muted @max-[640px]:col-span-2 @max-[640px]:col-start-2 @max-[640px]:row-start-2">
+                <span className="min-w-0 text-muted @max-[640px]:col-start-2 @max-[640px]:row-start-2">
                   {[
                     medicine.amount,
                     medicine.directions,
