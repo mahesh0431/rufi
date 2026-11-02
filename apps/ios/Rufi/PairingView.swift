@@ -63,6 +63,7 @@ struct PairedView: View {
     let pairing: Pairing
     @State private var askingLock = false
     @State private var askingReminders = false
+    @State private var problem: String?
 
     var body: some View {
         VStack(spacing: 16) {
@@ -90,10 +91,17 @@ struct PairedView: View {
                 Text("Rufi asks for Face ID, or your iPhone's passcode, when you open it and after a minute away.")
                     .multilineTextAlignment(.center).foregroundStyle(.secondary)
                 Spacer()
+                if let problem {
+                    Text(problem).multilineTextAlignment(.center).foregroundStyle(.red)
+                }
                 Button("Lock Rufi", systemImage: "lock") {
                     Task {
-                        await app.lock.turnOn()
-                        askingReminders = true
+                        // Only once it is on; cancelled, the offer stays.
+                        if await app.lock.turnOn() {
+                            askingReminders = true
+                        } else {
+                            problem = "Face ID or your passcode wasn't given. Try again, or choose Not Now."
+                        }
                     }
                 }
                 .buttonStyle(.glassProminent).controlSize(.large)
@@ -107,7 +115,7 @@ struct PairedView: View {
                 Spacer()
                 Button("Continue", systemImage: "arrow.right") {
                     // No passcode on the iPhone: no lock to offer.
-                    if Lock.canLock { askingLock = true } else { askingReminders = true }
+                    if app.lock.available { askingLock = true } else { askingReminders = true }
                 }
                 .buttonStyle(.glassProminent).controlSize(.large)
                 Text("Wrong person? Unpair on your Mac and pair again.").font(.footnote).foregroundStyle(.secondary)

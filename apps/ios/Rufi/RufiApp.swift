@@ -6,6 +6,7 @@ import UserNotifications
 @main
 struct RufiApp: App {
     @UIApplicationDelegateAdaptor private var delegate: AppDelegate
+    @State private var shield = Shield()
     @Environment(\.scenePhase) private var phase
 
     private var app: AppModel { delegate.app }
@@ -13,20 +14,14 @@ struct RufiApp: App {
     var body: some Scene {
         WindowGroup {
             RootView(app: app)
-                // Whenever Rufi isn't active, a plain cover, so the app
-                // switcher's still shows nothing.
-                .overlay {
-                    if phase != .active { Color(.systemBackground).ignoresSafeArea() }
+                .onChange(of: phase, initial: true) { _, now in
+                    app.lock.phase(now)
+                    shield.show(now != .active || app.lock.locked, app: app)
+                    if now == .background { refreshAway() }
+                    if now == .active { Task { await app.refresh() } }
                 }
-                .onChange(of: phase) { _, now in
-                    if now == .background {
-                        app.lock.left()
-                        refreshAway()
-                    }
-                    if now == .active {
-                        app.lock.cameBack()
-                        Task { await app.refresh() }
-                    }
+                .onChange(of: app.lock.locked) { _, locked in
+                    shield.show(phase != .active || locked, app: app)
                 }
         }
         // When iOS allows, Rufi refreshes its reminders in the background.
@@ -99,12 +94,9 @@ struct RootView: View {
         case .unpaired:
             UnpairedView(app: app)
         case let .open(shell):
-            // The screens stay in memory behind the lock, so a half-typed
-            // message is still there after unlocking.
+            // The screens stay in memory behind the lock (Shield.swift), so
+            // a half-typed message is still there after unlocking.
             ShellView(shell: shell, app: app)
-                .overlay {
-                    if app.lock.locked { LockedView(lock: app.lock) }
-                }
         }
     }
 }

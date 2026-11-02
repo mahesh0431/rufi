@@ -10,6 +10,9 @@
 // same id and the core never takes it twice. Autosaves skip that text.
 // Nothing here sends a message by itself. The box's chips (references to
 // health data) are kept with its text: saved, sent and cleared with it.
+// Words that couldn't be saved stay in the tab's storage too, until a save
+// or a send takes them: a new page in the same tab, as when its session
+// ended while Rufi was away, shows them first and saves them.
 import {
   type Chip,
   Draft,
@@ -86,6 +89,9 @@ const Kept = Schema.Struct({
   ),
 });
 type Kept = typeof Kept.Type;
+
+/** Words that couldn't be saved, kept in this tab: the text and its chips. */
+const Unsaved = Kept.mapFields(({ text, refs }) => ({ text, refs }));
 const sameChips = (a: readonly BoxChip[], b: readonly BoxChip[]) =>
   JSON.stringify(pointers(a)) === JSON.stringify(pointers(b));
 
@@ -143,6 +149,7 @@ const answered = (error: unknown) =>
 export function draftBox(api: DraftApi) {
   const newId = api.newId ?? (() => crypto.randomUUID());
   const sendKey = `rufi/send/${api.scope}`;
+  const unsavedKey = `rufi/unsaved/${api.scope}`;
   const store = createStore<BoxState>(() => ({
     text: "",
     refs: [],
@@ -177,6 +184,17 @@ export function draftBox(api: DraftApi) {
     store.setState({ unresolved: false });
   }
 
+  /** Keeps words that couldn't be saved in this tab; none when `text` is undefined. */
+  function keepUnsaved(text?: string, refs?: readonly BoxChip[]): void {
+    try {
+      if (text === undefined) api.storage?.removeItem(unsavedKey);
+      else api.storage?.setItem(unsavedKey, JSON.stringify({ text, refs }));
+    } catch (error) {
+      // The box still says Not saved, with Retry.
+      store.setState({ notice: messageOf(error) });
+    }
+  }
+
   /** Reads the draft until it is read. */
   async function load(): Promise<void> {
     for (;;) {
@@ -185,17 +203,24 @@ export function draftBox(api: DraftApi) {
         unanswered = saved
           ? Schema.decodeUnknownSync(Kept)(JSON.parse(saved))
           : undefined;
+        const left = api.storage?.getItem(unsavedKey);
+        const unsaved = left
+          ? Schema.decodeUnknownSync(Unsaved)(JSON.parse(left))
+          : undefined;
         const draft = Schema.decodeUnknownSync(Draft)(
           await api.call("GET", "draft"),
         );
+        const mine = unanswered ?? unsaved;
         store.setState({
           draft,
-          text: unanswered?.text ?? draft.text,
-          refs: unanswered?.refs ? [...unanswered.refs] : shown(draft.refs),
+          text: mine?.text ?? draft.text,
+          refs: mine?.refs ? [...mine.refs] : shown(draft.refs),
           loaded: true,
           unresolved: unanswered !== undefined,
+          failed: unanswered === undefined && unsaved !== undefined,
           notice: null,
         });
+        if (unanswered === undefined && unsaved !== undefined) void save();
         return;
       } catch (error) {
         // Said in the box; asked again in a moment.
@@ -248,8 +273,10 @@ export function draftBox(api: DraftApi) {
           failed: false,
           ...(!keepNotice && { notice: null }),
         });
+        keepUnsaved();
       } catch (error) {
         store.setState({ failed: true, notice: messageOf(error) });
+        keepUnsaved(text, refs);
       }
     });
   }
@@ -343,6 +370,7 @@ export function draftBox(api: DraftApi) {
             }),
           );
           forget();
+          keepUnsaved();
           store.setState({
             sending: false,
             accepted: id,

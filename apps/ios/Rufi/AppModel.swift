@@ -28,7 +28,8 @@ final class AppModel {
         }
         if let pairing = Pairing.saved(), let key = Keychain.key() {
             reminders = newReminders(pairing, key)
-            stage = .open(shell(pairing, key))
+            // Paired, but the lock's offer wasn't answered: it comes again.
+            stage = UserDefaults.standard.bool(forKey: "setup.done") ? .open(shell(pairing, key)) : .paired(pairing)
         }
     }
 
@@ -57,9 +58,11 @@ final class AppModel {
         }
     }
 
-    /// After the setup: Rufi opens, and its reminders are set.
+    /// After the setup, with the lock and the reminders answered: Rufi
+    /// opens, and its reminders are set.
     func finishSetup() {
         guard case let .paired(pairing) = stage, let key = Keychain.key() else { return }
+        UserDefaults.standard.set(true, forKey: "setup.done")
         stage = .open(shell(pairing, key))
         Task { await refresh() }
     }
@@ -122,6 +125,7 @@ final class AppModel {
     private func forget() {
         Keychain.forget()
         Pairing.forget()
+        UserDefaults.standard.removeObject(forKey: "setup.done")
         lock.forget()
         reminders = nil
     }

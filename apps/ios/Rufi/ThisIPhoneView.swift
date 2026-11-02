@@ -27,9 +27,9 @@ struct ThisIPhoneView: View {
                 }
                 Section {
                     Toggle("Lock Rufi", isOn: $lock.on)
-                        .disabled(!Lock.canLock)
+                        .disabled(!lock.available)
                 } footer: {
-                    Text(Lock.canLock
+                    Text(lock.available
                         ? "Face ID, or your passcode, when you open Rufi and after a minute away."
                         : "Set a passcode in Settings › Face ID & Passcode to lock Rufi.")
                 }
