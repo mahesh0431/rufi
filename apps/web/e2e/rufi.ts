@@ -124,6 +124,8 @@ export class Rufi {
       now?: () => string;
       /** How the data folder was chosen; RUFI_HOME when not given. */
       source?: FolderSource;
+      /** Tailscale; when not given, a stand-in that serves nothing. */
+      tailscale?: Tailscale;
     } = {},
   ): Promise<Core> {
     const { port } = options;
@@ -163,7 +165,7 @@ export class Rufi {
             return Promise.resolve();
           },
         },
-        tailscale: this.#tailscale(),
+        tailscale: options.tailscale ?? this.#tailscale(),
         ...(port !== undefined && { port }),
         ...(options.now !== undefined && { now: options.now }),
       }).pipe(Scope.provide(scope)),
