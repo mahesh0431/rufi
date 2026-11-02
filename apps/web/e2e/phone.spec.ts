@@ -215,3 +215,42 @@ test("in the iPhone app, Scan asks the app for its camera, and the pages it adds
   ).toHaveText(["Sunrise Labs August.pdf"]);
   await expect(box).toHaveValue("What does this report say?");
 });
+
+test.describe("on a phone's screen, with touch", () => {
+  test.use({ viewport: { width: 402, height: 874 }, hasTouch: true });
+
+  test("in the iPhone app, at a large Text Size, Send stays in reach after a reply shows how much context it used", async ({
+    page,
+    rufi,
+  }) => {
+    await rufi.family();
+    await rufi.start({
+      scenario: { usage: { tokens: 38_000, window: 100_000 } },
+    });
+    await asPhone(page);
+    await page.goto(rufi.link());
+    await page.evaluate(() => {
+      const app = window as unknown as {
+        rufi: { open: (path: string) => void };
+      };
+      app.rufi.open("/people/asha/chat");
+    });
+    const box = page.getByRole("textbox", { name: "Message to Rufi" });
+    const send = page.getByRole("button", { name: "Send" });
+    await box.fill("How is my HbA1c?");
+    await send.click();
+    await expect(page.getByText("ok:How is my HbA1c?")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Context used: 38%" }),
+    ).toBeVisible();
+
+    // The iPhone's Text Size at Accessibility Large, as the app sends it.
+    await page.evaluate(() => {
+      document.documentElement.style.setProperty("--ios-body", "33px");
+    });
+    await box.fill("And my CRP?");
+    await expect(send).toBeInViewport();
+    await send.click();
+    await expect(page.getByText("ok:And my CRP?")).toBeVisible();
+  });
+});

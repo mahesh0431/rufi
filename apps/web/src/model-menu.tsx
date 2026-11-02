@@ -84,12 +84,15 @@ export function ModelMenu({
     <Menu.Root modal={false}>
       <Menu.Trigger
         aria-label={`Model and effort: ${name}, ${shownEffort}`}
-        className="flex h-8 shrink-0 items-center gap-1 rounded-lg px-2 pointer-coarse:min-h-[44px] text-[0.8125rem] whitespace-nowrap hover:bg-side data-[popup-open]:bg-side"
+        className="flex h-8 min-w-0 items-center gap-1 rounded-lg px-2 pointer-coarse:min-h-[44px] text-[0.8125rem] whitespace-nowrap hover:bg-side data-[popup-open]:bg-side"
       >
-        {name}
-        {/* A space between the two, so the menu's name holds what it shows. */}{" "}
-        <span className="text-muted">{shownEffort}</span>
-        <ChevronDown size={ICON} className="text-muted" aria-hidden />
+        {/* Narrow, the names end in "…" before Send leaves the box. */}
+        <span className="truncate">
+          {name}
+          {/* A space between the two, so the menu's name holds what it shows. */}{" "}
+          <span className="text-muted">{shownEffort}</span>
+        </span>
+        <ChevronDown size={ICON} className="shrink-0 text-muted" aria-hidden />
       </Menu.Trigger>
       <Menu.Portal container={menus}>
         <Menu.Positioner side="top" align="end" sideOffset={8} className="z-30">
