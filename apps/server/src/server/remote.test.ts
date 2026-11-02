@@ -1,9 +1,10 @@
 // The remote door as a paired app, its web view and Settings › iPhone meet
 // it: the core started on a fictional data folder, with Tailscale stood in
 // for (no real `tailscale` runs), its check reaching the door as Serve would.
-import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import fs, { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { request as httpRequest, type IncomingMessage } from "node:http";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -13,11 +14,13 @@ import { Effect, Exit, Scope } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { codexAdapter } from "../agent/codex/adapter.ts";
 import { databasePath, openWritable } from "../core/store/database.ts";
+import { holdRufiLock } from "../platform/files.ts";
 import { PROOF_HEADER } from "./api.ts";
 import { agentSetup, startCore, type Core } from "./core.ts";
 import { TailscaleProblem, type Tailscale } from "./tailscale.ts";
 
 const FAKE = join(import.meta.dirname, "../../tests/fake-codex.ts");
+const DOCUMENTS = join(import.meta.dirname, "../../tests/fixtures/documents");
 const NAME = "asha-mbp.tail1234.ts.net";
 
 let home: string;
@@ -564,6 +567,13 @@ describe("the door", () => {
 describe("a person's routes through the door", () => {
   // Never delete: a paired app reaches only its own person.
   it("refuse another person's id with 404, by key or session, and change nothing", async () => {
+    // Ravi's own medicine: a dose for it would be a valid log on his path.
+    const store = openWritable(databasePath(home));
+    store.db.exec(`
+      INSERT INTO medicine_uses (id, person_id, name, status, times, remind)
+        VALUES ('med-r1', 'ravi', 'Atorvastatin', 'current', '["21:00"]', 1);
+    `);
+    store.close();
     const core = await start();
     const { port, key } = await paired(await settings(core));
     const page = await webView(port, await launchOf(port, key));
@@ -582,6 +592,17 @@ describe("a person's routes through the door", () => {
           { id: randomUUID(), text: "What does my report say?" },
         ],
         ["POST", "/api/people/ravi/documents", {}],
+        [
+          "POST",
+          "/api/people/ravi/doses",
+          {
+            id: randomUUID(),
+            medicineUseId: "med-r1",
+            doseAt: "2026-11-02T21:00",
+            state: "taken",
+            loggedAt: "2026-11-02T15:32:00.000Z",
+          },
+        ],
       ] as const) {
         expect((await door(port, method, path, by, body)).status).toBe(404);
       }
@@ -592,7 +613,7 @@ describe("a person's routes through the door", () => {
     await stop();
     const db = new DatabaseSync(databasePath(home), { readOnly: true });
     try {
-      for (const table of ["chat_queue", "turns", "documents"]) {
+      for (const table of ["chat_queue", "turns", "documents", "dose_log"]) {
         expect(
           db
             .prepare(
@@ -605,6 +626,91 @@ describe("a person's routes through the door", () => {
       db.close();
     }
   });
+});
+
+describe("Rufi stopping", () => {
+  // The same rule as the screens' listener: an answer still at work owns
+  // the data folder until it is done.
+  it("finishes a document the door was adding before letting the data folder go", async () => {
+    const core = await start();
+    const { port, key } = await paired(await settings(core));
+    const bytes = await readFile(join(DOCUMENTS, "thyroid-recheck.jpg"));
+    const original = join(
+      home,
+      "files",
+      createHash("sha256").update(bytes).digest("hex"),
+    );
+    const form = new FormData();
+    form.append("file", new File([bytes], "thyroid-recheck.jpg"));
+    form.append("together", "yes");
+    const sent = new Response(form);
+    const publishing = Promise.withResolvers<undefined>();
+    const finish = Promise.withResolvers<undefined>();
+    const rename = fs.rename;
+    // A slow disk where the original is kept; the rest runs as it does.
+    const delayed = vi
+      .spyOn(fs, "rename")
+      .mockImplementation(async (from, to) => {
+        if (to === original) {
+          publishing.resolve(undefined);
+          await finish.promise;
+        }
+        await rename(from, to);
+      });
+    syncBuiltinESMExports();
+    const adding = (async () => {
+      const req = httpRequest({
+        host: "127.0.0.1",
+        port,
+        method: "POST",
+        path: "/api/people/asha/documents",
+        headers: {
+          host: `${NAME}:${String(port)}`,
+          authorization: `Bearer ${key}`,
+          "content-type": sent.headers.get("content-type") ?? "",
+        },
+        agent: false,
+      });
+      // Rufi stopping cuts the connection: the phone sees an error.
+      req.on("error", () => undefined);
+      req.end(Buffer.from(await sent.arrayBuffer()));
+    })();
+    let stopping: Promise<void> | undefined;
+    try {
+      await adding;
+      await publishing.promise;
+      let stopped = false;
+      stopping = stop().then(() => {
+        stopped = true;
+      });
+      await sleep(1_000);
+      expect(stopped).toBe(false);
+      await expect(holdRufiLock(home, () => undefined)).rejects.toThrow(
+        "already running",
+      );
+
+      finish.resolve(undefined);
+      await stopping;
+      const db = new DatabaseSync(databasePath(home), { readOnly: true });
+      try {
+        expect(
+          db
+            .prepare(
+              "SELECT count(*) AS n FROM documents WHERE person_id = 'asha'",
+            )
+            .get(),
+        ).toEqual({ n: 1 });
+      } finally {
+        db.close();
+      }
+      expect(await readFile(original)).toEqual(bytes);
+    } finally {
+      finish.resolve(undefined);
+      await stopping;
+      delayed.mockRestore();
+      syncBuiltinESMExports();
+    }
+  }, 10_000);
 });
 
 describe("a dose logged through the door", () => {

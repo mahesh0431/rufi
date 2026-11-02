@@ -254,6 +254,13 @@ export const startCore = (options: CoreOptions) =>
     yield* Effect.addFinalizer(() =>
       Effect.promise(() => Promise.allSettled(answering)),
     );
+    /** An answer of either listener, finished before Rufi lets the folder go. */
+    const working = (answer: Promise<Response>) => {
+      const done = () => answering.delete(answer);
+      answering.add(answer);
+      answer.then(done, done);
+      return answer;
+    };
     const transcripts = openTranscripts(writer, options.now);
     const drafts = openDrafts(writer, options.now);
     const queue = chatQueue(writer, options.now);
@@ -511,6 +518,7 @@ export const startCore = (options: CoreOptions) =>
           setting: transcripts.setting,
           saveSetting: transcripts.saveSetting,
           tailscale: options.tailscale ?? tailscale(),
+          working,
           person,
           read: settingsReads({ transcripts, devices: deviceData }),
           account,
@@ -569,13 +577,11 @@ export const startCore = (options: CoreOptions) =>
               {
                 fetch: (request, env) => {
                   const endpoint = mcp[new URL(request.url).pathname];
-                  const answer = Promise.resolve(
-                    endpoint ? endpoint(request) : app.fetch(request, env),
+                  return working(
+                    Promise.resolve(
+                      endpoint ? endpoint(request) : app.fetch(request, env),
+                    ),
                   );
-                  const done = () => answering.delete(answer);
-                  answering.add(answer);
-                  answer.then(done, done);
-                  return answer;
                 },
                 hostname: "127.0.0.1",
                 port: options.port ?? 0,

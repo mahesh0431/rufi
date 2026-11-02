@@ -50,6 +50,11 @@ export interface RemoteDeps {
   /** Saves a setting; null removes it. */
   saveSetting: (key: string, value: string | null) => Promise<void>;
   tailscale: Tailscale;
+  /**
+   * Keeps each answer in the core's work: Rufi finishes it before closing
+   * the record and letting the data folder go, as the screens' answers.
+   */
+  working: (answer: Promise<Response>) => Promise<Response>;
   /** A person's routes, as the screens have them. */
   person: PersonDeps;
   /** Rufi's settings, as the screens read them. */
@@ -366,7 +371,12 @@ export function remote(deps: RemoteDeps): Remote {
     if (server && port !== undefined) return port;
     const started = await new Promise<ServerType>((resolve, reject) => {
       const listening = serve(
-        { fetch: door.fetch, hostname: "127.0.0.1", port: at },
+        {
+          fetch: (request, env) =>
+            deps.working(Promise.resolve(door.fetch(request, env))),
+          hostname: "127.0.0.1",
+          port: at,
+        },
         () => {
           resolve(listening);
         },
