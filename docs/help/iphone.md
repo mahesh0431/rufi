@@ -20,6 +20,8 @@ Rufi on your iPhone opens your own record from Rufi on your Mac, through Tailsca
 
 A paired iPhone opens only that person's record, for good. To open another person's record, pair again for them.
 
+Pairing leaves that person's medicine reminders ringing on the Mac. Under **Reminders** on the Medicines page you can choose **iPhone** or **Both** (see [Reminders](record.md#reminders)); the iPhone doesn't ring yet, so until it does keep **Mac** or **Both** to be reminded.
+
 ## Lock Rufi
 
 After pairing, the iPhone offers **Lock Rufi**: Rufi then asks for Face ID, or your iPhone's passcode, when you open it and after more than a minute away. While Rufi isn't on screen, the app switcher shows a blank page instead of your record. Turn it on or off in **This iPhone** (the dog at the top right of each tab). It needs a passcode on the iPhone: without one, the switch is off and says so.
@@ -49,7 +51,7 @@ If the iPhone says to update Rufi on your iPhone or on your Mac so they match, t
 
 ## Unpair
 
-On the Mac: click **Unpair** on its line, then **Unpair** again. From then on it can't open Rufi, and anything it has open ends at once. What it sent stays on your Mac. If you lose your phone, unpair it here. The next time Rufi on that iPhone reaches the Mac, it says it was unpaired, with **Pair Again**.
+On the Mac: click **Unpair** on its line, then **Unpair** again. From then on it can't open Rufi, and anything it has open ends at once. What it sent stays on your Mac. If you lose your phone, unpair it here. When it was that person's last iPhone, their reminders ring on the Mac. The next time Rufi on that iPhone reaches the Mac, it says it was unpaired, with **Pair Again**.
 
 On the iPhone: in **This iPhone**, tap **Unpair This iPhone**, then confirm. The iPhone forgets its key and the Mac stops letting it in.
 

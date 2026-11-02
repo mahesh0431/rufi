@@ -499,6 +499,36 @@ describe("a paired app's key", () => {
     );
   });
 
+  it("keeps reminders ringing on the Mac when an iPhone is paired, until the person chooses; with no iPhone left, the Mac again", async () => {
+    const core = await start();
+    const api = await settings(core);
+    const ring = async () =>
+      (await api("GET", "/api/people/asha/reminders")).body["ring"];
+    expect(await ring()).toBe("mac");
+
+    let link = await pairingLink(api);
+    const first = (await pair(link.port, link.code)).body;
+    expect(await ring()).toBe("mac");
+    // Both, as chosen; a second iPhone keeps the choice.
+    await api("PUT", "/api/people/asha/reminders", {
+      show: "count",
+      ring: "both",
+    });
+    expect(await ring()).toBe("both");
+    link = await pairingLink(api);
+    const second = (await pair(link.port, link.code)).body;
+    expect(await ring()).toBe("both");
+
+    for (const app of [first, second]) {
+      const id = (app["app"] as { id: string }).id;
+      await api("POST", `/api/paired-apps/${id}/unpair`);
+    }
+    expect(await ring()).toBe("mac");
+    expect(
+      (await api("GET", "/api/people/asha/reminders")).body["iphones"],
+    ).toEqual([]);
+  });
+
   it("opens the door again when Rufi starts with an app paired, on the same port", async () => {
     const { port, code } = await pairingLink(await settings(await start()));
     const key = String((await pair(port, code)).body["key"]);
@@ -578,10 +608,13 @@ describe("a person's routes through the door", () => {
     const { port, key } = await paired(await settings(core));
     const page = await webView(port, await launchOf(port, key));
 
-    // Asha's own: a read.
-    expect(
-      (await door(port, "GET", "/api/people/asha/overview", { key })).status,
-    ).toBe(200);
+    // Asha's own: reads.
+    for (const path of [
+      "/api/people/asha/overview",
+      "/api/people/asha/reminders",
+    ]) {
+      expect((await door(port, "GET", path, { key })).status).toBe(200);
+    }
     for (const by of [{ key }, page.headers]) {
       for (const [method, path, body] of [
         ["GET", "/api/people/ravi/overview", undefined],
@@ -603,6 +636,7 @@ describe("a person's routes through the door", () => {
             loggedAt: "2026-11-02T15:32:00.000Z",
           },
         ],
+        ["PUT", "/api/people/ravi/reminders", { show: "names", ring: "mac" }],
       ] as const) {
         expect((await door(port, method, path, by, body)).status).toBe(404);
       }

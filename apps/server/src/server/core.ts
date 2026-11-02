@@ -39,6 +39,7 @@ import { openRecord } from "../core/store/install.ts";
 import { claimNotices } from "../core/record/notices.ts";
 import { recordViews, waiting } from "../core/record/views.ts";
 import { doseLog } from "../core/doses/log.ts";
+import { remindersOf, saveReminders } from "../core/reminders/setting.ts";
 import { changeProfile, readProfile } from "../core/record/profile.ts";
 import { localTime } from "../core/record/dates.ts";
 import { pages } from "../core/documents/pages.ts";
@@ -504,6 +505,17 @@ export const startCore = (options: CoreOptions) =>
       agents: agentSystem.logs,
       items: draftItems(writer, readings.changed),
       pages: pageService,
+      reminders: {
+        read: async (personId) => {
+          const found = (
+            await remindersOf((reader ?? writer).query, [personId])
+          ).get(personId);
+          if (!found) throw new Error("The person isn't in the record.");
+          return found;
+        },
+        save: (personId, choice) =>
+          saveReminders(writer.query, personId, choice),
+      },
       log,
       ...(options.behindMax !== undefined && { behindMax: options.behindMax }),
     };
