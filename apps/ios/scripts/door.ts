@@ -101,6 +101,8 @@ await run("openssl", [
   "-CAkey",
   caKey,
   "-CAcreateserial",
+  "-CAserial",
+  join(folder, "ca.srl"),
   "-days",
   "30",
   "-extfile",
