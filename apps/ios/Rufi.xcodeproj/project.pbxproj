@@ -254,10 +254,12 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = PDTWC4T5Z7;
 				ENABLE_PREVIEWS = YES;
+				CODE_SIGN_ENTITLEMENTS = Rufi.entitlements;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Rufi;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Rufi uses the camera to scan the pairing code in Rufi on your Mac, and the papers you add to the chat.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Rufi uses Face ID to open your health record.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Rufi reads your heart rate and resting heart rate from Apple Health and sends them to Rufi on your Mac when you tap Sync.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
@@ -285,10 +287,12 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = PDTWC4T5Z7;
 				ENABLE_PREVIEWS = YES;
+				CODE_SIGN_ENTITLEMENTS = Rufi.entitlements;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Rufi;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Rufi uses the camera to scan the pairing code in Rufi on your Mac, and the papers you add to the chat.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Rufi uses Face ID to open your health record.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Rufi reads your heart rate and resting heart rate from Apple Health and sends them to Rufi on your Mac when you tap Sync.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;

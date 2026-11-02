@@ -16,6 +16,8 @@ final class AppModel {
 
     private(set) var stage: Stage = .pairing
     let lock = Lock()
+    /// Apple Health sync for the pairing; none while unpaired.
+    private(set) var health: HealthSync?
     /// Rufi's scene is active.
     var active = true
     /// Rufi is on screen and unlocked: what it shows can be seen.
@@ -30,6 +32,7 @@ final class AppModel {
         // Copies of originals left from a Rufi that ended while showing one.
         Originals.shown.deleteAll()
         if let pairing = Pairing.saved(), let key = Keychain.key() {
+            health = newHealth(pairing, key)
             // Paired, but the lock's offer wasn't answered: it comes again.
             stage = UserDefaults.standard.bool(forKey: "setup.done") ? .open(shell(pairing, key)) : .paired(pairing)
         }
@@ -46,6 +49,7 @@ final class AppModel {
             let pairing = Pairing(origin: link.origin, app: paired.app.id, person: paired.person,
                                   mac: paired.mac, folder: paired.folder)
             pairing.save()
+            health = newHealth(pairing, paired.key)
             stage = .paired(pairing)
             return nil
         } catch .codeExpired {
@@ -66,8 +70,9 @@ final class AppModel {
         stage = .open(shell(pairing, key))
     }
 
-    /// Unpairs here, on the Mac too when it answers.
+    /// Unpairs here, on the Mac too when it answers. A sync settles first.
     func unpair() async {
+        await health?.end()
         if let pairing = Pairing.saved(), let key = Keychain.key() {
             try? await Door(origin: pairing.origin, key: key).unpair()
         }
@@ -81,9 +86,24 @@ final class AppModel {
 
     private func shell(_ pairing: Pairing, _ key: String) -> Shell {
         Shell(pairing: pairing, key: key, seen: { [weak self] in self?.seen ?? false }) { [weak self] in
-            self?.forget()
-            self?.stage = .unpaired
+            self?.wasUnpaired()
         }
+    }
+
+    private func newHealth(_ pairing: Pairing, _ key: String) -> HealthSync {
+        HealthSync(reader: HealthReader(), door: Door(origin: pairing.origin, key: key),
+                   memory: HealthMemory(defaults: .standard, app: pairing.app)) { [weak self] in
+            self?.wasUnpaired()
+        }
+    }
+
+    /// The Mac unpaired this iPhone: a sync settles, then its bookmarks,
+    /// key and pairing go.
+    private func wasUnpaired() {
+        let health = health
+        Task { await health?.end() }
+        forget()
+        stage = .unpaired
     }
 
     private func forget() {
@@ -91,5 +111,6 @@ final class AppModel {
         Pairing.forget()
         UserDefaults.standard.removeObject(forKey: "setup.done")
         lock.forget()
+        health = nil
     }
 }

@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// This iPhone: whose record and which Mac, the lock's switch, and Unpair.
+/// This iPhone: whose record and which Mac, the lock's switch, Apple
+/// Health, and Unpair.
 struct ThisIPhoneView: View {
     let app: AppModel
     let pairing: Pairing
@@ -28,6 +29,15 @@ struct ThisIPhoneView: View {
                         ? "Face ID, or your passcode, when you open Rufi and after a minute away."
                         : "Set a passcode in Settings › Face ID & Passcode to lock Rufi.")
                 }
+                if let health = app.health {
+                    Section {
+                        NavigationLink {
+                            HealthView(health: health, person: pairing.person.name)
+                        } label: {
+                            LabeledContent("Apple Health", value: healthWords(health))
+                        }
+                    }
+                }
                 Section {
                     Button("Unpair This iPhone", role: .destructive) { unpairing = true }
                         .confirmationDialog("Unpair This iPhone?", isPresented: $unpairing, titleVisibility: .hidden) {
@@ -52,6 +62,16 @@ struct ThisIPhoneView: View {
                 }
             }
         }
+    }
+
+    /// "Sent 09:15", as the last sync went.
+    private func healthWords(_ health: HealthSync) -> String {
+        if health.running { return "Sending…" }
+        guard let last = health.last else { return "" }
+        let when = Calendar.current.isDateInToday(last.at)
+            ? last.at.formatted(date: .omitted, time: .shortened)
+            : last.at.formatted(.dateTime.day().month(.abbreviated))
+        return last.batches == 0 ? "Checked \(when)" : "Sent \(when)"
     }
 
     private var version: String {

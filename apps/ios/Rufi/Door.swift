@@ -108,6 +108,36 @@ nonisolated struct Door: Sendable {
         return staged
     }
 
+    /// What the Mac said of a batch it took.
+    enum Received: Sendable {
+        case gotIt
+        case alreadyGot
+    }
+
+    /// Sends one Apple Health batch, as it is, into this app's device source
+    /// on the Mac. A refusal comes back in the Mac's words.
+    func batch(_ body: Data) async throws(Problem) -> Received {
+        var request = URLRequest(url: origin.appending(path: "/api/batches"))
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await Self.session.upload(for: request, from: body)
+        } catch {
+            throw .unreachable
+        }
+        // A Mac whose Rufi doesn't take batches yet.
+        if (response as? HTTPURLResponse)?.statusCode == 404 { throw .mismatch }
+        struct Answer: Decodable { let answer: String }
+        switch (try? JSONDecoder().decode(Answer.self, from: try Self.taken(data, response)))?.answer {
+        case "got_it": return .gotIt
+        case "already_got": return .alreadyGot
+        default: throw .mismatch
+        }
+    }
+
     /// Unpairs this iPhone on the Mac.
     func unpair() async throws(Problem) {
         struct Nothing: Decodable {}
