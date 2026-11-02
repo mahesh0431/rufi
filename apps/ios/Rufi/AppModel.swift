@@ -16,9 +16,9 @@ final class AppModel {
     }
 
     private(set) var stage: Stage = .pairing
-    let lock = Lock()
+    let lock: Lock
     /// Dose logs not on the Mac yet; kept through unpairing.
-    let outbox = Outbox()
+    let outbox: Outbox
     /// The reminders of the pairing; none while unpaired.
     private(set) var reminders: Reminders?
     /// The last pairing's reminders being removed: a new pairing waits for it.
@@ -28,7 +28,9 @@ final class AppModel {
     /// Rufi is on screen and unlocked: what it shows can be seen.
     var seen: Bool { active && !lock.locked }
 
-    init() {
+    init(lock: Lock = Lock(), outbox: Outbox = Outbox()) {
+        self.lock = lock
+        self.outbox = outbox
         // A first launch after installing: a key left from before is removed.
         if !UserDefaults.standard.bool(forKey: "installed") {
             Keychain.forget()

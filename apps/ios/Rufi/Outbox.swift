@@ -41,6 +41,8 @@ nonisolated struct UnsentLog: Codable, Equatable, Identifiable, Sendable {
     let state: State
     /// When it was logged, as an instant.
     let loggedAt: String
+    /// When it was taken: the tap, for Taken on a reminder; none when skipped.
+    var takenAt: String?
     /// The Mac refused it, in its words: kept, not sent again.
     var refused: String?
 }
@@ -110,10 +112,10 @@ final class Outbox {
                 case let .refused(words):
                     if let at = now.firstIndex(where: { $0.id == log.id }) { now[at].refused = words }
                 }
-                logs = now
-                // A write that fails leaves the file behind: the log is sent
-                // again, and the Mac answers that it has it.
-                try? write(now)
+                // The file first, then memory, so they never differ: a write
+                // that fails keeps the log in both, and it is sent again,
+                // which the Mac answers as already stored.
+                if (try? write(now)) != nil { logs = now }
             }
         } while logs.contains { $0.refused == nil && $0.made.matches(pairing) && !tried.contains($0.id) }
     }

@@ -239,7 +239,9 @@ final class Reminders {
         let loggedAt = instant.string(from: now())
         try outbox.add(medicines.map { medicine in
             UnsentLog(id: UUID().uuidString.lowercased(), made: .init(pairing), medicine: medicine.id,
-                      label: medicine.label, doseAt: at, state: state, loggedAt: loggedAt)
+                      label: medicine.label, doseAt: at, state: state, loggedAt: loggedAt,
+                      // Taken when tapped, as on Today.
+                      takenAt: state == .taken ? loggedAt : nil)
         })
         center.removeDelivered([id])
     }

@@ -142,10 +142,11 @@ nonisolated struct Door: Sendable {
     /// Sends one dose log to its person's log on the Mac, under its own id.
     /// The Mac out of reach, or failing: `unreachable`, for the next time.
     func log(_ log: UnsentLog) async throws(Problem) -> Logged {
-        let body = [
+        var body = [
             "id": log.id, "medicineUseId": log.medicine, "doseAt": log.doseAt,
             "state": log.state.rawValue, "loggedAt": log.loggedAt,
         ]
+        if let takenAt = log.takenAt { body["takenAt"] = takenAt }
         var request = URLRequest(url: origin.appending(path: "\(Self.people)/\(log.made.person)/doses"))
         request.httpMethod = "POST"
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")

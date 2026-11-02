@@ -122,4 +122,24 @@ struct OutboxTests {
         let folder = try file.deletingLastPathComponent().resourceValues(forKeys: [.isExcludedFromBackupKey])
         #expect(folder.isExcludedFromBackup == true)
     }
+
+    @Test func aLogTheMacHasButTheFileStillHoldsKeepsLockRufiOnThroughUnpairing() async throws {
+        let file = Self.file()
+        let folder = file.deletingLastPathComponent()
+        let outbox = Outbox(file: file)
+        try outbox.add([Self.log("d-1")])
+        // The Mac takes it, but the file can't be written after.
+        let mac = StandInMac()
+        mac.meanwhile = { try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path()) }
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path()) }
+        try await outbox.send(to: Self.pairing, mac.take)
+        let lock = Lock(defaults: UserDefaults(suiteName: "lock-\(UUID().uuidString)")!, passcode: { true })
+        lock.on = true
+
+        await AppModel(lock: lock, outbox: outbox).unpair()
+
+        #expect(mac.sent == ["d-1"])
+        #expect(lock.on)
+        #expect(Outbox(file: file).logs.map(\.id) == ["d-1"])
+    }
 }

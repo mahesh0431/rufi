@@ -239,6 +239,8 @@ struct RemindersTests {
         #expect(Set(kept.map(\.id)).count == 2)
         // 13:10 in India, as the Mac takes an instant.
         #expect(kept.first?.loggedAt == "2026-11-02T07:40:00.000Z")
+        // Taken when tapped, so the Mac shows the time.
+        #expect(kept.allSatisfy { $0.takenAt == "2026-11-02T07:40:00.000Z" })
         #expect(center.delivered.isEmpty)
     }
 }
