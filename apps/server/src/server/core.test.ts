@@ -1599,6 +1599,196 @@ describe("the local API", () => {
   );
 });
 
+describe("the dose log", () => {
+  /** The fictional family, Asha's Metformin at 08:00 and 21:00. */
+  const family = async () => {
+    const store = openWritable(databasePath(home));
+    try {
+      store.db.exec(
+        await readFile(
+          join(
+            import.meta.dirname,
+            "../../tests/fixtures/fictional-family.sql",
+          ),
+          "utf8",
+        ),
+      );
+      store.db.exec(
+        `UPDATE medicine_uses SET times = '["08:00","21:00"]', remind = 1 WHERE id = 'med-a1'`,
+      );
+    } finally {
+      store.close();
+    }
+  };
+  const taken = {
+    id: "d-1",
+    medicineUseId: "med-a1",
+    doseAt: "2026-11-02T21:00",
+    state: "taken",
+    loggedAt: "2026-11-02T15:32:00.000Z",
+  };
+
+  it("keeps one log per id: the same log again is 200 with one row; another log under that id, or another person's medicine, is refused and stores nothing", async () => {
+    await family();
+    const core = await start();
+    const page = await session(core);
+    const asha = "/api/people/asha/doses";
+    const ravi = "/api/people/ravi/doses";
+
+    expect((await page.api("POST", asha, taken)).status).toBe(201);
+    // Its answer was lost: the retry finds the same log.
+    expect((await page.api("POST", asha, taken)).status).toBe(200);
+    for (const [path, log] of [
+      // Another log under the id.
+      [asha, { ...taken, state: "skipped" }],
+      [asha, { ...taken, takenAt: "2026-11-02T15:45:00.000Z" }],
+      // The same id for another person, with their own medicine.
+      [ravi, { ...taken, medicineUseId: "med-r1" }],
+    ] as const) {
+      expect((await page.api("POST", path, log)).status).toBe(409);
+    }
+    for (const [path, log] of [
+      // Ravi's medicine on Asha's path, and nobody's path.
+      [asha, { ...taken, id: "d-2", medicineUseId: "med-r1" }],
+      ["/api/people/nobody/doses", { ...taken, id: "d-3" }],
+    ] as const) {
+      expect((await page.api("POST", path, log)).status).toBe(404);
+    }
+    for (const log of [
+      { ...taken, id: "d-4", doseAt: "2026-11-02" },
+      { ...taken, id: "d-5", state: "missed" },
+      { ...taken, id: "d-6", loggedAt: "yesterday" },
+      { ...taken, id: "d-7", state: "skipped", takenAt: taken.loggedAt },
+    ]) {
+      expect((await page.api("POST", asha, log)).status).toBe(400);
+    }
+
+    const day = "?from=2026-11-02&to=2026-11-02";
+    const read = async (path: string) =>
+      (await page.api("GET", path)).body["doses"];
+    expect(await read(`${asha}${day}`)).toEqual([
+      {
+        id: "d-1",
+        medicine: { id: "med-a1", name: "Metformin", strength: "500 mg" },
+        doseAt: "2026-11-02T21:00",
+        state: "taken",
+        loggedAt: "2026-11-02T15:32:00.000Z",
+        receivedAt: expect.stringMatching(/Z$/) as unknown,
+        by: "mac",
+      },
+    ]);
+    expect(await read(`${ravi}${day}`)).toEqual([]);
+
+    // Its times changed, then it stopped and was removed: the log stays.
+    const store = openWritable(databasePath(home));
+    try {
+      store.db.exec(
+        `UPDATE medicine_uses SET times = '["09:00"]', status = 'stopped', removed = 1 WHERE id = 'med-a1'`,
+      );
+    } finally {
+      store.close();
+    }
+    expect(await read(`${asha}${day}&medicine=med-a1`)).toMatchObject([
+      { id: "d-1", medicine: { name: "Metformin" }, doseAt: taken.doseAt },
+    ]);
+    expect(await read(`${asha}${day}&medicine=med-a2`)).toEqual([]);
+
+    // At most 62 days, from a day to a later one.
+    expect(
+      (await page.api("GET", `${asha}?from=2026-09-01&to=2026-11-01`)).status,
+    ).toBe(200);
+    for (const range of [
+      "?from=2026-09-01&to=2026-11-02",
+      "?from=2026-11-02&to=2026-11-01",
+      "?from=2026-11-02",
+      "?from=2026-02-30&to=2026-03-01",
+    ]) {
+      expect((await page.api("GET", `${asha}${range}`)).status, range).toBe(
+        400,
+      );
+    }
+  });
+
+  it("shows on Today each dose's latest log by when it was logged, also one that arrives later; an undo shows it not logged; open screens hear of each", async () => {
+    await family();
+    const core = await start({
+      now: () => new Date(2026, 10, 2, 12).toISOString(),
+    });
+    const page = await session(core);
+    const asha = "/api/people/asha";
+    const live = stream(core.port, `${asha}/chat/stream`, page.headers);
+    const ravis = stream(
+      core.port,
+      "/api/people/ravi/chat/stream",
+      page.headers,
+    );
+    await until(() => live.lines.length > 0 && ravis.lines.length > 0);
+    const told = () => live.lines.filter((l) => l.type === "doses").length;
+    const today = async () =>
+      (
+        (await page.api("GET", `${asha}/today`)).body["doses"] as {
+          at: string;
+          logged?: unknown;
+        }[]
+      ).map(({ at, logged }) => [at, logged]);
+    const morning = "2026-11-02T08:00";
+
+    await page.api("POST", `${asha}/doses`, {
+      id: "d-taken",
+      medicineUseId: "med-a1",
+      doseAt: morning,
+      state: "taken",
+      loggedAt: "2026-11-02T03:10:00.000Z",
+      takenAt: "2026-11-02T02:45:00.000Z",
+    });
+    await until(() => told() === 1);
+    // Skipped on a phone before that, arriving now: the later log stays.
+    await page.api("POST", `${asha}/doses`, {
+      id: "d-skipped",
+      medicineUseId: "med-a1",
+      doseAt: morning,
+      state: "skipped",
+      loggedAt: "2026-11-02T03:05:00.000Z",
+    });
+    await until(() => told() === 2);
+    expect(await today()).toEqual([
+      [
+        "08:00",
+        {
+          state: "taken",
+          takenAt: "2026-11-02T02:45:00.000Z",
+          loggedAt: "2026-11-02T03:10:00.000Z",
+          by: "mac",
+        },
+      ],
+      ["21:00", undefined],
+    ]);
+
+    await page.api("POST", `${asha}/doses`, {
+      id: "d-undo",
+      medicineUseId: "med-a1",
+      doseAt: morning,
+      state: "cleared",
+      loggedAt: "2026-11-02T03:20:00.000Z",
+    });
+    await until(() => told() === 3);
+    expect(await today()).toEqual([
+      ["08:00", undefined],
+      ["21:00", undefined],
+    ]);
+    // The rows are the history: all three, in the order they were logged.
+    expect(
+      (
+        (await page.api("GET", `${asha}/doses?from=2026-11-02&to=2026-11-02`))
+          .body["doses"] as { id: string }[]
+      ).map((d) => d.id),
+    ).toEqual(["d-skipped", "d-taken", "d-undo"]);
+    expect(ravis.lines.filter((l) => l.type === "doses")).toEqual([]);
+    live.hangUp();
+    ravis.hangUp();
+  });
+});
+
 describe("what the screens read", () => {
   it("says whether Codex and Claude are signed in, as each reports it", async () => {
     const core = await start({ adapters: scripted({ signedIn: false }) });

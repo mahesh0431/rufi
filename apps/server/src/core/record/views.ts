@@ -43,6 +43,7 @@ import {
   type Kind,
   type Row,
 } from "./kinds.ts";
+import { doseKey, latestLogs } from "../doses/log.ts";
 import { daysWords, dosesOn, laterDose, timingOf } from "../timing/doses.ts";
 import { localTime } from "./dates.ts";
 import { classify, dueSpan } from "./due.ts";
@@ -874,6 +875,8 @@ async function today(db: Db, personId: string, now: Date): Promise<Today> {
     WHERE r.person_id = ${personId} AND ${isCurrent(kind, "r")}
       AND r.status = 'current' AND r.times IS NOT NULL
     ORDER BY r.rowid`.execute(db);
+  const day = localTime(now.toISOString()).slice(0, 10);
+  const logs = await latestLogs(db, personId, `${day}T00:00`, `${day}T23:59`);
   const doses: Today["doses"][number][] = [];
   let upcoming = false;
   for (const row of rows) {
@@ -881,16 +884,29 @@ async function today(db: Db, personId: string, now: Date): Promise<Today> {
     if (medicine.kind !== "medicine_use" || "problem" in medicine) continue;
     const timing = timingOf(row);
     for (const dose of dosesOn(timing, now)) {
+      const at = localTime(dose.toISOString());
+      const log = logs.get(
+        doseKey({ medicine_use_id: medicine.id, dose_at: at }),
+      );
       doses.push({
-        at: localTime(dose.toISOString()).slice(11),
+        at: at.slice(11),
         past: dose < now,
         medicine,
+        ...(log &&
+          log.state !== "cleared" && {
+            logged: {
+              state: log.state as "taken" | "skipped",
+              ...(log.taken_at !== null && { takenAt: log.taken_at }),
+              loggedAt: log.logged_at,
+              by: log.logged_by,
+            },
+          }),
       });
     }
     upcoming ||= laterDose(timing, now);
   }
   return {
-    day: localTime(now.toISOString()).slice(0, 10),
+    day,
     doses: doses.toSorted(
       (a, b) =>
         a.at.localeCompare(b.at) ||
