@@ -9,7 +9,7 @@
 // 10 minutes, one at a time.
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { AddressInfo, Socket } from "node:net";
-import { serve, type ServerType } from "@hono/node-server";
+import { serve, type HttpBindings, type ServerType } from "@hono/node-server";
 import type { Status } from "@rufi/contracts";
 import {
   OpenRequest,
@@ -21,7 +21,7 @@ import {
   type Pairing,
   type PhoneMe,
 } from "@rufi/contracts/remote";
-import { Hono, type Context } from "hono";
+import { Hono, type Context, type Next } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import type { KeyHolder, PairedApps } from "../core/paired/paired-apps.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
@@ -78,6 +78,9 @@ export interface Remote {
   /** Closes the door, its connections too; Serve's route stays. */
   close: () => Promise<void>;
 }
+
+/** A request on the door. */
+type DoorContext = Context<{ Bindings: HttpBindings }>;
 
 /** Who is asking: the app, and its session when not by its key. */
 interface Asker {
@@ -259,7 +262,7 @@ export function remote(deps: RemoteDeps): Remote {
   // Every other API route: the app's key, or the cookie and tab proof of
   // its session, read fresh on each request. A session's change needs the
   // door's own page as Origin.
-  door.use("/api/*", async (c, next) => {
+  door.use("/api/*", async (c: DoorContext, next: Next) => {
     const key = /^Bearer (\S+)$/.exec(c.req.header("authorization") ?? "")?.[1];
     let found: Asker | undefined;
     if (key !== undefined) {
@@ -312,7 +315,7 @@ export function remote(deps: RemoteDeps): Remote {
   });
 
   // Only the app's own person: another's is not there.
-  door.use("/api/people/:personId/*", async (c, next) => {
+  door.use("/api/people/:personId/*", async (c: DoorContext, next: Next) => {
     if (c.req.param("personId") !== asker(c).app.person.id) {
       throw new HttpError(404, "Not found.");
     }

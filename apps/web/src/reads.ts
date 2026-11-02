@@ -56,7 +56,7 @@ export const queries = new QueryClient({
  * It doesn't change while the page is open.
  */
 const me = () =>
-  queries.fetchQuery({
+  queries.query({
     queryKey: ["me"],
     queryFn: () => read(Me, "GET", "/api/me"),
     staleTime: Infinity,

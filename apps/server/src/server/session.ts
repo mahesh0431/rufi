@@ -70,8 +70,6 @@ export function sessions(now: () => number = Date.now) {
 /** A paired app's launch link works once, and only for this long. */
 const APP_LAUNCH_MS = 60_000;
 
-export type AppSessions = ReturnType<typeof appSessions>;
-
 /**
  * The remote door's sessions (docs/adr/0032): the same two proofs, each
  * launch and session owned by one paired app. Each launch makes a new
