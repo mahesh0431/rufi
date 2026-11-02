@@ -347,7 +347,11 @@ export function remote(deps: RemoteDeps): Remote {
     close: () =>
       inTurn(async () => {
         dropCode();
-        if (await unneeded()) await unserve();
+        // A record already closed (Rufi lost its lock) can't say: the next
+        // start removes the route then.
+        await (async () => {
+          if (await unneeded()) await unserve();
+        })().catch(() => undefined);
         await shut(true);
       }),
   };
