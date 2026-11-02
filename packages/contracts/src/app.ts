@@ -13,8 +13,9 @@ export const APPEARANCE_HEADER = "x-rufi-appearance";
 /**
  * One person's follow-ups that just became due or overdue, and medicines
  * whose dose time just came, as counts: the app shows each as a Mac notice.
- * No title or name ever goes in one. `at`: the medicines' time, when they
- * share one ('21:00').
+ * No title ever goes in one, and a medicine's name only when the person
+ * chose Which ones. `at`: the medicines' time, when they share one
+ * ('21:00'). Medicines come only when they ring on the Mac.
  */
 export const PersonNotices = Schema.Struct({
   personId: Schema.String,
@@ -22,6 +23,10 @@ export const PersonNotices = Schema.Struct({
   overdue: Schema.Int,
   medicines: Schema.Int,
   at: Schema.optionalKey(Schema.String),
+  /** With medicines: what the person chose a reminder to show. */
+  show: Schema.optionalKey(Schema.Literals(["time", "count", "names"])),
+  /** Only when they chose Which ones: each medicine told, as it reads. */
+  names: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 export type PersonNotices = typeof PersonNotices.Type;
 

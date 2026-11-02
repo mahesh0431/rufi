@@ -5,6 +5,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { PairedApp } from "@rufi/contracts/remote";
 import { v7 as uuid } from "uuid";
+import { ringOnNewIphone } from "../reminders/setting.ts";
 import type { Store } from "../store/database.ts";
 
 /** The data folder's id, made at the first pairing; a restored copy keeps it. */
@@ -26,8 +27,8 @@ export function pairedApps(store: Store, now: () => string) {
   return {
     /**
      * Pairs a new app for `personId`, in one transaction with the folder's
-     * id when it has none yet. Gives the key, the only time it exists
-     * outside the app.
+     * id when it has none yet, and with their reminders set to ring on it.
+     * Gives the key, the only time it exists outside the app.
      */
     add: async (personId: string, name: string) => {
       const key = randomBytes(32).toString("base64url");
@@ -49,6 +50,7 @@ export function pairedApps(store: Store, now: () => string) {
             paired_at: now(),
           })
           .execute();
+        await ringOnNewIphone(trx, personId);
         await trx
           .insertInto("settings")
           .values({ key: FOLDER_SETTING, value: randomUUID() })

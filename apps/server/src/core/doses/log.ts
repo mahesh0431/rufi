@@ -153,7 +153,13 @@ export function doseLog(store: Store, now: () => Date = () => new Date()) {
       }));
     },
 
-    /** Calls `listener` after each log stored for the person. */
+    /** Tells the person's listeners that what rings or shows changed. */
+    changed,
+
+    /**
+     * Calls `listener` after each log stored for the person, and when their
+     * reminder setting changes.
+     */
     subscribe: (personId: string, listener: () => void): (() => void) => {
       const set = listeners.get(personId) ?? new Set();
       set.add(listener);

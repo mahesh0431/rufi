@@ -380,6 +380,36 @@ describe("a paired app's key", () => {
     );
   });
 
+  it("sets where its person's reminders ring: their iPhone once paired, the Mac again after the last is unpaired, the iPhone when one is paired again", async () => {
+    const core = await start();
+    const api = await settings(core);
+    const ring = async () =>
+      (await api("GET", "/api/people/asha/reminders")).body["ring"];
+    expect(await ring()).toBe("mac");
+
+    let link = await pairingLink(api);
+    const first = (await pair(link.port, link.code)).body;
+    expect(await ring()).toBe("iphone");
+    // Both, as chosen; a second iPhone sets it back to the iPhone.
+    await api("PUT", "/api/people/asha/reminders", {
+      show: "count",
+      ring: "both",
+    });
+    expect(await ring()).toBe("both");
+    link = await pairingLink(api);
+    const second = (await pair(link.port, link.code)).body;
+    expect(await ring()).toBe("iphone");
+
+    for (const app of [first, second]) {
+      const id = (app["app"] as { id: string }).id;
+      await api("POST", `/api/paired-apps/${id}/unpair`);
+    }
+    expect(await ring()).toBe("mac");
+    expect(
+      (await api("GET", "/api/people/asha/reminders")).body["iphones"],
+    ).toEqual([]);
+  });
+
   it("opens the door again when Rufi starts with an app paired, on the same port", async () => {
     const { port, code } = await pairingLink(await settings(await start()));
     const key = String((await pair(port, code)).body["key"]);

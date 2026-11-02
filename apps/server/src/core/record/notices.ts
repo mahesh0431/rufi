@@ -4,13 +4,17 @@
 // overdue) and per due: a moved date is told again. A medicine with
 // reminders on is told its latest dose since the last one handled (or since
 // the save that last changed it), only within 60 minutes of it: never a
-// backlog (docs/adr/0031). The claim records what it tells in
-// follow_up_notices and medicine_notices, in one transaction with the
-// read, and gives back only counts per person: no titles, no names. The
+// backlog (docs/adr/0031). A dose is told on the Mac only when the
+// person's reminders ring there (the Mac, or both); one rung on their
+// iPhone is still handled, so the Mac never tells it later. The claim
+// records what it handles in follow_up_notices and medicine_notices, in one
+// transaction with the read, and gives back counts per person and what a
+// reminder shows: no titles, and a medicine's name only at Which ones. The
 // marker is committed before the app shows anything, so a crash in between
 // loses that notice; Needs you and Today still show it.
 import type { PersonNotices } from "@rufi/contracts/app";
 import { sql, type Kysely, type Transaction } from "kysely";
+import { remindersOf } from "../reminders/setting.ts";
 import type { Tables } from "../store/tables.ts";
 import { latestDose, timingOf } from "../timing/doses.ts";
 import { localTime } from "./dates.ts";
@@ -51,7 +55,14 @@ export function claimNotices(
       .execute();
     const people = new Map<
       string,
-      { due: number; overdue: number; medicines: number; at?: string }
+      {
+        due: number;
+        overdue: number;
+        medicines: number;
+        at?: string;
+        show?: "time" | "count" | "names";
+        names?: string[];
+      }
     >();
     const of = (personId: string) => {
       const counts = people.get(personId) ?? {
@@ -79,20 +90,32 @@ export function claimNotices(
         .execute();
       of(personId)[state] += 1;
     }
-    for (const { personId, at } of await claimDoses(trx, now)) {
+    const doses = await claimDoses(trx, now);
+    const settings = await remindersOf(trx, [
+      ...new Set(doses.map((dose) => dose.personId)),
+    ]);
+    for (const { personId, at, label } of doses) {
+      const setting = settings.get(personId);
+      // Rung on their iPhone only: handled, and not told here.
+      if (!setting || setting.ring === "iphone") continue;
       const counts = of(personId);
       counts.medicines += 1;
       const time = localTime(at.toISOString()).slice(11);
       // The time only when every dose told shares it.
       counts.at =
         counts.medicines === 1 || counts.at === time ? time : undefined;
+      counts.show = setting.show;
+      if (setting.show === "names")
+        counts.names = [...(counts.names ?? []), label];
     }
     return [...people]
       .toSorted(([a], [b]) => a.localeCompare(b))
-      .map(([personId, { at, ...counts }]) => ({
+      .map(([personId, { at, show, names, ...counts }]) => ({
         personId,
         ...counts,
         ...(at !== undefined && { at }),
+        ...(show !== undefined && { show }),
+        ...(names !== undefined && { names }),
       }));
   });
 }
@@ -105,7 +128,7 @@ export function claimNotices(
 async function claimDoses(
   trx: Transaction<Tables>,
   now: Date,
-): Promise<{ personId: string; at: Date }[]> {
+): Promise<{ personId: string; at: Date; label: string }[]> {
   const { rows } = await sql<Record<string, unknown>>`
     SELECT m.*, n.told,
       (SELECT o.created_at FROM record_changes c
@@ -118,7 +141,7 @@ async function claimDoses(
     WHERE m.removed = 0 AND m.status = 'current' AND m.remind = 1
       AND m.times IS NOT NULL
     ORDER BY m.person_id, m.rowid`.execute(trx);
-  const told: { personId: string; at: Date }[] = [];
+  const told: { personId: string; at: Date; label: string }[] = [];
   for (const row of rows) {
     const personId = String(row["person_id"]);
     const marker =
@@ -143,8 +166,18 @@ async function claimDoses(
           .doUpdateSet({ told: handled }),
       )
       .execute();
-    if (now.getTime() - dose.getTime() <= LATE_MS)
-      told.push({ personId, at: dose });
+    if (now.getTime() - dose.getTime() <= LATE_MS) {
+      const text = (name: string) =>
+        typeof row[name] === "string" ? (row[name] as string) : undefined;
+      // "Amoxicillin 500 mg · 1 capsule", as Today names it.
+      const label = [
+        [text("name"), text("strength")].filter(Boolean).join(" "),
+        text("amount"),
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      told.push({ personId, at: dose, label });
+    }
   }
   return told;
 }

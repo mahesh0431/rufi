@@ -19,6 +19,8 @@ import { DeleteDocument, FixItem } from "@rufi/contracts/documents";
 import {
   LogDose,
   SaveProfile,
+  SaveReminders,
+  type Reminders,
   type Overview,
   type Profile,
 } from "@rufi/contracts/record";
@@ -87,8 +89,13 @@ export interface PersonDeps {
   items: DraftItems;
   /** A document's pages as the reader saw them. */
   pages: Pages;
-  /** What the person said happened to their doses. */
-  doses: Pick<DoseLog, "add" | "list" | "subscribe">;
+  /** What the person said happened to their doses; `changed` tells their screens. */
+  doses: Pick<DoseLog, "add" | "list" | "subscribe" | "changed">;
+  /** The person's reminder setting, as it applies, and their choices. */
+  reminders: {
+    read: (personId: string) => Promise<Reminders>;
+    save: (personId: string, choice: SaveReminders) => Promise<void>;
+  };
   log: Log;
   /** Updates a screen may fall behind by before its stream is closed. */
   behindMax?: number;
@@ -279,6 +286,19 @@ export function personRoutes(
         c.req.query("medicine"),
       ),
     });
+  });
+  // The person's reminder setting: what a medicine reminder shows and where
+  // it rings. A setting, not the record; a change tells their open screens,
+  // so a phone schedules again.
+  const remindersPath = "/api/people/:personId/reminders";
+  app.get(remindersPath, async (c) =>
+    c.json(await deps.reminders.read((await person(c)).id)),
+  );
+  app.put(remindersPath, async (c) => {
+    const { id } = await person(c);
+    await deps.reminders.save(id, await body(c, SaveReminders));
+    deps.doses.changed(id);
+    return c.json(await deps.reminders.read(id));
   });
   // The person's follow-ups, in the Follow-ups page's groups.
   app.get("/api/people/:personId/follow-ups", async (c) =>

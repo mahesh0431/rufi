@@ -365,6 +365,11 @@ export interface Tables {
     operation_id: string | null;
     removed_by: string | null;
   };
+  reminder_settings: {
+    person_id: string;
+    show: string | null;
+    ring: string | null;
+  };
   reports: {
     id: string;
     person_id: string;

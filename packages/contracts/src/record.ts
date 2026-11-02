@@ -537,6 +537,33 @@ export type DoseLogRow = typeof DoseLogRow.Type;
 export const Doses = Schema.Struct({ doses: Schema.Array(DoseLogRow) });
 export type Doses = typeof Doses.Type;
 
+/** What a medicine reminder shows: the time, how many, or which ones. */
+export const ReminderShow = Schema.Literals(["time", "count", "names"]);
+export type ReminderShow = typeof ReminderShow.Type;
+/** Where a person's medicine reminders ring. */
+export const ReminderRing = Schema.Literals(["iphone", "mac", "both"]);
+export type ReminderRing = typeof ReminderRing.Type;
+
+/**
+ * A person's reminder setting, as it applies now: `ring` is the Mac while
+ * no iPhone is paired for them, whatever was chosen; `iphones` are theirs.
+ */
+export const Reminders = Schema.Struct({
+  show: ReminderShow,
+  ring: ReminderRing,
+  iphones: Schema.Array(
+    Schema.Struct({ id: Schema.String, name: Schema.String }),
+  ),
+});
+export type Reminders = typeof Reminders.Type;
+
+/** A change to a person's reminder setting: both choices, as picked. */
+export const SaveReminders = Schema.Struct({
+  show: ReminderShow,
+  ring: ReminderRing,
+});
+export type SaveReminders = typeof SaveReminders.Type;
+
 /**
  * Today on the Medicines page: each current medicine's doses on the Mac's
  * local day, by time, then name. A past dose is only earlier today. A
