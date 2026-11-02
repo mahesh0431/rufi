@@ -11,7 +11,8 @@ Rufi is in early development and not ready for use yet. These pages describe wha
 7. [Visit brief](visit-brief.md): ask for a brief before a doctor's visit, what it has, its sources, and copying it.
 8. [Your data and the AI](your-data-and-the-ai.md): where your records are, what the AI sends, what Rufi keeps of your chat, and what Rufi logs.
 9. [Device data](device-data.md): what your devices measure, what Rufi keeps of it and for how long, and what Settings says about it.
-10. [Backups and export](backups-and-export.md): Rufi's backups with your documents, how to restore one, and how to take all your data out.
-11. [What Rufi's AI will and won't do](safety.md): the rules Rufi gives its AI, which you can rely on.
+10. [iPhone](iphone.md): pair Rufi on your iPhone with your Mac through Tailscale, and unpair it.
+11. [Backups and export](backups-and-export.md): Rufi's backups with your documents, how to restore one, and how to take all your data out.
+12. [What Rufi's AI will and won't do](safety.md): the rules Rufi gives its AI, which you can rely on.
 
 The words Rufi uses are in the [glossary](../../GLOSSARY.md).
