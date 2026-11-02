@@ -26,6 +26,7 @@ import {
   type Instructions,
 } from "@rufi/contracts/instructions";
 import { KeepValues, type DeviceData } from "@rufi/contracts/devices";
+import { StartPairing } from "@rufi/contracts/remote";
 import { createReadStream } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { Readable } from "node:stream";
@@ -52,6 +53,7 @@ import { errorCode } from "../platform/logs.ts";
 import type { AiFiles } from "./files.ts";
 import { body, HttpError, shared, type App } from "./http.ts";
 import { personRoutes, type PersonDeps } from "./person-routes.ts";
+import type { Remote } from "./remote.ts";
 import { screen } from "./screens.ts";
 import { sameSecret, type Sessions } from "./session.ts";
 import type { SignInFlow } from "./signin.ts";
@@ -81,6 +83,8 @@ export interface ApiDeps extends PersonDeps {
   exportZip: (signal: AbortSignal) => Promise<MadeExport>;
   /** The pictures and pages the AI made, that replies show. */
   files: AiFiles;
+  /** The remote door: paired apps and pairing (Settings › iPhone). */
+  remote: Pick<Remote, "state" | "pair" | "cancel" | "unpair">;
   /** The secret `pnpm start` shows to get a fresh link while Rufi runs. */
   launcher: string;
   /** A fresh single-use link that opens Rufi. */
@@ -386,6 +390,24 @@ export function api(deps: ApiDeps): App {
   app.post("/api/backups", async (c) => {
     await deps.backups.backUp().catch(() => undefined);
     return c.json(backups());
+  });
+
+  // Settings › iPhone: the paired apps, and pairing one for a person's record.
+  app.get("/api/paired-apps", async (c) => c.json(await deps.remote.state()));
+  app.post("/api/paired-apps/pairing", async (c) => {
+    const { personId } = await body(c, StartPairing);
+    await deps.remote.pair(personId);
+    return c.json(await deps.remote.state());
+  });
+  app.delete("/api/paired-apps/pairing", async (c) => {
+    await deps.remote.cancel();
+    return c.json(await deps.remote.state());
+  });
+  app.post("/api/paired-apps/:appId/unpair", async (c) => {
+    if (!(await deps.remote.unpair(c.req.param("appId")))) {
+      throw new HttpError(404, "That app isn't paired any more.");
+    }
+    return c.json(await deps.remote.state());
   });
 
   const folder = (): DataFolder => ({
