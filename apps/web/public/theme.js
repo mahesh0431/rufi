@@ -10,7 +10,9 @@
   const root = document.documentElement;
   const dark = matchMedia("(prefers-color-scheme: dark)");
   const apply = () => {
-    const chosen = root.dataset["appearance"];
+    // In Rufi's iPhone app, always the iPhone's own (src/phone.ts).
+    const chosen =
+      root.dataset["place"] === "phone" ? "system" : root.dataset["appearance"];
     const theme =
       chosen === "light" || chosen === "dark"
         ? chosen

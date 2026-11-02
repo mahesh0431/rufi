@@ -9,6 +9,9 @@
 /* The dog's motion (src/dog.tsx); it stops under reduced motion. */
 @import "@rufi/brand/mark/motion.css";
 
+/* `phone:`, only in Rufi's iPhone app (src/phone.ts). */
+@custom-variant phone (&:where([data-place="phone"] *));
+
 /* OpenUI's text in Rufi's: its typography tokens, as OpenUI's theme sets
    them (its ThemeProvider can't run under the screens' CSP), at the chat's
    size and in its font, so a reply reads like the messages and Activity
@@ -173,6 +176,12 @@ html {
 }
 :root[data-text-size="larger"] {
   font-size: calc(16px * 17 / 13);
+}
+/* In Rufi's iPhone app (src/phone.ts), the iPhone's Text Size instead:
+   body text is its body size (17 px by default), sent by the app as
+   --ios-body; the Mac's Text size doesn't count there. */
+:root[data-place="phone"] {
+  font-size: calc(var(--ios-body, 17px) * 16 / 13);
 }
 
 /* The chat page's sides: 2.5rem in a page 640 px wide or more (the Mac's
