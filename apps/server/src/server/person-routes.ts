@@ -17,6 +17,7 @@ import {
 import type { Brief } from "@rufi/contracts/briefs";
 import { DeleteDocument, FixItem } from "@rufi/contracts/documents";
 import {
+  LogDose,
   SaveProfile,
   type Overview,
   type Profile,
@@ -34,6 +35,7 @@ import {
   type Deletions,
 } from "../core/documents/delete.ts";
 import { NotADocument, type Documents } from "../core/documents/documents.ts";
+import { IdTaken, NoSuchMedicine, type DoseLog } from "../core/doses/log.ts";
 import { StaleFix, type DraftItems } from "../core/documents/items.ts";
 import type { Pages } from "../core/documents/pages.ts";
 import type { Readings } from "../core/documents/reading.ts";
@@ -85,6 +87,8 @@ export interface PersonDeps {
   items: DraftItems;
   /** A document's pages as the reader saw them. */
   pages: Pages;
+  /** What the person said happened to their doses. */
+  doses: Pick<DoseLog, "add" | "list" | "subscribe">;
   log: Log;
   /** Updates a screen may fall behind by before its stream is closed. */
   behindMax?: number;
@@ -112,6 +116,18 @@ const SEND_REFUSAL = `A message needs some text or something added to it, and ca
 const PING_MS = 15_000;
 /** Updates a screen may fall behind by before its stream is closed; it reconnects. */
 const BEHIND_MAX = 1_000;
+/** The most days one read of the dose log covers. */
+const DOSE_DAYS_MAX = 62;
+const DAY_MS = 86_400_000;
+
+/** A real calendar day 'YYYY-MM-DD' as its UTC midnight; undefined if not one. */
+function dayOf(text: string | undefined): number | undefined {
+  if (text === undefined || !/^\d{4}-\d{2}-\d{2}$/.test(text)) return undefined;
+  const at = Date.parse(`${text}T00:00:00Z`);
+  return Number.isNaN(at) || new Date(at).toISOString().slice(0, 10) !== text
+    ? undefined
+    : at;
+}
 
 /**
  * Registers a person's routes on `app`, behind whatever checks `app`
@@ -217,6 +233,53 @@ export function personRoutes(
   app.get("/api/people/:personId/today", async (c) =>
     c.json(await deps.record.today((await person(c)).id)),
   );
+  // The person's dose log (docs/adr/0033): a log as it came, stored once
+  // for its id, and the logs of the doses on some days. Logs made here are
+  // the Mac's.
+  const dosesPath = "/api/people/:personId/doses";
+  app.post(dosesPath, async (c) => {
+    const { id } = await person(c);
+    const log = await body(c, LogDose);
+    if (log.takenAt !== undefined && log.state !== "taken") {
+      throw new HttpError(400, "Only a dose taken has when it was taken.");
+    }
+    try {
+      const answer = await deps.doses.add(id, log, "mac");
+      return c.json({ id: log.id }, answer === "added" ? 201 : 200);
+    } catch (error) {
+      if (error instanceof NoSuchMedicine) {
+        throw new HttpError(404, error.message);
+      }
+      if (error instanceof IdTaken) throw new HttpError(409, error.message);
+      throw error;
+    }
+  });
+  app.get(dosesPath, async (c) => {
+    const { id } = await person(c);
+    const from = c.req.query("from");
+    const to = c.req.query("to");
+    const first = dayOf(from);
+    const last = dayOf(to);
+    if (
+      first === undefined ||
+      last === undefined ||
+      last < first ||
+      (last - first) / DAY_MS + 1 > DOSE_DAYS_MAX
+    ) {
+      throw new HttpError(
+        400,
+        `Give from and to as days, at most ${String(DOSE_DAYS_MAX)} days apart.`,
+      );
+    }
+    return c.json({
+      doses: await deps.doses.list(
+        id,
+        from as string,
+        to as string,
+        c.req.query("medicine"),
+      ),
+    });
+  });
   // The person's follow-ups, in the Follow-ups page's groups.
   app.get("/api/people/:personId/follow-ups", async (c) =>
     c.json(await deps.record.followUps((await person(c)).id)),
@@ -602,6 +665,9 @@ export function personRoutes(
       const unagents = deps.agents.subscribe(found.id, () => {
         push({ type: "agents" });
       });
+      const undoses = deps.doses.subscribe(found.personId, () => {
+        push({ type: "doses" });
+      });
       out.onAbort(() => {
         state.open = false;
         wake?.();
@@ -637,6 +703,7 @@ export function personRoutes(
         unwatch();
         unread();
         unagents();
+        undoses();
       }
     });
   });

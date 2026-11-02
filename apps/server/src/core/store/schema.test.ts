@@ -309,6 +309,28 @@ describe("schema", () => {
       }).toThrow("FOREIGN KEY constraint failed");
     });
 
+    it("rejects a dose log for one person on another person's medicine", () => {
+      insert("medicine_uses", {
+        id: "mu-amma",
+        person_id: "amma",
+        name: "Amoxicillin",
+      });
+      const log = (id: string, person: string) => ({
+        id,
+        person_id: person,
+        medicine_use_id: "mu-amma",
+        dose_at: "2026-11-02T21:00",
+        state: "taken",
+        logged_at: now,
+        received_at: now,
+        logged_by: "mac",
+      });
+      insert("dose_log", log("d-amma", "amma"));
+      expect(() => {
+        insert("dose_log", log("d-nanna", "nanna"));
+      }).toThrow("FOREIGN KEY constraint failed");
+    });
+
     it("keeps device data with its source's person: a batch, a value and its link", () => {
       insert("device_sources", {
         id: "src-a",

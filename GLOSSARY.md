@@ -93,8 +93,16 @@ How to take a medicine, exactly as the paper or the person said it: "1-0-1 after
 _Avoid_: schedule, sig, dosage instructions
 
 **Today**:
-The top of the Medicines page: each current medicine's doses on the Mac's day, by time. A past time is only "earlier today", never taken or missed.
+The top of the Medicines page: each current medicine's doses on the Mac's day, by time, each with what the person logged. A past time is only "earlier today".
 _Avoid_: schedule, plan, checklist
+
+**Dose**:
+One medicine at one of its times on one local day: Metformin at 21:00 on 2 Nov. Worked out from the medicine's times, never stored as a row of its own.
+_Avoid_: intake, administration
+
+**Dose log**:
+What the person said happened to a dose: taken, skipped, or an earlier log taken back (Undo). Kept as it came, outside the record, and never changed; the latest log decides a dose's state. A dose with no log is **not logged**, never missed. Logged on Today, or by telling Rufi AI. A medicine's **Doses** shows its log.
+_Avoid_: adherence, compliance, missed dose, intake record
 
 **Visit**:
 One care event that happened, with its kind in the person's words, such as a clinic, dental or lab visit, a phone call or a stay in hospital (admitted and discharged). It keeps the doctor's words as written, the medicines proposed included, and its paper's page as its source; the records saved from it cite it. A visit to come is a follow-up. A **prescription** is a kind of document: the paper from a visit, not a record of its own.

@@ -38,6 +38,7 @@ import type { FolderSource } from "../core/store/data-folder.ts";
 import { openRecord } from "../core/store/install.ts";
 import { claimNotices } from "../core/record/notices.ts";
 import { recordViews, waiting } from "../core/record/views.ts";
+import { doseLog } from "../core/doses/log.ts";
 import { changeProfile, readProfile } from "../core/record/profile.ts";
 import { localTime } from "../core/record/dates.ts";
 import { pages } from "../core/documents/pages.ts";
@@ -357,6 +358,11 @@ export const startCore = (options: CoreOptions) =>
       return { codex, claude };
     };
     const pageService = pages(reader ?? writer, home, gate);
+    // The Mac's local time, for when follow-ups are due.
+    const clock = () =>
+      options.now === undefined ? new Date() : new Date(options.now());
+    // What the person said happened to their doses: Today, Rufi AI.
+    const doses = doseLog(writer, clock);
     const chat = yield* Effect.acquireRelease(
       Effect.sync(() =>
         openChat({
@@ -409,6 +415,7 @@ export const startCore = (options: CoreOptions) =>
                   readings.changed(personId);
                 },
               },
+              doses,
             ),
           },
           log,
@@ -448,9 +455,6 @@ export const startCore = (options: CoreOptions) =>
     // The token is in the fragment: the browser never sends it in a request.
     const launchUrl = () =>
       `http://127.0.0.1:${String(port)}/#launch=${access.launch()}`;
-    // The Mac's local time, for when follow-ups are due.
-    const clock = () =>
-      options.now === undefined ? new Date() : new Date(options.now());
     const record = recordViews(reader ?? writer, clock);
     const personDocuments = documents(
       writer,
@@ -528,6 +532,7 @@ export const startCore = (options: CoreOptions) =>
       agents: agentSystem.logs,
       items: draftItems(writer, readings.changed),
       pages: pageService,
+      doses,
       files: aiFiles({
         folder: aiSandbox(home).folder,
         generated: generatedImages(home),

@@ -18,6 +18,7 @@ import {
   setReader,
   sortDocuments,
 } from "./documents.ts";
+import { logDose, logDoseFor, readDoses } from "./doses.ts";
 import { showFace } from "./face.ts";
 import { getOverview } from "./overview.ts";
 import {
@@ -54,6 +55,7 @@ import {
 import type { SortAnswer, SortInput, SortScope } from "../documents/sorting.ts";
 import { dismissItems as dismissDrafts } from "../record/items.ts";
 import { saveChanges as saveToRecord } from "../record/save.ts";
+import type { DoseLog } from "../doses/log.ts";
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
 
@@ -68,6 +70,8 @@ export const TOOLS: readonly Tool[] = [
   saveReading,
   setReader,
   createBrief,
+  readDoses,
+  logDose,
   showFace,
   startAgent,
   agentStatus,
@@ -171,6 +175,8 @@ export function rufiCaller(
     /** After a reading is kept. */
     done: (personId: string) => void;
   },
+  /** The dose log, which log_dose adds to. */
+  doses?: Pick<DoseLog, "add">,
 ) {
   return (scope: TurnScope) => {
     const { chat, ref } = scope;
@@ -285,6 +291,17 @@ export function rufiCaller(
           kept();
           reading?.done(chat.personId);
           return set;
+        },
+        logDose: (input, callId) => {
+          if (!doses) throw new Refusal("Rufi can't log a dose here.");
+          return logDoseFor(
+            doses,
+            reader,
+            chat.personId,
+            input,
+            callId,
+            transcripts.now(),
+          );
         },
         brief: async (input, callId) => {
           const written = await transcripts.briefWithLine(
