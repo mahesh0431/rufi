@@ -20,6 +20,7 @@ import {
   FolderOpen,
   KeyRound,
   MessageCircle,
+  Smartphone,
   Palette,
   SlidersHorizontal,
   UserRound,
@@ -30,6 +31,7 @@ import { download, read } from "./api.ts";
 import { AdvancedOptions } from "./advanced.tsx";
 import { AppearanceChoice, ColourChoice } from "./appearance.tsx";
 import { DeviceDataSection } from "./devices.tsx";
+import { IPhoneSection } from "./iphone.tsx";
 import { ProfileHistory, ProfileSection } from "./profile.tsx";
 import { SettingChoice } from "./choice.tsx";
 import { printedTime } from "./dates.ts";
@@ -64,6 +66,7 @@ const NAMES: Record<Group, { name: string; icon: Icon }> = {
   profile: { name: "Profile", icon: UserRound },
   appearance: { name: "Appearance", icon: Palette },
   chat: { name: "Chat", icon: MessageCircle },
+  iphone: { name: "iPhone", icon: Smartphone },
   data: { name: "Data", icon: Database },
   advanced: { name: "Advanced", icon: SlidersHorizontal },
 };
@@ -307,6 +310,8 @@ function GroupOptions({ group }: { group: Group }) {
           <RestartSection />
         </>
       );
+    case "iphone":
+      return <IPhoneSection />;
     case "data":
       return (
         <>

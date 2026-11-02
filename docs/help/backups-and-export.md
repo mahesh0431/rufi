@@ -92,6 +92,7 @@ What the restored copy has:
 - A file that wasn't sorted when the backup was made shows **Not sorted yet** on the Documents page. It isn't sorted by itself: click **Ask Rufi** (see [Documents](documents.md#when-a-file-isnt-sorted)).
 - Your next message starts a new thread for the AI with the chat's last messages.
 - Which follow-up notices you already had, as of the backup. A notice the Rufi app showed after the backup was made can show once more (see [Follow-ups](follow-ups.md#notices-on-your-mac)).
+- No paired iPhones: each must pair again in Settings › iPhone (see [iPhone](iphone.md)).
 
 If Rufi refuses:
 

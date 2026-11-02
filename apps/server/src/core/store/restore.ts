@@ -74,7 +74,7 @@ export async function restore(
     checkDatabase(staged);
     // Only the new folder's copy is upgraded; the backup stays as it is.
     migrate(staged);
-    holdQueue(staged);
+    settleRestored(staged);
     const files = join(staging, "files");
     await mkdir(files, { mode: 0o700 });
     for (const { id, size } of filesIn(staged)) {
@@ -114,15 +114,17 @@ export async function restore(
  * back held, for the person to send again or remove; a hand-over the backup
  * caught after the AI may have got it counts as sent (server/rufi-ai.ts),
  * and one caught before (while Rufi read its files) waits held too
- * (core/chat/queue.ts).
+ * (core/chat/queue.ts). No paired app's key opens the restored record: each
+ * is revoked, and phones pair again (docs/adr/0032).
  */
-function holdQueue(path: string): void {
+function settleRestored(path: string): void {
   const db = new DatabaseSync(path);
   try {
     db.exec(`
       BEGIN;
       UPDATE chat_queue SET state = 'waiting', held = NULL, hold_id = NULL WHERE state = 'handing_over' AND sent_as IS NULL;
       UPDATE chat_queue SET held = 'restored', held_text = NULL, hold_id = NULL WHERE state = 'waiting';
+      UPDATE paired_apps SET revoked_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE revoked_at IS NULL;
       COMMIT;
     `);
   } finally {

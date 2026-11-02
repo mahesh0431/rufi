@@ -223,4 +223,34 @@ describe("a restore of a backup made while a reply read its files", () => {
       db.close();
     }
   });
+  it("revokes every paired app's key: phones pair again", async () => {
+    const home = join(root, "paired");
+    await mkdir(home);
+    const store = openWritable(databasePath(home));
+    store.db.exec(`
+      INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional');
+      INSERT INTO paired_apps (id, person_id, kind, name, key_sha256, paired_at, revoked_at) VALUES
+        ('app-1', 'asha', 'iphone', 'Asha''s iPhone', 'hash-1', '2026-10-01T09:00:00Z', NULL),
+        ('app-0', 'asha', 'iphone', 'Asha''s iPhone', 'hash-0', '2026-09-01T09:00:00Z', '2026-09-30T09:00:00Z');
+    `);
+    store.close();
+    const made = await makeBackup(home, new Date("2026-10-08T09:14:03Z"));
+    const target = join(root, "restored");
+
+    await restore(join(backupsPath(home), made.name), target);
+
+    const db = new DatabaseSync(databasePath(target), { readOnly: true });
+    try {
+      const apps = db
+        .prepare("SELECT id, revoked_at FROM paired_apps ORDER BY id")
+        .all() as { id: string; revoked_at: string | null }[];
+      expect(apps[0]).toEqual({
+        id: "app-0",
+        revoked_at: "2026-09-30T09:00:00Z",
+      });
+      expect(apps[1]?.revoked_at).not.toBeNull();
+    } finally {
+      db.close();
+    }
+  });
 });
