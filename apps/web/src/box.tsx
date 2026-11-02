@@ -337,14 +337,31 @@ export function Box({
             </ul>
           )}
           <div className="flex">{field}</div>
-          <div className="mt-1 flex items-center gap-1.5">
-            <AttachButton personId={person.id} />
-            {onPhone && <ScanButton personId={person.id} />}
-            <span className="flex-1" />
-            {choice}
-            <ContextMeter live={live} />
-            {working ? whileWorking : sendButton}
-          </div>
+          {onPhone ? (
+            // On a phone, Send stays on screen: the model chip gives
+            // up its width first (it takes no room when the row wraps),
+            // then the meter and Send go to a second line, Send at its end
+            // (and to a line of its own at the largest sizes).
+            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+              <AttachButton personId={person.id} />
+              <ScanButton personId={person.id} />
+              <div className="flex min-w-0 grow basis-0 justify-end">
+                {choice}
+              </div>
+              <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
+                <ContextMeter live={live} />
+                {working ? whileWorking : sendButton}
+              </div>
+            </div>
+          ) : (
+            <div className="mt-1 flex items-center gap-1.5">
+              <AttachButton personId={person.id} />
+              <span className="flex-1" />
+              {choice}
+              <ContextMeter live={live} />
+              {working ? whileWorking : sendButton}
+            </div>
+          )}
         </div>
       )}
       {size === "bar"
