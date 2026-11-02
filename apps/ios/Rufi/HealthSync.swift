@@ -110,6 +110,7 @@ final class HealthSync {
     private let unpaired: () -> Void
     private let pause: (Duration) async throws -> Void
     private var run: Task<Void, Never>?
+    @ObservationIgnored private var background = UIBackgroundTaskIdentifier.invalid
 
     init(reader: any HealthReading, door: any BatchSending, memory: HealthMemory,
          unpaired: @escaping () -> Void,
@@ -127,19 +128,27 @@ final class HealthSync {
     func sync() -> Task<Void, Never> {
         if let run { return run }
         // Leaving Rufi mid-run: iOS gives a little time for the batch in
-        // flight; when it runs out, the run stops as Stop does.
-        let background = UIApplication.shared.beginBackgroundTask(withName: "Sync") { [weak self] in
+        // flight; when it runs out, the run stops as Stop does, and the time
+        // is handed back at once, as iOS asks.
+        background = UIApplication.shared.beginBackgroundTask(withName: "Sync") { [weak self] in
             self?.run?.cancel()
+            self?.endBackground()
         }
         UIApplication.shared.isIdleTimerDisabled = true
         let started = Task {
             await sending()
             UIApplication.shared.isIdleTimerDisabled = false
-            UIApplication.shared.endBackgroundTask(background)
+            endBackground()
             run = nil
         }
         run = started
         return started
+    }
+
+    private func endBackground() {
+        guard background != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(background)
+        background = .invalid
     }
 
     /// Stops the run and waits until it has settled: the batch in flight
