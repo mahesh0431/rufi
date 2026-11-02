@@ -135,12 +135,16 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
   await box.fill("Make a brief for my visit on Friday");
   await box.press("Enter");
 
-  // Rufi's own line, which opens the brief.
+  // Rufi's own line, which opens the brief. It comes at the end of the
+  // chat's first reply: Codex starts, opens the thread, makes the call. That
+  // takes a fifth of a second alone, and up to ten seconds with the whole
+  // suite running side by side.
   const line = chat
     .getByRole("log", { name: "Messages" })
     .locator("[data-entry]", { hasText: "records cited" });
   await expect(line).toHaveText(
     /^RufiVisit brief · Made \d{1,2} \w{3} \d{4} · 4 records citedOpen$/,
+    { timeout: 20_000 },
   );
   await accessible(page);
   await line.getByRole("link", { name: /^Open Visit brief/ }).click();
