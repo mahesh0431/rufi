@@ -60,6 +60,7 @@ const EVENTS = new Set([
   "remote.refused",
   "remote.unpaired",
   "remote.failed",
+  "remote.batch",
 ] as const);
 
 export type LogEvent = typeof EVENTS extends Set<infer E> ? E : never;
@@ -125,6 +126,12 @@ const FIELDS: Record<string, (value: unknown) => boolean> = {
       )),
   status: (value) =>
     value === "completed" || value === "failed" || value === "interrupted",
+  // The door's answer to a paired app's batch (server/remote.ts).
+  answer: (value) =>
+    value === "got_it" ||
+    value === "already_got" ||
+    value === "refused" ||
+    value === "couldnt_store",
   code: isCode,
   error: isCode,
   ms: (value) => typeof value === "number" && Number.isFinite(value),

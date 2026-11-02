@@ -21,6 +21,11 @@ import { TailscaleProblem, type Tailscale } from "./tailscale.ts";
 
 const FAKE = join(import.meta.dirname, "../../tests/fake-codex.ts");
 const DOCUMENTS = join(import.meta.dirname, "../../tests/fixtures/documents");
+/** A batch as Rufi on the iPhone sends it. */
+const PHONE_BATCH = join(
+  import.meta.dirname,
+  "../../tests/fixtures/device/phone-batch.json",
+);
 const NAME = "asha-mbp.tail1234.ts.net";
 
 let home: string;
@@ -304,32 +309,46 @@ function stream(
 }
 
 /**
- * The answer to a body over 1 MB. It is sent and then held open: the door
- * refuses as soon as it has read past the limit, and closes, so nothing may
- * still be writing then.
+ * The answer to a body over a route's limit (1 MB unless said). It is sent
+ * and then held open: the door refuses as soon as it has read past the
+ * limit, and closes, so nothing may still be writing then.
  */
-function tooLarge(port: number): Promise<number> {
+function tooLarge(
+  port: number,
+  { path = "/api/pair", bytes = 1024 * 1024, key = "" } = {},
+): Promise<Reply> {
   return new Promise((resolve, reject) => {
     const req = httpRequest(
       {
         host: "127.0.0.1",
         port,
         method: "POST",
-        path: "/api/pair",
+        path,
         headers: {
           host: `${NAME}:${String(port)}`,
           "content-type": "application/json",
+          ...(key !== "" && { authorization: `Bearer ${key}` }),
         },
         agent: false,
       },
       (res) => {
-        resolve(res.statusCode ?? 0);
-        res.resume();
-        req.destroy();
+        let text = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk: string) => (text += chunk));
+        res.on("end", () => {
+          resolve({
+            status: res.statusCode ?? 0,
+            headers: res.headers,
+            body: text.startsWith("{")
+              ? (JSON.parse(text) as Record<string, unknown>)
+              : {},
+          });
+          req.destroy();
+        });
       },
     );
     req.on("error", reject);
-    req.write(`{"code":"${"x".repeat(1024 * 1024 + 1)}`);
+    req.write(`{"code":"${"x".repeat(bytes + 1)}`);
   });
 }
 
@@ -541,6 +560,89 @@ describe("a paired app's key", () => {
   });
 });
 
+describe("Apple Health batches through the door", () => {
+  it("are stored as they came under the key's person, in its app's one source, and converted at once", async () => {
+    const core = await start();
+    const api = await settings(core);
+    const asha = await paired(api, "asha");
+    const ravi = await paired(api, "ravi");
+    const batch = await readFile(PHONE_BATCH, "utf8");
+    // Near the 4 MB a batch may be: past the 1 MB other requests may.
+    const large = JSON.stringify({
+      batch: "asha-large",
+      values: [
+        {
+          id: "A5E1C0DE-0004-4000-8000-000000000004",
+          type: "HKQuantityTypeIdentifierHeartRate",
+          value: 66,
+          unit: "count/min",
+          start: "2026-10-22T01:30:00.000Z",
+          end: "2026-10-22T01:30:00.000Z",
+          metadata: { HKMetadataKeyExternalUUID: "x".repeat(3 * 1024 * 1024) },
+        },
+      ],
+      deleted: [],
+    });
+    const send = (key: string, body: string) =>
+      door(asha.port, "POST", "/api/batches", { key }, body);
+
+    for (const [key, body, answer] of [
+      [asha.key, batch, "got_it"],
+      [asha.key, batch, "already_got"],
+      [asha.key, large, "got_it"],
+      [ravi.key, batch, "got_it"],
+    ] as const) {
+      const sent = await send(key, body);
+      expect(sent.status).toBe(200);
+      expect(sent.body).toEqual({ answer });
+    }
+
+    // Converted without waiting for the converter's idle minute.
+    const sources = async () =>
+      (await api("GET", "/api/devices")).body["sources"] as {
+        name: string;
+        person: { id: string };
+        values: number;
+        waiting: number;
+      }[];
+    const end = Date.now() + 5_000;
+    while ((await sources()).some((one) => one.waiting > 0)) {
+      if (Date.now() > end) throw new Error("not converted");
+      await sleep(50);
+    }
+    expect(
+      (await sources()).map(({ name, person, values, waiting }) => ({
+        name,
+        person: person.id,
+        values,
+        waiting,
+      })),
+    ).toEqual([
+      { name: "Asha's iPhone", person: "asha", values: 4, waiting: 0 },
+      { name: "Asha's iPhone", person: "ravi", values: 3, waiting: 0 },
+    ]);
+  });
+
+  it("refuse a batch over 4 MB before reading it whole, and store nothing", async () => {
+    const core = await start();
+    const api = await settings(core);
+    const { port, key } = await paired(api);
+
+    const refused = await tooLarge(port, {
+      path: "/api/batches",
+      bytes: 4 * 1024 * 1024,
+      key,
+    });
+
+    expect(refused.status).toBe(413);
+    expect(refused.body).toMatchObject({
+      answer: "refused",
+      problems: ["too_big"],
+    });
+    expect((await api("GET", "/api/devices")).body["sources"]).toEqual([]);
+  });
+});
+
 describe("the door", () => {
   it("answers only by the Mac's tailnet name, with the shared protections, and none of the Mac's own routes", async () => {
     const core = await start();
@@ -571,7 +673,7 @@ describe("the door", () => {
       "frame-ancestors 'none'",
     );
 
-    expect(await tooLarge(port)).toBe(413);
+    expect((await tooLarge(port)).status).toBe(413);
 
     for (const [method, path] of [
       ["GET", "/api/people"],

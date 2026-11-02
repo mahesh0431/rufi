@@ -8,6 +8,7 @@ import { Result, Schema } from "effect";
 import type { Context, Hono, MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { except } from "hono/combine";
+import { MAX_BATCH_BYTES } from "../core/devices/devices.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 
 /** A listener of Rufi's API. */
@@ -24,9 +25,22 @@ const APP_CSP =
 const MAX_ADD_BYTES = 256 * 1024 * 1024;
 /** The address documents are added at; it takes files, so a larger body. */
 const ADD_PATH = /^\/api\/people\/[^/]+\/documents$/;
+/** The address a paired app sends device batches to (remote.ts): up to 4 MB. */
+const BATCHES_PATH = "/api/batches";
 
 export class HttpError extends Error {
-  readonly status: 400 | 401 | 403 | 404 | 409 | 410 | 413 | 500 | 502;
+  readonly status:
+    | 400
+    | 401
+    | 403
+    | 404
+    | 409
+    | 410
+    | 413
+    | 422
+    | 500
+    | 502
+    | 503;
   /** More of the answer, beside the error. */
   readonly more: Record<string, unknown>;
   constructor(
@@ -68,11 +82,15 @@ export function shared(
   });
   app.use("*", guard);
 
-  const limit = (maxSize: number, refusal: string) =>
+  const limit = (
+    maxSize: number,
+    refusal: string,
+    more: Record<string, unknown> = {},
+  ) =>
     bodyLimit({
       maxSize,
       onError: () => {
-        throw new HttpError(413, refusal);
+        throw new HttpError(413, refusal, more);
       },
     });
   const requests = limit(1024 * 1024, "That request is too large.");
@@ -80,14 +98,23 @@ export function shared(
     MAX_ADD_BYTES,
     "Those files are too large to add at once (256 MB at most). Add fewer at a time.",
   );
-  // An add of documents has its own, larger limit (`adds`, on its route).
+  const batches = limit(
+    MAX_BATCH_BYTES,
+    "This batch is larger than Rufi takes (4 MB). Update Rufi on your iPhone (or on your Mac) so they match.",
+    { answer: "refused", problems: ["too_big"] },
+  );
+  // An add of documents has its own, larger limit (`adds`, on its route);
+  // a batch has its own.
   app.use(
     "/api/*",
     except(
-      (c) => c.req.method === "POST" && ADD_PATH.test(c.req.path),
+      (c) =>
+        c.req.method === "POST" &&
+        (ADD_PATH.test(c.req.path) || c.req.path === BATCHES_PATH),
       requests,
     ),
   );
+  app.post(BATCHES_PATH, batches);
   return { adds };
 }
 
