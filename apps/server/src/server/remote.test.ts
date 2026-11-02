@@ -518,34 +518,50 @@ describe("a paired app's key", () => {
     );
   });
 
-  it("keeps reminders ringing on the Mac when an iPhone is paired, until the person chooses; with no iPhone left, the Mac again", async () => {
+  it("rings reminders on the iPhone once the person's first is paired; another keeps their choice; with no iPhone left, the Mac again", async () => {
     const core = await start();
     const api = await settings(core);
     const ring = async () =>
       (await api("GET", "/api/people/asha/reminders")).body["ring"];
+    const unpair = (app: Record<string, unknown>) =>
+      api(
+        "POST",
+        `/api/paired-apps/${(app["app"] as { id: string }).id}/unpair`,
+      );
+    await api("PUT", "/api/people/asha/reminders", {
+      show: "names",
+      ring: "mac",
+    });
     expect(await ring()).toBe("mac");
 
     let link = await pairingLink(api);
     const first = (await pair(link.port, link.code)).body;
-    expect(await ring()).toBe("mac");
+    expect((await api("GET", "/api/people/asha/reminders")).body).toMatchObject(
+      {
+        show: "names",
+        ring: "iphone",
+      },
+    );
     // Both, as chosen; a second iPhone keeps the choice.
     await api("PUT", "/api/people/asha/reminders", {
-      show: "count",
+      show: "names",
       ring: "both",
     });
-    expect(await ring()).toBe("both");
     link = await pairingLink(api);
     const second = (await pair(link.port, link.code)).body;
     expect(await ring()).toBe("both");
+    expect((await api("GET", "/api/people/ravi/reminders")).body["ring"]).toBe(
+      "mac",
+    );
 
-    for (const app of [first, second]) {
-      const id = (app["app"] as { id: string }).id;
-      await api("POST", `/api/paired-apps/${id}/unpair`);
-    }
+    await unpair(first);
+    expect(await ring()).toBe("both");
+    await unpair(second);
     expect(await ring()).toBe("mac");
-    expect(
-      (await api("GET", "/api/people/asha/reminders")).body["iphones"],
-    ).toEqual([]);
+    // Paired again: the iPhone again, not the choice from before.
+    link = await pairingLink(api);
+    await pair(link.port, link.code);
+    expect(await ring()).toBe("iphone");
   });
 
   it("opens the door again when Rufi starts with an app paired, on the same port", async () => {
@@ -714,6 +730,7 @@ describe("a person's routes through the door", () => {
     for (const path of [
       "/api/people/asha/overview",
       "/api/people/asha/reminders",
+      "/api/people/asha/reminders/plan?from=2026-11-02&days=8",
     ]) {
       expect((await door(port, "GET", path, { key })).status).toBe(200);
     }
@@ -739,6 +756,11 @@ describe("a person's routes through the door", () => {
           },
         ],
         ["PUT", "/api/people/ravi/reminders", { show: "names", ring: "mac" }],
+        [
+          "GET",
+          "/api/people/ravi/reminders/plan?from=2026-11-02&days=8",
+          undefined,
+        ],
       ] as const) {
         expect((await door(port, method, path, by, body)).status).toBe(404);
       }

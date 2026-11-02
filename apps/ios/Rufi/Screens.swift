@@ -24,6 +24,8 @@ final class Screens: NSObject {
     var onPage: (String, String) -> Void = { _, _ in }
     /// The session ended, or the page couldn't load.
     var onEnded: () -> Void = {}
+    /// Doses, medicines or the reminder setting may have changed.
+    var onRefresh: () -> Void = {}
     var onUnreachable: () -> Void = {}
     /// Scan: the page asks for the document camera.
     var onScan: () -> Void = {}
@@ -136,6 +138,8 @@ final class Screens: NSObject {
             }
         case "ended":
             onEnded()
+        case "refresh":
+            onRefresh()
         case "scan":
             onScan()
         case "original":

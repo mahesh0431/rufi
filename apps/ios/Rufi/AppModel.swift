@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UserNotifications
 
 /// Where the app is: pairing, the setup after it, Rufi open, or unpaired by
 /// the Mac.
@@ -18,6 +19,11 @@ final class AppModel {
     let lock = Lock()
     /// Apple Health sync for the pairing; none while unpaired.
     private(set) var health: HealthSync?
+    /// The reminders of the pairing; none while unpaired.
+    private(set) var reminders: Reminders?
+    /// The last pairing's reminders being removed and its sync settling: a
+    /// new pairing waits for it.
+    private var stopping: Task<Void, Never>?
     /// Rufi's scene is active.
     var active = true
     /// Rufi is on screen and unlocked: what it shows can be seen.
@@ -32,6 +38,7 @@ final class AppModel {
         // Copies of originals left from a Rufi that ended while showing one.
         Originals.shown.deleteAll()
         if let pairing = Pairing.saved(), let key = Keychain.key() {
+            reminders = newReminders(pairing, key)
             health = newHealth(pairing, key)
             // Paired, but the lock's offer wasn't answered: it comes again.
             stage = UserDefaults.standard.bool(forKey: "setup.done") ? .open(shell(pairing, key)) : .paired(pairing)
@@ -40,6 +47,7 @@ final class AppModel {
 
     /// Pairs with the link's code; the one line to show when it didn't.
     func pair(_ text: String) async -> String? {
+        await stopping?.value
         guard let link = PairingLink(text) else {
             return "That isn't a Rufi pairing link. Copy it again from Rufi on your Mac."
         }
@@ -49,6 +57,7 @@ final class AppModel {
             let pairing = Pairing(origin: link.origin, app: paired.app.id, person: paired.person,
                                   mac: paired.mac, folder: paired.folder)
             pairing.save()
+            reminders = newReminders(pairing, paired.key)
             health = newHealth(pairing, paired.key)
             stage = .paired(pairing)
             return nil
@@ -63,19 +72,38 @@ final class AppModel {
         }
     }
 
-    /// After the setup, with the lock on or Not Now chosen: Rufi opens.
+    /// After the setup, with the lock and the reminders answered: Rufi
+    /// opens, and its reminders are set.
     func finishSetup() {
         guard case let .paired(pairing) = stage, let key = Keychain.key() else { return }
         UserDefaults.standard.set(true, forKey: "setup.done")
         stage = .open(shell(pairing, key))
+        Task { await refresh() }
     }
 
-    /// Unpairs here, on the Mac too when it answers. A sync settles first.
+    /// Asks iOS to let Rufi ring reminders, once.
+    func allowNotifications() async {
+        _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+    }
+
+    /// Brings the reminders in line with the Mac's plan.
+    func refresh() async {
+        await reminders?.refresh()
+    }
+
+    /// A reminder was tapped: Medicines, after the lock.
+    func openMedicines() {
+        if case let .open(shell) = stage { Task { await shell.show(.medicines) } }
+    }
+
+    /// Unpairs here, on the Mac too when it answers; its reminders go. A
+    /// sync settles first, so none of its batches meets the unpaired key.
     func unpair() async {
         await health?.end()
         if let pairing = Pairing.saved(), let key = Keychain.key() {
             try? await Door(origin: pairing.origin, key: key).unpair()
         }
+        await reminders?.stop()
         forget()
         stage = .pairing
     }
@@ -86,6 +114,18 @@ final class AppModel {
 
     private func shell(_ pairing: Pairing, _ key: String) -> Shell {
         Shell(pairing: pairing, key: key, seen: { [weak self] in self?.seen ?? false }) { [weak self] in
+            Task { await self?.refresh() }
+        } unpaired: { [weak self] in
+            self?.wasUnpaired()
+        }
+    }
+
+    private func newReminders(_ pairing: Pairing, _ key: String) -> Reminders {
+        let door = Door(origin: pairing.origin, key: key)
+        let person = pairing.person.id
+        return Reminders { (from: String) async throws(Door.Problem) -> ReminderPlan in
+            try await door.plan(for: person, from: from)
+        } unpaired: { [weak self] in
             self?.wasUnpaired()
         }
     }
@@ -97,11 +137,19 @@ final class AppModel {
         }
     }
 
-    /// The Mac unpaired this iPhone: a sync settles, then its bookmarks,
-    /// key and pairing go.
+    /// The Mac unpaired this iPhone: its key and pairing go; its reminders
+    /// are removed, then its sync settles and its bookmarks go. A new
+    /// pairing waits for both.
     private func wasUnpaired() {
+        let reminders = reminders
         let health = health
-        Task { await health?.end() }
+        // Told twice (the reminders and a sync both heard it): after the first.
+        let before = stopping
+        stopping = Task {
+            await before?.value
+            await reminders?.stop()
+            await health?.end()
+        }
         forget()
         stage = .unpaired
     }
@@ -111,6 +159,7 @@ final class AppModel {
         Pairing.forget()
         UserDefaults.standard.removeObject(forKey: "setup.done")
         lock.forget()
+        reminders = nil
         health = nil
     }
 }

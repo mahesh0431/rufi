@@ -158,24 +158,29 @@ export function latestDose(
   return dose;
 }
 
+/** The first dose at or after `from`; undefined when none comes. */
+export function nextDose(timing: Timing, from: Date): Date | undefined {
+  const found = read(timing);
+  if (!found) return undefined;
+  const start = found.first && found.first > from ? found.first : from;
+  // The first day with a dose from then: that day's may all be earlier.
+  let next = found.rule.after(calendarDay(start), true);
+  let dose: Date | undefined;
+  for (let tries = 0; next && !dose && tries < 2; tries++) {
+    dose = dosesAt(next, found.times).find((d) => d >= start);
+    if (!dose) next = found.rule.after(next, false);
+  }
+  return dose && (!found.last || dose <= found.last) ? dose : undefined;
+}
+
 /** Whether a dose falls after the local day `day`. */
 export function laterDose(timing: Timing, day: Date): boolean {
-  const found = read(timing);
-  if (!found) return false;
   const tomorrow = new Date(
     day.getFullYear(),
     day.getMonth(),
     day.getDate() + 1,
   );
-  const from = found.first && found.first > tomorrow ? found.first : tomorrow;
-  // The first day with a dose from then: that day's may all be earlier.
-  let next = found.rule.after(calendarDay(from), true);
-  let dose: Date | undefined;
-  for (let tries = 0; next && !dose && tries < 2; tries++) {
-    dose = dosesAt(next, found.times).find((d) => d >= from);
-    if (!dose) next = found.rule.after(next, false);
-  }
-  return dose !== undefined && (!found.last || dose <= found.last);
+  return nextDose(timing, tomorrow) !== undefined;
 }
 
 /**

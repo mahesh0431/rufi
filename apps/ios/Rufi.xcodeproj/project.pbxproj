@@ -311,6 +311,7 @@
 				ENABLE_PREVIEWS = YES;
 				CODE_SIGN_ENTITLEMENTS = Rufi.entitlements;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Rufi-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Rufi;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Rufi uses the camera to scan the pairing code in Rufi on your Mac, and the papers you add to the chat.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Rufi uses Face ID to open your health record.";
@@ -344,6 +345,7 @@
 				ENABLE_PREVIEWS = YES;
 				CODE_SIGN_ENTITLEMENTS = Rufi.entitlements;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Rufi-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Rufi;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Rufi uses the camera to scan the pairing code in Rufi on your Mac, and the papers you add to the chat.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Rufi uses Face ID to open your health record.";

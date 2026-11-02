@@ -565,6 +565,33 @@ export const SaveReminders = Schema.Struct({
 export type SaveReminders = typeof SaveReminders.Type;
 
 /**
+ * A person's reminder plan: the doses with reminders on for the calendar
+ * days a paired app asked for, in its own calendar, grouped by local time
+ * ('YYYY-MM-DDTHH:MM'), then the first time after those days any of them is
+ * due. `logged`: the medicines whose dose at that time is already taken or
+ * skipped. The app rings what is left, where `ring` says.
+ */
+export const ReminderPlan = Schema.Struct({
+  show: ReminderShow,
+  ring: ReminderRing,
+  doses: Schema.Array(
+    Schema.Struct({
+      at: Schema.String,
+      medicines: Schema.Array(
+        Schema.Struct({
+          id: Schema.String,
+          name: Schema.String,
+          strength: Schema.optionalKey(Schema.String),
+          amount: Schema.optionalKey(Schema.String),
+        }),
+      ),
+      logged: Schema.Array(Schema.String),
+    }),
+  ),
+});
+export type ReminderPlan = typeof ReminderPlan.Type;
+
+/**
  * Today on the Medicines page: each current medicine's doses on the Mac's
  * local day, by time, then name. A past dose is only earlier today. A
  * dose's `logged` is its latest log, taken or skipped; with none, or an

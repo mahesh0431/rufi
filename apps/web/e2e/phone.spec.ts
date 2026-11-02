@@ -113,6 +113,42 @@ test("in the iPhone app, signed out on the Mac, the chat says to sign in there a
   await expect(page.getByRole("button", { name: "Sign in" })).toHaveCount(0);
 });
 
+test("in the iPhone app, a dose logged on the Mac tells the app to refresh its reminders", async ({
+  page,
+  context,
+  rufi,
+}) => {
+  const noon = new Date(2026, 10, 2, 12);
+  await rufi.family(
+    `UPDATE medicine_uses SET times = '["08:00","21:00"]', remind = 1 WHERE id = 'med-a1'`,
+  );
+  await rufi.start({ now: () => noon.toISOString() });
+  await asPhone(page);
+  const told = () => page.evaluate(() => window.told);
+  await page.goto(rufi.link());
+  // Connected: whatever changed while it was away, the app refreshes.
+  await expect.poll(told).toContainEqual({ type: "refresh" });
+  await page.evaluate(() => {
+    window.told = [];
+  });
+
+  const mac = await context.newPage();
+  await mac.clock.setFixedTime(noon);
+  await mac.goto(rufi.link());
+  await mac
+    .getByRole("complementary")
+    .getByRole("link", { name: /^Medicines/ })
+    .click();
+  await mac
+    .getByRole("region", { name: /^Today/ })
+    .getByRole("listitem")
+    .filter({ hasText: "21:00" })
+    .getByRole("button", { name: "Taken" })
+    .click();
+
+  await expect.poll(told).toContainEqual({ type: "refresh" });
+});
+
 test("in the iPhone app, View original asks the app to show the document's file", async ({
   page,
   rufi,

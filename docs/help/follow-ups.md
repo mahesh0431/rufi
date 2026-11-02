@@ -89,7 +89,7 @@ When you don't get a notice:
 
 ### Medicine reminders
 
-A medicine with reminders on gets a notice at each of its times, on the Mac when that person's reminders ring on the **Mac** or **Both** (see [Reminders](record.md#reminders)). What it shows is the person's choice there; at **How many**, the start:
+A medicine with reminders on gets a notice at each of its times, on the Mac when that person's reminders ring on the **Mac** or **Both** (see [Reminders](record.md#reminders)), and on their iPhone at **iPhone** or **Both** (see [Medicine reminders on the iPhone](iphone.md#medicine-reminders-on-the-iphone)). Follow-up notices are on the Mac only. What it shows is the person's choice there; at **How many**, the start:
 
 - **Rufi** · 1 medicine at 21:00
 - **Rufi** · 2 medicines at 08:00

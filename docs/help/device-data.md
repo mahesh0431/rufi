@@ -8,7 +8,7 @@ Rufi on your iPhone sends it (see [Apple Health from your iPhone](#apple-health-
 
 Pair Rufi on your iPhone with your Mac first (see [iPhone](iphone.md)). Then, on the iPhone, open **This iPhone** (the dog at the top right of each tab) › **Apple Health**.
 
-1. Tap **Connect Apple Health**. Apple's own sheet asks which heart data Rufi may read: heart rate and resting heart rate. Rufi only reads; it never writes to Apple Health. You can change what you allowed later in Settings › Health › Data Access & Devices › Rufi.
+1. Tap **Connect Apple Health**. Apple's own sheet asks which heart data Rufi may read: heart rate and resting heart rate. Rufi only reads; it never writes to Apple Health. You can change what you allowed later in the Health app: tap your picture, then Apps › Rufi.
 2. The page shows your latest resting heart rate and heart rate, from Apple Health, with when each was measured: **today**, a time, or the date when it isn't from today. During a workout Apple Health may keep many readings as one value: the number shown is the last reading, with its own time.
 3. Tap **Sync for Asha** (with the name of the person the iPhone was paired for). Rufi sends everything Apple Health lets it read the first time, then only what is new since. The line under it counts while it sends, then says **Last sent 09:14 · 5,752 readings**, or **Last checked 09:14 · nothing new**. Keep Rufi open meanwhile; the first sync of years of heart data can take a while.
 
@@ -16,7 +16,7 @@ Pair Rufi on your iPhone with your Mac first (see [iPhone](iphone.md)). Then, on
 
 What a sync sends goes into this iPhone's own device source on the Mac, made at its first sync and named as the iPhone, under the person the iPhone was paired for. Rufi on the Mac stores each part as it came and converts it in the background. Values from your Apple Watch that two iPhones both send are kept once.
 
-**Only recent history.** If you allowed Rufi to read only recent history in Apple's sheet, the page says from when, for example **Apple Health lets Rufi read heart rate from 2 Aug 2026.** After you allow more in Settings › Health › Data Access & Devices › Rufi, tap **Read History Again**: Rufi reads everything Apple Health now lets it read and sends it again. What your Mac has stays, and it keeps each value once.
+**Only recent history.** If you allowed Rufi to read only recent history in Apple's sheet, the page says from when, for example **Apple Health lets Rufi read heart rate from 2 Aug 2026.** After you allow more in the Health app (tap your picture, then Apps › Rufi), tap **Read History Again**: Rufi reads everything Apple Health now lets it read and sends it again. What your Mac has stays, and it keeps each value once.
 
 When a sync stops, the page says why in one line:
 

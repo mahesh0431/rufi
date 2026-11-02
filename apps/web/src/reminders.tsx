@@ -29,11 +29,7 @@ const SHOWS: readonly [ReminderShow, string, string][] = [
 
 /** Where they ring; the iPhone's line names the person's iPhones. */
 const rings = (setting: Reminders): [ReminderRing, string, string][] => [
-  [
-    "iphone",
-    "iPhone",
-    `${setting.iphones.map((app) => app.name).join(", ")}: rings once Rufi's iPhone app is ready`,
-  ],
+  ["iphone", "iPhone", setting.iphones.map((app) => app.name).join(", ")],
   ["mac", "Mac", "While the Rufi app is open"],
   ["both", "Both", "A backup when the iPhone can't"],
 ];

@@ -102,7 +102,7 @@ struct HealthView: View {
 
     private var numbersFooter: String {
         if numbers.isEmpty {
-            return "No heart data from Apple Health. To allow it: Settings › Health › Data Access & Devices › Rufi."
+            return "No heart data from Apple Health. To allow it: in the Health app, tap your picture, then Apps › Rufi."
         }
         let limited = HeartType.allCases.compactMap { type in
             earliest[type].map {
@@ -110,7 +110,7 @@ struct HealthView: View {
             }
         }
         if limited.isEmpty { return "From Apple Health." }
-        return (["From Apple Health."] + limited + ["To allow more: Settings › Health › Data Access & Devices › Rufi."])
+        return (["From Apple Health."] + limited + ["To allow more: in the Health app, tap your picture, then Apps › Rufi."])
             .joined(separator: " ")
     }
 

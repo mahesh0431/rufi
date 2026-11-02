@@ -257,6 +257,10 @@ _Avoid_: alert, push
 A medicine's notices at its times, on or off for each medicine, set in the chat. Where they ring (iPhone, Mac or both) and what a notice shows (the time, how many, or which ones) is the person's **reminder setting**, on the Medicines page. Follow-ups have notices, not reminders.
 _Avoid_: alarm, alert
 
+**Reminder plan**:
+The doses with reminders on for the days a paired iPhone asks for, worked out on the Mac and rung by the iPhone as its own notices, one per time. **Set until** is the last dose time the iPhone has set; a **renewal notice** rings a minute after it.
+_Avoid_: schedule, sync
+
 **Visit brief**:
 A dated summary the AI writes for a doctor's visit from the saved record only, with the records it rests on as its sources. It never changes; when a later save changes the record, its page says so.
 _Avoid_: handoff, summary, report

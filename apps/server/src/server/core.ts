@@ -39,6 +39,7 @@ import { openRecord } from "../core/store/install.ts";
 import { claimNotices } from "../core/record/notices.ts";
 import { recordViews, waiting } from "../core/record/views.ts";
 import { doseLog } from "../core/doses/log.ts";
+import { reminderPlan } from "../core/reminders/plan.ts";
 import { remindersOf, saveReminders } from "../core/reminders/setting.ts";
 import { changeProfile, readProfile } from "../core/record/profile.ts";
 import { localTime } from "../core/record/dates.ts";
@@ -515,6 +516,8 @@ export const startCore = (options: CoreOptions) =>
         },
         save: (personId, choice) =>
           saveReminders(writer.query, personId, choice),
+        plan: (personId, from, days) =>
+          reminderPlan((reader ?? writer).query, personId, from, days),
       },
       log,
       ...(options.behindMax !== undefined && { behindMax: options.behindMax }),

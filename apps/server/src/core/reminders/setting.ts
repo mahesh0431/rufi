@@ -1,9 +1,10 @@
 // Each person's reminder setting (docs/adr/0012, amended): what a medicine
 // reminder shows and where it rings. Only the person's choices are kept,
 // in reminder_settings; what applies is worked out here. Reminders ring on
-// the Mac until the person chooses otherwise, and always while no iPhone is
-// paired for them, when the choice isn't shown; so unpairing the last one,
-// or a restore that revokes every key, needs no write.
+// the Mac while no iPhone is paired for them, when the choice isn't shown;
+// pairing their first iPhone chooses the iPhone (../paired/paired-apps.ts),
+// and unpairing the last one, or a restore that revokes every key, needs no
+// write.
 import type {
   ReminderRing,
   ReminderShow,
