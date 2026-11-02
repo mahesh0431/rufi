@@ -380,7 +380,7 @@ describe("a paired app's key", () => {
     );
   });
 
-  it("sets where its person's reminders ring: their iPhone once paired, the Mac again after the last is unpaired, the iPhone when one is paired again", async () => {
+  it("keeps reminders ringing on the Mac when an iPhone is paired, until the person chooses; with no iPhone left, the Mac again", async () => {
     const core = await start();
     const api = await settings(core);
     const ring = async () =>
@@ -389,8 +389,8 @@ describe("a paired app's key", () => {
 
     let link = await pairingLink(api);
     const first = (await pair(link.port, link.code)).body;
-    expect(await ring()).toBe("iphone");
-    // Both, as chosen; a second iPhone sets it back to the iPhone.
+    expect(await ring()).toBe("mac");
+    // Both, as chosen; a second iPhone keeps the choice.
     await api("PUT", "/api/people/asha/reminders", {
       show: "count",
       ring: "both",
@@ -398,7 +398,7 @@ describe("a paired app's key", () => {
     expect(await ring()).toBe("both");
     link = await pairingLink(api);
     const second = (await pair(link.port, link.code)).body;
-    expect(await ring()).toBe("iphone");
+    expect(await ring()).toBe("both");
 
     for (const app of [first, second]) {
       const id = (app["app"] as { id: string }).id;

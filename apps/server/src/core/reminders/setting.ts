@@ -1,9 +1,9 @@
 // Each person's reminder setting (docs/adr/0031, amended): what a medicine
 // reminder shows and where it rings. Only the person's choices are kept,
-// in reminder_settings; what applies is worked out here. With no iPhone
-// paired for the person, reminders ring on the Mac, whatever was chosen,
-// so unpairing the last one, or a restore that revokes every key, needs no
-// write. Pairing one sets it back to the iPhone (core/paired).
+// in reminder_settings; what applies is worked out here. Reminders ring on
+// the Mac until the person chooses otherwise, and always while no iPhone is
+// paired for them, when the choice isn't shown; so unpairing the last one,
+// or a restore that revokes every key, needs no write.
 import type {
   ReminderRing,
   ReminderShow,
@@ -13,8 +13,9 @@ import type {
 import type { Kysely } from "kysely";
 import type { Tables } from "../store/tables.ts";
 
-/** Before the person chooses: How many. */
+/** Before the person chooses: How many, on the Mac. */
 const SHOW: ReminderShow = "count";
+const RING: ReminderRing = "mac";
 
 /** Each person's iPhones paired and not revoked, the first paired first. */
 async function iphonesOf(db: Kysely<Tables>, personIds?: readonly string[]) {
@@ -53,7 +54,7 @@ export async function remindersOf(
       const ring: ReminderRing =
         theirs.length === 0
           ? "mac"
-          : ((choice?.ring as ReminderRing | null) ?? "iphone");
+          : ((choice?.ring as ReminderRing | null) ?? RING);
       return [
         personId,
         {
@@ -76,17 +77,5 @@ export async function saveReminders(
     .insertInto("reminder_settings")
     .values({ person_id: personId, show, ring })
     .onConflict((oc) => oc.column("person_id").doUpdateSet({ show, ring }))
-    .execute();
-}
-
-/** A new iPhone for the person: their reminders ring there again. */
-export async function ringOnNewIphone(
-  db: Kysely<Tables>,
-  personId: string,
-): Promise<void> {
-  await db
-    .updateTable("reminder_settings")
-    .set({ ring: null })
-    .where("person_id", "=", personId)
     .execute();
 }

@@ -37,15 +37,14 @@ test("keeps what a reminder shows as picked, and where it rings once an iPhone i
     .analyze();
   expect(violations.map((violation) => violation.id)).toEqual([]);
 
-  // Asha pairs her iPhone, from Settings on the Mac; pairing sets her
-  // reminders to ring on it.
+  // Asha pairs her iPhone, from Settings on the Mac; her reminders still
+  // ring on the Mac until she chooses.
   await rufi.stop();
   const store = openWritable(databasePath(rufi.home));
   try {
     store.db
       .exec(`INSERT INTO paired_apps (id, person_id, kind, name, key_sha256, paired_at)
-      VALUES ('app-1', 'asha', 'iphone', 'Asha''s iPhone', 'k1', '2026-11-02T10:00:00Z');
-      UPDATE reminder_settings SET ring = NULL WHERE person_id = 'asha';`);
+      VALUES ('app-1', 'asha', 'iphone', 'Asha''s iPhone', 'k1', '2026-11-02T10:00:00Z');`);
   } finally {
     store.close();
   }
@@ -54,7 +53,7 @@ test("keeps what a reminder shows as picked, and where it rings once an iPhone i
   await page.getByRole("button", { name: "Reminders" }).click();
   await expect(choice(page, "Which ones")).toBeChecked();
   await expect(choice(page, "iPhone")).toContainText("Asha's iPhone");
-  await expect(choice(page, "iPhone")).toBeChecked();
+  await expect(choice(page, "Mac")).toBeChecked();
   await choice(page, "Both").click();
   await page.reload();
   await page.getByRole("button", { name: "Reminders" }).click();

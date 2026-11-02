@@ -261,10 +261,11 @@ describe("medicine reminders", () => {
       saved,
     );
     medicine("ravi", "r1", course, saved);
-    // Asha paired her iPhone: her reminders ring there.
+    // Asha paired her iPhone and chose to have her reminders ring there.
     store.db
       .exec(`INSERT INTO paired_apps (id, person_id, kind, name, key_sha256, paired_at)
-      VALUES ('app-1', 'asha', 'iphone', 'Asha''s iPhone', 'k1', '2026-11-01T10:00:00Z')`);
+      VALUES ('app-1', 'asha', 'iphone', 'Asha''s iPhone', 'k1', '2026-11-01T10:00:00Z');
+      INSERT INTO reminder_settings (person_id, show, ring) VALUES ('asha', NULL, 'iphone')`);
     expect(await claim(minute(2026, 11, 1, 21, 0))).toEqual([
       {
         personId: "ravi",
@@ -277,7 +278,7 @@ describe("medicine reminders", () => {
     ]);
     // Both, and which ones: the next dose rings on the Mac too, with names.
     store.db.exec(
-      "INSERT INTO reminder_settings (person_id, show, ring) VALUES ('asha', 'names', 'both'), ('ravi', 'time', NULL)",
+      "UPDATE reminder_settings SET show = 'names', ring = 'both' WHERE person_id = 'asha'; INSERT INTO reminder_settings (person_id, show, ring) VALUES ('ravi', 'time', NULL)",
     );
     expect(await claim(minute(2026, 11, 2, 8, 0))).toEqual([
       {
