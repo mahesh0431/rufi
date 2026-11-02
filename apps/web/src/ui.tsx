@@ -55,6 +55,60 @@ type Look = NonNullable<VariantProps<typeof buttonLook>["look"]>;
 /** The one icon size, before a label or alone. */
 export const ICON = 16;
 
+/*
+ * A row in a page narrower than 640 px (a phone; each page is a container):
+ * its name and its button on the first line, then RowBreak, then its other
+ * parts on one line, a dot between them (laterParts). On the Mac's wider
+ * page the same parts are the row's grid columns.
+ */
+export const NARROW_ROW =
+  "@max-[640px]:flex @max-[640px]:flex-wrap @max-[640px]:items-center @max-[640px]:gap-x-1.5 @max-[640px]:gap-y-0.5";
+/** The row's name, first: it takes the first line's room. */
+export const NARROW_FIRST = "@max-[640px]:min-w-0 @max-[640px]:flex-1";
+/** What ends the first line, such as Ask Rufi. */
+export const NARROW_END = "@max-[640px]:order-1";
+/**
+ * In a stacked row, the dot after a part that another follows: it stays
+ * with that part, so a wrapped line never starts with one.
+ */
+export const DOT = "@max-[640px]:after:ml-1.5 @max-[640px]:after:content-['·']";
+
+/**
+ * A row's own control that isn't a button look (its name, a value's date,
+ * a link to what it is about), on a touch screen (a coarse pointer): at
+ * least 44 × 44 px, Apple's smallest touch target, its text where it was.
+ * A button centres its text in the room itself; a link takes TOUCH_LINK.
+ */
+export const TOUCH = "pointer-coarse:min-h-[44px] pointer-coarse:min-w-[44px]";
+export const TOUCH_LINK = `${TOUCH} pointer-coarse:inline-flex pointer-coarse:items-center`;
+
+/** Ends a stacked row's first line; nothing on a wider page. */
+export function RowBreak() {
+  return (
+    <span
+      aria-hidden
+      className="hidden @max-[640px]:order-2 @max-[640px]:block @max-[640px]:basis-full"
+    />
+  );
+}
+
+/**
+ * Each of a row's later parts, by its classes in a stacked row: after the
+ * first line, a dot after each but the last shown, an empty one hidden.
+ */
+export function laterParts<const T extends readonly unknown[]>(
+  parts: T,
+): { [K in keyof T]: string } {
+  const empty = (part: unknown) =>
+    part === undefined || part === null || part === "" || part === false;
+  const last = parts.findLastIndex((part) => !empty(part));
+  return parts.map((part, index) =>
+    empty(part)
+      ? "@max-[640px]:hidden"
+      : `@max-[640px]:order-3 ${index < last ? DOT : ""}`,
+  ) as { [K in keyof T]: string };
+}
+
 /**
  * A button with a label. `busy`: what it is doing ("Backing up…"), in place
  * of the label, with a spinner; it can't be pressed again meanwhile.
