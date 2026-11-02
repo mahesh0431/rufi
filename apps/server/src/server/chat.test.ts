@@ -2136,6 +2136,8 @@ describe("the chat, on the scripted Codex", () => {
             },
           ],
         },
+        // Its done message wakes the helper, its first turn ended.
+        last: ["second:"],
       },
     });
     const c = await newChat();
@@ -2282,6 +2284,7 @@ describe("the chat, on the scripted Codex", () => {
         },
         // Each turn ends with it, the helper's too, and no answer text.
         unstreamed: { text: "", questions: [question] },
+        last: ["helper:"],
       },
     });
     const c = await newChat();
@@ -2361,6 +2364,7 @@ describe("the chat, on the scripted Codex", () => {
             },
           ],
         },
+        last: ["reader:"],
       },
     });
     const c = await newChat();
@@ -2822,6 +2826,7 @@ describe("the chat, on the scripted Codex", () => {
             "Read stopped.pdf": [saves([1, 2])],
             "Reading stopped.pdf (": [sorts("doc-stopped", [1, 2])],
           },
+          last: ["Read stopped.pdf"],
         },
       });
       const c = await newChat();
@@ -2875,7 +2880,13 @@ describe("the chat, on the scripted Codex", () => {
     });
     const c = await newChat();
     await say(c, "Ask two helpers");
-    await until(async () => (await transcript(c.id)).turns.length > 1);
+    await until(() =>
+      Promise.resolve(
+        agentRows(
+          "SELECT 1 FROM queue WHERE about = 'done' AND state = 'delivered'",
+        ).length === 2,
+      ),
+    );
     await settled(c.id);
     // Each went to Rufi AI: in a reply it gave by itself, or steered in.
     expect(
@@ -3423,6 +3434,7 @@ describe("the chat, on the scripted Codex", () => {
             },
           ],
         },
+        last: ["Read the March report."],
       },
     });
     const c = await newChat();
@@ -3740,8 +3752,14 @@ describe("the chat, on the scripted Codex", () => {
     const c = await newChat();
     await say(c, "Ask a helper");
     const helper = ownCall("call-start");
-    // Its result wakes Rufi AI, which replies.
-    await ended(c.id, 2);
+    // Its result reaches Rufi AI: in a reply it gives by itself, or steered in.
+    await until(() =>
+      Promise.resolve(
+        agentRows(
+          `SELECT 1 FROM queue WHERE sender = '${helper}' AND about = 'done' AND state = 'delivered'`,
+        ).length === 1,
+      ),
+    );
     await settled(c.id);
     const [row] = agentRows(
       `SELECT provider, model, result FROM agents WHERE id = '${helper}'`,

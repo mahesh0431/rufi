@@ -66,6 +66,12 @@ export interface Scenario {
   answerLate?: string[];
   /** Methods the fake holds, while the file `file` exists, before it answers. */
   held?: { methods: string[]; file: string };
+  /**
+   * Turns whose text starts with one of these answer, after their calls,
+   * only once no other thread runs a turn: a helper that ends after the
+   * reply that started it, its message then waking a reply of its own.
+   */
+  last?: string[];
   /** How long after a turn starts Codex shows the user's message (at once). */
   userMessageMs?: number;
   /** Feature flags as Codex reports them, over what config.toml asked for. */
@@ -584,6 +590,12 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
       answered: request.method,
       reply: await askRufi(request.method, request.params),
     });
+  }
+  if (scenario.last?.some((words) => text.startsWith(words))) {
+    const others = () =>
+      [...threads.values()].some((other) => other !== thread && other.running);
+    while (others()) await sleep(20);
+    if (thread.running?.turnId !== turnId) return;
   }
   const reasoning =
     scenario.reasoning ?? (text.includes("think") ? THINKING : undefined);
