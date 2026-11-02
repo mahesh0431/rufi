@@ -152,8 +152,11 @@ nonisolated struct Door: Sendable {
         }
         // A Mac whose Rufi doesn't take batches yet.
         if (response as? HTTPURLResponse)?.statusCode == 404 { throw .mismatch }
+        // A refusal says why (unpaired, couldn't store, refused); only an
+        // answer the app can't read is a mismatch.
+        let accepted = try Self.taken(data, response)
         struct Answer: Decodable { let answer: String }
-        switch (try? JSONDecoder().decode(Answer.self, from: try Self.taken(data, response)))?.answer {
+        switch (try? JSONDecoder().decode(Answer.self, from: accepted))?.answer {
         case "got_it": return .gotIt
         case "already_got": return .alreadyGot
         default: throw .mismatch

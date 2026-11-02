@@ -13,6 +13,16 @@ nonisolated struct HealthReader: HealthReading {
     struct Latest: Equatable, Sendable {
         let value: Double
         let at: Date
+
+        /// The newest sample's latest reading. A condensed sample (`count`
+        /// over 1) gives its last reading, or none when its readings can't be
+        /// read: never its average. A single one gives its value and end.
+        static func of(count: Int, value: Double, end: Date,
+                       readings: () async throws -> [HealthValue.Reading]) async -> Latest? {
+            guard count > 1 else { return Latest(value: value, at: end) }
+            guard let last = try? await readings().last else { return nil }
+            return Latest(value: last.value, at: last.end)
+        }
     }
 
     private var types: Set<HKObjectType> { Set(HeartType.allCases.map(\.quantityType)) }
@@ -35,10 +45,8 @@ nonisolated struct HealthReader: HealthReading {
         let newest = HKSampleQueryDescriptor(predicates: [.quantitySample(type: type.quantityType)],
                                              sortDescriptors: [SortDescriptor(\.endDate, order: .reverse)], limit: 1)
         guard let sample = try? await newest.result(for: Self.store).first else { return nil }
-        if sample.count > 1, let reading = try? await Self.readings(of: sample, type).last {
-            return Latest(value: reading.value, at: reading.end)
-        }
-        return Latest(value: sample.quantity.doubleValue(for: Self.perMinute), at: sample.endDate)
+        return await Latest.of(count: sample.count, value: sample.quantity.doubleValue(for: Self.perMinute),
+                               end: sample.endDate) { try await Self.readings(of: sample, type) }
     }
 
     /// The earliest date Apple Health lets Rufi read the type from, when the
@@ -79,7 +87,8 @@ nonisolated struct HealthReader: HealthReading {
         }
     }
 
-    private static func value(of sample: HKQuantitySample, _ type: HeartType) async throws -> HealthValue {
+    /// A sample as plain data, its readings read when it is condensed.
+    static func value(of sample: HKQuantitySample, _ type: HeartType) async throws -> HealthValue {
         let zone = (sample.metadata?[HKMetadataKeyTimeZone] as? String).flatMap(TimeZone.init(identifier:))
         let average = (sample as? HKDiscreteQuantitySample)?.averageQuantity ?? sample.quantity
         return HealthValue(id: sample.uuid.uuidString, type: type,
@@ -113,10 +122,14 @@ nonisolated struct HealthReader: HealthReading {
         case let date as Date:
             return .text(Envelope.instant(date))
         case let quantity as HKQuantity:
-            // Apple writes a quantity as its value and unit: "120 count/min".
-            let parts = quantity.description.split(separator: " ", maxSplits: 1)
-            guard parts.count == 2, let number = Double(parts[0]) else { return .text(quantity.description) }
-            return .quantity(number, String(parts[1]))
+            // A quantity doesn't name its unit; Apple writes it after the
+            // number ("120 count/min"). Only the unit is taken from that text:
+            // the number, exactly, comes from the quantity in that unit.
+            guard let written = quantity.description.split(separator: " ", maxSplits: 1).last,
+                  quantity.description.contains(" ") else { return nil }
+            let unit = HKUnit(from: String(written))
+            guard quantity.is(compatibleWith: unit) else { return nil }
+            return .quantity(quantity.doubleValue(for: unit), unit.unitString)
         default:
             return nil
         }
