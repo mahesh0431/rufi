@@ -147,13 +147,11 @@ export function remote(deps: RemoteDeps): Remote {
         { problem: "code_expired" },
       );
     }
-    const added = await apps
-      .add(live.person.id, name)
-      .finally(() => {
-        pairing -= 1;
-        // The code is used up: with no app paired after all, the door closes.
-        void inTurn(() => settle());
-      });
+    const added = await apps.add(live.person.id, name).finally(() => {
+      pairing -= 1;
+      // The code is used up: with no app paired after all, the door closes.
+      void inTurn(() => settle());
+    });
     log("remote.paired");
     return c.json({ ...added, mac: mac() } satisfies Paired);
   });
