@@ -83,3 +83,47 @@ test("logs a dose from Today, sends it again under the same id when its answer i
     "Today08:00 skipped (Mac) · 21:00 taken 12:00 (Mac) · 21:00 undone (Mac)",
   );
 });
+
+test("keeps a log whose send got no answer through another page and a reload, and Try again sends it as it was made", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family(
+    `UPDATE medicine_uses SET times = '["08:00","21:00"]', remind = 1 WHERE id = 'med-a1'`,
+  );
+  await rufi.start({ now: () => NOON.toISOString() });
+  const sent: { id: string; loggedAt: string }[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().endsWith("/doses")) {
+      sent.push(request.postDataJSON() as { id: string; loggedAt: string });
+    }
+  });
+  // The send never reaches the core.
+  await page.route(
+    "**/api/people/asha/doses",
+    (route) => route.abort("connectionreset"),
+    { times: 1 },
+  );
+  const here = await medicines(page, rufi.link());
+  await here.dose("21:00").getByRole("button", { name: "Taken" }).click();
+  await expect(here.dose("21:00")).toContainText("Not sure it was logged");
+
+  // A minute later, after Overview and back, then a reload.
+  await page.clock.setFixedTime(new Date(NOON.getTime() + 60_000));
+  await sidebar(page).getByRole("link", { name: "Overview" }).click();
+  await sidebar(page)
+    .getByRole("link", { name: /^Medicines/ })
+    .click();
+  await expect(here.dose("21:00")).toContainText("Not sure it was logged");
+  await page.reload();
+  await expect(here.dose("21:00")).toContainText("Not sure it was logged");
+
+  await here.dose("21:00").getByRole("button", { name: "Try again" }).click();
+  await expect(here.dose("21:00")).toContainText("Taken 12:00 · Mac");
+  expect(sent).toHaveLength(2);
+  expect(sent[1]).toEqual(sent[0]);
+  await page.getByRole("button", { name: "Metformin 500 mg" }).click();
+  const doses = page.getByRole("region", { name: /^Doses/ });
+  await expect(doses).toContainText("Today21:00 taken 12:00 (Mac)");
+  await expect(doses).not.toContainText("12:01");
+});

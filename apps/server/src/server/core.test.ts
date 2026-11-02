@@ -1642,6 +1642,8 @@ describe("the dose log", () => {
       // Another log under the id.
       [asha, { ...taken, state: "skipped" }],
       [asha, { ...taken, takenAt: "2026-11-02T15:45:00.000Z" }],
+      // The same id and log on another person's path.
+      [ravi, taken],
       // The same id for another person, with their own medicine.
       [ravi, { ...taken, medicineUseId: "med-r1" }],
     ] as const) {

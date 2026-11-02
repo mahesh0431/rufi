@@ -5,12 +5,13 @@
 // missed, and has Taken and Skipped; a logged one says so, with Undo. With
 // no dose today but one to come, it says so; with none to come, it isn't
 // shown. Reminders are a status here: they change in the chat, with Ask Rufi.
-import type {
-  DoseState,
+import {
+  type DoseState,
   LogDose,
-  MedicineUseRow,
-  Today,
+  type MedicineUseRow,
+  type Today,
 } from "@rufi/contracts/record";
+import { Option, Schema } from "effect";
 import {
   Bell,
   BellOff,
@@ -67,9 +68,35 @@ export const clockTime = (iso: string) =>
 type Dose = Today["doses"][number];
 
 /**
+ * A log on its way is kept in this tab's storage before it goes, by
+ * person, medicine and dose, until the core answers for sure: a log whose
+ * answer was lost shows again after another page or a reload, and Try
+ * again sends it as it was made.
+ */
+const pendingKey = (
+  personId: string,
+  log: Pick<LogDose, "medicineUseId" | "doseAt">,
+) => `rufi.dose:${personId}:${log.medicineUseId}:${log.doseAt}`;
+
+const pendingOf = (key: string): LogDose | undefined => {
+  try {
+    const kept = sessionStorage.getItem(key);
+    return kept === null
+      ? undefined
+      : Option.getOrUndefined(
+          Schema.decodeUnknownOption(LogDose)(JSON.parse(kept)),
+        );
+  } catch {
+    // Unreadable: as if nothing was kept.
+    return undefined;
+  }
+};
+
+/**
  * A dose's log on Today: what was logged, with Undo, or Taken and Skipped.
  * A press makes the log's id; when its answer is lost, the same log goes
- * again on Try again, so the core takes it once.
+ * again on Try again, also after another page or a reload, so the core
+ * takes it once.
  */
 function DoseLogged({
   personId,
@@ -80,15 +107,28 @@ function DoseLogged({
   day: Today["day"];
   dose: Dose;
 }) {
+  const key = pendingKey(personId, {
+    medicineUseId: dose.medicine.id,
+    doseAt: `${day}T${dose.at}`,
+  });
   const [sending, setSending] = useState<LogDose>();
-  const [unsure, setUnsure] = useState<LogDose>();
+  // A log kept from before, whose answer never came.
+  const [unsure, setUnsure] = useState(() => pendingOf(key));
   const [refused, setRefused] = useState<string>();
   const send = async (log: LogDose) => {
-    setSending(log);
     setUnsure(undefined);
     setRefused(undefined);
     try {
+      sessionStorage.setItem(key, JSON.stringify(log));
+    } catch (error) {
+      // Not kept, so not sent: a lost answer could never be resolved.
+      setRefused(error instanceof Error ? error.message : String(error));
+      return;
+    }
+    setSending(log);
+    try {
       await logDose(personId, log);
+      sessionStorage.removeItem(key);
       await dosesChanged(personId);
     } catch (error) {
       // No answer, or the core failed: it may have stored it.
@@ -99,6 +139,7 @@ function DoseLogged({
       ) {
         setUnsure(log);
       } else {
+        sessionStorage.removeItem(key);
         setRefused(error.message);
       }
     } finally {
@@ -220,7 +261,7 @@ export function MedicinesToday({
             const { at, past, medicine } = dose;
             return (
               <li
-                key={`${at}:${medicine.id}`}
+                key={`${today.day}T${at}:${medicine.id}`}
                 className={`grid grid-cols-[48px_1.2fr_2fr_224px_auto_auto] items-center gap-2 border-t border-line px-3 py-2 first:border-t-0 ${past ? "text-muted" : ""}`}
               >
                 <span className="font-semibold tabular-nums">
