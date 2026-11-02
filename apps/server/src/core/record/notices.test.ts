@@ -171,7 +171,14 @@ describe("medicine reminders", () => {
 
     expect(await claim(minute(2026, 11, 1, 20, 59))).toEqual([]);
     expect(await claim(minute(2026, 11, 1, 21, 0))).toEqual([
-      { personId: "asha", due: 0, overdue: 0, medicines: 1, at: "21:00" },
+      {
+        personId: "asha",
+        due: 0,
+        overdue: 0,
+        medicines: 1,
+        at: "21:00",
+        show: "count",
+      },
     ]);
     expect(await claim(minute(2026, 11, 1, 21, 1))).toEqual([]);
     // Rufi restarted: the marker is in the record.
@@ -179,21 +186,49 @@ describe("medicine reminders", () => {
     store = openWritable(databasePath(dirname));
     expect(await claim(minute(2026, 11, 1, 21, 30))).toEqual([]);
     expect(await claim(minute(2026, 11, 2, 8, 0))).toEqual([
-      { personId: "asha", due: 0, overdue: 0, medicines: 1, at: "08:00" },
+      {
+        personId: "asha",
+        due: 0,
+        overdue: 0,
+        medicines: 1,
+        at: "08:00",
+        show: "count",
+      },
     ]);
   });
 
   it("tells a dose up to 60 minutes late, and passes over one later than that", async () => {
     medicine("asha", "late", course, saved);
     expect(await claim(minute(2026, 11, 1, 21, 20))).toEqual([
-      { personId: "asha", due: 0, overdue: 0, medicines: 1, at: "21:00" },
+      {
+        personId: "asha",
+        due: 0,
+        overdue: 0,
+        medicines: 1,
+        at: "21:00",
+        show: "count",
+      },
     ]);
     medicine("ravi", "later", course, saved);
     expect(await claim(minute(2026, 11, 1, 22, 30))).toEqual([]);
     // The passed-over dose isn't told later; the next one is.
     expect(await claim(minute(2026, 11, 2, 8, 0))).toEqual([
-      { personId: "asha", due: 0, overdue: 0, medicines: 1, at: "08:00" },
-      { personId: "ravi", due: 0, overdue: 0, medicines: 1, at: "08:00" },
+      {
+        personId: "asha",
+        due: 0,
+        overdue: 0,
+        medicines: 1,
+        at: "08:00",
+        show: "count",
+      },
+      {
+        personId: "ravi",
+        due: 0,
+        overdue: 0,
+        medicines: 1,
+        at: "08:00",
+        show: "count",
+      },
     ]);
   });
 
@@ -212,13 +247,89 @@ describe("medicine reminders", () => {
     expect(await claim(minute(2026, 11, 2, 8, 10))).toEqual([]);
   });
 
+  it("tells on the Mac only where the person chose it, passing over a dose rung on their iPhone; names medicines only at Which ones", async () => {
+    medicine(
+      "asha",
+      "amox",
+      { ...course, strength: "500 mg", amount: "1 capsule" },
+      saved,
+    );
+    medicine(
+      "asha",
+      "iron",
+      { ...course, name: "Iron", strength: null, amount: null },
+      saved,
+    );
+    medicine("ravi", "r1", course, saved);
+    // Asha paired her iPhone and chose to have her reminders ring there.
+    store.db
+      .exec(`INSERT INTO paired_apps (id, person_id, kind, name, key_sha256, paired_at)
+      VALUES ('app-1', 'asha', 'iphone', 'Asha''s iPhone', 'k1', '2026-11-01T10:00:00Z');
+      INSERT INTO reminder_settings (person_id, show, ring) VALUES ('asha', NULL, 'iphone')`);
+    expect(await claim(minute(2026, 11, 1, 21, 0))).toEqual([
+      {
+        personId: "ravi",
+        due: 0,
+        overdue: 0,
+        medicines: 1,
+        at: "21:00",
+        show: "count",
+      },
+    ]);
+    // Both, and which ones: the next dose rings on the Mac too, with names.
+    store.db.exec(
+      "UPDATE reminder_settings SET show = 'names', ring = 'both' WHERE person_id = 'asha'; INSERT INTO reminder_settings (person_id, show, ring) VALUES ('ravi', 'time', NULL)",
+    );
+    expect(await claim(minute(2026, 11, 2, 8, 0))).toEqual([
+      {
+        personId: "asha",
+        due: 0,
+        overdue: 0,
+        medicines: 2,
+        at: "08:00",
+        show: "names",
+        names: ["Amoxicillin 500 mg · 1 capsule", "Iron"],
+      },
+      {
+        personId: "ravi",
+        due: 0,
+        overdue: 0,
+        medicines: 1,
+        at: "08:00",
+        show: "time",
+      },
+    ]);
+    // Her iPhone unpaired: the Mac again, whatever she chose before.
+    store.db.exec(
+      "UPDATE paired_apps SET revoked_at = '2026-11-02T10:00:00Z'; UPDATE reminder_settings SET ring = 'iphone' WHERE person_id = 'asha'",
+    );
+    expect(await claim(minute(2026, 11, 2, 21, 0))).toMatchObject([
+      { personId: "asha", medicines: 2 },
+      { personId: "ravi", medicines: 1 },
+    ]);
+  });
+
   it("counts each person's own, with the time when they share one", async () => {
     medicine("asha", "a1", { times: '["08:00"]' }, saved);
     medicine("asha", "a2", { times: '["08:00","20:00"]' }, saved);
     medicine("ravi", "r1", { times: '["07:30"]' }, saved);
     expect(await claim(minute(2026, 11, 2, 8, 0))).toEqual([
-      { personId: "asha", due: 0, overdue: 0, medicines: 2, at: "08:00" },
-      { personId: "ravi", due: 0, overdue: 0, medicines: 1, at: "07:30" },
+      {
+        personId: "asha",
+        due: 0,
+        overdue: 0,
+        medicines: 2,
+        at: "08:00",
+        show: "count",
+      },
+      {
+        personId: "ravi",
+        due: 0,
+        overdue: 0,
+        medicines: 1,
+        at: "07:30",
+        show: "count",
+      },
     ]);
   });
 });

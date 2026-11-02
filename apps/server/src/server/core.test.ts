@@ -1791,6 +1791,65 @@ describe("the dose log", () => {
   });
 });
 
+describe("the reminder setting", () => {
+  it("keeps each person's own: How many and the Mac until they choose; a change tells their open screens, not another's", async () => {
+    const store = openWritable(databasePath(home));
+    store.db.exec(
+      await readFile(
+        join(import.meta.dirname, "../../tests/fixtures/fictional-family.sql"),
+        "utf8",
+      ),
+    );
+    store.close();
+    const core = await start();
+    const page = await session(core);
+    const asha = "/api/people/asha";
+    const live = stream(core.port, `${asha}/chat/stream`, page.headers);
+    const ravis = stream(
+      core.port,
+      "/api/people/ravi/chat/stream",
+      page.headers,
+    );
+    await until(() => live.lines.length > 0 && ravis.lines.length > 0);
+
+    const unchosen = { show: "count", ring: "mac", iphones: [] };
+    expect((await page.api("GET", `${asha}/reminders`)).body).toEqual(unchosen);
+    const saved = await page.api("PUT", `${asha}/reminders`, {
+      show: "names",
+      ring: "mac",
+    });
+    expect(saved.body).toEqual({ ...unchosen, show: "names" });
+    await until(() => live.lines.some((l) => l.type === "doses"));
+    expect((await page.api("GET", `${asha}/reminders`)).body).toMatchObject({
+      show: "names",
+    });
+    expect((await page.api("GET", "/api/people/ravi/reminders")).body).toEqual(
+      unchosen,
+    );
+    expect(ravis.lines.filter((l) => l.type === "doses")).toEqual([]);
+
+    for (const choice of [
+      { show: "everything", ring: "mac" },
+      { show: "count", ring: "watch" },
+      { show: "count" },
+    ]) {
+      expect((await page.api("PUT", `${asha}/reminders`, choice)).status).toBe(
+        400,
+      );
+    }
+    expect(
+      (
+        await page.api("PUT", "/api/people/nobody/reminders", {
+          show: "count",
+          ring: "mac",
+        })
+      ).status,
+    ).toBe(404);
+    live.hangUp();
+    ravis.hangUp();
+  });
+});
+
 describe("what the screens read", () => {
   it("says whether Codex and Claude are signed in, as each reports it", async () => {
     const core = await start({ adapters: scripted({ signedIn: false }) });
