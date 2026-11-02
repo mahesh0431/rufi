@@ -32,6 +32,8 @@ iOS can also lock any app (touch and hold its icon, then **Require Face ID**). I
 
 Rufi has four tabs: **Chat**, **Medicines**, **Record** and **Documents**. Their pages come from Rufi on your Mac, as they are there now: what you do on the phone is done on the Mac. A link to another page opens it on top, with **Back** (or a swipe from the left edge) to return; a link in a reply opens the result in Chat, with Back to the chat. Web links open in Safari.
 
+To add a paper report from the chat, tap the scan button beside the paperclip: iOS's document camera finds the page's edges and straightens it. Scan each page, then tap **Save**: the pages go to your Mac together as one document, and its chip appears in the box, as when you add photos with the paperclip. Rufi reads it when you send. The paperclip still adds photos and files.
+
 Text follows the iPhone's Text Size (Settings › Accessibility › Display & Text Size), and Rufi follows the iPhone's light or dark appearance. Rufi's own text size and appearance settings are for the Mac.
 
 Settings, sign-in and backups are on the Mac only.
@@ -41,7 +43,7 @@ Settings, sign-in and backups are on the Mac only.
 - Its key, in the iPhone's keychain, on this iPhone only.
 - Which Mac it paired with and whose record it opens, and whether Lock Rufi is on.
 
-Nothing of your record, chat or documents is written to the iPhone: pages are shown while Rufi is open and gone when it closes. Deleting the app deletes all of this; to use Rufi on that iPhone again, pair it again.
+Nothing of your record, chat or documents is written to the iPhone: pages are shown while Rufi is open and gone when it closes, and scanned pages go straight to your Mac without being saved on the iPhone. Deleting the app deletes all of this; to use Rufi on that iPhone again, pair it again.
 
 ## When your Mac can't be reached
 

@@ -76,6 +76,17 @@ nonisolated struct Door: Sendable {
         let _: Nothing = try await Self.call(origin: origin, key: key, method: "POST", path: "/api/unpair", body: [:])
     }
 
+    /// How long an original or an upload may take, as the screens give a file.
+    static let fileSeconds: TimeInterval = 5 * 60
+
+    private static let files: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = fileSeconds
+        configuration.timeoutIntervalForResource = fileSeconds
+        configuration.waitsForConnectivity = false
+        return URLSession(configuration: configuration, delegate: NoRedirects(), delegateQueue: nil)
+    }()
+
     private static let session: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 20
@@ -100,17 +111,62 @@ nonisolated struct Door: Sendable {
         } catch {
             throw .unreachable
         }
+        guard let answer = try? JSONDecoder().decode(Answer.self, from: try taken(data, response)) else {
+            throw .mismatch
+        }
+        return answer
+    }
+
+    /// The form that adds scanned pages, as the paperclip's add sends photos:
+    /// each page a JPEG `file`, together as one document, from the chat.
+    static func scanForm(_ pages: [Data], boundary: String) -> Data {
+        var body = Data()
+        func part(_ head: String, _ data: Data) {
+            body.append(Data("--\(boundary)\r\n\(head)\r\n\r\n".utf8))
+            body.append(data)
+            body.append(Data("\r\n".utf8))
+        }
+        for (index, page) in pages.enumerated() {
+            part("Content-Disposition: form-data; name=\"file\"; filename=\"Scan page \(index + 1).jpg\"\r\nContent-Type: image/jpeg", page)
+        }
+        part("Content-Disposition: form-data; name=\"together\"", Data("yes".utf8))
+        part("Content-Disposition: form-data; name=\"from\"", Data("chat".utf8))
+        body.append(Data("--\(boundary)--\r\n".utf8))
+        return body
+    }
+
+    /// The answer when the door took the call; else why not.
+    private static func taken(_ data: Data, _ response: URLResponse) throws(Problem) -> Data {
         guard let http = response as? HTTPURLResponse else { throw .unreachable }
         let refusal = try? JSONDecoder().decode(Refusal.self, from: data)
         switch http.statusCode {
-        case 200..<300:
-            guard let answer = try? JSONDecoder().decode(Answer.self, from: data) else { throw .mismatch }
-            return answer
+        case 200..<300: return data
         case 401 where refusal?.problem == "unpaired": throw .unpaired
         case 410 where refusal?.problem == "code_expired": throw .codeExpired
         default:
             throw .refused(refusal?.error ?? "Rufi on your Mac refused (\(http.statusCode)).")
         }
+    }
+
+    /// Adds scanned pages to `person`'s documents from the chat, together as
+    /// one document, as the paperclip adds photos; pages may be large, so it
+    /// has 5 minutes. The door's answer, as it came, for the chat box.
+    func add(person: String, pages: [Data]) async throws(Problem) -> Data {
+        let at = person.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(.init(charactersIn: "-_."))) ?? ""
+        var request = URLRequest(url: origin.appending(path: "/api/people/\(at)/documents"), timeoutInterval: Self.fileSeconds)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        let boundary = "rufi-\(UUID().uuidString)"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        let body = Self.scanForm(pages, boundary: boundary)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await Self.files.upload(for: request, from: body)
+        } catch {
+            throw .unreachable
+        }
+        return try Self.taken(data, response)
     }
 }
 

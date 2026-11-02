@@ -25,6 +25,8 @@ final class Screens: NSObject {
     /// The session ended, or the page couldn't load.
     var onEnded: () -> Void = {}
     var onUnreachable: () -> Void = {}
+    /// Scan: the page asks for the document camera.
+    var onScan: () -> Void = {}
 
     private var top: CGFloat = 0
     private var bottom: CGFloat = 0
@@ -65,6 +67,13 @@ final class Screens: NSObject {
         view.evaluateJavaScript("window.rufi.open(\(text))") { [weak self] _, error in
             if error != nil { self?.onEnded() }
         }
+    }
+
+    /// Gives the page the door's answer to an added scan: its chips go in the box.
+    func added(_ answer: Data) {
+        guard (try? JSONSerialization.jsonObject(with: answer)) != nil,
+              let json = String(data: answer, encoding: .utf8) else { return }
+        view.evaluateJavaScript("window.rufi.added(\(json))")
     }
 
     /// A still of the page as it is now.
@@ -125,6 +134,8 @@ final class Screens: NSObject {
             }
         case "ended":
             onEnded()
+        case "scan":
+            onScan()
         default:
             break
         }
