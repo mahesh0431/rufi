@@ -614,6 +614,7 @@ function Row({
           )}
           {!done && (
             <AskRufi
+              tipAfter
               onClick={(event) => {
                 event.stopPropagation();
                 add();

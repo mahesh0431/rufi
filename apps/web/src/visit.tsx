@@ -19,7 +19,17 @@ import {
   visitWhen,
 } from "./record.tsx";
 import { Marked } from "./transcript.tsx";
-import { buttonLook, EmptyState, ICON, Problem } from "./ui.tsx";
+import {
+  buttonLook,
+  EmptyState,
+  ICON,
+  laterParts,
+  NARROW_END,
+  NARROW_FIRST,
+  NARROW_ROW,
+  Problem,
+  RowBreak,
+} from "./ui.tsx";
 
 export function VisitPage({
   person,
@@ -47,7 +57,8 @@ export function VisitPage({
     );
   }
   return (
-    <div className="mx-auto max-w-[790px] px-6 py-8">
+    // A container: below 640 px of page its rows stack (FromVisit).
+    <div className="@container mx-auto max-w-[790px] px-6 py-8">
       <div className="mb-3.5">
         <h2 className="flex items-start gap-3 text-[1.375rem] font-bold">
           <span className="min-w-0 flex-1">{visitTitle(row)}</span>
@@ -105,12 +116,23 @@ function FromVisit({ personId, row }: { personId: string; row: ShownRow }) {
     );
   }
   const cells = cellsOf(row);
+  // Below 640 px: the record and Open, then what it is and its status.
+  const [noun, status] = laterParts([nounOf(row), cells.status]);
   return (
-    <li className="flex items-center gap-2 border-t border-line px-3 py-2 first:border-t-0">
-      <span className="w-28 shrink-0 text-muted">{nounOf(row)}</span>
-      <span className="min-w-0 flex-1 font-semibold">{cells.title}</span>
-      <span>{cells.status}</span>
-      <OpenRow personId={personId} row={row} />
+    <li
+      className={`flex items-center gap-2 border-t border-line px-3 py-2 first:border-t-0 ${NARROW_ROW}`}
+    >
+      <span className={`w-28 shrink-0 text-muted @max-[640px]:w-auto ${noun}`}>
+        {nounOf(row)}
+      </span>
+      <span className={`min-w-0 flex-1 font-semibold ${NARROW_FIRST}`}>
+        {cells.title}
+      </span>
+      <span className={status}>{cells.status}</span>
+      <span className={NARROW_END}>
+        <OpenRow personId={personId} row={row} />
+      </span>
+      <RowBreak />
     </li>
   );
 }

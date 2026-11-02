@@ -145,3 +145,31 @@ test("a dose told to Rufi AI with no time it was taken says only that it was tak
     "Today08:00 taken (told Rufi AI)",
   );
 });
+
+// On a touch screen, as on the iPhone; how it looks is in the screenshots.
+test.describe("on a touch screen", () => {
+  test.use({ hasTouch: true });
+
+  test("in a page 390 px wide, Taken on a dose is in view, a tap logs it, and the medicine's Doses show it", async ({
+    page,
+    rufi,
+  }) => {
+    await rufi.family(
+      `UPDATE medicine_uses SET times = '["08:00","21:00"]', remind = 1, directions = '1-0-1 after food, with a full glass of water' WHERE id = 'med-a1'`,
+    );
+    await rufi.start({ now: () => NOON.toISOString() });
+    // 390 px of page beside the 240 px sidebar: the phone's width.
+    await page.setViewportSize({ width: 630, height: 844 });
+    const here = await medicines(page, rufi.link());
+    const evening = here.dose("21:00");
+    const taken = evening.getByRole("button", { name: "Taken" });
+    await expect(taken).toBeInViewport({ ratio: 1 });
+
+    await taken.tap();
+    await expect(evening).toContainText("Taken 12:00 · Mac");
+    await page.getByRole("button", { name: "Metformin 500 mg" }).tap();
+    await expect(page.getByRole("region", { name: /^Doses/ })).toContainText(
+      "Today21:00 taken 12:00 (Mac)",
+    );
+  });
+});

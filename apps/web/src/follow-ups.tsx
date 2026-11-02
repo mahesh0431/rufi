@@ -20,7 +20,17 @@ import { printedDate } from "./dates.ts";
 import { askRufi } from "./panel.ts";
 import { cellsOf, chipOf, pageOf, RowDetail, rowElementId } from "./record.tsx";
 import { useFollowUps, useRecordDetail } from "./reads.ts";
-import { EmptyState, Problem } from "./ui.tsx";
+import {
+  EmptyState,
+  laterParts,
+  NARROW_END,
+  NARROW_FIRST,
+  NARROW_ROW,
+  Problem,
+  RowBreak,
+  TOUCH,
+  TOUCH_LINK,
+} from "./ui.tsx";
 
 type Group = FollowUps["groups"][number]["group"];
 
@@ -139,7 +149,8 @@ export function FollowUpsPage({
     );
   }
   return (
-    <div className="mx-auto max-w-[790px] px-6 py-8">
+    // A container: below 640 px of page its rows stack (FollowUpView).
+    <div className="@container mx-auto max-w-[790px] px-6 py-8">
       <p className="mb-5 text-muted">
         What to do, and when. Changes start in the chat: <b>Ask Rufi</b> on a
         row.
@@ -209,20 +220,24 @@ function FollowUpView({
     );
   }
   const closed = group === "done" || group === "dropped";
+  const due = whenDue(group, row.due, now);
+  // Below 640 px: what to do, what it is about, and Ask Rufi, then whether
+  // it was done and when it is due.
+  const [state, when] = laterParts([closed, due]);
   return (
     <li
       id={rowElementId(row.kind, row.id)}
       className="border-t border-line first:border-t-0"
     >
       <div
-        className={`group grid items-center gap-3 px-3 py-2 ${closed ? "grid-cols-[1fr_auto_minmax(13rem,auto)_auto]" : "grid-cols-[1fr_minmax(13rem,auto)_auto]"} ${open ? "bg-accent-soft" : "hover:bg-side"}`}
+        className={`group grid items-center gap-3 px-3 py-2 ${closed ? "grid-cols-[1fr_auto_minmax(13rem,auto)_auto]" : "grid-cols-[1fr_minmax(13rem,auto)_auto]"} ${NARROW_ROW} ${open ? "bg-accent-soft" : "hover:bg-side"}`}
       >
-        <span className="min-w-0">
+        <span className={`min-w-0 ${NARROW_FIRST}`}>
           <button
             type="button"
             aria-expanded={open}
             onClick={onOpen}
-            className="text-left font-semibold"
+            className={`text-left font-semibold ${TOUCH}`}
           >
             {row.title}
           </button>
@@ -239,15 +254,17 @@ function FollowUpView({
             </span>
           )}
         </span>
-        {closed && <span>{group === "done" ? "Done" : "Dropped"}</span>}
-        <span className="whitespace-nowrap text-muted">
-          {whenDue(group, row.due, now)}
-        </span>
+        {closed && (
+          <span className={state}>{group === "done" ? "Done" : "Dropped"}</span>
+        )}
+        <span className={`whitespace-nowrap text-muted ${when}`}>{due}</span>
         <AskRufi
+          className={NARROW_END}
           onClick={() => {
             onAsk(row);
           }}
         />
+        <RowBreak />
       </div>
       {open && <RowDetail personId={personId} row={row} />}
     </li>
@@ -301,7 +318,8 @@ function About({
       ? label
       : `${said} · amended to ${cells.value ?? cells.title}`;
   return (
-    <span className="block text-[0.78125rem] text-muted">
+    // On a touch screen its link is 44 px high, beside "About:".
+    <span className="block text-[0.78125rem] text-muted pointer-coarse:flex pointer-coarse:items-center pointer-coarse:gap-1">
       About:{" "}
       {detail.data?.removed ? (
         `${shown} (removed from your health record)`
@@ -310,7 +328,7 @@ function About({
           to="/people/$personId/record/$kind"
           params={{ personId, kind: page }}
           search={{ open: id }}
-          className="rounded-md text-accent-ink hover:bg-accent-soft"
+          className={`rounded-md text-accent-ink hover:bg-accent-soft ${TOUCH_LINK}`}
         >
           {shown}
         </Link>
