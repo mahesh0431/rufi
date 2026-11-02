@@ -8,6 +8,10 @@ nonisolated struct HealthReader: HealthReading {
     /// One per app, as Apple recommends.
     private static let store = HKHealthStore()
     private static let perMinute = HKUnit.count().unitDivided(by: .minute())
+    /// The units a quantity in heart metadata can be sent in, one per kind.
+    private static let metadataUnits: [HKUnit] = [
+        perMinute, .count(), .percent(), .second(), .meter(), .kilocalorie(), .degreeCelsius(),
+    ]
 
     /// A type's newest reading: a condensed sample's last, with its own time.
     struct Latest: Equatable, Sendable {
@@ -122,13 +126,12 @@ nonisolated struct HealthReader: HealthReading {
         case let date as Date:
             return .text(Envelope.instant(date))
         case let quantity as HKQuantity:
-            // A quantity doesn't name its unit; Apple writes it after the
-            // number ("120 count/min"). Only the unit is taken from that text:
-            // the number, exactly, comes from the quantity in that unit.
-            guard let written = quantity.description.split(separator: " ", maxSplits: 1).last,
-                  quantity.description.contains(" ") else { return nil }
-            let unit = HKUnit(from: String(written))
-            guard quantity.is(compatibleWith: unit) else { return nil }
+            // A quantity doesn't name its unit: it goes in the first unit of
+            // Rufi's short list it fits, its number exact in that unit; one
+            // that fits none goes as Apple writes it ("120 mmHg"), unparsed.
+            guard let unit = metadataUnits.first(where: quantity.is(compatibleWith:)) else {
+                return .text(quantity.description)
+            }
             return .quantity(quantity.doubleValue(for: unit), unit.unitString)
         default:
             return nil

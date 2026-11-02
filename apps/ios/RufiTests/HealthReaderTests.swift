@@ -9,24 +9,34 @@ struct HealthReaderTests {
     private let perMinute = HKUnit.count().unitDivided(by: .minute())
 
     /// A quantity in a sample's metadata reaches the batch as its exact
-    /// number and unit, as it came.
+    /// number and unit; one in a unit Rufi doesn't list, as Apple writes it.
     @Test func sendsAQuantityInMetadataExactly() async throws {
+        let pressure = HKQuantity(unit: .millimeterOfMercury(), doubleValue: 118.25)
+        let metadata = try await sentMetadata([
+            HKMetadataKeyHeartRateEventThreshold: HKQuantity(unit: perMinute, doubleValue: 123.456789012345),
+            "Pressure": pressure,
+        ])
+
+        let threshold = try #require(metadata[HKMetadataKeyHeartRateEventThreshold] as? [String: Any])
+        #expect(threshold["value"] as? Double == 123.456789012345)
+        #expect(threshold["unit"] as? String == "count/min")
+        #expect(metadata["Pressure"] as? String == pressure.description)
+    }
+
+    /// A heart-rate sample made in memory with `metadata`, through the
+    /// reader's mapping and the envelope: its metadata as sent.
+    private func sentMetadata(_ metadata: [String: Any]) async throws -> [String: Any] {
         let at = Date(timeIntervalSince1970: 1_792_548_000)
         let sample = HKQuantitySample(
             type: HKQuantityType(.heartRate), quantity: HKQuantity(unit: perMinute, doubleValue: 72),
             start: at, end: at,
             device: HKDevice(name: "Apple Watch", manufacturer: nil, model: nil, hardwareVersion: nil,
                              firmwareVersion: nil, softwareVersion: nil, localIdentifier: nil, udiDeviceIdentifier: nil),
-            metadata: [HKMetadataKeyHeartRateEventThreshold: HKQuantity(unit: perMinute, doubleValue: 123.456789012345)])
-
+            metadata: metadata)
         let value = try await HealthReader.value(of: sample, .heartRate)
         let body = Envelope.encode(batch: "b-1", values: [value], deleted: [])
-
         let sent = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
-        let metadata = try #require((sent["values"] as? [[String: Any]])?.first?["metadata"] as? [String: Any])
-        let threshold = try #require(metadata[HKMetadataKeyHeartRateEventThreshold] as? [String: Any])
-        #expect(threshold["value"] as? Double == 123.456789012345)
-        #expect(threshold["unit"] as? String == "count/min")
+        return try #require((sent["values"] as? [[String: Any]])?.first?["metadata"] as? [String: Any])
     }
 
     /// The latest heart rate of a workout's condensed sample is its last

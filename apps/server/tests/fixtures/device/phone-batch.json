@@ -8,7 +8,7 @@
       "id": "A5E1C0DE-0001-4000-8000-000000000001",
       "metadata": {
         "HKMetadataKeyHeartRateMotionContext": 1,
-        "HKMetadataKeyTimeZone": "Asia/Kolkata"
+        "HKTimeZone": "Asia/Kolkata"
       },
       "start": "2026-10-21T01:30:00.000Z",
       "time_zone": "Asia/Kolkata",
@@ -34,7 +34,7 @@
       "id": "A5E1C0DE-0003-4000-8000-000000000003",
       "metadata": {
         "HKMetadataKeyHeartRateMotionContext": 2,
-        "HKMetadataKeyTimeZone": "Asia/Kolkata"
+        "HKTimeZone": "Asia/Kolkata"
       },
       "series": [
         {

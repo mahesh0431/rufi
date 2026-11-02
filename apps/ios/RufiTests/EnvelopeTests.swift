@@ -15,7 +15,7 @@ struct EnvelopeTests {
                         start: at("2026-10-21T01:30:00.000Z"), end: at("2026-10-21T01:30:00.000Z"),
                         timeZone: india, device: "Apple Watch", readings: [],
                         metadata: ["HKMetadataKeyHeartRateMotionContext": .number(1),
-                                   "HKMetadataKeyTimeZone": .text("Asia/Kolkata")]),
+                                   "HKTimeZone": .text("Asia/Kolkata")]),
             // No time zone in Apple Health: none is sent, not the phone's own.
             HealthValue(id: "A5E1C0DE-0002-4000-8000-000000000002", type: .heartRate, value: 71.5,
                         start: at("2026-10-21T04:12:30.250Z"), end: at("2026-10-21T04:12:30.250Z"),
@@ -31,7 +31,7 @@ struct EnvelopeTests {
                             .init(start: at("2026-10-21T12:00:10.000Z"), end: at("2026-10-21T12:00:15.000Z"), value: 120),
                         ],
                         metadata: ["HKMetadataKeyHeartRateMotionContext": .number(2),
-                                   "HKMetadataKeyTimeZone": .text("Asia/Kolkata")]),
+                                   "HKTimeZone": .text("Asia/Kolkata")]),
         ]
 
         let body = Envelope.encode(batch: "6F1C2B7E-4A0D-4C55-9E21-3B8A90D1C001", values: values,
