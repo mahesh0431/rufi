@@ -7,6 +7,7 @@
 // Card, whose sources and citations open by the rule. Callout, Steps and
 // Card follow OpenUI's own (@openuidev/react-ui 0.18.1, MIT; see NOTICE).
 import {
+  useIsStreaming,
   useStateField,
   type ComponentRenderProps,
   type ElementNode,
@@ -24,6 +25,7 @@ import {
 } from "@openuidev/react-ui";
 import { createContext, use, useEffect, type ComponentProps } from "react";
 import type { Options } from "react-markdown";
+import remend from "remend";
 
 /** How a reply's Markdown text draws: the reply's own links and files. */
 export const TextParts = createContext<Options>({});
@@ -123,7 +125,12 @@ const VARIANTS = ["clear", "card", "sunk"] as const;
 const variantOf = (value: unknown) =>
   VARIANTS.find((variant) => variant === value);
 
-/** OpenUI's Markdown component, with a reply's links and files. */
+/**
+ * OpenUI's Markdown component, with a reply's links and files. While the
+ * reply is written, half-written Markdown is closed so it reads right (a
+ * bold whose closing `**` hasn't come yet), and a half-written link shows as
+ * its text, as in a reply of plain Markdown (transcript.tsx).
+ */
 function Markdown({
   text,
   variant,
@@ -137,9 +144,10 @@ function Markdown({
   className?: string;
 }) {
   const options = use(TextParts);
+  const streaming = useIsStreaming();
   return (
     <MarkDownRenderer
-      textMarkdown={text}
+      textMarkdown={streaming ? remend(text, { linkMode: "text-only" }) : text}
       {...(variant && { variant })}
       {...(className && { className })}
       options={

@@ -81,6 +81,13 @@
     --shade: rgb(0 0 0 / 0.45);
     --shade-menu: rgb(0 0 0 / 0.5);
   }
+
+  /* The app's sidebar in the dark: the Mac's sidebar material shows through
+     it, a lighter grey than --side (about #51504e), so its quieter text is
+     lighter there to keep AA. The page keeps the muted above. */
+  :root[data-app][data-theme="dark"] [data-sidebar] {
+    --muted: #c3c3c3;
+  }
 }
 
 /* The colour themes. Each sets the background greys and the accent family,
