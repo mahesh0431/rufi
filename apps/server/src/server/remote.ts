@@ -357,7 +357,8 @@ export function remote(deps: RemoteDeps): Remote {
     return c.json({});
   });
 
-  personRoutes(door, deps.person, adds);
+  // What a person does here is their paired app's.
+  personRoutes(door, deps.person, adds, (c) => `app:${asker(c).app.id}`);
   screensRoute(door, deps.screens, deps.read);
 
   /** Listens on `at` (0: a free port, then kept); the port it got. */

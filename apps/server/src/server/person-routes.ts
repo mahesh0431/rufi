@@ -137,6 +137,11 @@ export function personRoutes(
   app: App,
   deps: PersonDeps,
   adds: MiddlewareHandler,
+  /**
+   * Who is asking, as a dose log keeps it: 'mac' on the screens' listener,
+   * 'app:<paired app id>' on the remote door.
+   */
+  asking: (c: Context) => string,
 ): void {
   const { transcripts, drafts, chat } = deps;
   const person = async (c: Context) => {
@@ -234,8 +239,7 @@ export function personRoutes(
     c.json(await deps.record.today((await person(c)).id)),
   );
   // The person's dose log (docs/adr/0033): a log as it came, stored once
-  // for its id, and the logs of the doses on some days. Logs made here are
-  // the Mac's.
+  // for its id, with who made it, and the logs of the doses on some days.
   const dosesPath = "/api/people/:personId/doses";
   app.post(dosesPath, async (c) => {
     const { id } = await person(c);
@@ -244,7 +248,7 @@ export function personRoutes(
       throw new HttpError(400, "Only a dose taken has when it was taken.");
     }
     try {
-      const answer = await deps.doses.add(id, log, "mac");
+      const answer = await deps.doses.add(id, log, asking(c));
       return c.json({ id: log.id }, answer === "added" ? 201 : 200);
     } catch (error) {
       if (error instanceof NoSuchMedicine) {

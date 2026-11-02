@@ -607,6 +607,49 @@ describe("a person's routes through the door", () => {
   });
 });
 
+describe("a dose logged through the door", () => {
+  it("is kept as the paired app's, by key or by its session", async () => {
+    const store = openWritable(databasePath(home));
+    store.db.exec(`
+      INSERT INTO medicine_uses (id, person_id, name, status, times, remind)
+        VALUES ('med-a1', 'asha', 'Metformin', 'current', '["08:00","21:00"]', 1);
+    `);
+    store.close();
+    const core = await start();
+    const { port, key, id } = await paired(await settings(core));
+    const page = await webView(port, await launchOf(port, key));
+    const dose = (doseId: string, doseAt: string) => ({
+      id: doseId,
+      medicineUseId: "med-a1",
+      doseAt,
+      state: "taken",
+      loggedAt: "2026-11-02T15:32:00.000Z",
+    });
+
+    for (const [by, log] of [
+      [{ key }, dose("d-key", "2026-11-02T08:00")],
+      [page.headers, dose("d-page", "2026-11-02T21:00")],
+    ] as const) {
+      expect(
+        (await door(port, "POST", "/api/people/asha/doses", by, log)).status,
+      ).toBe(201);
+    }
+
+    await stop();
+    const db = new DatabaseSync(databasePath(home), { readOnly: true });
+    try {
+      expect(
+        db.prepare("SELECT id, logged_by FROM dose_log ORDER BY id").all(),
+      ).toEqual([
+        { id: "d-key", logged_by: `app:${id}` },
+        { id: "d-page", logged_by: `app:${id}` },
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+});
+
 describe("the app's sessions", () => {
   let screens: string;
   beforeEach(async () => {

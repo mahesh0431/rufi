@@ -446,7 +446,8 @@ export function api(deps: ApiDeps): App {
     });
   });
 
-  personRoutes(app, deps, adds);
+  // What a person does here is the Mac's.
+  personRoutes(app, deps, adds, () => "mac");
 
   // A file a reply shows, by its address from /api/files; checked again now.
   // Never cached as unchanging: a reply shows the file as it is now.
