@@ -537,6 +537,17 @@ export const startCore = (options: CoreOptions) =>
           tailscale: options.tailscale ?? tailscale(),
           working,
           person,
+          receive: async (app, bytes) => {
+            const receipt = await deviceData.receive(
+              await deviceData.appSource({
+                id: app.id,
+                personId: app.person.id,
+              }),
+              bytes,
+            );
+            if (receipt.answer === "got_it") convertLoop.convertSoon();
+            return receipt;
+          },
           read: settingsReads({ transcripts, devices: deviceData }),
           account,
           ...(options.screens !== undefined && { screens: options.screens }),

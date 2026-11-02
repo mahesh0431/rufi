@@ -364,6 +364,10 @@ _Avoid_: device (for the connection), integration, account
 What a device source sends in one go: values and the IDs of values it takes back. Rufi stores it first, exactly as it came, then converts it in the background, in the order batches came.
 _Avoid_: page, upload, sync
 
+**Sync**:
+On the iPhone, sending what is new in Apple Health to Rufi on the Mac, when the person taps **Sync for** their name; the first sends all Apple Health lets Rufi read. Each part goes as one batch, and the iPhone remembers how far it got only once the Mac has it.
+_Avoid_: upload, import, backup
+
 **Device value**:
 One thing a device measured, in Rufi's terms: its type, number and unit, when, and the device; where it was measured only when the device says. Known by the source's own ID.
 _Avoid_: reading (that is a document's), sample, data point, measurement (that is a result)

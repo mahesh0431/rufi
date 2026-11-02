@@ -100,3 +100,13 @@ export type OpenRequest = typeof OpenRequest.Type;
 
 export const Opened = Schema.Struct({ url: Schema.String });
 export type Opened = typeof Opened.Type;
+
+/**
+ * `POST /api/batches` on the door, with the app's key: a batch of Apple
+ * Health values, stored as it came in the app's own device source. A
+ * refusal (422, or 413 over 4 MB) says why; one that couldn't be stored
+ * answers 503 `{ problem: "couldnt_store" }`.
+ */
+export type BatchAnswer =
+  | { answer: "got_it" | "already_got" }
+  | { answer: "refused"; problems: readonly string[]; error: string };

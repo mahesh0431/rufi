@@ -1,0 +1,64 @@
+{
+  "batch": "6F1C2B7E-4A0D-4C55-9E21-3B8A90D1C001",
+  "deleted": [{ "id": "A5E1C0DE-0099-4000-8000-000000000099" }],
+  "values": [
+    {
+      "device": "Apple Watch",
+      "end": "2026-10-21T01:30:00.000Z",
+      "id": "A5E1C0DE-0001-4000-8000-000000000001",
+      "metadata": {
+        "HKMetadataKeyHeartRateMotionContext": 1,
+        "HKTimeZone": "Asia/Kolkata"
+      },
+      "start": "2026-10-21T01:30:00.000Z",
+      "time_zone": "Asia/Kolkata",
+      "type": "HKQuantityTypeIdentifierHeartRate",
+      "unit": "count/min",
+      "utc_offset": 330,
+      "value": 64
+    },
+    {
+      "device": "Apple Watch",
+      "end": "2026-10-21T04:12:30.250Z",
+      "id": "A5E1C0DE-0002-4000-8000-000000000002",
+      "metadata": { "HKMetadataKeyHeartRateMotionContext": 0 },
+      "start": "2026-10-21T04:12:30.250Z",
+      "type": "HKQuantityTypeIdentifierHeartRate",
+      "unit": "count/min",
+      "value": 71.5
+    },
+    {
+      "count": 3,
+      "device": "Apple Watch",
+      "end": "2026-10-21T12:00:15.000Z",
+      "id": "A5E1C0DE-0003-4000-8000-000000000003",
+      "metadata": {
+        "HKMetadataKeyHeartRateMotionContext": 2,
+        "HKTimeZone": "Asia/Kolkata"
+      },
+      "series": [
+        {
+          "end": "2026-10-21T12:00:05.000Z",
+          "start": "2026-10-21T12:00:00.000Z",
+          "value": 115
+        },
+        {
+          "end": "2026-10-21T12:00:10.000Z",
+          "start": "2026-10-21T12:00:05.000Z",
+          "value": 125
+        },
+        {
+          "end": "2026-10-21T12:00:15.000Z",
+          "start": "2026-10-21T12:00:10.000Z",
+          "value": 120
+        }
+      ],
+      "start": "2026-10-21T12:00:00.000Z",
+      "time_zone": "Asia/Kolkata",
+      "type": "HKQuantityTypeIdentifierHeartRate",
+      "unit": "count/min",
+      "utc_offset": 330,
+      "value": 120
+    }
+  ]
+}
