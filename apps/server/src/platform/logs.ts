@@ -56,6 +56,7 @@ const EVENTS = new Set([
   "devices.cleaned",
   "signin.failed",
   "remote.paired",
+  "remote.opened",
   "remote.refused",
   "remote.unpaired",
   "remote.failed",
