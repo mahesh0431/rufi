@@ -52,7 +52,8 @@ function call(
 ): Promise<Reply> {
   return new Promise((resolve, reject) => {
     const req = httpRequest(
-      { host: "127.0.0.1", port, method, path, headers },
+      // A connection of its own: one a refusal (413) closed is never reused.
+      { host: "127.0.0.1", port, method, path, headers, agent: false },
       (res) => {
         let text = "";
         res.setEncoding("utf8");
@@ -194,6 +195,36 @@ const door = (
 
 const pair = (port: number, code: string) =>
   door(port, "POST", "/api/pair", {}, { code, name: "Asha's iPhone" });
+
+/**
+ * The answer to a body over 1 MB. It is sent and then held open: the door
+ * refuses as soon as it has read past the limit, and closes, so nothing may
+ * still be writing then.
+ */
+function tooLarge(port: number): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(
+      {
+        host: "127.0.0.1",
+        port,
+        method: "POST",
+        path: "/api/pair",
+        headers: {
+          host: `${NAME}:${String(port)}`,
+          "content-type": "application/json",
+        },
+        agent: false,
+      },
+      (res) => {
+        resolve(res.statusCode ?? 0);
+        res.resume();
+        req.destroy();
+      },
+    );
+    req.on("error", reject);
+    req.write(`{"code":"${"x".repeat(1024 * 1024 + 1)}`);
+  });
+}
 
 describe("pairing", () => {
   it("pairs once for the person chosen; the key reads who it is, and the same code again makes nothing", async () => {
@@ -372,14 +403,7 @@ describe("the door", () => {
       "frame-ancestors 'none'",
     );
 
-    const large = await door(
-      port,
-      "POST",
-      "/api/pair",
-      {},
-      JSON.stringify({ code: "x".repeat(1024 * 1024), name: "Asha's iPhone" }),
-    );
-    expect(large.status).toBe(413);
+    expect(await tooLarge(port)).toBe(413);
 
     for (const [method, path] of [
       ["GET", "/api/people"],
