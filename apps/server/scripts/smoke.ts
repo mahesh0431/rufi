@@ -2210,9 +2210,15 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
       if (!store) throw new Error("no database");
       const rows = store.db
         .prepare(
-          "SELECT dose_at, state, taken_at FROM dose_log WHERE logged_by = 'rufi_ai'",
+          "SELECT person_id, medicine_use_id, dose_at, state, taken_at FROM dose_log WHERE logged_by = 'rufi_ai'",
         )
-        .all() as { dose_at: string; state: string; taken_at: string | null }[];
+        .all() as {
+        person_id: string;
+        medicine_use_id: string;
+        dose_at: string;
+        state: string;
+        taken_at: string | null;
+      }[];
       store.close();
       return rows;
     };
@@ -2224,16 +2230,14 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     await c.say("Did I miss any Amoxicillin since I started?");
     const asked = await c.read();
     const [log] = logged;
-    const takenAt = log?.taken_at == null ? undefined : new Date(log.taken_at);
     return {
       checks: {
         logged_one: logged.length === 1,
+        ashas_amoxicillin:
+          log?.person_id === "asha" && log.medicine_use_id === "med-amox",
         last_nights_dose: log?.dose_at === `${localDay(-1)}T21:00`,
         taken: log?.state === "taken",
-        at_21_15:
-          takenAt !== undefined &&
-          takenAt.getHours() === 21 &&
-          takenAt.getMinutes() === 15,
+        taken_last_night_at_21_15: log?.taken_at === instant(-1, "21:15"),
         nothing_saved: record(home).saves === 0,
         read_the_log: usedTool(home, "read_doses"),
         no_log_from_the_question: byRufiAi().length === 1,

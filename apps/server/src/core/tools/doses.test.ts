@@ -200,6 +200,26 @@ describe("log_dose", () => {
     ]);
   });
 
+  it("refuses a taken time that isn't a real date or time, logging nothing", async () => {
+    for (const [taken_at, callId] of [
+      ["2026-11-31T21:15", "agent-1/1/c-4"],
+      ["2026-11-02T25:15", "agent-1/1/c-5"],
+    ] as const) {
+      const answer = await call(
+        "log_dose",
+        {
+          medicine: "med-a1",
+          dose_at: "2026-11-02T21:00",
+          state: "taken",
+          taken_at,
+        },
+        callId,
+      );
+      expect(answer.ok, taken_at).toBe(false);
+    }
+    expect(await doses.list("asha", "2026-10-01", "2026-11-30")).toEqual([]);
+  });
+
   it("refuses another person's medicine, a call already used for another log, and taken_at without taken; nothing is logged", async () => {
     for (const [input, callId] of [
       [

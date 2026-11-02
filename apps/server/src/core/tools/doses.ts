@@ -12,7 +12,7 @@ import {
   NoSuchMedicine,
   type DoseLog,
 } from "../doses/log.ts";
-import { localTime } from "../record/dates.ts";
+import { dateProblem, localTime } from "../record/dates.ts";
 import { kindNamed, type Kind, type Row } from "../record/kinds.ts";
 import { fieldsOf } from "../record/read.ts";
 import type { Store } from "../store/database.ts";
@@ -224,6 +224,10 @@ export async function logDoseFor(
   if (input.taken_at !== undefined && input.state !== "taken") {
     throw new Refusal("Give taken_at only with taken.");
   }
+  // A date that isn't real would roll into another day as it is converted.
+  const notReal =
+    input.taken_at === undefined ? undefined : dateProblem(input.taken_at);
+  if (notReal !== undefined) throw new Refusal(`taken_at: ${notReal}`);
   const medicine = await medicineOf(reader, personId, input.medicine);
   if (!medicine) {
     throw new Refusal(
