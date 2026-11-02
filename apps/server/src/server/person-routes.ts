@@ -20,6 +20,7 @@ import {
   LogDose,
   SaveProfile,
   SaveReminders,
+  type ReminderPlan,
   type Reminders,
   type Overview,
   type Profile,
@@ -95,6 +96,12 @@ export interface PersonDeps {
   reminders: {
     read: (personId: string) => Promise<Reminders>;
     save: (personId: string, choice: SaveReminders) => Promise<void>;
+    /** Their reminder plan for `days` calendar days from `from`. */
+    plan: (
+      personId: string,
+      from: string,
+      days: number,
+    ) => Promise<ReminderPlan>;
   };
   log: Log;
   /** Updates a screen may fall behind by before its stream is closed. */
@@ -125,6 +132,8 @@ const PING_MS = 15_000;
 const BEHIND_MAX = 1_000;
 /** The most days one read of the dose log covers. */
 const DOSE_DAYS_MAX = 62;
+/** The most days one reminder plan covers: a paired app asks for a week and a day. */
+const PLAN_DAYS_MAX = 14;
 const DAY_MS = 86_400_000;
 
 /** A real calendar day 'YYYY-MM-DD' as its UTC midnight; undefined if not one. */
@@ -303,6 +312,25 @@ export function personRoutes(
     await deps.reminders.save(id, await body(c, SaveReminders));
     deps.doses.changed(id);
     return c.json(await deps.reminders.read(id));
+  });
+  // The doses a paired app rings, for calendar days in the app's own
+  // calendar (docs/how-rufi-works.md).
+  app.get(`${remindersPath}/plan`, async (c) => {
+    const { id } = await person(c);
+    const from = c.req.query("from");
+    const days = Number(c.req.query("days"));
+    if (
+      dayOf(from) === undefined ||
+      !Number.isInteger(days) ||
+      days < 1 ||
+      days > PLAN_DAYS_MAX
+    ) {
+      throw new HttpError(
+        400,
+        `Give from as a day and days from 1 to ${String(PLAN_DAYS_MAX)}.`,
+      );
+    }
+    return c.json(await deps.reminders.plan(id, from as string, days));
   });
   // The person's follow-ups, in the Follow-ups page's groups.
   app.get("/api/people/:personId/follow-ups", async (c) =>

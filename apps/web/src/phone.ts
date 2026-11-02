@@ -19,7 +19,12 @@ export type ToApp =
   /** A page has drawn: the app's bar takes its title. */
   | { type: "page"; path: string; title: string }
   /** The session has ended: the app opens Rufi again, or says it's unpaired. */
-  | { type: "ended" };
+  | { type: "ended" }
+  /**
+   * Doses, medicines or the reminder setting may have changed: the app
+   * refreshes its reminders.
+   */
+  | { type: "refresh" };
 
 declare global {
   interface Window {

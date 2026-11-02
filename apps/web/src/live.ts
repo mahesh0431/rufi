@@ -3,11 +3,14 @@
 // queue read again when it changes. Entries are kept by id, so a
 // streaming reply re-renders only itself. The stream closes when nothing
 // shows the chat; when it drops, it connects again and starts from the
-// latest page. It never sends anything.
+// latest page. It never sends anything to the Mac; in Rufi's iPhone app it
+// tells the app when doses, medicines or the reminder setting may have
+// changed, so the app refreshes its reminders.
 import { Page, Queue, StreamLine } from "@rufi/contracts";
 import { Schema } from "effect";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import { ApiError, read, stream } from "./api.ts";
+import { tell } from "./phone.ts";
 import { dosesChanged, queries } from "./reads.ts";
 import {
   addOlder,
@@ -146,6 +149,7 @@ function open(personId: string): Opened {
     }
     if (line.type === "doses") {
       void dosesChanged(personId);
+      tell({ type: "refresh" });
       return;
     }
     const next = apply(store.getState(), line);
@@ -159,10 +163,13 @@ function open(personId: string): Opened {
       recordChanged();
       void dosesChanged(personId);
       void queries.invalidateQueries({ queryKey: ["agents", personId] });
+      tell({ type: "refresh" });
     } else {
       store.setState({ ...next, status: "open" });
       if (line.entries.some((entry) => entry.kind === "receipt")) {
         recordChanged();
+        // A medicine's times or reminders may have changed.
+        tell({ type: "refresh" });
       }
     }
     // A reply that ended for the sign-in: the sidebar says so.
