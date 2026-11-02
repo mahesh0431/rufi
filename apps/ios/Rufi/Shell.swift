@@ -22,7 +22,7 @@ final class Shell {
 
     let pairing: Pairing
     let screens: Screens
-    private let door: Door
+    let door: Door
     private let unpaired: () -> Void
 
     var state = State.opening
@@ -40,6 +40,8 @@ final class Shell {
     /// The holder's page hasn't drawn yet: its still, or a blank page, covers it.
     private(set) var covered = true
     private var reopening = false
+    /// A tab to show once the first page has drawn: a notice tapped as Rufi opened.
+    private var wanted: Tab?
 
     /// The document camera is up.
     var scanning = false
@@ -68,7 +70,8 @@ final class Shell {
     /// Why the original couldn't be shown, in one line.
     var originalProblem: String?
 
-    init(pairing: Pairing, key: String, seen: @escaping () -> Bool, unpaired: @escaping () -> Void) {
+    init(pairing: Pairing, key: String, seen: @escaping () -> Bool, refresh: @escaping () -> Void,
+         unpaired: @escaping () -> Void) {
         self.pairing = pairing
         self.seen = seen
         self.door = Door(origin: pairing.origin, key: key)
@@ -83,6 +86,7 @@ final class Shell {
         screens.onPage = { [weak self] path, title in self?.drawn(path, title) }
         screens.onEnded = { [weak self] in Task { await self?.reopen() } }
         screens.onUnreachable = { [weak self] in self?.state = .unreachable }
+        screens.onRefresh = refresh
         screens.onScan = { [weak self] in self?.scan() }
         screens.onOriginal = { [weak self] document, files in Task { await self?.show(document, files) } }
     }
@@ -213,6 +217,12 @@ final class Shell {
         }
     }
 
+    /// Shows `tab` at its first page: a notice was tapped. When Rufi is still
+    /// opening, once its first page has drawn.
+    func show(_ tab: Tab) async {
+        if state == .open, !covered { await go(tab.root(pairing.person.id)) } else { wanted = tab }
+    }
+
     /// A tab's stack changed: Back, or the edge swipe, finished.
     func popped() async {
         let top = top(tab)
@@ -242,6 +252,10 @@ final class Shell {
         pages[holder] = (path, title)
         covered = false
         state = .open
+        if let tab = wanted {
+            wanted = nil
+            Task { await go(tab.root(pairing.person.id)) }
+        }
     }
 }
 
@@ -249,6 +263,7 @@ final class Shell {
 struct ShellView: View {
     @Bindable var shell: Shell
     @State private var settings = false
+    @State private var reminding = false
     let app: AppModel
 
     var body: some View {
@@ -264,6 +279,9 @@ struct ShellView: View {
         }
         .sheet(isPresented: $settings) {
             ThisIPhoneView(app: app, pairing: shell.pairing)
+        }
+        .sheet(isPresented: $reminding) {
+            RemindersView(door: shell.door, person: shell.pairing.person.id, reminders: app.reminders)
         }
         .fullScreenCover(isPresented: $shell.scanning) {
             DocumentCamera { scan in Task { await shell.scanned(scan) } }
@@ -308,10 +326,15 @@ struct ShellView: View {
 
     @ViewBuilder
     private func page(_ screen: Screen, root: Bool) -> some View {
-        ScreenView(shell: shell, screen: screen)
+        ScreenView(shell: shell, screen: screen, until: app.reminders?.until)
             .navigationTitle(shell.title(screen))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                if root, screen == shell.roots[.medicines] {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Reminders", systemImage: "bell") { reminding = true }
+                    }
+                }
                 if root {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
@@ -330,13 +353,15 @@ struct ShellView: View {
 struct ScreenView: View {
     let shell: Shell
     let screen: Screen
+    /// Until when reminders are set on this iPhone.
+    let until: Date?
 
     var body: some View {
         ZStack {
             Color(.systemBackground).ignoresSafeArea(.container)
             switch shell.state {
             case .unreachable:
-                CantReachView { Task { await shell.reopen() } }
+                CantReachView(until: until) { Task { await shell.reopen() } }
             case let .problem(words):
                 ContentUnavailableView("Rufi Can't Open", systemImage: "exclamationmark.triangle", description: Text(words))
             case .opening, .open:
@@ -356,8 +381,10 @@ struct ScreenView: View {
     }
 }
 
-/// Rufi can't reach the Mac: the chrome stays, with Try Again.
+/// Rufi can't reach the Mac: the chrome stays, with Try Again, and until
+/// when the reminders already here ring.
 struct CantReachView: View {
+    let until: Date?
     let retry: () -> Void
 
     var body: some View {
@@ -365,6 +392,9 @@ struct CantReachView: View {
             Label("Can't Reach Your Mac", systemImage: "desktopcomputer.trianglebadge.exclamationmark")
         } description: {
             Text("Check Rufi is open there and the Mac is awake, and Tailscale is on, on both.")
+            if let until {
+                Text("Reminders set on this iPhone until \(until.reminderWords).")
+            }
         } actions: {
             Button("Try Again", systemImage: "arrow.clockwise", action: retry)
                 .buttonStyle(.borderedProminent)

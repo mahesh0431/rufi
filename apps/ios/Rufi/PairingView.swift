@@ -56,20 +56,37 @@ struct PairingView: View {
     }
 }
 
-/// Paired: whose record this iPhone opens, then the lock's setup.
+/// Paired: whose record this iPhone opens, then the lock's setup and the
+/// reminders'.
 struct PairedView: View {
     let app: AppModel
     let pairing: Pairing
     @State private var askingLock = false
+    @State private var askingReminders = false
     @State private var problem: String?
 
     var body: some View {
         VStack(spacing: 16) {
             Spacer()
-            Image(systemName: askingLock ? "faceid" : "checkmark.circle.fill")
+            Image(systemName: askingReminders ? "bell.badge" : askingLock ? "faceid" : "checkmark.circle.fill")
                 .font(.system(size: 64))
                 .foregroundStyle(.tint)
-            if askingLock {
+            if askingReminders {
+                Text("Medicine Reminders").font(.title.bold())
+                Text("Rufi can remind you at your medicines' times.")
+                    .multilineTextAlignment(.center).foregroundStyle(.secondary)
+                Spacer()
+                Button("Turn On Reminders", systemImage: "bell") {
+                    Task {
+                        await app.allowNotifications()
+                        app.finishSetup()
+                    }
+                }
+                .buttonStyle(.glassProminent).controlSize(.large)
+                Button("Not Now") { app.finishSetup() }
+                    .controlSize(.large)
+                Text("You can turn them on later in This iPhone.").font(.footnote).foregroundStyle(.secondary)
+            } else if askingLock {
                 Text("Lock Rufi with Face ID").font(.title.bold())
                 Text("Rufi asks for Face ID, or your iPhone's passcode, when you open it and after a minute away.")
                     .multilineTextAlignment(.center).foregroundStyle(.secondary)
@@ -81,14 +98,14 @@ struct PairedView: View {
                     Task {
                         // Only once it is on; cancelled, the offer stays.
                         if await app.lock.turnOn() {
-                            app.finishSetup()
+                            askingReminders = true
                         } else {
                             problem = "Face ID or your passcode wasn't given. Try again, or choose Not Now."
                         }
                     }
                 }
                 .buttonStyle(.glassProminent).controlSize(.large)
-                Button("Not Now") { app.finishSetup() }
+                Button("Not Now") { askingReminders = true }
                     .controlSize(.large)
                 Text("You can change this in This iPhone.").font(.footnote).foregroundStyle(.secondary)
             } else {
@@ -98,7 +115,7 @@ struct PairedView: View {
                 Spacer()
                 Button("Continue", systemImage: "arrow.right") {
                     // No passcode on the iPhone: no lock to offer.
-                    if app.lock.available { askingLock = true } else { app.finishSetup() }
+                    if app.lock.available { askingLock = true } else { askingReminders = true }
                 }
                 .buttonStyle(.glassProminent).controlSize(.large)
                 Text("Wrong person? Unpair on your Mac and pair again.").font(.footnote).foregroundStyle(.secondary)
@@ -136,7 +153,7 @@ struct UnpairedView: View {
         ContentUnavailableView {
             Label("Unpaired", systemImage: "iphone.slash")
         } description: {
-            Text("This iPhone was unpaired on your Mac. Pair again to open Rufi here.")
+            Text("This iPhone was unpaired on your Mac. Pair again to open Rufi here. Rufi's reminders were removed from this iPhone.")
         } actions: {
             Button("Pair Again", systemImage: "qrcode") { app.pairAgain() }
                 .buttonStyle(.glassProminent)

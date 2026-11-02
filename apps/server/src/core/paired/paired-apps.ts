@@ -62,6 +62,25 @@ export function pairedApps(store: Store, now: () => string) {
           .select(["id", "display_name"])
           .where("id", "=", personId)
           .executeTakeFirstOrThrow();
+        // The person's first iPhone: their reminders ring on it from now
+        // (unpairing the last rings them on the Mac again, worked out on
+        // read). Another keeps what they chose.
+        const another = await trx
+          .selectFrom("paired_apps")
+          .select("id")
+          .where("person_id", "=", personId)
+          .where("kind", "=", "iphone")
+          .where("revoked_at", "is", null)
+          .executeTakeFirst();
+        if (!another) {
+          await trx
+            .insertInto("reminder_settings")
+            .values({ person_id: personId, ring: "iphone" })
+            .onConflict((oc) =>
+              oc.column("person_id").doUpdateSet({ ring: "iphone" }),
+            )
+            .execute();
+        }
         await trx
           .insertInto("paired_apps")
           .values({

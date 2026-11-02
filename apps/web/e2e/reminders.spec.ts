@@ -37,8 +37,8 @@ test("keeps what a reminder shows as picked, and where it rings once an iPhone i
     .analyze();
   expect(violations.map((violation) => violation.id)).toEqual([]);
 
-  // Asha pairs her iPhone, from Settings on the Mac; her reminders still
-  // ring on the Mac until she chooses.
+  // An iPhone paired for Asha, as if from before she chose where they ring
+  // (pairing itself chooses the iPhone: the door's tests).
   await rufi.stop();
   const store = openWritable(databasePath(rufi.home));
   try {

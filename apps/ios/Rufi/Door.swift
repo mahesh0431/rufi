@@ -70,6 +70,28 @@ nonisolated struct Door: Sendable {
         return opened.url
     }
 
+    /// The person's reminder setting: what a notice shows, where it rings.
+    struct Setting: Codable, Equatable, Sendable {
+        var show: ReminderPlan.Show
+        var ring: ReminderPlan.Ring
+    }
+
+    /// The reminder plan for `person`, for the days from `from`.
+    func plan(for person: String, from: String) async throws(Problem) -> ReminderPlan {
+        try await Self.call(origin: origin, key: key, method: "GET", path: "\(Self.people)/\(person)/reminders/plan",
+                            query: ["from": from, "days": String(Notices.days)], body: nil)
+    }
+
+    func reminders(for person: String) async throws(Problem) -> Setting {
+        try await Self.call(origin: origin, key: key, method: "GET", path: "\(Self.people)/\(person)/reminders", body: nil)
+    }
+
+    /// Keeps the person's two choices; what applies comes back.
+    func save(_ setting: Setting, for person: String) async throws(Problem) -> Setting {
+        try await Self.call(origin: origin, key: key, method: "PUT", path: "\(Self.people)/\(person)/reminders",
+                            body: ["show": setting.show.rawValue, "ring": setting.ring.rawValue])
+    }
+
     /// Fetches one of `document`'s files, as it came, into `staging`; an
     /// original may be large, so it has 5 minutes.
     func file(person: String, document: String, file: String, into staging: URL) async throws(Problem) -> URL {
@@ -114,6 +136,7 @@ nonisolated struct Door: Sendable {
         let _: Nothing = try await Self.call(origin: origin, key: key, method: "POST", path: "/api/unpair", body: [:])
     }
 
+    private static let people = "/api/people"
     /// How long an original or an upload may take, as the screens give a file.
     static let fileSeconds: TimeInterval = 5 * 60
 
@@ -145,9 +168,14 @@ nonisolated struct Door: Sendable {
     #endif
 
     private static func call<Answer: Decodable>(
-        origin: URL, key: String?, method: String, path: String, body: [String: String]?
+        origin: URL, key: String?, method: String, path: String, query: [String: String] = [:],
+        body: [String: String]?
     ) async throws(Problem) -> Answer {
-        var request = URLRequest(url: origin.appending(path: path))
+        var url = origin.appending(path: path)
+        if !query.isEmpty {
+            url.append(queryItems: query.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) })
+        }
+        var request = URLRequest(url: url)
         request.httpMethod = method
         if let key { request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization") }
         if let body {

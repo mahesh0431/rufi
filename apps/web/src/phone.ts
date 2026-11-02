@@ -21,6 +21,11 @@ export type ToApp =
   | { type: "page"; path: string; title: string }
   /** The session has ended: the app opens Rufi again, or says it's unpaired. */
   | { type: "ended" }
+  /**
+   * Doses, medicines or the reminder setting may have changed: the app
+   * refreshes its reminders.
+   */
+  | { type: "refresh" }
   /** Scan: the app's document camera, then it adds the pages to the chat. */
   | { type: "scan" }
 

@@ -1,6 +1,6 @@
 # iPhone
 
-Rufi on your iPhone opens your own record from Rufi on your Mac, through Tailscale. You pair it once in [Settings › iPhone](rufi:/settings/iphone). This page says what pairing needs, how to pair, what the iPhone shows and keeps, how to unpair, and what to do when something fails.
+Rufi on your iPhone opens your own record from Rufi on your Mac, through Tailscale. You pair it once in [Settings › iPhone](rufi:/settings/iphone). This page says what pairing needs, how to pair, what the iPhone shows and keeps, how its medicine reminders work, how to unpair, and what to do when something fails.
 
 ## What pairing needs
 
@@ -15,12 +15,13 @@ Rufi on your iPhone opens your own record from Rufi on your Mac, through Tailsca
 3. Rufi sets up Tailscale for it and checks that it can reach itself through Tailscale. Then it shows a QR code and **Copy link**.
 4. On the iPhone, open Rufi and tap **Scan Code** to scan it, or copy the link on the Mac and tap **Paste**. The code works once, for 10 minutes. When the phone has paired, Settings says **Paired: Asha's iPhone, for Asha**.
 5. The iPhone says which Mac it paired with and whose record it opens. Tap **Continue**.
+6. It offers **Lock Rufi** (below), then **Turn On Reminders**, which asks iOS to let Rufi send notifications. **Not Now** skips either; both are in **This iPhone** later.
 
 **Close** before a phone pairs ends the code. Each paired iPhone has its own line: its name, whose record, when it paired, and when Rufi last saw it.
 
 A paired iPhone opens only that person's record, for good. To open another person's record, pair again for them.
 
-Pairing leaves that person's medicine reminders ringing on the Mac. Under **Reminders** on the Medicines page you can choose **iPhone** or **Both** (see [Reminders](record.md#reminders)); the iPhone doesn't ring yet, so until it does keep **Mac** or **Both** to be reminded.
+Pairing that person's first iPhone makes their medicine reminders ring on it, and no longer on the Mac. To have them on both, choose **Both** under **Reminders** (see [Medicine reminders on the iPhone](#medicine-reminders-on-the-iphone)). Pairing another iPhone for them keeps what they chose.
 
 ## Lock Rufi
 
@@ -38,24 +39,42 @@ Text follows the iPhone's Text Size (Settings › Accessibility › Display & Te
 
 Settings, sign-in and backups are on the Mac only.
 
+## Medicine reminders on the iPhone
+
+When that person's reminders ring on the **iPhone** or **Both**, Rufi on the iPhone rings them itself, at each medicine's times, as Rufi's own notices. They aren't Apple's Medications reminders.
+
+- **One notice per time**, with every medicine due then. Rufi's notices stack together in Notification Center.
+- **What it says** is the person's choice under **Reminders** (the bell at the top right of Medicines, or on the Mac's Medicines page): **Just the time** ("Medicines at 21:00"), **How many** ("2 medicines at 21:00"), or **Which ones** ("21:00 · 2 medicines", then each name, strength and amount). On the Lock Screen, Which ones shows names unless the iPhone's Settings › Notifications › Show Previews is **When Unlocked**; then it shows "Medicine reminder" until you unlock.
+- **Where reminders ring:** **iPhone**, **Mac** or **Both**, in the same place. With **Mac**, the iPhone has no medicine notices.
+- **Times are where you are.** A medicine at 08:00 rings at 08:00 on the iPhone's clock, also when you travel.
+- They are **Time Sensitive**, so a Focus doesn't hold them back. To change that, open Settings › Notifications › Rufi on the iPhone.
+- Tap a notice to open Rufi at **Medicines**, after Lock Rufi.
+
+**Set until.** The iPhone gets its reminders from your Mac for the next week, and the next time after it (so a medicine you take once a month still rings), and keeps them when it can't reach the Mac. **This iPhone** shows until when they are set, for example "Set until Thu 5 Nov, 21:00", and so does **Can't Reach Your Mac**. The iPhone gets them again each time you open Rufi, when you leave it, and now and then in the background when iOS allows. If you don't open Rufi for a week, a last notice, **Open Rufi to keep your reminders coming**, rings a minute after the last one set.
+
+After you change a medicine's times or reminders on the Mac, open Rufi on the iPhone, so it rings the new ones: until then it rings what it had. With Rufi open on the iPhone, it follows at once. A dose you logged, on the iPhone or the Mac, rings no more, and its notice leaves Notification Center the next time the iPhone gets its reminders, as do notices for a medicine you stopped or retimed, and ones older than yesterday.
+
+If nothing rings, check **This iPhone**: **Notifications** says whether iOS lets Rufi ring, with a way to turn them on.
+
 ## What the iPhone keeps
 
 - Its key, in the iPhone's keychain, on this iPhone only.
 - Which Mac it paired with and whose record it opens, and whether Lock Rufi is on.
+- Its medicine reminders for the next week, as iOS notices: the times and the medicines, whatever a notice shows.
 
 Nothing of your record, chat or documents is kept on the iPhone: pages are shown while Rufi is open and gone when it closes, and an original you view is a temporary copy, deleted when you close it (or the next time Rufi starts, if it was closed while showing one); scanned pages go straight to your Mac without being saved on the iPhone. Deleting the app deletes all of this; to use Rufi on that iPhone again, pair it again.
 
 ## When your Mac can't be reached
 
-If your Mac is asleep, Rufi isn't running there, or Tailscale is off on either, the iPhone says **Can't Reach Your Mac** with **Try Again**. If the Mac becomes unreachable while Rufi is open, a line says **Can't reach your Mac. Checking again every few seconds.** and the page comes back by itself when it can. What you were typing stays.
+If your Mac is asleep, Rufi isn't running there, or Tailscale is off on either, the iPhone says **Can't Reach Your Mac** with **Try Again**, and until when its reminders are set; they keep ringing. If the Mac becomes unreachable while Rufi is open, a line says **Can't reach your Mac. Checking again every few seconds.** and the page comes back by itself when it can. What you were typing stays.
 
 If the iPhone says to update Rufi on your iPhone or on your Mac so they match, they were built for different versions: update the older one.
 
 ## Unpair
 
-On the Mac: click **Unpair** on its line, then **Unpair** again. From then on it can't open Rufi, and anything it has open ends at once. What it sent stays on your Mac. If you lose your phone, unpair it here. When it was that person's last iPhone, their reminders ring on the Mac. The next time Rufi on that iPhone reaches the Mac, it says it was unpaired, with **Pair Again**.
+On the Mac: click **Unpair** on its line, then **Unpair** again. From then on it can't open Rufi, and anything it has open ends at once. What it sent stays on your Mac. If you lose your phone, unpair it here. When it was that person's last iPhone, their reminders ring on the Mac. Reminders already on the iPhone can still ring until it next reaches your Mac, at most a week. The next time Rufi on that iPhone reaches the Mac, it removes its reminders and says it was unpaired, with **Pair Again**.
 
-On the iPhone: in **This iPhone**, tap **Unpair This iPhone**, then confirm. The iPhone forgets its key and the Mac stops letting it in.
+On the iPhone: in **This iPhone**, tap **Unpair This iPhone**, then confirm. The iPhone forgets its key, removes its reminders, and the Mac stops letting it in.
 
 When nothing is paired and no code is waiting, Rufi stops listening for phones and removes its Tailscale route.
 
