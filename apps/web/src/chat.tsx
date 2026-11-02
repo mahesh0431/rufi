@@ -240,19 +240,21 @@ export function ChatPage({ person }: { person: Person }) {
           personId={person.id}
           onOlder={() => void loadOlder(person.id)}
           className="flex-1 overflow-auto"
-          inner="mx-auto max-w-[760px] px-10 py-6"
+          inner="mx-auto max-w-[760px] px-gutter py-6"
           room={room}
         />
-        <div className="relative mx-auto w-full max-w-[760px] px-10 pb-1">
-          <FloatingWaiting
-            live={live}
-            personId={person.id}
-            onHeight={setRoom}
-            className="inset-x-10 bottom-full"
-          />
-          <AgentsAtWork personId={person.id} />
-          <Box person={person} live={live} size="page" inputRef={field} />
-          <AiCanMakeMistakes />
+        <div className="mx-auto w-full max-w-[760px] px-gutter pb-1">
+          <div className="relative">
+            <FloatingWaiting
+              live={live}
+              personId={person.id}
+              onHeight={setRoom}
+              className="inset-x-0 bottom-full"
+            />
+            <AgentsAtWork personId={person.id} />
+            <Box person={person} live={live} size="page" inputRef={field} />
+            <AiCanMakeMistakes />
+          </div>
         </div>
       </Menus>
     </FileDrop>

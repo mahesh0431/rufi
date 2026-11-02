@@ -19,11 +19,12 @@ export type Icon = ComponentType<LucideProps>;
  * main: the one main next action on a screen, at most one. plain: other
  * actions. quiet: actions repeated on rows, and small known actions as an
  * icon only. delete: only the last step of a delete that can't be undone.
- * 36 px high with a label, 32 × 32 px with only an icon. A link that acts
- * like a button takes the same look.
+ * 36 px high with a label, 32 × 32 px with only an icon; on a touch screen
+ * (a coarse pointer) at least 44 × 44 px, Apple's smallest touch target. A
+ * link that acts like a button takes the same look.
  */
 export const buttonLook = cva(
-  "inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg text-[0.8125rem] font-medium whitespace-nowrap disabled:opacity-50",
+  "inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg text-[0.8125rem] font-medium whitespace-nowrap disabled:opacity-50 pointer-coarse:min-h-[44px]",
   {
     variants: {
       look: {
@@ -33,7 +34,10 @@ export const buttonLook = cva(
         delete:
           "border border-danger/35 bg-danger-soft text-danger not-disabled:hover:border-danger/70",
       },
-      shape: { label: "h-9 px-3.5", icon: "size-8" },
+      shape: {
+        label: "h-9 px-3.5",
+        icon: "size-8 pointer-coarse:min-w-[44px]",
+      },
     },
     compoundVariants: [
       {

@@ -288,6 +288,33 @@ test("shows each document Rufi AI split from a file with its place in the file, 
   ).toBeVisible();
 });
 
+test("in a page 390 px wide, each document's actions are in view without scrolling sideways, and Ask Rufi adds it", async ({
+  page,
+  rufi,
+}) => {
+  // 390 px of page beside the 240 px sidebar: the phone's width.
+  await page.setViewportSize({ width: 630, height: 844 });
+  await documentsPage(page, rufi);
+  const row = rows(page).filter({ hasText: "Sunrise Labs August.pdf" });
+  await expect(row.getByRole("button", { name: "Retry" })).toBeInViewport({
+    ratio: 1,
+  });
+  const ask = row.getByRole("button", { name: "Ask Rufi" });
+  await expect(ask).toBeInViewport({ ratio: 1 });
+  await accessible(page);
+  await ask.click();
+  // A small window opens the chat as its page, with the document's chip.
+  await chat(page)
+    .getByRole("button", { name: /^Open the chat/ })
+    .click();
+  await expect(page).toHaveURL(/\/people\/asha\/chat$/);
+  await expect(
+    page
+      .getByRole("list", { name: "Added to this message" })
+      .getByRole("listitem"),
+  ).toHaveText(["Sunrise Labs August.pdf"]);
+});
+
 test("says a file Rufi AI hasn't sorted yet, with Ask Rufi and no Retry; asking in the chat sorts it, and Rufi doesn't ask for it to be read again", async ({
   page,
   rufi,

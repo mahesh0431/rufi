@@ -62,6 +62,42 @@ export const doseKey = (
   row: Pick<Row, "medicine_use_id" | "dose_at">,
 ): string => `${row.medicine_use_id} ${row.dose_at}`;
 
+/**
+ * The person's logs for doses on the local days `from` to `to`
+ * ('YYYY-MM-DD', inclusive), of one medicine or all, by dose, then in the
+ * order they were logged; each with its medicine as it is now.
+ */
+export async function listDoses(
+  db: Kysely<Tables>,
+  personId: string,
+  from: string,
+  to: string,
+  medicineUseId?: string,
+): Promise<DoseLogRow[]> {
+  const { rows } = await sql<
+    Row & { name: string; strength: string | null }
+  >`SELECT d.*, m.name, m.strength FROM dose_log d
+    JOIN medicine_uses m ON m.person_id = d.person_id AND m.id = d.medicine_use_id
+    WHERE d.person_id = ${personId}
+      AND d.dose_at BETWEEN ${`${from}T00:00`} AND ${`${to}T23:59`}
+      AND (${medicineUseId ?? null} IS NULL OR d.medicine_use_id = ${medicineUseId ?? null})
+    ORDER BY d.dose_at, ${LOGGED_ORDER}`.execute(db);
+  return rows.map((row) => ({
+    id: row.id,
+    medicine: {
+      id: row.medicine_use_id,
+      name: row.name,
+      ...(row.strength !== null && { strength: row.strength }),
+    },
+    doseAt: row.dose_at,
+    state: row.state as DoseLogRow["state"],
+    ...(row.taken_at !== null && { takenAt: row.taken_at }),
+    loggedAt: row.logged_at,
+    receivedAt: row.received_at,
+    by: row.logged_by,
+  }));
+}
+
 export type DoseLog = ReturnType<typeof doseLog>;
 
 export function doseLog(store: Store, now: () => Date = () => new Date()) {
@@ -118,40 +154,14 @@ export function doseLog(store: Store, now: () => Date = () => new Date()) {
       return answer;
     },
 
-    /**
-     * The person's logs for doses on the local days `from` to `to`
-     * ('YYYY-MM-DD', inclusive), of one medicine or all, by dose, then in
-     * the order they were logged; each with its medicine as it is now.
-     */
-    list: async (
+    /** The person's logs (`listDoses`). */
+    list: (
       personId: string,
       from: string,
       to: string,
       medicineUseId?: string,
-    ): Promise<DoseLogRow[]> => {
-      const { rows } = await sql<
-        Row & { name: string; strength: string | null }
-      >`SELECT d.*, m.name, m.strength FROM dose_log d
-        JOIN medicine_uses m ON m.person_id = d.person_id AND m.id = d.medicine_use_id
-        WHERE d.person_id = ${personId}
-          AND d.dose_at BETWEEN ${`${from}T00:00`} AND ${`${to}T23:59`}
-          AND (${medicineUseId ?? null} IS NULL OR d.medicine_use_id = ${medicineUseId ?? null})
-        ORDER BY d.dose_at, ${LOGGED_ORDER}`.execute(store.query);
-      return rows.map((row) => ({
-        id: row.id,
-        medicine: {
-          id: row.medicine_use_id,
-          name: row.name,
-          ...(row.strength !== null && { strength: row.strength }),
-        },
-        doseAt: row.dose_at,
-        state: row.state as DoseLogRow["state"],
-        ...(row.taken_at !== null && { takenAt: row.taken_at }),
-        loggedAt: row.logged_at,
-        receivedAt: row.received_at,
-        by: row.logged_by,
-      }));
-    },
+    ): Promise<DoseLogRow[]> =>
+      listDoses(store.query, personId, from, to, medicineUseId),
 
     /** Tells the person's listeners that what rings or shows changed. */
     changed,

@@ -147,12 +147,15 @@ function DoseLogged({
     }
   };
   const press = (state: DoseState) => {
+    const now = new Date().toISOString();
     void send({
       id: crypto.randomUUID(),
       medicineUseId: dose.medicine.id,
       doseAt: `${day}T${dose.at}`,
       state,
-      loggedAt: new Date().toISOString(),
+      loggedAt: now,
+      // Taken on a tap is taken as it is tapped.
+      ...(state === "taken" && { takenAt: now }),
     });
   };
   const busy = (state: DoseState, label: string) =>
@@ -179,7 +182,10 @@ function DoseLogged({
         <>
           <span className="whitespace-nowrap">
             {logged.state === "taken"
-              ? `Taken ${clockTime(logged.takenAt ?? logged.loggedAt)}`
+              ? // Without when it was taken, only that it was.
+                logged.takenAt === undefined
+                ? "Taken"
+                : `Taken ${clockTime(logged.takenAt)}`
               : "Skipped"}{" "}
             · {loggedWhere(logged.by)}
           </span>

@@ -295,9 +295,12 @@ export function Box({
           className={`rounded-2xl border border-line bg-surface px-3.5 pt-2.5 pb-1.5 ${size === "page" ? "shadow-sm" : ""}`}
         >
           {chips.length > 0 && (
+            // On a touch screen, room inside the scroller for the touches
+            // each remove button takes around it (chips.tsx), in the same
+            // place: a scroller cuts off what goes past its edge.
             <ul
               aria-label="Added to this message"
-              className="mb-1.5 flex max-h-24 flex-wrap gap-1.5 overflow-auto"
+              className="mb-1.5 flex max-h-24 flex-wrap gap-1.5 overflow-auto pointer-coarse:-mx-2.5 pointer-coarse:-mt-2.5 pointer-coarse:mb-[-4px] pointer-coarse:max-h-[116px] pointer-coarse:p-2.5"
             >
               {chips.map((chip) => (
                 <li key={chipKey(chip)} className="max-w-full">

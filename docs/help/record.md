@@ -104,7 +104,7 @@ The Medicines page lists each medicine with its amount, directions and times. Op
 
 **Today**, at the top of the Medicines page, shows what you take today, by time: each medicine taken now that has times, with its amount, directions, the last day of a course, whether its reminders are on, and what you logged for that dose. A time already past today is greyed; that means only "earlier today".
 
-- Click **Taken** or **Skipped** on a dose to log it. It then says, for example, **Taken 21:02 · Mac**: when you logged it, and where. You can log a dose before its time too.
+- Click **Taken** or **Skipped** on a dose to log it. It then says, for example, **Taken 21:02 · Mac**: when you took it, and where it was logged. A dose you told Rufi AI about without saying when says only **Taken · Rufi AI**. You can log a dose before its time too.
 - Click **Undo** to take a log back; the dose shows **Taken** and **Skipped** again.
 - A dose you didn't log has its buttons and nothing else: Rufi never calls it missed.
 - If Rufi couldn't tell whether a log arrived, the dose says **Not sure it was logged**, also after you open another page or reload this window. Click **Try again**: Rufi sends the same log, as you made it, so it is never counted twice.
@@ -118,7 +118,7 @@ To change a time, the days or the reminders, use **Ask Rufi** on the row, or tel
 
 ### Doses
 
-Open a medicine to see its **Doses**: what you logged for it in the last 14 days, by day, newest first, for example "Mon 2 Nov · 21:00 taken 21:02 (Mac) · 21:00 undone (Mac)". Every log is there as you made it, an undo too; a dose you didn't log has no line. Rufi doesn't count doses or say how many you missed, because a medicine's times can change: what is logged is what you said.
+Open a medicine to see its **Doses**: what you logged for it in the last 14 days, here or by telling Rufi AI, by day, newest first, for example "Mon 2 Nov · 21:00 taken 21:02 (Mac) · 21:00 undone (Mac)". Every log is there as you made it, an undo too; a dose you didn't log has no line. Rufi doesn't count doses or say how many you missed, because a medicine's times can change: what is logged is what you said.
 
 A log is kept as you made it, outside your health record: it has no receipt in the chat, and it never changes or goes away. Undo adds a log; it doesn't remove one. Logs are in your [backups and export](backups-and-export.md) (`dose_log`).
 

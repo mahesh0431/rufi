@@ -13,6 +13,7 @@ import type { SortAnswer, SortInput } from "../documents/sorting.ts";
 import type { DismissInput, Dismissed } from "../record/items.ts";
 import type { SaveRequest, Saved } from "../record/save.ts";
 import type { Store } from "../store/database.ts";
+import type { LogDoseInput } from "./doses.ts";
 import type {
   AgentStatusInput,
   ReadAgentInput,
@@ -65,6 +66,10 @@ export interface ToolContext {
   /** Sets the agent that reads documents (set_reader): only in Rufi's own chat. */
   setReader?:
     | ((input: SetReaderInput, callId: string) => Promise<unknown>)
+    | undefined;
+  /** Logs a dose the user told of (log_dose): only in Rufi's own chat. */
+  logDose?:
+    | ((input: LogDoseInput, callId: string) => Promise<unknown>)
     | undefined;
   /** What the calling agent does with agents: only in Rufi's own chat. */
   agents?: AgentTools | undefined;
