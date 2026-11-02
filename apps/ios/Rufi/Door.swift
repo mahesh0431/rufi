@@ -70,9 +70,9 @@ nonisolated struct Door: Sendable {
         return opened.url
     }
 
-    /// Fetches one of `document`'s files, as it came, into a temporary file;
-    /// an original may be large, so it has 5 minutes.
-    func file(person: String, document: String, file: String) async throws(Problem) -> URL {
+    /// Fetches one of `document`'s files, as it came, into `staging`; an
+    /// original may be large, so it has 5 minutes.
+    func file(person: String, document: String, file: String, into staging: URL) async throws(Problem) -> URL {
         let path = ["api", "people", person, "documents", document, "files", file]
             .map { $0.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(.init(charactersIn: "-_."))) ?? "" }
             .joined(separator: "/")
@@ -86,14 +86,26 @@ nonisolated struct Door: Sendable {
         } catch {
             throw .unreachable
         }
-        guard let http = response as? HTTPURLResponse else { throw .unreachable }
-        guard (200..<300).contains(http.statusCode) else {
-            let refusal = (try? Data(contentsOf: fetched)).flatMap { try? JSONDecoder().decode(Refusal.self, from: $0) }
+        // At once where Rufi's own cleanup finds it, whatever happens next.
+        let staged = staging.appending(path: UUID().uuidString)
+        do {
+            try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+            try FileManager.default.moveItem(at: fetched, to: staged)
+        } catch {
             try? FileManager.default.removeItem(at: fetched)
+            throw .refused("Rufi couldn't keep a copy to show. Try again.")
+        }
+        guard let http = response as? HTTPURLResponse else {
+            try? FileManager.default.removeItem(at: staged)
+            throw .unreachable
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let refusal = (try? Data(contentsOf: staged)).flatMap { try? JSONDecoder().decode(Refusal.self, from: $0) }
+            try? FileManager.default.removeItem(at: staged)
             if http.statusCode == 401, refusal?.problem == "unpaired" { throw .unpaired }
             throw .refused(refusal?.error ?? "Rufi on your Mac refused (\(http.statusCode)).")
         }
-        return fetched
+        return staged
     }
 
     /// Unpairs this iPhone on the Mac.

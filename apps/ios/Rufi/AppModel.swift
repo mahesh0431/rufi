@@ -16,6 +16,10 @@ final class AppModel {
 
     private(set) var stage: Stage = .pairing
     let lock = Lock()
+    /// Rufi's scene is active.
+    var active = true
+    /// Rufi is on screen and unlocked: what it shows can be seen.
+    var seen: Bool { active && !lock.locked }
 
     init() {
         // A first launch after installing: a key left from before is removed.
@@ -76,7 +80,7 @@ final class AppModel {
     }
 
     private func shell(_ pairing: Pairing, _ key: String) -> Shell {
-        Shell(pairing: pairing, key: key) { [weak self] in
+        Shell(pairing: pairing, key: key, seen: { [weak self] in self?.seen ?? false }) { [weak self] in
             self?.forget()
             self?.stage = .unpaired
         }

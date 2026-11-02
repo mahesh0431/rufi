@@ -54,11 +54,16 @@ final class Shell {
     }
     /// An original is being fetched.
     private(set) var fetching = false
+    /// Fetched while Rufi was hidden or locked: it shows once Rufi is seen again.
+    private var waiting = false
+    /// Rufi is on screen and unlocked.
+    private let seen: () -> Bool
     /// Why the original couldn't be shown, in one line.
     var originalProblem: String?
 
-    init(pairing: Pairing, key: String, unpaired: @escaping () -> Void) {
+    init(pairing: Pairing, key: String, seen: @escaping () -> Bool, unpaired: @escaping () -> Void) {
         self.pairing = pairing
+        self.seen = seen
         self.door = Door(origin: pairing.origin, key: key)
         self.unpaired = unpaired
         screens = Screens(origin: pairing.origin)
@@ -121,7 +126,8 @@ final class Shell {
         var copies: [URL] = []
         do {
             for file in files {
-                let fetched = try await door.file(person: pairing.person.id, document: document, file: file.id)
+                let fetched = try await door.file(person: pairing.person.id, document: document, file: file.id,
+                                                  into: Originals.shown.staging)
                 copies.append(try Originals.shown.keep(fetched, named: file.name))
             }
         } catch {
@@ -136,7 +142,14 @@ final class Shell {
             return
         }
         originals = copies
-        original = copies.first
+        if seen() { original = copies.first } else { waiting = true }
+    }
+
+    /// Rufi is on screen and unlocked again: an original fetched meanwhile shows.
+    func appeared() {
+        guard waiting else { return }
+        waiting = false
+        original = originals.first
     }
 
     /// The person tapped a link to `path` in the page.
@@ -215,6 +228,9 @@ struct ShellView: View {
             Button("OK") {}
         } message: {
             Text(shell.originalProblem ?? "")
+        }
+        .onChange(of: app.seen) { _, seen in
+            if seen { shell.appeared() }
         }
         .task { await shell.reopen() }
     }

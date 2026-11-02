@@ -2,21 +2,32 @@ import Foundation
 
 /// The copies of originals being shown in Quick Look: each in its own folder
 /// in the app's temporary folder, with complete file protection, deleted when
-/// Quick Look closes and, for any left behind, at every start.
+/// Quick Look closes and, for any left behind, at every start. Files being
+/// fetched wait in `staging`, inside it, so the start's cleanup finds them too.
 nonisolated struct Originals: Sendable {
     let folder: URL
 
     static let shown = Originals(folder: FileManager.default.temporaryDirectory.appending(path: "originals"))
 
+    /// Where fetched files wait until they are kept.
+    var staging: URL { folder.appending(path: "staging", directoryHint: .isDirectory) }
+
     /// Moves a fetched file into a folder of its own, under its name as the
-    /// Mac gave it, made safe to be a file name; the copy's place.
+    /// Mac gave it, made safe to be a file name; the copy's place. When a
+    /// step fails, neither the fetched file nor a part-made copy stays.
     func keep(_ fetched: URL, named name: String) throws -> URL {
         let own = folder.appending(path: UUID().uuidString, directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: own, withIntermediateDirectories: true)
-        let copy = own.appending(path: Self.fileName(name))
-        try FileManager.default.moveItem(at: fetched, to: copy)
-        try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: copy.path)
-        return copy
+        do {
+            try FileManager.default.createDirectory(at: own, withIntermediateDirectories: true)
+            let copy = own.appending(path: Self.fileName(name))
+            try FileManager.default.moveItem(at: fetched, to: copy)
+            try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: copy.path)
+            return copy
+        } catch {
+            try? FileManager.default.removeItem(at: fetched)
+            try? FileManager.default.removeItem(at: own)
+            throw error
+        }
     }
 
     /// Deletes these copies, each with its folder.

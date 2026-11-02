@@ -34,4 +34,17 @@ struct OriginalsTests {
         originals.deleteAll()
         #expect(!FileManager.default.fileExists(atPath: second.path))
     }
+
+    @Test func aCopyThatCantBeKeptLeavesNothing() throws {
+        let place = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        // The copies' folder can't be made: a file is in its place.
+        try Data().write(to: place)
+        defer { try? FileManager.default.removeItem(at: place) }
+        let originals = Originals(folder: place)
+        let fetched = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try Data("%PDF-1.7 fictional".utf8).write(to: fetched)
+
+        #expect(throws: (any Error).self) { try originals.keep(fetched, named: "report.pdf") }
+        #expect(!FileManager.default.fileExists(atPath: fetched.path))
+    }
 }
