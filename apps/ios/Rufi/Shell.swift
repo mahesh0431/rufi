@@ -1,3 +1,4 @@
+import QuickLook
 import SwiftUI
 
 /// One page in a tab's stack. Its address and title can change as the page
@@ -40,8 +41,29 @@ final class Shell {
     private(set) var covered = true
     private var reopening = false
 
-    init(pairing: Pairing, key: String, unpaired: @escaping () -> Void) {
+    /// The copies of the original Quick Look shows, and the one on screen;
+    /// closing it deletes them.
+    private(set) var originals: [URL] = []
+    var original: URL? {
+        didSet {
+            if original == nil, !originals.isEmpty {
+                Originals.shown.delete(originals)
+                originals = []
+            }
+        }
+    }
+    /// An original is being fetched.
+    private(set) var fetching = false
+    /// Fetched while Rufi was hidden or locked: it shows once Rufi is seen again.
+    private var waiting = false
+    /// Rufi is on screen and unlocked.
+    private let seen: () -> Bool
+    /// Why the original couldn't be shown, in one line.
+    var originalProblem: String?
+
+    init(pairing: Pairing, key: String, seen: @escaping () -> Bool, unpaired: @escaping () -> Void) {
         self.pairing = pairing
+        self.seen = seen
         self.door = Door(origin: pairing.origin, key: key)
         self.unpaired = unpaired
         screens = Screens(origin: pairing.origin)
@@ -54,6 +76,7 @@ final class Shell {
         screens.onPage = { [weak self] path, title in self?.drawn(path, title) }
         screens.onEnded = { [weak self] in Task { await self?.reopen() } }
         screens.onUnreachable = { [weak self] in self?.state = .unreachable }
+        screens.onOriginal = { [weak self] document, files in Task { await self?.show(document, files) } }
     }
 
     /// The screen on top in `tab`.
@@ -92,6 +115,41 @@ final class Shell {
         } catch {
             state = .unreachable
         }
+    }
+
+    /// View original: fetches the document's files with the key and shows
+    /// them in Quick Look.
+    func show(_ document: String, _ files: [(id: String, name: String)]) async {
+        guard !fetching, originals.isEmpty else { return }
+        fetching = true
+        defer { fetching = false }
+        var copies: [URL] = []
+        do {
+            for file in files {
+                let fetched = try await door.file(person: pairing.person.id, document: document, file: file.id,
+                                                  into: Originals.shown.staging)
+                copies.append(try Originals.shown.keep(fetched, named: file.name))
+            }
+        } catch {
+            Originals.shown.delete(copies)
+            switch error as? Door.Problem {
+            case .unpaired: unpaired()
+            case .unreachable: originalProblem = "Can't reach your Mac. Try again when it's awake and Rufi is open."
+            case let .refused(words): originalProblem = words
+            case .codeExpired, .mismatch: originalProblem = "Update Rufi on your iPhone (or on your Mac) so they match."
+            case nil: originalProblem = "Rufi couldn't keep a copy to show. Try again."
+            }
+            return
+        }
+        originals = copies
+        if seen() { original = copies.first } else { waiting = true }
+    }
+
+    /// Rufi is on screen and unlocked again: an original fetched meanwhile shows.
+    func appeared() {
+        guard waiting else { return }
+        waiting = false
+        original = originals.first
     }
 
     /// The person tapped a link to `path` in the page.
@@ -162,7 +220,23 @@ struct ShellView: View {
         .sheet(isPresented: $settings) {
             ThisIPhoneView(app: app, pairing: shell.pairing)
         }
+        .quickLookPreview($shell.original, in: shell.originals)
+        .overlay {
+            if shell.fetching { ProgressView().controlSize(.large).padding(24).glassEffect() }
+        }
+        .alert("Rufi Couldn't Open the Original", isPresented: problemShown) {
+            Button("OK") {}
+        } message: {
+            Text(shell.originalProblem ?? "")
+        }
+        .onChange(of: app.seen) { _, seen in
+            if seen { shell.appeared() }
+        }
         .task { await shell.reopen() }
+    }
+
+    private var problemShown: Binding<Bool> {
+        Binding { shell.originalProblem != nil } set: { if !$0 { shell.originalProblem = nil } }
     }
 
     private func stack(_ tab: Tab) -> Binding<[Screen]> {
