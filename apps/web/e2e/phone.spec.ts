@@ -148,3 +148,27 @@ test("in the iPhone app, a dose logged on the Mac tells the app to refresh its r
 
   await expect.poll(told).toContainEqual({ type: "refresh" });
 });
+
+test("in the iPhone app, View original asks the app to show the document's file", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family();
+  await rufi.start();
+  await asPhone(page);
+  await page.goto(rufi.link());
+  await page.evaluate(() => {
+    const app = window as unknown as { rufi: { open: (path: string) => void } };
+    app.rufi.open("/people/asha/documents/doc-asha-aug");
+  });
+  await page.getByRole("button", { name: "View original" }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.told))
+    .toContainEqual({
+      type: "original",
+      documentId: "doc-asha-aug",
+      files: [{ id: expect.any(String), name: "Sunrise Labs August.pdf" }],
+    });
+  // The app shows it; the page opens no viewer of its own.
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});

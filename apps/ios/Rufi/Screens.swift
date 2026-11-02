@@ -27,6 +27,8 @@ final class Screens: NSObject {
     /// Doses, medicines or the reminder setting may have changed.
     var onRefresh: () -> Void = {}
     var onUnreachable: () -> Void = {}
+    /// View original: a document and its files, each an id and a name.
+    var onOriginal: (String, [(id: String, name: String)]) -> Void = { _, _ in }
 
     private var top: CGFloat = 0
     private var bottom: CGFloat = 0
@@ -129,6 +131,11 @@ final class Screens: NSObject {
             onEnded()
         case "refresh":
             onRefresh()
+        case "original":
+            let files = (body["files"] as? [[String: Any]] ?? []).compactMap { file in
+                (file["id"] as? String).flatMap { id in (file["name"] as? String).map { (id: id, name: $0) } }
+            }
+            if let document = body["documentId"] as? String, !files.isEmpty { onOriginal(document, files) }
         default:
             break
         }

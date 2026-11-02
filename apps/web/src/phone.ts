@@ -24,7 +24,13 @@ export type ToApp =
    * Doses, medicines or the reminder setting may have changed: the app
    * refreshes its reminders.
    */
-  | { type: "refresh" };
+  | { type: "refresh" }
+  /** View original: the app fetches the document's files and shows them. */
+  | {
+      type: "original";
+      documentId: string;
+      files: { id: string; name: string }[];
+    };
 
 declare global {
   interface Window {

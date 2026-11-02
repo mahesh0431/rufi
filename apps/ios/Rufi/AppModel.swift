@@ -21,6 +21,10 @@ final class AppModel {
     private(set) var reminders: Reminders?
     /// The last pairing's reminders being removed: a new pairing waits for it.
     private var stopping: Task<Void, Never>?
+    /// Rufi's scene is active.
+    var active = true
+    /// Rufi is on screen and unlocked: what it shows can be seen.
+    var seen: Bool { active && !lock.locked }
 
     init() {
         // A first launch after installing: a key left from before is removed.
@@ -28,6 +32,8 @@ final class AppModel {
             Keychain.forget()
             UserDefaults.standard.set(true, forKey: "installed")
         }
+        // Copies of originals left from a Rufi that ended while showing one.
+        Originals.shown.deleteAll()
         if let pairing = Pairing.saved(), let key = Keychain.key() {
             reminders = newReminders(pairing, key)
             // Paired, but the lock's offer wasn't answered: it comes again.
@@ -100,7 +106,7 @@ final class AppModel {
     }
 
     private func shell(_ pairing: Pairing, _ key: String) -> Shell {
-        Shell(pairing: pairing, key: key) { [weak self] in
+        Shell(pairing: pairing, key: key, seen: { [weak self] in self?.seen ?? false }) { [weak self] in
             Task { await self?.refresh() }
         } unpaired: { [weak self] in
             self?.wasUnpaired()

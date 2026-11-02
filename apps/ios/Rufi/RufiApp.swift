@@ -15,6 +15,7 @@ struct RufiApp: App {
         WindowGroup {
             RootView(app: app)
                 .onChange(of: phase, initial: true) { _, now in
+                    app.active = now == .active
                     app.lock.phase(now)
                     shield.show(now != .active || app.lock.locked, app: app)
                     if now == .background { refreshAway() }
