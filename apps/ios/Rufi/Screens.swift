@@ -27,6 +27,8 @@ final class Screens: NSObject {
     /// Doses, medicines or the reminder setting may have changed.
     var onRefresh: () -> Void = {}
     var onUnreachable: () -> Void = {}
+    /// Scan: the page asks for the document camera.
+    var onScan: () -> Void = {}
     /// View original: a document and its files, each an id and a name.
     var onOriginal: (String, [(id: String, name: String)]) -> Void = { _, _ in }
 
@@ -69,6 +71,13 @@ final class Screens: NSObject {
         view.evaluateJavaScript("window.rufi.open(\(text))") { [weak self] _, error in
             if error != nil { self?.onEnded() }
         }
+    }
+
+    /// Gives the page the door's answer to an added scan: its chips go in the box.
+    func added(_ answer: Data) {
+        guard (try? JSONSerialization.jsonObject(with: answer)) != nil,
+              let json = String(data: answer, encoding: .utf8) else { return }
+        view.evaluateJavaScript("window.rufi.added(\(json))")
     }
 
     /// A still of the page as it is now.
@@ -131,6 +140,8 @@ final class Screens: NSObject {
             onEnded()
         case "refresh":
             onRefresh()
+        case "scan":
+            onScan()
         case "original":
             let files = (body["files"] as? [[String: Any]] ?? []).compactMap { file in
                 (file["id"] as? String).flatMap { id in (file["name"] as? String).map { (id: id, name: $0) } }

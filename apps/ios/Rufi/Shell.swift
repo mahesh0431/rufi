@@ -43,6 +43,13 @@ final class Shell {
     /// A tab to show once the first page has drawn: a notice tapped as Rufi opened.
     private var wanted: Tab?
 
+    /// The document camera is up.
+    var scanning = false
+    /// Scanned pages are being added.
+    private(set) var adding = false
+    /// Why a scan couldn't be added, in one line.
+    var scanProblem: String?
+
     /// The copies of the original Quick Look shows, and the one on screen;
     /// closing it deletes them.
     private(set) var originals: [URL] = []
@@ -80,6 +87,7 @@ final class Shell {
         screens.onEnded = { [weak self] in Task { await self?.reopen() } }
         screens.onUnreachable = { [weak self] in self?.state = .unreachable }
         screens.onRefresh = refresh
+        screens.onScan = { [weak self] in self?.scan() }
         screens.onOriginal = { [weak self] document, files in Task { await self?.show(document, files) } }
     }
 
@@ -118,6 +126,43 @@ final class Shell {
             state = .problem(words)
         } catch {
             state = .unreachable
+        }
+    }
+
+    /// Scan: the document camera, where the iPhone has one.
+    func scan() {
+        guard !adding else { return }
+        if DocumentCamera.available {
+            scanning = true
+        } else {
+            scanProblem = "This iPhone can't scan documents. Add a photo with the paperclip instead."
+        }
+    }
+
+    /// The camera's pages: added with the key, together as one document, and
+    /// their chip goes in the chat box. They are only in memory meanwhile.
+    func scanned(_ scan: DocumentCamera.Scan) async {
+        scanning = false
+        let pages: [Data]
+        switch scan {
+        case .cancelled: return
+        case .failed:
+            scanProblem = "The camera couldn't take that scan. Scan it again."
+            return
+        case let .pages(taken): pages = taken
+        }
+        adding = true
+        defer { adding = false }
+        do {
+            screens.added(try await door.add(person: pairing.person.id, pages: pages))
+        } catch .unpaired {
+            unpaired()
+        } catch .unreachable {
+            scanProblem = "Can't reach your Mac. Scan again when it's awake and Rufi is open."
+        } catch let .refused(words) {
+            scanProblem = words
+        } catch {
+            scanProblem = "Update Rufi on your iPhone (or on your Mac) so they match."
         }
     }
 
@@ -238,9 +283,18 @@ struct ShellView: View {
         .sheet(isPresented: $reminding) {
             RemindersView(door: shell.door, person: shell.pairing.person.id, reminders: app.reminders)
         }
+        .fullScreenCover(isPresented: $shell.scanning) {
+            DocumentCamera { scan in Task { await shell.scanned(scan) } }
+                .ignoresSafeArea()
+        }
+        .alert("Rufi Couldn't Add the Scan", isPresented: scanProblemShown) {
+            Button("OK") {}
+        } message: {
+            Text(shell.scanProblem ?? "")
+        }
         .quickLookPreview($shell.original, in: shell.originals)
         .overlay {
-            if shell.fetching { ProgressView().controlSize(.large).padding(24).glassEffect() }
+            if shell.fetching || shell.adding { ProgressView().controlSize(.large).padding(24).glassEffect() }
         }
         .alert("Rufi Couldn't Open the Original", isPresented: problemShown) {
             Button("OK") {}
@@ -251,6 +305,10 @@ struct ShellView: View {
             if seen { shell.appeared() }
         }
         .task { await shell.reopen() }
+    }
+
+    private var scanProblemShown: Binding<Bool> {
+        Binding { shell.scanProblem != nil } set: { if !$0 { shell.scanProblem = nil } }
     }
 
     private var problemShown: Binding<Bool> {

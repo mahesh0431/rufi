@@ -33,6 +33,8 @@ iOS can also lock any app (touch and hold its icon, then **Require Face ID**). I
 
 Rufi has four tabs: **Chat**, **Medicines**, **Record** and **Documents**. Their pages come from Rufi on your Mac, as they are there now: what you do on the phone is done on the Mac. A link to another page opens it on top, with **Back** (or a swipe from the left edge) to return; a link in a reply opens the result in Chat, with Back to the chat. Web links open in Safari. On a document, **View original** shows the file as it came in iOS's own viewer, every photo of it too, with its share button; Rufi deletes its copy when you close it.
 
+To add a paper report from the chat, tap the scan button beside the paperclip: iOS's document camera finds the page's edges and straightens it. Scan each page, then tap **Save**: the pages go to your Mac together as one document, and its chip appears in the box, as when you add photos with the paperclip. Rufi reads it when you send; if you open another tab meanwhile, the chip is in the box when you come back. If the camera can't take the scan, Rufi says so, adds no pages and keeps your words: scan again. The paperclip still adds photos and files.
+
 Text follows the iPhone's Text Size (Settings › Accessibility › Display & Text Size), and Rufi follows the iPhone's light or dark appearance. Rufi's own text size and appearance settings are for the Mac.
 
 Settings, sign-in and backups are on the Mac only.
@@ -60,7 +62,7 @@ If nothing rings, check **This iPhone**: **Notifications** says whether iOS lets
 - Which Mac it paired with and whose record it opens, and whether Lock Rufi is on.
 - Its medicine reminders for the next week, as iOS notices: the times and the medicines, whatever a notice shows.
 
-Nothing of your record, chat or documents is kept on the iPhone: pages are shown while Rufi is open and gone when it closes, and an original you view is a temporary copy, deleted when you close it (or the next time Rufi starts, if it was closed while showing one). Deleting the app deletes all of this; to use Rufi on that iPhone again, pair it again.
+Nothing of your record, chat or documents is kept on the iPhone: pages are shown while Rufi is open and gone when it closes, and an original you view is a temporary copy, deleted when you close it (or the next time Rufi starts, if it was closed while showing one); scanned pages go straight to your Mac without being saved on the iPhone. Deleting the app deletes all of this; to use Rufi on that iPhone again, pair it again.
 
 ## When your Mac can't be reached
 
