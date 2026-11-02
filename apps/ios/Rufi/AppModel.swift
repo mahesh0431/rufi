@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UserNotifications
 
 /// Where the app is: pairing, the setup after it, Rufi open, or unpaired by
 /// the Mac.
@@ -16,6 +17,8 @@ final class AppModel {
 
     private(set) var stage: Stage = .pairing
     let lock = Lock()
+    /// The reminders of the pairing; none while unpaired.
+    private(set) var reminders: Reminders?
 
     init() {
         // A first launch after installing: a key left from before is removed.
@@ -24,6 +27,7 @@ final class AppModel {
             UserDefaults.standard.set(true, forKey: "installed")
         }
         if let pairing = Pairing.saved(), let key = Keychain.key() {
+            reminders = newReminders(pairing, key)
             stage = .open(shell(pairing, key))
         }
     }
@@ -39,6 +43,7 @@ final class AppModel {
             let pairing = Pairing(origin: link.origin, app: paired.app.id, person: paired.person,
                                   mac: paired.mac, folder: paired.folder)
             pairing.save()
+            reminders = newReminders(pairing, paired.key)
             stage = .paired(pairing)
             return nil
         } catch .codeExpired {
@@ -52,17 +57,34 @@ final class AppModel {
         }
     }
 
-    /// After the setup: Rufi opens.
+    /// After the setup: Rufi opens, and its reminders are set.
     func finishSetup() {
         guard case let .paired(pairing) = stage, let key = Keychain.key() else { return }
         stage = .open(shell(pairing, key))
+        Task { await refresh() }
     }
 
-    /// Unpairs here, on the Mac too when it answers.
+    /// Asks iOS to let Rufi ring reminders, once.
+    func allowNotifications() async {
+        _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+    }
+
+    /// Brings the reminders in line with the Mac's plan.
+    func refresh() async {
+        await reminders?.refresh()
+    }
+
+    /// A reminder was tapped: Medicines, after the lock.
+    func openMedicines() {
+        if case let .open(shell) = stage { Task { await shell.show(.medicines) } }
+    }
+
+    /// Unpairs here, on the Mac too when it answers; its reminders go.
     func unpair() async {
         if let pairing = Pairing.saved(), let key = Keychain.key() {
             try? await Door(origin: pairing.origin, key: key).unpair()
         }
+        await reminders?.clear()
         forget()
         stage = .pairing
     }
@@ -73,14 +95,34 @@ final class AppModel {
 
     private func shell(_ pairing: Pairing, _ key: String) -> Shell {
         Shell(pairing: pairing, key: key) { [weak self] in
-            self?.forget()
-            self?.stage = .unpaired
+            Task { await self?.refresh() }
+        } unpaired: { [weak self] in
+            self?.wasUnpaired()
         }
+    }
+
+    private func newReminders(_ pairing: Pairing, _ key: String) -> Reminders {
+        let door = Door(origin: pairing.origin, key: key)
+        let person = pairing.person.id
+        return Reminders { (from: String) async throws(Door.Problem) -> ReminderPlan in
+            try await door.plan(for: person, from: from)
+        } unpaired: { [weak self] in
+            self?.wasUnpaired()
+        }
+    }
+
+    /// The Mac unpaired this iPhone: its key, pairing and reminders go.
+    private func wasUnpaired() {
+        let reminders = reminders
+        Task { await reminders?.clear() }
+        forget()
+        stage = .unpaired
     }
 
     private func forget() {
         Keychain.forget()
         Pairing.forget()
         lock.forget()
+        reminders = nil
     }
 }

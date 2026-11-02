@@ -24,6 +24,8 @@ final class Screens: NSObject {
     var onPage: (String, String) -> Void = { _, _ in }
     /// The session ended, or the page couldn't load.
     var onEnded: () -> Void = {}
+    /// Doses, medicines or the reminder setting may have changed.
+    var onRefresh: () -> Void = {}
     var onUnreachable: () -> Void = {}
 
     private var top: CGFloat = 0
@@ -121,6 +123,8 @@ final class Screens: NSObject {
             }
         case "ended":
             onEnded()
+        case "refresh":
+            onRefresh()
         default:
             break
         }
