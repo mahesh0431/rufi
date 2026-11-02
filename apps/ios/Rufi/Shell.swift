@@ -114,9 +114,16 @@ final class Shell {
 
     /// The camera's pages: added with the key, together as one document, and
     /// their chip goes in the chat box. They are only in memory meanwhile.
-    func scanned(_ pages: [Data]) async {
+    func scanned(_ scan: DocumentCamera.Scan) async {
         scanning = false
-        guard !pages.isEmpty else { return }
+        let pages: [Data]
+        switch scan {
+        case .cancelled: return
+        case .failed:
+            scanProblem = "The camera couldn't take that scan. Scan it again."
+            return
+        case let .pages(taken): pages = taken
+        }
         adding = true
         defer { adding = false }
         do {
@@ -201,7 +208,7 @@ struct ShellView: View {
             ThisIPhoneView(app: app, pairing: shell.pairing)
         }
         .fullScreenCover(isPresented: $shell.scanning) {
-            DocumentCamera { pages in Task { await shell.scanned(pages) } }
+            DocumentCamera { scan in Task { await shell.scanned(scan) } }
                 .ignoresSafeArea()
         }
         .overlay {

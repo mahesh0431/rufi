@@ -80,19 +80,31 @@ nonisolated struct Door: Sendable {
     static let fileSeconds: TimeInterval = 5 * 60
 
     private static let files: URLSession = {
-        let configuration = URLSessionConfiguration.ephemeral
+        let configuration = Self.configuration()
         configuration.timeoutIntervalForRequest = fileSeconds
         configuration.timeoutIntervalForResource = fileSeconds
-        configuration.waitsForConnectivity = false
         return URLSession(configuration: configuration, delegate: NoRedirects(), delegateQueue: nil)
     }()
 
     private static let session: URLSession = {
-        let configuration = URLSessionConfiguration.ephemeral
+        let configuration = Self.configuration()
         configuration.timeoutIntervalForRequest = 20
-        configuration.waitsForConnectivity = false
         return URLSession(configuration: configuration, delegate: NoRedirects(), delegateQueue: nil)
     }()
+
+    private static func configuration() -> URLSessionConfiguration {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.waitsForConnectivity = false
+        #if DEBUG
+        if let standIn { configuration.protocolClasses = [standIn] }
+        #endif
+        return configuration
+    }
+
+    #if DEBUG
+    /// Tests answer for the door with a URLProtocol, set before the first call.
+    nonisolated(unsafe) static var standIn: AnyClass?
+    #endif
 
     private static func call<Answer: Decodable>(
         origin: URL, key: String?, method: String, path: String, body: [String: String]?
@@ -111,9 +123,9 @@ nonisolated struct Door: Sendable {
         } catch {
             throw .unreachable
         }
-        guard let answer = try? JSONDecoder().decode(Answer.self, from: try taken(data, response)) else {
-            throw .mismatch
-        }
+        // A refusal says why; only an answer the app can't read is a mismatch.
+        let accepted = try taken(data, response)
+        guard let answer = try? JSONDecoder().decode(Answer.self, from: accepted) else { throw .mismatch }
         return answer
     }
 

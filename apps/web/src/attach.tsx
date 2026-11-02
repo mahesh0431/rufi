@@ -12,7 +12,6 @@ import {
   type DragEvent,
   type ReactNode,
   useContext,
-  useEffect,
   useRef,
   useState,
 } from "react";
@@ -31,7 +30,7 @@ import {
 import { messageOf } from "./live.ts";
 import { Menus } from "./model-menu.tsx";
 import { chatPage, isSmall, openPanel, whyClosed } from "./panel.ts";
-import { tell, whenScanned } from "./phone.ts";
+import { scan } from "./phone.ts";
 import { queries } from "./reads.ts";
 import { IconButton } from "./ui.tsx";
 
@@ -177,30 +176,31 @@ export function AttachButton({ personId }: { personId: string }) {
  * a chip, as from the paperclip.
  */
 export function ScanButton({ personId }: { personId: string }) {
-  useEffect(
-    () =>
-      whenScanned((answer) => {
-        try {
-          place(personId, Schema.decodeUnknownSync(Added)(answer));
-        } catch (error) {
-          attaching(personId).setState({ notice: messageOf(error) });
-        } finally {
-          void queries.invalidateQueries({ queryKey: ["documents", personId] });
-        }
-      }),
-    [personId],
-  );
   return (
     <IconButton
       label="Scan a document"
       icon={ScanLine}
       onClick={() => {
         const why = whyClosed(boxFor(personId).store.getState());
-        if (why === null) tell({ type: "scan" });
-        else attaching(personId).setState({ notice: why });
+        if (why === null) {
+          scan((answer) => {
+            scanned(personId, answer);
+          });
+        } else attaching(personId).setState({ notice: why });
       }}
     />
   );
+}
+
+/** The app's answer to a scan: its chip goes in the person's box, open or not. */
+function scanned(personId: string, answer: unknown) {
+  try {
+    place(personId, Schema.decodeUnknownSync(Added)(answer));
+  } catch (error) {
+    attaching(personId).setState({ notice: messageOf(error) });
+  } finally {
+    void queries.invalidateQueries({ queryKey: ["documents", personId] });
+  }
 }
 
 /** Under the box: files on their way, an add's outcome, and the photos' question. */

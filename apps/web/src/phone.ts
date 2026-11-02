@@ -35,13 +35,17 @@ declare global {
   }
 }
 
-/** What the app added from a scan, for the chat box that asked. */
-const scanned = new Set<(answer: unknown) => void>();
+/**
+ * Who takes the app's answer to the last scan asked for. It lives here, not
+ * in the button, so an answer that arrives while the person is on another
+ * tab still reaches their chat box.
+ */
+const scanning: { added: ((answer: unknown) => void) | null } = { added: null };
 
-/** Calls `listener` with each scan the app adds, until the returned call. */
-export function whenScanned(listener: (answer: unknown) => void): () => void {
-  scanned.add(listener);
-  return () => scanned.delete(listener);
+/** Asks the app to scan; `added` takes what it adds, whenever that comes. */
+export function scan(added: (answer: unknown) => void): void {
+  scanning.added = added;
+  tell({ type: "scan" });
 }
 
 /** Tells the iPhone app; nothing outside it. */
@@ -73,7 +77,7 @@ export function phoneHistory(): RouterHistory {
       history.replace(path);
     },
     added: (answer) => {
-      for (const listener of scanned) listener(answer);
+      scanning.added?.(answer);
     },
   };
   return history;
