@@ -136,3 +136,46 @@ test("in the iPhone app, View original asks the app to show the document's file"
   // The app shows it; the page opens no viewer of its own.
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
+
+test("in the iPhone app, Scan asks the app for its camera, and the pages it adds come back as a chip, even after another tab", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family();
+  await rufi.start();
+  await asPhone(page);
+  await page.goto(rufi.link());
+  const open = (path: string) =>
+    page.evaluate((path) => {
+      const app = window as unknown as {
+        rufi: { open: (path: string) => void };
+      };
+      app.rufi.open(path);
+    }, path);
+  await open("/people/asha/chat");
+  const box = page.getByRole("textbox", { name: "Message to Rufi" });
+  await box.fill("What does this report say?");
+  await page.getByRole("button", { name: "Scan a document" }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.told))
+    .toContainEqual({ type: "scan" });
+
+  // While the app uploads the pages, the person goes to Medicines; then
+  // the door's answer comes back.
+  await open("/people/asha/record/medicine_use");
+  await expect(box).toHaveCount(0);
+  await page.evaluate(() => {
+    const app = window as unknown as {
+      rufi: { added: (answer: unknown) => void };
+    };
+    app.rufi.added({ added: ["doc-asha-aug"], already: [] });
+  });
+
+  await open("/people/asha/chat");
+  await expect(
+    page
+      .getByRole("list", { name: "Added to this message" })
+      .getByRole("listitem"),
+  ).toHaveText(["Sunrise Labs August.pdf"]);
+  await expect(box).toHaveValue("What does this report say?");
+});
