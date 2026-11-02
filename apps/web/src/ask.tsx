@@ -35,9 +35,9 @@ export function AskRufi({
   ...props
 }: Omit<ComponentProps<"button">, "children"> & {
   /**
-   * In a page narrower than 640 px it sits at the left of its row (a
-   * document, a read result): its tip shows on its right. Elsewhere it ends
-   * its row, and the tip shows on its left.
+   * In a page narrower than 640 px it sits at the left of its row (a read
+   * result): its tip shows on its right. Elsewhere it ends its row, and the
+   * tip shows on its left.
    */
   tipAfter?: boolean;
 }) {

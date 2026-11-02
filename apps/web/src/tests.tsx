@@ -30,6 +30,8 @@ import {
   NARROW_ROW,
   Problem,
   RowBreak,
+  TOUCH,
+  TOUCH_LINK,
 } from "./ui.tsx";
 
 /** The heading of the tests with no section. */
@@ -132,7 +134,7 @@ function TestLine({
           <Link
             to="/people/$personId/tests/$testId"
             params={{ personId, testId: row.id }}
-            className="font-semibold"
+            className={`font-semibold ${TOUCH_LINK}`}
           >
             {row.name}
           </Link>
@@ -323,7 +325,7 @@ function ValueLine({
           type="button"
           aria-expanded={open}
           onClick={onOpen}
-          className={`min-w-0 text-left font-semibold ${NARROW_FIRST}`}
+          className={`min-w-0 text-left font-semibold ${NARROW_FIRST} ${TOUCH}`}
         >
           {dated(row.measured) ?? "No date"}
         </button>

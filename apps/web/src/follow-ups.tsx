@@ -28,6 +28,8 @@ import {
   NARROW_ROW,
   Problem,
   RowBreak,
+  TOUCH,
+  TOUCH_LINK,
 } from "./ui.tsx";
 
 type Group = FollowUps["groups"][number]["group"];
@@ -235,7 +237,7 @@ function FollowUpView({
             type="button"
             aria-expanded={open}
             onClick={onOpen}
-            className="text-left font-semibold"
+            className={`text-left font-semibold ${TOUCH}`}
           >
             {row.title}
           </button>
@@ -316,7 +318,8 @@ function About({
       ? label
       : `${said} · amended to ${cells.value ?? cells.title}`;
   return (
-    <span className="block text-[0.78125rem] text-muted">
+    // On a touch screen its link is 44 px high, beside "About:".
+    <span className="block text-[0.78125rem] text-muted pointer-coarse:flex pointer-coarse:items-center pointer-coarse:gap-1">
       About:{" "}
       {detail.data?.removed ? (
         `${shown} (removed from your health record)`
@@ -325,7 +328,7 @@ function About({
           to="/people/$personId/record/$kind"
           params={{ personId, kind: page }}
           search={{ open: id }}
-          className="rounded-md text-accent-ink hover:bg-accent-soft"
+          className={`rounded-md text-accent-ink hover:bg-accent-soft ${TOUCH_LINK}`}
         >
           {shown}
         </Link>

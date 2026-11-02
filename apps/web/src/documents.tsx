@@ -24,7 +24,7 @@ import { askRufi, openPanel } from "./panel.ts";
 import { printedDate, printedDay } from "./dates.ts";
 import { useDocuments } from "./reads.ts";
 import { openReading, RetryButton } from "./reading.tsx";
-import { Button, DOT, EmptyState, IconButton, Problem } from "./ui.tsx";
+import { Button, DOT, EmptyState, IconButton, Problem, TOUCH } from "./ui.tsx";
 
 const KINDS: readonly { id: DocumentKind; name: string }[] = [
   { id: "lab_report", name: "Lab reports" },
@@ -306,7 +306,7 @@ function List({
                     <Link
                       to="/people/$personId/documents/$documentId"
                       params={{ personId, documentId: document.id }}
-                      className="flex w-fit min-w-28 items-center gap-2 text-left font-semibold hover:underline"
+                      className={`flex w-fit min-w-28 items-center gap-2 text-left font-semibold hover:underline ${TOUCH}`}
                     >
                       <Icon
                         size={16}
@@ -319,19 +319,19 @@ function List({
                   </td>
                   <td
                     role="cell"
-                    className={`py-2.5 text-muted @max-[640px]:ml-6 ${document.kind ? "" : "@max-[640px]:hidden"}`}
+                    className={`py-2.5 text-muted @max-[640px]:ml-6 ${document.kind ? DOT : "@max-[640px]:hidden"}`}
                   >
                     {document.kind ? KIND_NAMES[document.kind] : "—"}
                   </td>
                   <td
                     role="cell"
-                    className={`py-2.5 whitespace-nowrap text-muted ${!document.date ? "@max-[640px]:hidden" : document.kind ? DOT : "@max-[640px]:ml-6"}`}
+                    className={`py-2.5 whitespace-nowrap text-muted ${!document.date ? "@max-[640px]:hidden" : `${DOT} ${document.kind ? "" : "@max-[640px]:ml-6"}`}`}
                   >
                     {document.date ? printedDate(document.date) : "—"}
                   </td>
                   <td
                     role="cell"
-                    className={`py-2.5 whitespace-nowrap @max-[640px]:text-muted ${document.kind || document.date ? DOT : "@max-[640px]:ml-6"}`}
+                    className={`py-2.5 whitespace-nowrap @max-[640px]:text-muted ${document.kind || document.date ? "" : "@max-[640px]:ml-6"}`}
                   >
                     {/* Without the column's heading, the words say what it is. */}
                     <span className="hidden @max-[640px]:inline">Added </span>
@@ -346,7 +346,6 @@ function List({
                       <Status personId={personId} document={document} />
                       {document.status !== "reading" && (
                         <AskRufi
-                          tipAfter
                           className="ml-auto"
                           onClick={() => {
                             askRufi(personId, [

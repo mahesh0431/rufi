@@ -40,6 +40,8 @@ import {
   NARROW_ROW,
   Problem,
   RowBreak,
+  TOUCH,
+  TOUCH_LINK,
 } from "./ui.tsx";
 
 /** The pages, in the sidebar's order, by their title: results have two. */
@@ -486,7 +488,7 @@ function RowView({
           <Link
             to="/people/$personId/visits/$visitId"
             params={{ personId, visitId: row.id }}
-            className={`min-w-0 text-left font-semibold ${NARROW_FIRST}`}
+            className={`min-w-0 text-left font-semibold ${NARROW_FIRST} ${TOUCH_LINK}`}
           >
             {cells.title}
           </Link>
@@ -495,7 +497,7 @@ function RowView({
             type="button"
             aria-expanded={open}
             onClick={onOpen}
-            className={`min-w-0 text-left font-semibold ${NARROW_FIRST}`}
+            className={`min-w-0 text-left font-semibold ${NARROW_FIRST} ${TOUCH}`}
           >
             {cells.name ?? cells.title}
             {cells.note !== undefined && (
