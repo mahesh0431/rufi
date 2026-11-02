@@ -456,6 +456,7 @@ export const startCore = (options: CoreOptions) =>
     const launchUrl = () =>
       `http://127.0.0.1:${String(port)}/#launch=${access.launch()}`;
     const record = recordViews(reader ?? writer, clock);
+    const doses = doseLog(writer, clock);
     const personDocuments = documents(
       writer,
       home,
