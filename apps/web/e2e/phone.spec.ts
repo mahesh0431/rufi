@@ -112,3 +112,34 @@ test("in the iPhone app, signed out on the Mac, the chat says to sign in there a
   // No way into the Mac's sign-in, which a phone can't open.
   await expect(page.getByRole("button", { name: "Sign in" })).toHaveCount(0);
 });
+
+test("in the iPhone app, Scan asks the app for its camera, and the pages it adds come back as a chip", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family();
+  await rufi.start();
+  await asPhone(page);
+  await page.goto(rufi.link());
+  await page.evaluate(() => {
+    const app = window as unknown as { rufi: { open: (path: string) => void } };
+    app.rufi.open("/people/asha/chat");
+  });
+  await page.getByRole("button", { name: "Scan a document" }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.told))
+    .toContainEqual({ type: "scan" });
+
+  // The app uploaded the pages and gives the door's answer back.
+  await page.evaluate(() => {
+    const app = window as unknown as {
+      rufi: { added: (answer: unknown) => void };
+    };
+    app.rufi.added({ added: ["doc-asha-aug"], already: [] });
+  });
+  await expect(
+    page
+      .getByRole("list", { name: "Added to this message" })
+      .getByRole("listitem"),
+  ).toHaveText(["Sunrise Labs August.pdf"]);
+});

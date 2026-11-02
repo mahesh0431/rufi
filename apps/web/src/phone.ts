@@ -3,7 +3,8 @@
 // body text size and how much its bars cover as CSS values), and draws its
 // own tabs, bars and back. Here the page keeps only its content, and every
 // move to another page goes through the app, which pushes it in a tab's
-// stack or switches tab. The app talks back by `window.rufi.open(path)`.
+// stack or switches tab. The app talks back by `window.rufi.open(path)`, and
+// by `window.rufi.added(answer)` after it uploaded a scan.
 import {
   createMemoryHistory,
   type RouterHistory,
@@ -19,7 +20,9 @@ export type ToApp =
   /** A page has drawn: the app's bar takes its title. */
   | { type: "page"; path: string; title: string }
   /** The session has ended: the app opens Rufi again, or says it's unpaired. */
-  | { type: "ended" };
+  | { type: "ended" }
+  /** Scan: the app's document camera, then it adds the pages to the chat. */
+  | { type: "scan" };
 
 declare global {
   interface Window {
@@ -28,8 +31,17 @@ declare global {
         rufi?: { postMessage: (message: ToApp) => void };
       };
     };
-    rufi?: { open: (path: string) => void };
+    rufi?: { open: (path: string) => void; added: (answer: unknown) => void };
   }
+}
+
+/** What the app added from a scan, for the chat box that asked. */
+const scanned = new Set<(answer: unknown) => void>();
+
+/** Calls `listener` with each scan the app adds, until the returned call. */
+export function whenScanned(listener: (answer: unknown) => void): () => void {
+  scanned.add(listener);
+  return () => scanned.delete(listener);
 }
 
 /** Tells the iPhone app; nothing outside it. */
@@ -59,6 +71,9 @@ export function phoneHistory(): RouterHistory {
   window.rufi = {
     open: (path) => {
       history.replace(path);
+    },
+    added: (answer) => {
+      for (const listener of scanned) listener(answer);
     },
   };
   return history;

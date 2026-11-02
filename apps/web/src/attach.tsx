@@ -6,11 +6,13 @@
 // the person has, and a line saying so.
 import type { useNavigate } from "@tanstack/react-router";
 import { Added } from "@rufi/contracts/documents";
-import { Paperclip } from "lucide-react";
+import { Schema } from "effect";
+import { Paperclip, ScanLine } from "lucide-react";
 import {
   type DragEvent,
   type ReactNode,
   useContext,
+  useEffect,
   useRef,
   useState,
 } from "react";
@@ -29,6 +31,7 @@ import {
 import { messageOf } from "./live.ts";
 import { Menus } from "./model-menu.tsx";
 import { chatPage, isSmall, openPanel, whyClosed } from "./panel.ts";
+import { tell, whenScanned } from "./phone.ts";
 import { queries } from "./reads.ts";
 import { IconButton } from "./ui.tsx";
 
@@ -56,6 +59,34 @@ function attaching(personId: string): StoreApi<Attaching> {
   return store;
 }
 
+/**
+ * Puts the chips of documents just added in the person's box, or says why
+ * they can't go in now.
+ */
+function place(personId: string, added: Added) {
+  const state = attaching(personId);
+  // The core names each chip when the box saves.
+  const chips: BoxChip[] = [
+    ...added.added,
+    ...added.already.map((a) => a.documentId),
+  ].map((id) => ({
+    pointer: { type: "document", id },
+    label: "",
+    detail: "",
+  }));
+  const box = boxFor(personId);
+  const why = whyClosed(box.store.getState());
+  if (why !== null) {
+    state.setState({
+      notice: `${why} Choose these files again in a moment.`,
+    });
+  } else if (box.append("", chips) && added.already.length > 0) {
+    state.setState({
+      notice: `${added.already.map((a) => a.name).join(", ")} ${added.already.length === 1 ? "was" : "were"} already added: the chip is the document you have.`,
+    });
+  }
+}
+
 /** Adds the files as documents, from the chat, and puts their chips in the box. */
 async function add(personId: string, files: File[], together: boolean) {
   const state = attaching(personId);
@@ -69,31 +100,14 @@ async function add(personId: string, files: File[], together: boolean) {
     for (const file of files) form.append("file", file);
     form.append("together", together ? "yes" : "no");
     form.append("from", "chat");
-    const added = await upload(
-      Added,
-      `/api/people/${encodeURIComponent(personId)}/documents`,
-      form,
+    place(
+      personId,
+      await upload(
+        Added,
+        `/api/people/${encodeURIComponent(personId)}/documents`,
+        form,
+      ),
     );
-    // The core names each chip when the box saves.
-    const chips: BoxChip[] = [
-      ...added.added,
-      ...added.already.map((a) => a.documentId),
-    ].map((id) => ({
-      pointer: { type: "document", id },
-      label: "",
-      detail: "",
-    }));
-    const box = boxFor(personId);
-    const why = whyClosed(box.store.getState());
-    if (why !== null) {
-      state.setState({
-        notice: `${why} Choose these files again in a moment.`,
-      });
-    } else if (box.append("", chips) && added.already.length > 0) {
-      state.setState({
-        notice: `${added.already.map((a) => a.name).join(", ")} ${added.already.length === 1 ? "was" : "were"} already added: the chip is the document you have.`,
-      });
-    }
   } catch (error) {
     state.setState({ notice: messageOf(error) });
   } finally {
@@ -154,6 +168,38 @@ export function AttachButton({ personId }: { personId: string }) {
         }}
       />
     </>
+  );
+}
+
+/**
+ * In the iPhone app, beside the paperclip: the iPhone's document camera. The
+ * app adds the pages, together as one document, and they come back here as
+ * a chip, as from the paperclip.
+ */
+export function ScanButton({ personId }: { personId: string }) {
+  useEffect(
+    () =>
+      whenScanned((answer) => {
+        try {
+          place(personId, Schema.decodeUnknownSync(Added)(answer));
+        } catch (error) {
+          attaching(personId).setState({ notice: messageOf(error) });
+        } finally {
+          void queries.invalidateQueries({ queryKey: ["documents", personId] });
+        }
+      }),
+    [personId],
+  );
+  return (
+    <IconButton
+      label="Scan a document"
+      icon={ScanLine}
+      onClick={() => {
+        const why = whyClosed(boxFor(personId).store.getState());
+        if (why === null) tell({ type: "scan" });
+        else attaching(personId).setState({ notice: why });
+      }}
+    />
   );
 }
 

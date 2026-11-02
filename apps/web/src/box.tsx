@@ -39,7 +39,7 @@ import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
 import { ApiError, request } from "./api.ts";
 import { onPhone } from "./phone.ts";
-import { AttachButton, AttachStatus } from "./attach.tsx";
+import { AttachButton, AttachStatus, ScanButton } from "./attach.tsx";
 import { boxFor } from "./boxes.ts";
 import { ChipView } from "./chips.tsx";
 import { ContextMeter } from "./context-meter.tsx";
@@ -339,6 +339,7 @@ export function Box({
           <div className="flex">{field}</div>
           <div className="mt-1 flex items-center gap-1.5">
             <AttachButton personId={person.id} />
+            {onPhone && <ScanButton personId={person.id} />}
             <span className="flex-1" />
             {choice}
             <ContextMeter live={live} />
