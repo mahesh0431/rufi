@@ -49,6 +49,7 @@ export const MIGRATIONS: readonly string[] = [
   read("migrations/0028-tests.sql"),
   read("migrations/0029-a-click-keeps-what-the-ai-got.sql"),
   read("migrations/0030-medicines-keep-their-times.sql"),
+  read("migrations/0031-paired-apps.sql"),
   read("migrations/0032-the-dose-log.sql"),
 ];
 

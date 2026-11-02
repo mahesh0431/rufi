@@ -384,6 +384,29 @@ describe("schema", () => {
         });
       }).toThrow("FOREIGN KEY constraint failed");
     });
+
+    it("lets a device source belong only to its own person's paired app", () => {
+      insert("paired_apps", {
+        id: "app-a",
+        person_id: "amma",
+        kind: "iphone",
+        name: "Amma's iPhone",
+        key_sha256: "hash-a",
+        paired_at: now,
+      });
+      const source = (id: string, person: string) => ({
+        id,
+        person_id: person,
+        system: "apple_health",
+        name: "Apple Health",
+        created_at: now,
+        paired_app_id: "app-a",
+      });
+      insert("device_sources", source("src-a", "amma"));
+      expect(() => {
+        insert("device_sources", source("src-n", "nanna"));
+      }).toThrow("FOREIGN KEY constraint failed");
+    });
   });
 
   describe("results keep what was printed", () => {

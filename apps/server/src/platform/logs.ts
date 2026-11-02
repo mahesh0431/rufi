@@ -55,6 +55,10 @@ const EVENTS = new Set([
   "devices.failed",
   "devices.cleaned",
   "signin.failed",
+  "remote.paired",
+  "remote.refused",
+  "remote.unpaired",
+  "remote.failed",
 ] as const);
 
 export type LogEvent = typeof EVENTS extends Set<infer E> ? E : never;
@@ -101,13 +105,20 @@ const FIELDS: Record<string, (value: unknown) => boolean> = {
   // A Codex thread item's type ("commandExecution"), as the binary sends it.
   item: (value) =>
     typeof value === "string" && /^[a-z][a-zA-Z]{0,40}$/.test(value),
-  // Why Rufi's MCP server refused a request or a call (server/mcp.ts,
-  // chat.ts), or why a device batch failed (core/devices/devices.ts).
+  // Why Rufi's MCP server or the remote door refused a request or a call
+  // (server/mcp.ts, remote.ts, chat.ts), or why a device batch failed
+  // (core/devices/devices.ts).
   reason: (value) =>
     typeof value === "string" &&
-    (["forwarded", "host", "origin", "key", "no_call", "no_reply"].includes(
-      value,
-    ) ||
+    ([
+      "forwarded",
+      "host",
+      "origin",
+      "key",
+      "code",
+      "no_call",
+      "no_reply",
+    ].includes(value) ||
       /^(?:disk_full|io_error|error:(?:-?\d{1,10}|E[A-Z0-9_]{1,40}|[A-Za-z]{1,20}))$/.test(
         value,
       )),

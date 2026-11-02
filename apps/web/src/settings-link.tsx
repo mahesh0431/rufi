@@ -20,6 +20,7 @@ export const GROUPS = [
   "profile",
   "appearance",
   "chat",
+  "iphone",
   "data",
   "advanced",
 ] as const;

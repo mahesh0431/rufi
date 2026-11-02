@@ -372,6 +372,24 @@ _Avoid_: metric, kind (that is a record's)
 How long Rufi keeps device values, for everyone in the data folder: 30 days, 12 months or forever. A shorter time asks before it deletes.
 _Avoid_: retention (on screen)
 
+## Paired apps
+
+**Paired app**:
+An app given its own key by Rufi on the Mac, for one person's record, for good, such as Rufi on an iPhone. Unpairing it, on either side, or restoring a backup ends its access.
+_Avoid_: device (for the app), client, companion
+
+**Key**:
+A paired app's secret, shown once when it pairs. Whoever holds it acts as that person, and only that person. The Mac keeps only a fingerprint of it.
+_Avoid_: token, password
+
+**Remote door**:
+How paired apps reach Rufi on the Mac: its own address on your tailnet, through Tailscale, open only while an app is paired or a pairing code is live. Not the agents' door to Rufi's tools.
+_Avoid_: server, tunnel, API (for the door itself)
+
+**Pairing**:
+Giving an app its key: the Mac shows a code, as a QR code and the same link, that works once, for 10 minutes; the app scans or pastes it.
+_Avoid_: linking, registering
+
 ## Keeping your data safe
 
 **Backup**:
