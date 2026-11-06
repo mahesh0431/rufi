@@ -25,17 +25,21 @@ Pairing that person's first iPhone makes their medicine reminders ring on it, an
 
 ## Lock Rufi
 
-After pairing, the iPhone offers **Lock Rufi**: Rufi then asks for Face ID, or your iPhone's passcode, when you open it and after more than a minute away. While Rufi isn't on screen, the app switcher shows a blank page instead of your record. Turn it on or off in **This iPhone** (the dog at the top right of each tab). It needs a passcode on the iPhone: without one, the switch is off and says so.
+After pairing, the iPhone offers **Lock Rufi**: Rufi then asks for Face ID, or your iPhone's passcode, when you open it and after more than a minute away. While Rufi isn't on screen, the app switcher shows a blank page instead of your record. Turn it on or off in **This iPhone** (at the bottom of the sidebar). It needs a passcode on the iPhone: without one, the switch is off and says so.
 
 iOS can also lock any app (touch and hold its icon, then **Require Face ID**). If you use that for Rufi, turn **Lock Rufi** off, so you aren't asked twice.
 
 ## On the iPhone
 
-Rufi has four tabs: **Chat**, **Medicines**, **Record** and **Documents**. Their pages come from Rufi on your Mac, as they are there now: what you do on the phone is done on the Mac. A link to another page opens it on top, with **Back** (or a swipe from the left edge) to return; a link in a reply opens the result in Chat, with Back to the chat. Web links open in Safari. On a document, **View original** shows the file as it came in iOS's own viewer, every photo of it too, with its share button; Rufi deletes its copy when you close it.
+Your picture at the top left (your initials) opens the **sidebar**, or swipe from the left edge of the screen. It has the Mac's places in the Mac's order: **Chat with Rufi**, **Overview**, your health record's pages with how many each has (empty ones grey), **Follow-ups**, **Documents** and **Help**. The place you are in is marked. Tap one to go there; tap beside the sidebar, or swipe it left, to close it. At its bottom, your name and **This iPhone**. Settings is on the Mac only.
 
-To add a paper report from the chat, tap the scan button beside the paperclip: iOS's document camera finds the page's edges and straightens it. Scan each page, then tap **Save**: the pages go to your Mac together as one document, and its chip appears in the box, as when you add photos with the paperclip. Rufi reads it when you send; if you open another tab meanwhile, the chip is in the box when you come back. If the camera can't take the scan, Rufi says so, adds no pages and keeps your words: scan again. The paperclip still adds photos and files.
+The pages come from Rufi on your Mac, as they are there now: what you do on the phone is done on the Mac. A link to another page opens it on top, with its own name at the top (for example **HbA1c**) and **Back** (or a swipe from the left edge) to return; a link in a reply opens the result over the chat, with Back to the chat. A link to one of the sidebar's places goes to that place. Web links open in Safari.
 
-Text follows the iPhone's Text Size (Settings › Accessibility › Display & Text Size), and Rufi follows the iPhone's light or dark appearance. Rufi's own text size and appearance settings are for the Mac.
+**The chat bar.** The pages where you read your health have the chat bar at the bottom, as on the Mac: Overview, the health record's pages, Follow-ups, Documents, a document, a test, a visit and a visit brief. **Ask Rufi** on a row puts it in the bar, which lights up a moment; the page stays. **Send** in the bar sends, and the page stays. Tap the bar to open the chat over the page, with the keyboard; the arrow down, or a swipe down on its top, goes back to the page as you left it, and the arrows at its top right open **Chat with Rufi**. To put the keyboard away, swipe down on the page. This iPhone, Reminders and Help have no bar. On a document, **View original** shows the file as it came in iOS's own viewer, every photo of it too, with its share button; Rufi deletes its copy when you close it.
+
+To add a paper report from the chat, tap the scan button beside the paperclip: iOS's document camera finds the page's edges and straightens it. Scan each page, then tap **Save**: the pages go to your Mac together as one document, and its chip appears in the box, as when you add photos with the paperclip. Rufi reads it when you send; if you go to another place meanwhile, the chip is in the box when you come back. If the camera can't take the scan, Rufi says so, adds no pages and keeps your words: scan again. The paperclip still adds photos and files.
+
+Text follows the iPhone's Text Size (Settings › Accessibility › Display & Text Size), and Rufi follows the iPhone's light or dark appearance, in the colour theme chosen on the Mac (Settings › Appearance there); the sidebar and This iPhone take it too. A theme changed on the Mac shows the next time Rufi opens on the iPhone. Rufi's own text size and light or dark setting are for the Mac.
 
 Settings, sign-in and backups are on the Mac only.
 
@@ -77,6 +81,7 @@ In **This iPhone** › **Apple Health**, connect Apple Health, see your latest r
 - Its medicine reminders for the next week, as iOS notices: the times and the medicines, whatever a notice shows.
 - Doses you logged that aren't on your Mac yet: each medicine's name and strength, the dose's time, taken or skipped, and which Mac and person it is for. They aren't in the iPhone's backups.
 - For Apple Health: where each kind of heart data was sent up to (Apple's bookmark, not the values), and when the last sync was and how many readings it sent.
+- Rufi's own files (the scripts and styles its pages are drawn with, none of your record), so it opens without fetching them from your Mac again, and the colour theme's colours.
 
 Nothing of your record, chat, documents or heart data is kept by Rufi on the iPhone (your heart data stays in Apple Health, where it was): pages are shown while Rufi is open and gone when it closes, and an original you view is a temporary copy, deleted when you close it (or the next time Rufi starts, if it was closed while showing one); scanned pages go straight to your Mac without being saved on the iPhone. Deleting the app deletes all of this; to use Rufi on that iPhone again, pair it again.
 
