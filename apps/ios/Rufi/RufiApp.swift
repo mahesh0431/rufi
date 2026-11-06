@@ -7,6 +7,7 @@ import UserNotifications
 struct RufiApp: App {
     @UIApplicationDelegateAdaptor private var delegate: AppDelegate
     @State private var shield = Shield()
+    @AppStorage(Appearance.stored) private var appearance = Appearance.system
     @Environment(\.scenePhase) private var phase
 
     private var app: AppModel { delegate.app }
@@ -16,6 +17,8 @@ struct RufiApp: App {
             RootView(app: app)
                 .tint(app.theme.accent)
                 .environment(app.theme)
+                // The window's, so the pages, the sheets and Apple's parts change together.
+                .preferredColorScheme(appearance.scheme)
                 .onChange(of: phase, initial: true) { _, now in
                     app.active = now == .active
                     app.lock.phase(now)
@@ -26,6 +29,7 @@ struct RufiApp: App {
                 .onChange(of: app.lock.locked) { _, locked in
                     shield.show(phase != .active || locked, app: app)
                 }
+                .onChange(of: appearance) { shield.appearance($1) }
         }
         // When iOS allows, Rufi refreshes its reminders in the background.
         .backgroundTask(.appRefresh(Reminders.task)) {

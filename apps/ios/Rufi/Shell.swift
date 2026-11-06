@@ -352,12 +352,7 @@ struct ShellView: View {
             .toolbar {
                 if root {
                     ToolbarItem(placement: .topBarLeading) {
-                        Button {
-                            shell.sidebar = true
-                        } label: {
-                            Initials(name: shell.pairing.person.name, size: 32)
-                        }
-                        .accessibilityLabel("Show Sidebar")
+                        Button("Show Sidebar", systemImage: "sidebar.left") { shell.sidebar = true }
                     }
                 }
                 if root, shell.onMedicines {

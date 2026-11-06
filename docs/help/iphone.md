@@ -31,7 +31,7 @@ iOS can also lock any app (touch and hold its icon, then **Require Face ID**). I
 
 ## On the iPhone
 
-Your picture at the top left (your initials) opens the **sidebar**, or swipe from the left edge of the screen. It has the Mac's places in the Mac's order: **Chat with Rufi**, **Overview**, your health record's pages with how many each has (empty ones grey), **Follow-ups**, **Documents** and **Help**. The place you are in is marked. Tap one to go there; tap beside the sidebar, or swipe it left, to close it. At its bottom, your name and **This iPhone**. Settings is on the Mac only.
+The sidebar button at the top left opens the **sidebar**, or swipe from the left edge of the screen. It has the Mac's places in the Mac's order: **Chat with Rufi**, **Overview**, your health record's pages with how many each has (empty ones grey), **Follow-ups**, **Documents** and **Help**. The place you are in is marked. Tap one to go there; tap beside the sidebar, or swipe it left, to close it. At its bottom, your name and **This iPhone**. Settings is on the Mac only.
 
 The pages come from Rufi on your Mac, as they are there now: what you do on the phone is done on the Mac. A link to another page opens it on top, with its own name at the top (for example **HbA1c**) and **Back** (or a swipe from the left edge) to return; a link in a reply opens the result over the chat, with Back to the chat. In the chat over a page too, a link opens on top, even one to a row of that page; Back shows the page with the chat open again. A link to one of the sidebar's places goes to that place. Web links open in Safari.
 
@@ -39,7 +39,7 @@ The pages come from Rufi on your Mac, as they are there now: what you do on the 
 
 To add a paper report from the chat, tap the scan button beside the paperclip: iOS's document camera finds the page's edges and straightens it. Scan each page, then tap **Save**: the pages go to your Mac together as one document, and its chip appears in the box, as when you add photos with the paperclip. Rufi reads it when you send; if you go to another place meanwhile, the chip is in the box when you come back. If the camera can't take the scan, Rufi says so, adds no pages and keeps your words: scan again. The paperclip still adds photos and files.
 
-Text follows the iPhone's Text Size (Settings › Accessibility › Display & Text Size), and Rufi follows the iPhone's light or dark appearance, in the colour theme chosen on the Mac (Settings › Appearance there); the sidebar and This iPhone take it too. A theme changed on the Mac shows the next time Rufi opens on the iPhone. Rufi's own text size and light or dark setting are for the Mac.
+Text follows the iPhone's Text Size (Settings › Accessibility › Display & Text Size), and Rufi is light or dark as the iPhone is, in the colour theme chosen on the Mac (Settings › Appearance there); the sidebar and This iPhone take it too. To keep Rufi light or dark on this iPhone whatever the iPhone is set to, choose **Light** or **Dark** under **Appearance** in **This iPhone**; **System** follows the iPhone again. A theme changed on the Mac shows the next time Rufi opens on the iPhone. Rufi's own text size and the Mac's light or dark setting are for the Mac.
 
 Settings, sign-in and backups are on the Mac only.
 
@@ -77,7 +77,7 @@ In **This iPhone** › **Apple Health**, connect Apple Health, see your latest r
 ## What the iPhone keeps
 
 - Its key, in the iPhone's keychain, on this iPhone only.
-- Which Mac it paired with and whose record it opens, and whether Lock Rufi is on.
+- Which Mac it paired with and whose record it opens, whether Lock Rufi is on, and its Appearance (System, Light or Dark).
 - Its medicine reminders for the next week, as iOS notices: the times and the medicines, whatever a notice shows.
 - Doses you logged that aren't on your Mac yet: each medicine's name and strength, the dose's time, taken or skipped, and which Mac and person it is for. They aren't in the iPhone's backups.
 - For Apple Health: where each kind of heart data was sent up to (Apple's bookmark, not the values), and when the last sync was and how many readings it sent.
