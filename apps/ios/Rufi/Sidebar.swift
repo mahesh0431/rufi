@@ -28,7 +28,6 @@ struct Drawer<Content: View, Sidebar: View>: View {
                         .accessibilityHidden(true)
                     sidebar
                         .frame(width: width)
-                        .background(Color(.systemGroupedBackground), ignoresSafeAreaEdges: .all)
                         .offset(x: (out - 1) * width)
                         .gesture(closing(width))
                         .accessibilityAddTraits(.isModal)
@@ -77,6 +76,7 @@ struct SidebarView: View {
     /// The place the page on top is in, marked.
     let current: Place?
     let counts: Door.Counts?
+    let theme: Theme
     let choose: (Place) -> Void
     let thisIPhone: () -> Void
 
@@ -109,6 +109,8 @@ struct SidebarView: View {
                 }
             }
             .listStyle(.sidebar)
+            .listSectionSpacing(.compact)
+            .environment(\.defaultMinListRowHeight, 36)
             .scrollContentBackground(.hidden)
             Button(action: thisIPhone) {
                 HStack(spacing: 12) {
@@ -121,13 +123,14 @@ struct SidebarView: View {
                     Image(systemName: "chevron.right").foregroundStyle(.tertiary)
                 }
                 .padding(12)
-                .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 16))
+                .background(theme.surface, in: .rect(cornerRadius: 16))
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 12)
             .padding(.bottom, 8)
         }
+        .background(theme.side, ignoresSafeAreaEdges: .all)
     }
 
     private func row(_ place: Place) -> some View {
@@ -143,13 +146,17 @@ struct SidebarView: View {
                     Text("\(count)").foregroundStyle(.secondary).monospacedDigit()
                 }
             }
-            .foregroundStyle(empty ? .secondary : .primary)
+            .foregroundStyle(current == place ? theme.accentInk : empty ? Color(.secondaryLabel) : Color(.label))
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
+        // Flat on the sidebar, as on the Mac; the current place in the
+        // theme's soft accent.
+        .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets(top: 7, leading: 14, bottom: 7, trailing: 14))
         .listRowBackground(current == place
-            ? RoundedRectangle(cornerRadius: 12).fill(.fill.secondary).padding(.horizontal, 8)
-            : nil)
+            ? RoundedRectangle(cornerRadius: 12).fill(theme.accentSoft)
+            : RoundedRectangle(cornerRadius: 12).fill(.clear))
         .accessibilityAddTraits(current == place ? .isSelected : [])
     }
 }

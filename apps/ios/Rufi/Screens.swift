@@ -1,3 +1,4 @@
+import ObjectiveC
 import SwiftUI
 import UIKit
 import WebKit
@@ -31,6 +32,8 @@ final class Screens: NSObject {
     var onScan: () -> Void = {}
     /// View original: a document and its files, each an id and a name.
     var onOriginal: (String, [(id: String, name: String)]) -> Void = { _, _ in }
+    /// The page drew in these colours, in dark or light.
+    var onTheme: (Theme.Colours, Bool) -> Void = { _, _ in }
 
     private var top: CGFloat = 0
     private var bottom: CGFloat = 0
@@ -48,6 +51,9 @@ final class Screens: NSObject {
         view.allowsBackForwardNavigationGestures = false
         view.scrollView.contentInsetAdjustmentBehavior = .never
         view.scrollView.keyboardDismissMode = .interactive
+        // Rufi's pages are laid out for the phone; a pinch doesn't zoom them.
+        view.scrollView.pinchGestureRecognizer?.isEnabled = false
+        view.hideFormBar()
         view.isOpaque = false
         view.backgroundColor = .systemBackground
         view.navigationDelegate = self
@@ -142,6 +148,12 @@ final class Screens: NSObject {
             onRefresh()
         case "scan":
             onScan()
+        case "theme":
+            if let dark = body["dark"] as? Bool, let colours = body["colours"] as? [String: String],
+               let json = try? JSONSerialization.data(withJSONObject: colours),
+               let theme = try? JSONDecoder().decode(Theme.Colours.self, from: json) {
+                onTheme(theme, dark)
+            }
         case "original":
             let files = (body["files"] as? [[String: Any]] ?? []).compactMap { file in
                 (file["id"] as? String).flatMap { id in (file["name"] as? String).map { (id: id, name: $0) } }
@@ -178,6 +190,29 @@ extension Screens: WKNavigationDelegate, WKUIDelegate {
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         onEnded()
+    }
+}
+
+extension WKWebView {
+    /// No bar of arrows and Done above the keyboard: the box is the only
+    /// field, and a swipe down on the page puts the keyboard away. WebKit
+    /// has no setting for it, so its content view, the field's responder,
+    /// becomes a subclass of itself with no accessory view.
+    func hideFormBar() {
+        guard let content = scrollView.subviews.first(where: { String(describing: type(of: $0)).hasPrefix("WKContent") })
+        else { return }
+        let base: AnyClass = type(of: content)
+        let name = "\(NSStringFromClass(base))_NoFormBar"
+        if NSStringFromClass(base) == name { return }
+        var bare: AnyClass? = NSClassFromString(name)
+        if bare == nil, let made = objc_allocateClassPair(base, name, 0) {
+            let none: @convention(block) (AnyObject) -> UIView? = { _ in nil }
+            class_addMethod(made, #selector(getter: UIResponder.inputAccessoryView),
+                            imp_implementationWithBlock(none), "@@:")
+            objc_registerClassPair(made)
+            bare = made
+        }
+        if let bare { object_setClass(content, bare) }
     }
 }
 

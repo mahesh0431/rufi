@@ -104,6 +104,8 @@ struct Navigator {
     }
 
     let person: String
+    /// The place chosen, in the sidebar or by a link to its page.
+    private(set) var place: Place
     /// The place's own page, at the bottom of the stack.
     private(set) var root = Screen()
     /// The pages opened on top of it, bottom first.
@@ -112,6 +114,7 @@ struct Navigator {
 
     init(person: String, at place: Place) {
         self.person = person
+        self.place = place
         pages[root.id] = Page(path: place.path(person), title: place.title)
     }
 
@@ -152,6 +155,7 @@ struct Navigator {
     /// A place chosen in the sidebar: its page, with nothing on top.
     @discardableResult
     mutating func choose(_ place: Place) -> Screen {
+        self.place = place
         root = Screen()
         stack = []
         pages = [root.id: Page(path: place.path(person), title: place.title)]

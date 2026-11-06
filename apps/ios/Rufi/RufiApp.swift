@@ -14,6 +14,8 @@ struct RufiApp: App {
     var body: some Scene {
         WindowGroup {
             RootView(app: app)
+                .tint(app.theme.accent)
+                .environment(app.theme)
                 .onChange(of: phase, initial: true) { _, now in
                     app.active = now == .active
                     app.lock.phase(now)

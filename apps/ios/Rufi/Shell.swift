@@ -18,6 +18,7 @@ final class Shell {
     let pairing: Pairing
     let screens: Screens
     let door: Door
+    let theme: Theme
     private let unpaired: () -> Void
 
     var state = State.opening
@@ -65,9 +66,10 @@ final class Shell {
     /// Why the original couldn't be shown, in one line.
     var originalProblem: String?
 
-    init(pairing: Pairing, key: String, seen: @escaping () -> Bool, refresh: @escaping () -> Void,
+    init(pairing: Pairing, key: String, theme: Theme, seen: @escaping () -> Bool, refresh: @escaping () -> Void,
          unpaired: @escaping () -> Void) {
         self.pairing = pairing
+        self.theme = theme
         self.seen = seen
         self.door = Door(origin: pairing.origin, key: key)
         self.unpaired = unpaired
@@ -82,6 +84,12 @@ final class Shell {
         screens.onRefresh = refresh
         screens.onScan = { [weak self] in self?.scan() }
         screens.onOriginal = { [weak self] document, files in Task { await self?.show(document, files) } }
+        screens.view.backgroundColor = theme.pageColour
+        screens.onTheme = { [weak self] colours, dark in
+            guard let self else { return }
+            self.theme.took(colours, dark: dark)
+            screens.view.backgroundColor = self.theme.pageColour
+        }
     }
 
     func title(_ screen: Screen) -> String {
@@ -259,14 +267,14 @@ struct ShellView: View {
     var body: some View {
         Drawer(open: $shell.sidebar, enabled: shell.navigator.stack.isEmpty) {
             NavigationStack(path: stack) {
-                page(shell.navigator.root, root: true)
+                first(shell.navigator.place)
                     .navigationDestination(for: Screen.self) { page($0, root: false) }
             }
             // Another place: a stack of its own.
             .id(shell.navigator.root.id)
         } sidebar: {
             SidebarView(name: shell.pairing.person.name, current: shell.navigator.current,
-                        counts: shell.counts) { place in
+                        counts: shell.counts, theme: shell.theme) { place in
                 Task { await shell.choose(place) }
             } thisIPhone: {
                 shell.sidebar = false
@@ -322,6 +330,15 @@ struct ShellView: View {
         }
     }
 
+    /// What a place shows at the bottom of its stack: Rufi's page for it
+    /// from the Mac. A place that gets a screen of the app's own returns it
+    /// here, with the same bar items (`page`'s toolbar); what it opens goes
+    /// on top through `shell.go`, as a link in a page does.
+    @ViewBuilder
+    private func first(_ place: Place) -> some View {
+        page(shell.navigator.root, root: true)
+    }
+
     @ViewBuilder
     private func page(_ screen: Screen, root: Bool) -> some View {
         ScreenView(shell: shell, screen: screen, until: app.reminders?.until, unsent: app.outbox.logs.count)
@@ -358,7 +375,7 @@ struct ScreenView: View {
 
     var body: some View {
         ZStack {
-            Color(.systemBackground).ignoresSafeArea(.container)
+            shell.theme.page.ignoresSafeArea(.container)
             switch shell.state {
             case .unreachable:
                 CantReachView(until: until, unsent: unsent) { Task { await shell.reopen() } }
@@ -372,7 +389,7 @@ struct ScreenView: View {
                     if let still = shell.still(screen) {
                         Image(uiImage: still).resizable().ignoresSafeArea(.container)
                     } else {
-                        Color(.systemBackground).ignoresSafeArea(.container)
+                        shell.theme.page.ignoresSafeArea(.container)
                         if shell.state == .opening { ProgressView() }
                     }
                 }

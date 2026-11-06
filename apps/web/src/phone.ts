@@ -38,7 +38,44 @@ export type ToApp =
       type: "original";
       documentId: string;
       files: { id: string; name: string }[];
-    };
+    }
+  /**
+   * The colours the page draws in now (the theme chosen on the Mac, in the
+   * iPhone's light or dark): the app's own parts take them.
+   */
+  | { type: "theme"; dark: boolean; colours: Record<ThemeColour, string> };
+
+/** The theme's colours the app's own parts take. */
+const THEME_COLOURS = {
+  page: "--page",
+  side: "--side",
+  surface: "--surface",
+  accent: "--accent",
+  accentSoft: "--accent-soft",
+  accentInk: "--accent-ink",
+} as const;
+type ThemeColour = keyof typeof THEME_COLOURS;
+
+/** Tells the app the page's colours now, and again whenever they change. */
+export function tellTheme(): () => void {
+  const root = document.documentElement;
+  const send = () => {
+    const style = getComputedStyle(root);
+    const colours = Object.fromEntries(
+      Object.entries(THEME_COLOURS).map(([name, token]) => [
+        name,
+        style.getPropertyValue(token).trim(),
+      ]),
+    ) as Record<ThemeColour, string>;
+    tell({ type: "theme", dark: root.dataset["theme"] === "dark", colours });
+  };
+  send();
+  const changes = new MutationObserver(send);
+  changes.observe(root, { attributeFilter: ["data-theme", "data-colour"] });
+  return () => {
+    changes.disconnect();
+  };
+}
 
 declare global {
   interface Window {

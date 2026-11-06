@@ -39,7 +39,7 @@ import { AgentSheet } from "./agents.tsx";
 import { FirstRun } from "./first-run.tsx";
 import { retain } from "./live.ts";
 import { resetPanel } from "./panel.ts";
-import { onPhone, tell, useNamed } from "./phone.ts";
+import { onPhone, tell, tellTheme, useNamed } from "./phone.ts";
 import { SidebarDog } from "./sidebar-dog.tsx";
 import { isPageKind, KIND_TITLES } from "./record.tsx";
 import { SettingsDialog } from "./settings.tsx";
@@ -363,6 +363,8 @@ function PhoneFrame({
   useEffect(() => {
     if (ended) tell({ type: "ended" });
   }, [ended]);
+  // The app's own parts match the page's theme.
+  useEffect(tellTheme, []);
   return (
     <>
       {connection === "offline" && (
