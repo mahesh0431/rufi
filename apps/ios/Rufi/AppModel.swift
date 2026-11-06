@@ -17,6 +17,8 @@ final class AppModel {
 
     private(set) var stage: Stage = .pairing
     let lock: Lock
+    /// The Mac's colour theme, as the pages last drew it.
+    let theme = Theme()
     /// Dose logs not on the Mac yet; kept through unpairing.
     let outbox: Outbox
     /// Apple Health sync for the pairing; none while unpaired.
@@ -152,7 +154,7 @@ final class AppModel {
     }
 
     private func shell(_ pairing: Pairing, _ key: String) -> Shell {
-        Shell(pairing: pairing, key: key, seen: { [weak self] in self?.seen ?? false }) { [weak self] in
+        Shell(pairing: pairing, key: key, theme: theme, seen: { [weak self] in self?.seen ?? false }) { [weak self] in
             Task { await self?.refresh() }
         } unpaired: { [weak self] in
             self?.wasUnpaired()
@@ -201,5 +203,6 @@ final class AppModel {
         if outbox.logs.isEmpty { lock.forget() }
         reminders = nil
         health = nil
+        Task { await Screens.forget() }
     }
 }

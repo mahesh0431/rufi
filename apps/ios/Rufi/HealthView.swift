@@ -6,6 +6,7 @@ struct HealthView: View {
     let health: HealthSync
     let person: String
     private let reader = HealthReader()
+    @Environment(Theme.self) private var theme
 
     /// Whether Rufi asked Apple Health already; unknown until read.
     @State private var asked: Bool?
@@ -15,63 +16,67 @@ struct HealthView: View {
 
     var body: some View {
         Form {
-            if asked == false {
-                Section {
-                    Button("Connect Apple Health", systemImage: "heart") {
-                        Task {
-                            await reader.ask()
-                            await read()
-                        }
-                    }
-                } footer: {
-                    Text("Rufi reads your heart rate and resting heart rate from Apple Health and keeps them on your Mac.")
-                }
-            } else if asked == true {
-                Section {
-                    ForEach(HeartType.allCases, id: \.self) { type in
-                        LabeledContent(type.label, value: numbers[type].map { words($0, type) } ?? "–")
-                    }
-                } footer: {
-                    Text(numbersFooter)
-                }
-                Section {
-                    if case let .sending(type, readings) = health.state {
-                        HStack {
-                            ProgressView()
-                            Text("Sending \(type.words)… \(readings.formatted())")
-                                .padding(.leading, 6)
-                            Spacer()
-                            Button("Stop", systemImage: "stop.fill") { Task { await health.stop() } }
-                                .labelStyle(.titleAndIcon)
-                        }
-                    } else {
-                        Button("Sync for \(person)", systemImage: "arrow.triangle.2.circlepath") {
+            Group {
+                if asked == false {
+                    Section {
+                        Button("Connect Apple Health", systemImage: "heart") {
                             Task {
-                                await health.sync().value
+                                await reader.ask()
                                 await read()
                             }
                         }
+                    } footer: {
+                        Text("Rufi reads your heart rate and resting heart rate from Apple Health and keeps them on your Mac.")
                     }
-                } footer: {
-                    Text(status)
-                }
-                Section {
-                    Button("Read History Again", systemImage: "clock.arrow.circlepath") { readingAgain = true }
-                        .disabled(health.running)
-                        .confirmationDialog("Read History Again?", isPresented: $readingAgain, titleVisibility: .hidden) {
-                            Button("Read History Again") {
+                } else if asked == true {
+                    Section {
+                        ForEach(HeartType.allCases, id: \.self) { type in
+                            LabeledContent(type.label, value: numbers[type].map { words($0, type) } ?? "–")
+                        }
+                    } footer: {
+                        Text(numbersFooter)
+                    }
+                    Section {
+                        if case let .sending(type, readings) = health.state {
+                            HStack {
+                                ProgressView()
+                                Text("Sending \(type.words)… \(readings.formatted())")
+                                    .padding(.leading, 6)
+                                Spacer()
+                                Button("Stop", systemImage: "stop.fill") { Task { await health.stop() } }
+                                    .labelStyle(.titleAndIcon)
+                            }
+                        } else {
+                            Button("Sync for \(person)", systemImage: "arrow.triangle.2.circlepath") {
                                 Task {
-                                    await health.readAgain()
                                     await health.sync().value
                                     await read()
                                 }
                             }
-                        } message: {
-                            Text("Rufi reads all the heart data Apple Health lets it read and sends it to your Mac again. What your Mac has stays.")
                         }
+                    } footer: {
+                        Text(status)
+                    }
+                    Section {
+                        Button("Read History Again", systemImage: "clock.arrow.circlepath") { readingAgain = true }
+                            .disabled(health.running)
+                            .confirmationDialog("Read History Again?", isPresented: $readingAgain, titleVisibility: .hidden) {
+                                Button("Read History Again") {
+                                    Task {
+                                        await health.readAgain()
+                                        await health.sync().value
+                                        await read()
+                                    }
+                                }
+                            } message: {
+                                Text("Rufi reads all the heart data Apple Health lets it read and sends it to your Mac again. What your Mac has stays.")
+                            }
+                    }
                 }
             }
+            .listRowBackground(theme.surface)
         }
+        .themed(theme)
         .navigationTitle("Apple Health")
         .navigationBarTitleDisplayMode(.inline)
         .task { await read() }

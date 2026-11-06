@@ -8,6 +8,7 @@ struct ThisIPhoneView: View {
     let pairing: Pairing
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    @Environment(Theme.self) private var theme
     @State private var unpairing = false
     /// Whether iOS lets Rufi ring: unknown until read.
     @State private var notifications: UNAuthorizationStatus?
@@ -16,83 +17,87 @@ struct ThisIPhoneView: View {
         @Bindable var lock = app.lock
         NavigationStack {
             Form {
-                Section {
-                    HStack(spacing: 14) {
-                        Image("Dog").resizable().scaledToFit().frame(width: 52, height: 52).clipShape(.circle)
-                        VStack(alignment: .leading) {
-                            Text(pairing.person.name).font(.headline)
-                            Text("Paired with Rufi on \(pairing.mac)").foregroundStyle(.secondary)
-                        }
-                    }
-                }
-                Section {
-                    Toggle("Lock Rufi", isOn: $lock.on)
-                        .disabled(!lock.available)
-                } footer: {
-                    Text(lock.available
-                        ? "Face ID, or your passcode, when you open Rufi and after a minute away."
-                        : "Set a passcode in Settings › Face ID & Passcode to lock Rufi.")
-                }
-                Section {
-                    LabeledContent("Notifications", value: notifications == nil ? "" : allowed ? "On" : "Off")
-                    if notifications == .notDetermined {
-                        Button("Turn On Reminders", systemImage: "bell") {
-                            Task {
-                                await app.allowNotifications()
-                                await readNotifications()
-                                await app.refresh()
+                Group {
+                    Section {
+                        HStack(spacing: 14) {
+                            Initials(name: pairing.person.name, size: 52)
+                            VStack(alignment: .leading) {
+                                Text(pairing.person.name).font(.headline)
+                                Text("Paired with Rufi on \(pairing.mac)").foregroundStyle(.secondary)
                             }
                         }
-                    } else if notifications == .denied,
-                              let settings = URL(string: UIApplication.openNotificationSettingsURLString) {
-                        Button("Turn On in Settings", systemImage: "gear") { openURL(settings) }
                     }
-                    if let until = app.reminders?.until {
-                        LabeledContent("Set until", value: until.reminderWords)
-                    } else if app.reminders?.ring == .mac {
-                        LabeledContent("Reminders ring on", value: "Your Mac")
-                    } else {
-                        LabeledContent("Set until", value: "Nothing set")
-                    }
-                    if !app.outbox.logs.isEmpty {
-                        NavigationLink {
-                            List { UnsentSection(outbox: app.outbox, pairing: pairing) }
-                                .navigationTitle("Not on Your Mac Yet")
-                                .navigationBarTitleDisplayMode(.inline)
-                        } label: {
-                            LabeledContent("Not on your Mac yet", value: "\(app.outbox.logs.count)")
-                        }
-                    }
-                } header: {
-                    Text("Reminders")
-                } footer: {
-                    Text("What a reminder shows and where it rings: the bell on Medicines.")
-                }
-                if let health = app.health {
                     Section {
-                        NavigationLink {
-                            HealthView(health: health, person: pairing.person.name)
-                        } label: {
-                            LabeledContent("Apple Health", value: healthWords(health))
-                        }
+                        Toggle("Lock Rufi", isOn: $lock.on)
+                            .disabled(!lock.available)
+                    } footer: {
+                        Text(lock.available
+                            ? "Face ID, or your passcode, when you open Rufi and after a minute away."
+                            : "Set a passcode in Settings › Face ID & Passcode to lock Rufi.")
                     }
-                }
-                Section {
-                    Button("Unpair This iPhone", role: .destructive) { unpairing = true }
-                        .confirmationDialog("Unpair This iPhone?", isPresented: $unpairing, titleVisibility: .hidden) {
-                            Button("Unpair This iPhone", role: .destructive) {
+                    Section {
+                        LabeledContent("Notifications", value: notifications == nil ? "" : allowed ? "On" : "Off")
+                        if notifications == .notDetermined {
+                            Button("Turn On Reminders", systemImage: "bell") {
                                 Task {
-                                    await app.unpair()
-                                    dismiss()
+                                    await app.allowNotifications()
+                                    await readNotifications()
+                                    await app.refresh()
                                 }
                             }
-                        } message: {
-                            Text("This iPhone can't open Rufi any more, and its reminders are removed. What it sent stays on your Mac.")
+                        } else if notifications == .denied,
+                                  let settings = URL(string: UIApplication.openNotificationSettingsURLString) {
+                            Button("Turn On in Settings", systemImage: "gear") { openURL(settings) }
                         }
-                } footer: {
-                    Text("Rufi isn't a doctor; check with yours before medical decisions. Version \(version).")
+                        if let until = app.reminders?.until {
+                            LabeledContent("Set until", value: until.reminderWords)
+                        } else if app.reminders?.ring == .mac {
+                            LabeledContent("Reminders ring on", value: "Your Mac")
+                        } else {
+                            LabeledContent("Set until", value: "Nothing set")
+                        }
+                        if !app.outbox.logs.isEmpty {
+                            NavigationLink {
+                                List { UnsentSection(outbox: app.outbox, pairing: pairing) }
+                                    .navigationTitle("Not on Your Mac Yet")
+                                    .navigationBarTitleDisplayMode(.inline)
+                            } label: {
+                                LabeledContent("Not on your Mac yet", value: "\(app.outbox.logs.count)")
+                            }
+                        }
+                    } header: {
+                        Text("Reminders")
+                    } footer: {
+                        Text("What a reminder shows and where it rings: the bell on Medicines.")
+                    }
+                    if let health = app.health {
+                        Section {
+                            NavigationLink {
+                                HealthView(health: health, person: pairing.person.name)
+                            } label: {
+                                LabeledContent("Apple Health", value: healthWords(health))
+                            }
+                        }
+                    }
+                    Section {
+                        Button("Unpair This iPhone", role: .destructive) { unpairing = true }
+                            .confirmationDialog("Unpair This iPhone?", isPresented: $unpairing, titleVisibility: .hidden) {
+                                Button("Unpair This iPhone", role: .destructive) {
+                                    Task {
+                                        await app.unpair()
+                                        dismiss()
+                                    }
+                                }
+                            } message: {
+                                Text("This iPhone can't open Rufi any more, and its reminders are removed. What it sent stays on your Mac.")
+                            }
+                    } footer: {
+                        Text("Rufi isn't a doctor; check with yours before medical decisions. Version \(version).")
+                    }
                 }
+                .listRowBackground(theme.surface)
             }
+            .themed(theme)
             .task { await readNotifications() }
             .navigationTitle("This iPhone")
             .navigationBarTitleDisplayMode(.inline)

@@ -90,6 +90,8 @@ import {
   workingOf,
 } from "./transcript-state.ts";
 import { Dog, LiveDog } from "./dog.tsx";
+import { usePanel } from "./panel.ts";
+import { onPhone, tell } from "./phone.ts";
 import { effortName } from "./model-menu.tsx";
 import {
   settingsGroupOf,
@@ -154,13 +156,29 @@ function ownPage(personId: string, path: string): string | undefined {
 }
 
 /**
+ * Opens a page of Rufi a reply links, in place. On a phone the app opens it
+ * on top, even a row of the page under the chat, which the chat covers; Back
+ * opens the chat again.
+ */
+function useOpenPage() {
+  const navigate = useNavigate();
+  return (href: string) => {
+    if (onPhone) {
+      tell({ type: "go", path: href, chat: usePanel.getState().open });
+    } else {
+      void navigate({ href });
+    }
+  };
+}
+
+/**
  * A link to a page of Rufi in a reply: the person's page at that path,
  * opened in place by Rufi's router. A wrong path shows Rufi's "no page";
  * one that would leave the person's pages is its words only.
  */
 function RufiLink({ path, children }: { path: string; children: ReactNode }) {
   const personId = use(Whose);
-  const navigate = useNavigate();
+  const openPage = useOpenPage();
   const href = personId === "" ? undefined : ownPage(personId, path);
   if (href === undefined) return <span>{children}</span>;
   return (
@@ -168,7 +186,7 @@ function RufiLink({ path, children }: { path: string; children: ReactNode }) {
       href={href}
       onClick={(event) => {
         event.preventDefault();
-        void navigate({ href });
+        openPage(href);
       }}
     >
       {children}
@@ -288,7 +306,7 @@ function Reply({
   streaming: boolean;
 }) {
   const personId = use(Whose);
-  const navigate = useNavigate();
+  const openPage = useOpenPage();
   const openSettings = useOpenSettings();
   // A button's link, as the reply's links: a group of Settings over the
   // page, a page of Rufi in place, a web page outside Rufi; anything else
@@ -304,7 +322,7 @@ function Reply({
       path === undefined || personId === ""
         ? undefined
         : ownPage(personId, path);
-    if (href !== undefined) void navigate({ href });
+    if (href !== undefined) openPage(href);
     else if (WEB.test(url)) open(url, "_blank", "noopener,noreferrer");
   };
   return (

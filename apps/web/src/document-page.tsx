@@ -43,7 +43,7 @@ import type { BoxChip } from "./draft.ts";
 import { messageOf, retain } from "./live.ts";
 import { askRufi } from "./panel.ts";
 import { PageImage } from "./page-image.tsx";
-import { onPhone, tell } from "./phone.ts";
+import { onPhone, tell, useAppTitle } from "./phone.ts";
 import { documentPath, pagePath } from "./pages.ts";
 import { queries, useDocumentItems, useDocuments } from "./reads.ts";
 import {
@@ -155,6 +155,7 @@ function Checking({
   const [shown, setShown] = useState(items.items[0]?.page ?? 1);
   const [original, setOriginal] = useState(false);
   const { name } = describe(document);
+  useAppTitle(name);
   // A draft whose page was read again since can't be saved: it isn't counted.
   const pending = items.items.filter(
     (i) => i.status === "pending" && !i.outOfDate,

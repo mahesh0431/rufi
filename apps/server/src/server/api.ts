@@ -549,9 +549,15 @@ export function screensRoute(
     const found = await screen(screens, c.req.path);
     if (!found) throw new HttpError(404, "Not found.");
     c.header("Content-Type", found.type);
+    // The page itself is never kept, so the iPhone app's cache holds only
+    // the built, hashed files (apps/ios: Screens).
     c.header(
       "Cache-Control",
-      found.immutable ? "public, max-age=31536000, immutable" : "no-cache",
+      found.immutable
+        ? "public, max-age=31536000, immutable"
+        : found.type.startsWith("text/html")
+          ? "no-store"
+          : "no-cache",
     );
     if (found.type.startsWith("text/html")) {
       // The page carries the chosen appearance, colour, text size and reply

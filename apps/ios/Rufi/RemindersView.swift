@@ -8,48 +8,53 @@ struct RemindersView: View {
     let person: String
     let reminders: Reminders?
     @Environment(\.dismiss) private var dismiss
+    @Environment(Theme.self) private var theme
     @State private var setting: Door.Setting?
     @State private var problem: String?
 
     var body: some View {
         NavigationStack {
             Form {
-                if let setting {
-                    Section {
-                        Picker("A reminder shows", selection: choice(\.show, setting)) {
-                            Choice(name: "Just the time", detail: "“Medicines at 21:00”").tag(ReminderPlan.Show.time)
-                            Choice(name: "How many", detail: "“2 medicines at 21:00”").tag(ReminderPlan.Show.count)
-                            Choice(name: "Which ones", detail: "“21:00 · 2 medicines”, then each name and amount")
-                                .tag(ReminderPlan.Show.names)
+                Group {
+                    if let setting {
+                        Section {
+                            Picker("A reminder shows", selection: choice(\.show, setting)) {
+                                Choice(name: "Just the time", detail: "“Medicines at 21:00”").tag(ReminderPlan.Show.time)
+                                Choice(name: "How many", detail: "“2 medicines at 21:00”").tag(ReminderPlan.Show.count)
+                                Choice(name: "Which ones", detail: "“21:00 · 2 medicines”, then each name and amount")
+                                    .tag(ReminderPlan.Show.names)
+                            }
+                            .pickerStyle(.inline)
+                            .labelsHidden()
+                        } header: {
+                            Text("A reminder shows")
+                        } footer: {
+                            Text("On the Lock Screen, Which ones shows names unless Settings › Notifications › Show Previews is When Unlocked.")
                         }
-                        .pickerStyle(.inline)
-                        .labelsHidden()
-                    } header: {
-                        Text("A reminder shows")
-                    } footer: {
-                        Text("On the Lock Screen, Which ones shows names unless Settings › Notifications › Show Previews is When Unlocked.")
-                    }
-                    Section {
-                        Picker("Where reminders ring", selection: choice(\.ring, setting)) {
-                            Choice(name: "iPhone", detail: reminders?.until.map { "Set until \($0.reminderWords)" } ?? "")
-                                .tag(ReminderPlan.Ring.iphone)
-                            Choice(name: "Mac", detail: "").tag(ReminderPlan.Ring.mac)
-                            Choice(name: "Both", detail: "A backup when the iPhone can't ring").tag(ReminderPlan.Ring.both)
+                        Section {
+                            Picker("Where reminders ring", selection: choice(\.ring, setting)) {
+                                Choice(name: "iPhone", detail: reminders?.until.map { "Set until \($0.reminderWords)" } ?? "")
+                                    .tag(ReminderPlan.Ring.iphone)
+                                Choice(name: "Mac", detail: "").tag(ReminderPlan.Ring.mac)
+                                Choice(name: "Both", detail: "A backup when the iPhone can't ring").tag(ReminderPlan.Ring.both)
+                            }
+                            .pickerStyle(.inline)
+                            .labelsHidden()
+                        } header: {
+                            Text("Where reminders ring")
+                        } footer: {
+                            Text("Which medicines remind you, and when, you change in the chat.")
                         }
-                        .pickerStyle(.inline)
-                        .labelsHidden()
-                    } header: {
-                        Text("Where reminders ring")
-                    } footer: {
-                        Text("Which medicines remind you, and when, you change in the chat.")
+                    } else if problem == nil {
+                        ProgressView().frame(maxWidth: .infinity)
                     }
-                } else if problem == nil {
-                    ProgressView().frame(maxWidth: .infinity)
+                    if let problem {
+                        Section { Text(problem).foregroundStyle(.red) }
+                    }
                 }
-                if let problem {
-                    Section { Text(problem).foregroundStyle(.red) }
-                }
+                .listRowBackground(theme.surface)
             }
+            .themed(theme)
             .navigationTitle("Reminders")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

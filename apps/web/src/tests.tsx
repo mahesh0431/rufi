@@ -11,6 +11,7 @@ import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { AskRufi, AskRufiEmpty } from "./ask.tsx";
 import { askRufi } from "./panel.ts";
+import { useAppTitle } from "./phone.ts";
 import { useLabResults, useTestPage } from "./reads.ts";
 import {
   cellsOf,
@@ -183,6 +184,12 @@ export function TestPage({
   const page = useTestPage(person.id, testId);
   const [open, setOpen] = useState<string | null>(opened ?? null);
   const loaded = page.data !== undefined;
+  const named = page.data?.test;
+  useAppTitle(
+    named !== undefined && !("problem" in named) && named.kind === "test"
+      ? named.name
+      : undefined,
+  );
   useEffect(() => {
     if (!loaded || opened === undefined) return;
     document

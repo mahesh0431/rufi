@@ -34,11 +34,12 @@ export const openPanel = () => {
 
 /**
  * Another page or person: the panel closes and forgets where focus was,
- * or opens when the last page asked for that (`openNext`).
+ * or opens when the last page asked for that (`openNext`) or the iPhone
+ * app does (`open`: Back to a page whose chat was open).
  */
-export const resetPanel = () => {
+export const resetPanel = (open = false) => {
   usePanel.setState((now) => ({
-    open: now.openNext,
+    open: open || now.openNext,
     openNext: false,
     focusBefore: null,
     refused: null,
@@ -46,11 +47,11 @@ export const resetPanel = () => {
 };
 
 /**
- * Too small for the panel next to the page, or on a phone: the chat opens as
- * the page.
+ * A Mac window too small for the panel next to the page: the chat opens as
+ * the page. On a phone the panel rises over the page instead.
  */
 export const isSmall = () =>
-  onPhone || matchMedia("(max-width: 799px), (max-height: 499px)").matches;
+  !onPhone && matchMedia("(max-width: 799px), (max-height: 499px)").matches;
 
 /** The page of a person's chat. */
 export const chatPage = (personId: string) =>

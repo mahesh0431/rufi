@@ -6,6 +6,12 @@ import WebKit
 /// top. One, because the screens keep their session per web view and the
 /// door keeps one session per app; a second would end the first's.
 ///
+/// It keeps Rufi's built files (scripts, styles, fonts: hashed, never
+/// changing) in WebKit's disk cache, so a cold start doesn't fetch them
+/// again from the Mac; nothing else stays: at each start everything but
+/// that cache is cleared before a page loads, and the door sends every page
+/// and every answer as not to be kept (`no-store`).
+///
 /// The page is marked as the phone's before it loads (`data-place`, the
 /// iPhone's body text size and how much the bars cover), and talks to the
 /// app through one message handler, `rufi`, taken only from the door's
@@ -18,8 +24,9 @@ final class Screens: NSObject {
     /// The page shown now, as it last said.
     private(set) var path: String?
 
-    /// The person tapped a link to another page.
-    var onGo: (String) -> Void = { _ in }
+    /// The person tapped a link to another page; true when they tapped it
+    /// in the chat open over this one.
+    var onGo: (String, Bool) -> Void = { _, _ in }
     /// A page has drawn, with its title.
     var onPage: (String, String) -> Void = { _, _ in }
     /// The session ended, or the page couldn't load.
@@ -31,23 +38,34 @@ final class Screens: NSObject {
     var onScan: () -> Void = {}
     /// View original: a document and its files, each an id and a name.
     var onOriginal: (String, [(id: String, name: String)]) -> Void = { _, _ in }
+    /// The page drew in these colours, in dark or light.
+    var onTheme: (Theme.Colours, Bool) -> Void = { _, _ in }
 
     private var top: CGFloat = 0
     private var bottom: CGFloat = 0
     private var body = UIFont.preferredFont(forTextStyle: .body).pointSize
 
+    /// Everything of the last run but the disk cache is gone.
+    private let cleared: Task<Void, Never>
+
     init(origin: URL) {
         self.origin = origin
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .nonPersistent()
+        let store = WKWebsiteDataStore.default()
+        configuration.websiteDataStore = store
+        var others = WKWebsiteDataStore.allWebsiteDataTypes()
+        others.remove(WKWebsiteDataTypeDiskCache)
+        cleared = Task { await store.removeData(ofTypes: others, modifiedSince: .distantPast) }
         configuration.dataDetectorTypes = []
         configuration.allowsInlineMediaPlayback = true
-        view = WKWebView(frame: .zero, configuration: configuration)
+        view = PageView(frame: .zero, configuration: configuration)
         super.init()
         view.allowsLinkPreview = false
         view.allowsBackForwardNavigationGestures = false
         view.scrollView.contentInsetAdjustmentBehavior = .never
         view.scrollView.keyboardDismissMode = .interactive
+        // Rufi's pages are laid out for the phone; a pinch doesn't zoom them.
+        view.scrollView.pinchGestureRecognizer?.isEnabled = false
         view.isOpaque = false
         view.backgroundColor = .systemBackground
         view.navigationDelegate = self
@@ -59,16 +77,25 @@ final class Screens: NSObject {
             name: UIContentSizeCategory.didChangeNotification, object: nil)
     }
 
-    /// Loads a launch link from the door.
+    /// Loads a launch link from the door, once the last run's data is cleared.
     func load(_ url: URL) {
         path = nil
-        view.load(URLRequest(url: url))
+        Task {
+            await cleared.value
+            view.load(URLRequest(url: url))
+        }
     }
 
-    /// Shows `path` in the page that is open.
-    func open(_ path: String) {
+    /// Unpaired: the cached files go too.
+    static func forget() async {
+        await WKWebsiteDataStore.default().removeData(
+            ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast)
+    }
+
+    /// Shows `path` in the page that is open, with its chat open over it or not.
+    func open(_ path: String, chat: Bool) {
         guard let json = try? JSONEncoder().encode(path), let text = String(data: json, encoding: .utf8) else { return }
-        view.evaluateJavaScript("window.rufi.open(\(text))") { [weak self] _, error in
+        view.evaluateJavaScript("window.rufi.open(\(text), \(chat))") { [weak self] _, error in
             if error != nil { self?.onEnded() }
         }
     }
@@ -130,7 +157,7 @@ final class Screens: NSObject {
         else { return }
         switch type {
         case "go":
-            if let path = body["path"] as? String { onGo(path) }
+            if let path = body["path"] as? String { onGo(path, body["chat"] as? Bool ?? false) }
         case "page":
             if let path = body["path"] as? String, let title = body["title"] as? String {
                 self.path = path
@@ -142,6 +169,12 @@ final class Screens: NSObject {
             onRefresh()
         case "scan":
             onScan()
+        case "theme":
+            if let dark = body["dark"] as? Bool, let colours = body["colours"] as? [String: String],
+               let json = try? JSONSerialization.data(withJSONObject: colours),
+               let theme = try? JSONDecoder().decode(Theme.Colours.self, from: json) {
+                onTheme(theme, dark)
+            }
         case "original":
             let files = (body["files"] as? [[String: Any]] ?? []).compactMap { file in
                 (file["id"] as? String).flatMap { id in (file["name"] as? String).map { (id: id, name: $0) } }
@@ -179,6 +212,13 @@ extension Screens: WKNavigationDelegate, WKUIDelegate {
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         onEnded()
     }
+}
+
+/// No bar of arrows and Done above the keyboard: the box is the only
+/// field, and a swipe down on the page puts the keyboard away. WebKit asks
+/// its web view for the keyboard's accessory view; this one has none.
+private final class PageView: WKWebView {
+    override var inputAccessoryView: UIView? { nil }
 }
 
 /// The message handler, holding the screens weakly: the web view's
