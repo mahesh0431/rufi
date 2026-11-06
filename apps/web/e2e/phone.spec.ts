@@ -111,10 +111,17 @@ test("in the iPhone app, a reading page has the chat bar: a tap opens the chat o
     title: "HbA1c",
   });
 
+  // The bar keeps its width for the words; the full box has the model.
+  const model = page.getByRole("button", { name: /^Model and effort/ });
+  await expect(
+    page.getByRole("button", { name: /^Open the chat/ }),
+  ).toBeVisible();
+  await expect(model).toHaveCount(0);
   await page.getByRole("button", { name: /^Open the chat/ }).click();
   await expect(
     page.getByRole("textbox", { name: "Message to Rufi" }),
   ).toBeVisible();
+  await expect(model).toBeVisible();
   await expect(page.getByRole("heading", { name: "HbA1c" })).toBeVisible();
   await page.getByRole("button", { name: "Open as page" }).click();
   await expect

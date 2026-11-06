@@ -289,13 +289,9 @@ export function Box({
               )}
             </span>
           </button>
-          {onPhone ? (
-            // On a phone the words keep most of the bar: the model chip
-            // gives up its width first, as in the box.
-            <div className="flex max-w-[45%] min-w-0 justify-end">{choice}</div>
-          ) : (
-            choice
-          )}
+          {/* On a phone the bar keeps its width for the words; the panel
+              and the chat page have the model in the full box. */}
+          {!onPhone && choice}
           {working ? whileWorking : sendButton}
         </div>
       ) : (
