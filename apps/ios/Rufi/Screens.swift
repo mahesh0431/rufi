@@ -13,9 +13,9 @@ import WebKit
 /// and every answer as not to be kept (`no-store`).
 ///
 /// The page is marked as the phone's before it loads (`data-place`, the
-/// iPhone's body text size and how much the bars cover), and talks to the
-/// app through one message handler, `rufi`, taken only from the door's
-/// origin in the main frame (apps/web/src/phone.ts).
+/// iPhone's body text size and how much the bars and the chat box cover),
+/// and talks to the app through one message handler, `rufi`, taken only
+/// from the door's origin in the main frame (apps/web/src/phone.ts).
 @Observable
 final class Screens: NSObject {
     let view: WKWebView
@@ -27,15 +27,15 @@ final class Screens: NSObject {
     /// The person tapped a link to another page; true when they tapped it
     /// in the chat open over this one.
     var onGo: (String, Bool) -> Void = { _, _ in }
-    /// A page has drawn, with its title.
-    var onPage: (String, String) -> Void = { _, _ in }
+    /// A page has drawn, with its title and the chat box it has.
+    var onPage: (String, String, ChatBox.Kind?) -> Void = { _, _, _ in }
+    /// The chat box as the page has it now (ChatBox.State, as JSON).
+    var onBox: (Data) -> Void = { _ in }
     /// The session ended, or the page couldn't load.
     var onEnded: () -> Void = {}
     /// Doses, medicines or the reminder setting may have changed.
     var onRefresh: () -> Void = {}
     var onUnreachable: () -> Void = {}
-    /// Scan: the page asks for the document camera.
-    var onScan: () -> Void = {}
     /// View original: a document and its files, each an id and a name.
     var onOriginal: (String, [(id: String, name: String)]) -> Void = { _, _ in }
     /// The page drew in these colours, in dark or light.
@@ -43,6 +43,10 @@ final class Screens: NSObject {
 
     private var top: CGFloat = 0
     private var bottom: CGFloat = 0
+    /// Where the web view ends and the chat box starts, in the window; no
+    /// box, no top.
+    private var slotBottom: CGFloat = 0
+    private var boxTop: CGFloat?
     private var body = UIFont.preferredFont(forTextStyle: .body).pointSize
 
     /// Everything of the last run but the disk cache is gone.
@@ -100,11 +104,18 @@ final class Screens: NSObject {
         }
     }
 
-    /// Gives the page the door's answer to an added scan: its chips go in the box.
+    /// Gives the page the door's answer to what the box added: its chips go in the box.
     func added(_ answer: Data) {
         guard (try? JSONSerialization.jsonObject(with: answer)) != nil,
               let json = String(data: answer, encoding: .utf8) else { return }
         view.evaluateJavaScript("window.rufi.added(\(json))")
+    }
+
+    /// Asks the page's chat box to do what the person did in the app's.
+    func box(_ command: [String: Any]) {
+        guard let json = try? JSONSerialization.data(withJSONObject: command),
+              let text = String(data: json, encoding: .utf8) else { return }
+        view.evaluateJavaScript("window.rufi.box(\(text))")
     }
 
     /// A still of the page as it is now.
@@ -118,6 +129,41 @@ final class Screens: NSObject {
         self.top = top
         self.bottom = bottom
         mark()
+    }
+
+    /// Where the chat box starts, in the window, and the web view ends; no
+    /// box, none. The page ends above the box, with the keyboard up too.
+    func box(top: CGFloat?) {
+        guard top != boxTop else { return }
+        boxTop = top
+        mark()
+    }
+
+    fileprivate func slot(bottom: CGFloat) {
+        guard bottom != slotBottom else { return }
+        slotBottom = bottom
+        if boxTop != nil { mark() }
+    }
+
+    /// What covers the bottom of the web view: the chat box, else the bars.
+    private var covered: CGFloat {
+        guard let boxTop, slotBottom > 0 else { return bottom }
+        return max(slotBottom - boxTop, 0)
+    }
+
+    /// A swipe down on the page puts the keyboard away: the pages scroll
+    /// inside themselves, so the web view's own scrolling can't. It sits on
+    /// the slot, around the web view.
+    fileprivate func swipeDown() -> UIGestureRecognizer {
+        let swipe = UIPanGestureRecognizer(target: self, action: #selector(swiped))
+        swipe.cancelsTouchesInView = false
+        swipe.delegate = self
+        return swipe
+    }
+
+    @objc private func swiped(_ pan: UIPanGestureRecognizer) {
+        guard pan.state == .changed, pan.translation(in: view).y > 24 else { return }
+        view.window?.endEditing(true)
     }
 
     @objc private func textSizeChanged() {
@@ -134,7 +180,7 @@ final class Screens: NSObject {
               const style = document.documentElement.style;
               style.setProperty("--ios-body", "\(body)px");
               style.setProperty("--bar-top", "\(top)px");
-              style.setProperty("--bar-bottom", "\(bottom)px");
+              style.setProperty("--bar-bottom", "\(covered)px");
             }
             """
         let controller = view.configuration.userContentController
@@ -161,14 +207,14 @@ final class Screens: NSObject {
         case "page":
             if let path = body["path"] as? String, let title = body["title"] as? String {
                 self.path = path
-                onPage(path, title)
+                onPage(path, title, (body["box"] as? String).flatMap(ChatBox.Kind.init))
             }
+        case "box":
+            if let json = try? JSONSerialization.data(withJSONObject: body) { onBox(json) }
         case "ended":
             onEnded()
         case "refresh":
             onRefresh()
-        case "scan":
-            onScan()
         case "theme":
             if let dark = body["dark"] as? Bool, let colours = body["colours"] as? [String: String],
                let json = try? JSONSerialization.data(withJSONObject: colours),
@@ -183,6 +229,14 @@ final class Screens: NSObject {
         default:
             break
         }
+    }
+}
+
+extension Screens: UIGestureRecognizerDelegate {
+    /// The swipe never stops the page's own scrolling.
+    func gestureRecognizer(_ gesture: UIGestureRecognizer,
+                           shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+        true
     }
 }
 
@@ -214,8 +268,8 @@ extension Screens: WKNavigationDelegate, WKUIDelegate {
     }
 }
 
-/// No bar of arrows and Done above the keyboard: the box is the only
-/// field, and a swipe down on the page puts the keyboard away. WebKit asks
+/// No bar of arrows and Done above the keyboard for a field in a page: a
+/// swipe down on the page puts the keyboard away (`swiped`). WebKit asks
 /// its web view for the keyboard's accessory view; this one has none.
 private final class PageView: WKWebView {
     override var inputAccessoryView: UIView? { nil }
@@ -254,6 +308,7 @@ struct WebSlot: UIViewRepresentable {
         init(screens: Screens) {
             self.screens = screens
             super.init(frame: .zero)
+            addGestureRecognizer(screens.swipeDown())
         }
 
         @available(*, unavailable)
@@ -271,6 +326,12 @@ struct WebSlot: UIViewRepresentable {
         override func didMoveToWindow() {
             super.didMoveToWindow()
             if window != nil { hold() }
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            guard window != nil, screens.view.superview === self else { return }
+            screens.slot(bottom: convert(bounds, to: nil).maxY)
         }
 
         override func safeAreaInsetsDidChange() {

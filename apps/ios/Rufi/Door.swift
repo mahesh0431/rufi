@@ -294,19 +294,27 @@ nonisolated struct Door: Sendable {
         return answer
     }
 
-    /// The form that adds scanned pages, as the paperclip's add sends photos:
-    /// each page a JPEG `file`, together as one document, from the chat.
-    static func scanForm(_ pages: [Data], boundary: String) -> Data {
+    /// A file to add: its name, its type and its bytes.
+    struct Upload: Sendable {
+        let name: String
+        let type: String
+        let data: Data
+    }
+
+    /// The form that adds files from the chat, as the web's paperclip sends
+    /// them: each a `file`, and whether photos go together as one document.
+    static func form(_ files: [Upload], together: Bool, boundary: String) -> Data {
         var body = Data()
         func part(_ head: String, _ data: Data) {
             body.append(Data("--\(boundary)\r\n\(head)\r\n\r\n".utf8))
             body.append(data)
             body.append(Data("\r\n".utf8))
         }
-        for (index, page) in pages.enumerated() {
-            part("Content-Disposition: form-data; name=\"file\"; filename=\"Scan page \(index + 1).jpg\"\r\nContent-Type: image/jpeg", page)
+        for file in files {
+            let name = file.name.replacingOccurrences(of: "\"", with: "'")
+            part("Content-Disposition: form-data; name=\"file\"; filename=\"\(name)\"\r\nContent-Type: \(file.type)", file.data)
         }
-        part("Content-Disposition: form-data; name=\"together\"", Data("yes".utf8))
+        part("Content-Disposition: form-data; name=\"together\"", Data((together ? "yes" : "no").utf8))
         part("Content-Disposition: form-data; name=\"from\"", Data("chat".utf8))
         body.append(Data("--\(boundary)--\r\n".utf8))
         return body
@@ -325,17 +333,18 @@ nonisolated struct Door: Sendable {
         }
     }
 
-    /// Adds scanned pages to `person`'s documents from the chat, together as
-    /// one document, as the paperclip adds photos; pages may be large, so it
-    /// has 5 minutes. The door's answer, as it came, for the chat box.
-    func add(person: String, pages: [Data]) async throws(Problem) -> Data {
+    /// Adds files to `person`'s documents from the chat (the box's Photos,
+    /// Files and Camera), photos together as one document or each its own;
+    /// files may be large, so it has 5 minutes. The door's answer, as it
+    /// came, for the chat box.
+    func add(person: String, files: [Upload], together: Bool) async throws(Problem) -> Data {
         let at = person.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(.init(charactersIn: "-_."))) ?? ""
         var request = URLRequest(url: origin.appending(path: "/api/people/\(at)/documents"), timeoutInterval: Self.fileSeconds)
         request.httpMethod = "POST"
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         let boundary = "rufi-\(UUID().uuidString)"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        let body = Self.scanForm(pages, boundary: boundary)
+        let body = Self.form(files, together: together, boundary: boundary)
         let data: Data
         let response: URLResponse
         do {

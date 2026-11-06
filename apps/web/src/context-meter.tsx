@@ -14,14 +14,22 @@ import { Menus } from "./model-menu.tsx";
 const R = 14;
 const AROUND = 2 * Math.PI * R;
 
+/** How much of the window the chat uses, in whole percent. */
+export const contextUsed = (context: { tokens: number; window: number }) =>
+  Math.min(
+    100,
+    Math.max(0, Math.round((100 * context.tokens) / context.window)),
+  );
+
+/** What the meter says it means. */
+export const CONTEXT_WORDS =
+  "Of the AI's memory for this chat. Near full, Codex compacts the chat history.";
+
 export function ContextMeter({ live }: { live: StoreApi<Live> }) {
   const menus = useContext(Menus);
   const context = useStore(live, (state) => state.chat?.context ?? null);
   if (context === null) return null;
-  const used = Math.min(
-    100,
-    Math.max(0, Math.round((100 * context.tokens) / context.window)),
-  );
+  const used = contextUsed(context);
   const title = `Context used: ${String(used)}%`;
   return (
     <Tooltip.Root>
@@ -61,10 +69,7 @@ export function ContextMeter({ live }: { live: StoreApi<Live> }) {
         <Tooltip.Positioner side="top" sideOffset={8} className="z-50">
           <Tooltip.Popup className="w-64 rounded-xl bg-surface/95 px-3 py-2 text-xs text-ink shadow-menu backdrop-blur-xl">
             <p className="font-semibold">{title}</p>
-            <p>
-              Of the AI's memory for this chat. Near full, Codex compacts the
-              chat history.
-            </p>
+            <p>{CONTEXT_WORDS}</p>
           </Tooltip.Popup>
         </Tooltip.Positioner>
       </Tooltip.Portal>

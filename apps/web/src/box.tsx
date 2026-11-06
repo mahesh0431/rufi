@@ -38,8 +38,7 @@ import { type RefObject, useEffect, useState } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
 import { ApiError, request } from "./api.ts";
-import { onPhone } from "./phone.ts";
-import { AttachButton, AttachStatus, ScanButton } from "./attach.tsx";
+import { AttachButton, AttachStatus } from "./attach.tsx";
 import { boxFor } from "./boxes.ts";
 import { ChipView } from "./chips.tsx";
 import { ContextMeter } from "./context-meter.tsx";
@@ -100,21 +99,12 @@ function saveState(state: BoxState): string | null {
   return state.failed ? "Not saved" : null;
 }
 
-export function Box({
-  person,
-  live,
-  size,
-  onOpen,
-  inputRef,
-}: {
-  person: Person;
-  live: StoreApi<Live>;
-  size: "bar" | "panel" | "page";
-  /** The bar: a click opens the chat. */
-  onOpen?: () => void;
-  /** The box's text field, for focus; in the bar, the pill. */
-  inputRef: RefObject<HTMLElement | null>;
-}) {
+/**
+ * The box's state and what it does, the same for the web box and the
+ * iPhone app's own (phone-box.tsx): its text and chips, what Send does now,
+ * why it can't keep or send, and its acts.
+ */
+export function useBoxLogic(person: Person, live: StoreApi<Live>) {
   const box = boxFor(person.id);
   const text = useStore(box.store, (state) => state.text);
   const loaded = useStore(box.store, (state) => state.loaded);
@@ -129,9 +119,6 @@ export function Box({
   // What Enter does while a reply runs, and ⌘Enter.
   const enter = useSettings().data?.whileReplying ?? "steer";
   const other: WhileReplying = enter === "steer" ? "queue" : "steer";
-  // While ⌘ is held, the button shows what a click does then.
-  const shown = useCommandHeld() ? other : enter;
-  const navigate = useNavigate();
   const [problem, setProblem] = useState<string | null>(null);
   const long = tooLong(text);
   const many = tooMany(chips);
@@ -157,6 +144,23 @@ export function Box({
 
   const stop = () => act(() => request("POST", `${chatPath(person.id)}/stop`));
 
+  /** Takes a chip out; a document added for this message only goes too. */
+  const remove = (chip: BoxChip) =>
+    act(async () => {
+      if (chip.pointer.type === "document") {
+        try {
+          await request(
+            "DELETE",
+            `/api/people/${encodeURIComponent(person.id)}/documents/${encodeURIComponent(chip.pointer.id)}/unsent`,
+          );
+        } catch (error) {
+          // Sent files stay in Rufi; only their chip leaves the box.
+          if (!(error instanceof ApiError && error.status === 409)) throw error;
+        }
+      }
+      box.remove(chip);
+    });
+
   /**
    * Why the box can't keep, send or add what it should, in words; an add
    * refused just now comes first.
@@ -166,6 +170,65 @@ export function Box({
     : many
       ? `Too many added to keep or send: at most ${String(MAX_REFS)}, and this has ${String(chips.length)}. Take some out.`
       : (refused ?? notice ?? problem);
+  return {
+    box,
+    text,
+    loaded,
+    locked,
+    saved,
+    chips,
+    refused,
+    working,
+    enter,
+    other,
+    long,
+    hasText,
+    placeholder,
+    why,
+    submit,
+    act,
+    stop,
+    remove,
+  };
+}
+
+export function Box({
+  person,
+  live,
+  size,
+  onOpen,
+  inputRef,
+}: {
+  person: Person;
+  live: StoreApi<Live>;
+  size: "bar" | "panel" | "page";
+  /** The bar: a click opens the chat. */
+  onOpen?: () => void;
+  /** The box's text field, for focus; in the bar, the pill. */
+  inputRef: RefObject<HTMLElement | null>;
+}) {
+  const {
+    box,
+    text,
+    loaded,
+    locked,
+    saved,
+    chips,
+    refused,
+    working,
+    enter,
+    other,
+    hasText,
+    placeholder,
+    why,
+    submit,
+    act,
+    stop,
+    remove,
+  } = useBoxLogic(person, live);
+  // While ⌘ is held, the button shows what a click does then.
+  const shown = useCommandHeld() ? other : enter;
+  const navigate = useNavigate();
   /** In the pill, for the moment, in place of the text. */
   const reason = why ?? saved;
 
@@ -279,8 +342,7 @@ export function Box({
               <Added chips={chips} />{" "}
               {reason !== null ? (
                 <span className="truncate text-muted">{reason}</span>
-              ) : onPhone && chips.length > 0 && text.trim() === "" ? null : (
-                // On a phone an added document alone keeps the room.
+              ) : (
                 <span
                   className={`truncate ${text.trim() === "" ? "text-muted" : ""}`}
                 >
@@ -289,9 +351,7 @@ export function Box({
               )}
             </span>
           </button>
-          {/* On a phone the bar keeps its width for the words; the panel
-              and the chat page have the model in the full box. */}
-          {!onPhone && choice}
+          {choice}
           {working ? whileWorking : sendButton}
         </div>
       ) : (
@@ -312,26 +372,7 @@ export function Box({
                     chip={chip}
                     {...(!locked && {
                       onRemove: () => {
-                        void act(async () => {
-                          if (chip.pointer.type === "document") {
-                            try {
-                              await request(
-                                "DELETE",
-                                `/api/people/${encodeURIComponent(person.id)}/documents/${encodeURIComponent(chip.pointer.id)}/unsent`,
-                              );
-                            } catch (error) {
-                              // Sent files stay in Rufi; only their chip leaves the box.
-                              if (
-                                !(
-                                  error instanceof ApiError &&
-                                  error.status === 409
-                                )
-                              )
-                                throw error;
-                            }
-                          }
-                          box.remove(chip);
-                        });
+                        void remove(chip);
                       },
                     })}
                   />
@@ -340,31 +381,13 @@ export function Box({
             </ul>
           )}
           <div className="flex">{field}</div>
-          {onPhone ? (
-            // On a phone, Send stays on screen: the model chip gives
-            // up its width first (it takes no room when the row wraps),
-            // then the meter and Send go to a second line, Send at its end
-            // (and to a line of its own at the largest sizes).
-            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-              <AttachButton personId={person.id} />
-              <ScanButton personId={person.id} />
-              <div className="flex min-w-0 grow basis-0 justify-end">
-                {choice}
-              </div>
-              <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
-                <ContextMeter live={live} />
-                {working ? whileWorking : sendButton}
-              </div>
-            </div>
-          ) : (
-            <div className="mt-1 flex items-center gap-1.5">
-              <AttachButton personId={person.id} />
-              <span className="flex-1" />
-              {choice}
-              <ContextMeter live={live} />
-              {working ? whileWorking : sendButton}
-            </div>
-          )}
+          <div className="mt-1 flex items-center gap-1.5">
+            <AttachButton personId={person.id} />
+            <span className="flex-1" />
+            {choice}
+            <ContextMeter live={live} />
+            {working ? whileWorking : sendButton}
+          </div>
         </div>
       )}
       {size === "bar"
@@ -396,19 +419,15 @@ export function Box({
           className="flex items-center gap-1.5 px-3.5 pb-2 text-muted"
         >
           {why}
-          {(why === SIGNED_OUT || why === CLAUDE_SIGNED_OUT) &&
-            // On a phone, sign-in is on the Mac.
-            (onPhone ? (
-              <b className="font-medium text-ink">Sign in on your Mac.</b>
-            ) : (
-              <Button
-                look="quiet"
-                icon={LogIn}
-                onClick={() => void navigate({ to: "/sign-in" })}
-              >
-                Sign in
-              </Button>
-            ))}
+          {(why === SIGNED_OUT || why === CLAUDE_SIGNED_OUT) && (
+            <Button
+              look="quiet"
+              icon={LogIn}
+              onClick={() => void navigate({ to: "/sign-in" })}
+            >
+              Sign in
+            </Button>
+          )}
         </p>
       )}
     </form>

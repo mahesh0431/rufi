@@ -17,6 +17,8 @@ final class Theme {
         var accent: String
         var accentSoft: String
         var accentInk: String
+        /// Text and icons on the accent; none in a theme kept before it came.
+        var onAccent: String?
     }
 
     private(set) var light: Colours?
@@ -53,17 +55,18 @@ final class Theme {
     var accent: Color { colour(\.accent, or: UIColor(named: "AccentColor") ?? .systemBlue) }
     var accentSoft: Color { colour(\.accentSoft, or: .tertiarySystemFill) }
     var accentInk: Color { colour(\.accentInk, or: .label) }
+    var onAccent: Color { colour(\.onAccent, or: .white) }
 
     /// Behind the page, in UIKit's terms.
     var pageColour: UIColor { uiColour(\.page, or: .systemBackground) }
 
-    private func colour(_ key: KeyPath<Colours, String>, or fallback: UIColor) -> Color {
+    private func colour(_ key: (Colours) -> String?, or fallback: UIColor) -> Color {
         Color(uiColor: uiColour(key, or: fallback))
     }
 
-    private func uiColour(_ key: KeyPath<Colours, String>, or fallback: UIColor) -> UIColor {
-        let light = light.flatMap { UIColor(hex: $0[keyPath: key]) }
-        let dark = dark.flatMap { UIColor(hex: $0[keyPath: key]) }
+    private func uiColour(_ key: (Colours) -> String?, or fallback: UIColor) -> UIColor {
+        let light = light.flatMap { key($0) }.flatMap { UIColor(hex: $0) }
+        let dark = dark.flatMap { key($0) }.flatMap { UIColor(hex: $0) }
         // SwiftUI can resolve it off the main thread: it holds only colours.
         return UIColor { @Sendable traits in
             (traits.userInterfaceStyle == .dark ? dark : light) ?? fallback.resolvedColor(with: traits)
