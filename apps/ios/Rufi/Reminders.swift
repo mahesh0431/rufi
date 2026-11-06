@@ -147,7 +147,7 @@ protocol NoticeCenter {
 @Observable
 final class Reminders {
     /// The background refresh's task (Info.plist).
-    static let task = "com.mahesh.rufi.refresh"
+    static let task = "com.maheshpalavalli.rufi.refresh"
 
     /// The last dose time set on this iPhone; none when nothing is.
     private(set) var until: Date?

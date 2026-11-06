@@ -324,7 +324,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = com.mahesh.rufi;
+				PRODUCT_BUNDLE_IDENTIFIER = com.maheshpalavalli.rufi;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -358,7 +358,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = com.mahesh.rufi;
+				PRODUCT_BUNDLE_IDENTIFIER = com.maheshpalavalli.rufi;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -377,7 +377,7 @@
 				DEVELOPMENT_TEAM = W8CB6Y6LAF;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = com.mahesh.rufi.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.maheshpalavalli.rufi.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -396,7 +396,7 @@
 				DEVELOPMENT_TEAM = W8CB6Y6LAF;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = com.mahesh.rufi.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.maheshpalavalli.rufi.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -425,7 +425,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = com.mahesh.rufi.seed;
+				PRODUCT_BUNDLE_IDENTIFIER = com.maheshpalavalli.rufi.seed;
 				PRODUCT_NAME = "Rufi Seed";
 				SDKROOT = iphonesimulator;
 				SKIP_INSTALL = YES;
@@ -456,7 +456,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = com.mahesh.rufi.seed;
+				PRODUCT_BUNDLE_IDENTIFIER = com.maheshpalavalli.rufi.seed;
 				PRODUCT_NAME = "Rufi Seed";
 				SDKROOT = iphonesimulator;
 				SKIP_INSTALL = YES;

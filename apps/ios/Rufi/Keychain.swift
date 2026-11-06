@@ -8,7 +8,7 @@ nonisolated enum Keychain {
     private static var item: [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "com.mahesh.rufi",
+            kSecAttrService as String: "com.maheshpalavalli.rufi",
             kSecAttrAccount as String: "door-key",
         ]
     }
