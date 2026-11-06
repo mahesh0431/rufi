@@ -1,7 +1,7 @@
 import SwiftUI
 import UserNotifications
 
-/// This iPhone: whose record and which Mac, the lock's switch, whether iOS
+/// This iPhone: whose record and which Mac, light or dark, the lock's switch, whether iOS
 /// lets Rufi ring and until when reminders are set, Apple Health, and Unpair.
 struct ThisIPhoneView: View {
     let app: AppModel
@@ -10,6 +10,7 @@ struct ThisIPhoneView: View {
     @Environment(\.openURL) private var openURL
     @Environment(Theme.self) private var theme
     @State private var unpairing = false
+    @AppStorage(Appearance.stored) private var appearance = Appearance.system
     /// Whether iOS lets Rufi ring: unknown until read.
     @State private var notifications: UNAuthorizationStatus?
 
@@ -26,6 +27,13 @@ struct ThisIPhoneView: View {
                                 Text("Paired with Rufi on \(pairing.mac)").foregroundStyle(.secondary)
                             }
                         }
+                    }
+                    Section("Appearance") {
+                        Picker("Appearance", selection: $appearance) {
+                            ForEach(Appearance.allCases) { Text($0.name).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
                     }
                     Section {
                         Toggle("Lock Rufi", isOn: $lock.on)

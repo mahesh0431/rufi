@@ -14,10 +14,16 @@ final class Shield {
            let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first {
             let window = UIWindow(windowScene: scene)
             window.windowLevel = .alert + 1
+            window.overrideUserInterfaceStyle = Appearance.chosen.style
             window.rootViewController = UIHostingController(rootView: ShieldView(app: app))
             self.window = window
         }
         window?.isHidden = !shown
+    }
+
+    /// Light or dark was chosen on this iPhone: the lock's window takes it too.
+    func appearance(_ appearance: Appearance) {
+        window?.overrideUserInterfaceStyle = appearance.style
     }
 }
 
