@@ -1,6 +1,6 @@
 # iPhone
 
-Rufi on your iPhone opens your own record from Rufi on your Mac, through Tailscale, and sends your heart data from Apple Health to it. You pair it once in [Settings › iPhone](rufi:/settings/iphone). This page says what pairing needs, how to pair, what the iPhone shows and keeps, how its medicine reminders work, how to unpair, and what to do when something fails.
+Rufi on your iPhone opens your own record from Rufi on your Mac, through Tailscale, and sends your heart data from Apple Health to it. You pair it once in [Settings › iPhone](rufi:/settings/iphone). This page says what pairing needs, how to pair, what the iPhone shows and keeps, how its medicine reminders work, how Rufi and its testing build Rufi Dev keep apart, how to unpair, and what to do when something fails.
 
 ## What pairing needs
 
@@ -47,7 +47,7 @@ When that person's reminders ring on the **iPhone** or **Both**, Rufi on the iPh
 - **What it says** is the person's choice under **Reminders** (the bell at the top right of Medicines, or on the Mac's Medicines page): **Just the time** ("Medicines at 21:00"), **How many** ("2 medicines at 21:00"), or **Which ones** ("21:00 · 2 medicines", then each name, strength and amount). On the Lock Screen, Which ones shows names unless the iPhone's Settings › Notifications › Show Previews is **When Unlocked**; then it shows "Medicine reminder" until you unlock.
 - **Where reminders ring:** **iPhone**, **Mac** or **Both**, in the same place. With **Mac**, the iPhone has no medicine notices.
 - **Times are where you are.** A medicine at 08:00 rings at 08:00 on the iPhone's clock, also when you travel.
-- They are **Time Sensitive**, so a Focus doesn't hold them back. To change that, open Settings › Notifications › Rufi on the iPhone.
+- They are **Time Sensitive**, so a Focus doesn't hold them back. To change that, open Settings › Notifications › Rufi on the iPhone (Rufi Dev for a testing build).
 - Tap a notice to open Rufi at **Medicines**, after Lock Rufi.
 
 ### Log a dose from a reminder
@@ -79,6 +79,10 @@ In **This iPhone** › **Apple Health**, connect Apple Health, see your latest r
 - For Apple Health: where each kind of heart data was sent up to (Apple's bookmark, not the values), and when the last sync was and how many readings it sent.
 
 Nothing of your record, chat, documents or heart data is kept by Rufi on the iPhone (your heart data stays in Apple Health, where it was): pages are shown while Rufi is open and gone when it closes, and an original you view is a temporary copy, deleted when you close it (or the next time Rufi starts, if it was closed while showing one); scanned pages go straight to your Mac without being saved on the iPhone. Deleting the app deletes all of this; to use Rufi on that iPhone again, pair it again.
+
+## Rufi and Rufi Dev
+
+Testing builds of the iPhone app are named **Rufi Dev**. Rufi and Rufi Dev are separate apps and can both be on one iPhone. Each one pairs on its own, with its own line in Settings › iPhone, and keeps what it keeps on its own: its key, Lock Rufi, reminders, Apple Health bookmarks and doses not on your Mac yet. Nothing moves from one to the other. When both are paired for the same person, both ring that person's reminders; unpair the one you don't use. Where this page says Rufi on the iPhone, it means whichever of the two you opened, also in the iPhone's own Settings.
 
 ## When your Mac can't be reached
 
