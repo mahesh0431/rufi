@@ -157,7 +157,8 @@ export function ChatDock({ person }: { person: Person }) {
           className={
             onPhone
               ? open
-                ? "fixed inset-x-2 top-[calc(var(--bar-top,0px)+4px)] bottom-[calc(var(--bar-bottom,0px)+8px)] z-20 flex flex-col overflow-hidden rounded-[20px] bg-surface/95 shadow-float backdrop-blur-xl"
+                ? // Down behind the app's box, which sits in the panel.
+                  "fixed inset-x-2 top-[calc(var(--bar-top,0px)+4px)] bottom-0 z-20 flex flex-col overflow-hidden rounded-[20px] bg-surface/95 shadow-float backdrop-blur-xl"
                 : "fixed inset-x-3 bottom-[calc(var(--bar-bottom,0px)+8px)] z-20 flex flex-col"
               : open
                 ? "fixed right-5 bottom-5 z-20 flex h-[min(660px,calc(100vh-40px))] w-[500px] max-w-[calc(100vw-40px)] flex-col overflow-hidden rounded-[20px] bg-surface/95 shadow-float backdrop-blur-xl"
@@ -213,7 +214,7 @@ export function ChatDock({ person }: { person: Person }) {
             <div
               className={
                 open
-                  ? "relative px-3 pt-1"
+                  ? `relative px-3 pt-1 ${onPhone ? "pb-(--bar-bottom)" : ""}`
                   : `rounded-full bg-surface/95 shadow-float backdrop-blur-xl transition-shadow ${lit ? "ring-2 ring-accent" : ""}`
               }
             >

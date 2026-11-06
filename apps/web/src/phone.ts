@@ -60,6 +60,7 @@ const THEME_COLOURS = {
   accent: "--accent",
   accentSoft: "--accent-soft",
   accentInk: "--accent-ink",
+  onAccent: "--on-accent",
 } as const;
 type ThemeColour = keyof typeof THEME_COLOURS;
 

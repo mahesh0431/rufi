@@ -19,6 +19,8 @@ final class Shell {
     let screens: Screens
     let door: Door
     let theme: Theme
+    /// The chat's box, drawn here; the page keeps its rules.
+    let box = ChatBox()
     private let unpaired: () -> Void
 
     var state = State.opening
@@ -41,10 +43,10 @@ final class Shell {
 
     /// The document camera is up.
     var scanning = false
-    /// Scanned pages are being added.
+    /// Files from the box are being added.
     private(set) var adding = false
-    /// Why a scan couldn't be added, in one line.
-    var scanProblem: String?
+    /// Why files from the box couldn't be added, in one line.
+    var addProblem: String?
 
     /// The copies of the original Quick Look shows, and the one on screen;
     /// closing it deletes them.
@@ -78,11 +80,15 @@ final class Shell {
         self.navigator = navigator
         holder = navigator.root.id
         screens.onGo = { [weak self] path, chat in Task { await self?.go(path, chat: chat) } }
-        screens.onPage = { [weak self] path, title in self?.drawn(path, title) }
+        screens.onPage = { [weak self] path, title, box in
+            self?.box.kind = box
+            self?.drawn(path, title)
+        }
+        screens.onBox = { [weak self] data in self?.box.took(data) }
         screens.onEnded = { [weak self] in Task { await self?.reopen() } }
         screens.onUnreachable = { [weak self] in self?.state = .unreachable }
         screens.onRefresh = refresh
-        screens.onScan = { [weak self] in self?.scan() }
+        box.asking = { [weak screens] command in screens?.box(command) }
         screens.onOriginal = { [weak self] document, files in Task { await self?.show(document, files) } }
         screens.view.backgroundColor = theme.pageColour
         screens.onTheme = { [weak self] colours, dark in
@@ -113,6 +119,7 @@ final class Shell {
         defer { reopening = false }
         state = .opening
         covered = true
+        box.reset()
         do {
             let url = try await door.open(navigator.page(at: holder)?.path ?? Place.chat.path(pairing.person.id))
             screens.load(url)
@@ -135,40 +142,46 @@ final class Shell {
         if let counts = try? await door.counts(for: pairing.person.id) { self.counts = counts }
     }
 
-    /// Scan: the document camera, where the iPhone has one.
+    /// Camera, in the box's paperclip: the document camera, where the iPhone has one.
     func scan() {
         guard !adding else { return }
         if DocumentCamera.available {
             scanning = true
         } else {
-            scanProblem = "This iPhone can't scan documents. Add a photo with the paperclip instead."
+            addProblem = "This iPhone can't scan documents. Add a photo from Photos instead."
         }
     }
 
-    /// The camera's pages: added with the key, together as one document, and
-    /// their chip goes in the chat box. They are only in memory meanwhile.
+    /// The camera's pages: added together as one document.
     func scanned(_ scan: DocumentCamera.Scan) async {
         scanning = false
-        let pages: [Data]
         switch scan {
         case .cancelled: return
-        case .failed:
-            scanProblem = "The camera couldn't take that scan. Scan it again."
-            return
-        case let .pages(taken): pages = taken
+        case .failed: addProblem = "The camera couldn't take that scan. Scan it again."
+        case let .pages(pages):
+            await attach(pages.enumerated().map { index, page in
+                Door.Upload(name: "Scan page \(index + 1).jpg", type: "image/jpeg", data: page)
+            }, together: true)
         }
+    }
+
+    /// Files from the box's paperclip: added with the key, as one document or
+    /// each its own, and their chips go in the box. They are only in memory
+    /// meanwhile.
+    func attach(_ files: [Door.Upload], together: Bool) async {
+        guard !adding, !files.isEmpty else { return }
         adding = true
         defer { adding = false }
         do {
-            screens.added(try await door.add(person: pairing.person.id, pages: pages))
+            screens.added(try await door.add(person: pairing.person.id, files: files, together: together))
         } catch .unpaired {
             unpaired()
         } catch .unreachable {
-            scanProblem = "Can't reach your Mac. Scan again when it's awake and Rufi is open."
+            addProblem = "Can't reach your Mac. Add them again when it's awake and Rufi is open."
         } catch let .refused(words) {
-            scanProblem = words
+            addProblem = words
         } catch {
-            scanProblem = "Update Rufi on your iPhone (or on your Mac) so they match."
+            addProblem = "Update Rufi on your iPhone (or on your Mac) so they match."
         }
     }
 
@@ -275,6 +288,15 @@ struct ShellView: View {
             }
             // Another place: a stack of its own.
             .id(shell.navigator.root.id)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if boxShown {
+                    ChatBoxView(box: shell.box, shell: shell)
+                        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: {
+                            shell.screens.box(top: $0)
+                        }
+                        .onDisappear { shell.screens.box(top: nil) }
+                }
+            }
         } sidebar: {
             SidebarView(name: shell.pairing.person.name, current: shell.navigator.current,
                         counts: shell.counts, theme: shell.theme) { place in
@@ -294,10 +316,10 @@ struct ShellView: View {
             DocumentCamera { scan in Task { await shell.scanned(scan) } }
                 .ignoresSafeArea()
         }
-        .alert("Rufi Couldn't Add the Scan", isPresented: scanProblemShown) {
+        .alert("Rufi Couldn't Add That", isPresented: addProblemShown) {
             Button("OK") {}
         } message: {
-            Text(shell.scanProblem ?? "")
+            Text(shell.addProblem ?? "")
         }
         .quickLookPreview($shell.original, in: shell.originals)
         .overlay {
@@ -317,8 +339,13 @@ struct ShellView: View {
         }
     }
 
-    private var scanProblemShown: Binding<Bool> {
-        Binding { shell.scanProblem != nil } set: { if !$0 { shell.scanProblem = nil } }
+    /// The page on top has a chat box, and the page has told it.
+    private var boxShown: Bool {
+        shell.state == .open && shell.box.kind != nil && shell.box.state != nil
+    }
+
+    private var addProblemShown: Binding<Bool> {
+        Binding { shell.addProblem != nil } set: { if !$0 { shell.addProblem = nil } }
     }
 
     private var problemShown: Binding<Bool> {
