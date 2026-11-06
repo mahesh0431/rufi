@@ -5,7 +5,7 @@
 // the pages where you read your health, the chat bar; every move to another
 // page goes through the app, which opens it on top or switches place. The
 // app talks back by `window.rufi.open(path)`, and by
-// `window.rufi.added(answer)` after it uploaded a scan.
+// `window.rufi.added(answer)` after it added files from its box.
 import {
   createMemoryHistory,
   useMatch,

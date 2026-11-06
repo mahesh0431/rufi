@@ -174,7 +174,9 @@ struct ChatBoxView: View {
             .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
             // Under the chat, not over a page, and not with the keyboard up.
             if !focused, box.kind == .page || state?.panel == true {
-                Disclaimer()
+                // At the accessibility sizes, as at the largest other size:
+                // never more than two lines.
+                Disclaimer().dynamicTypeSize(...DynamicTypeSize.xxxLarge)
             }
         }
         .padding(.horizontal, 10)
@@ -201,11 +203,14 @@ struct ChatBoxView: View {
         .onChange(of: picked) { _, items in
             guard !items.isEmpty else { return }
             picked = []
-            Task { await chose(await Self.uploads(items)) }
+            Task { await chose(await Chosen.photos(items)) }
         }
         .fileImporter(isPresented: $files, allowedContentTypes: [.pdf, .jpeg, .png, .heic, .heif],
                       allowsMultipleSelection: true) { result in
-            if case let .success(urls) = result { Task { await chose(Self.uploads(urls)) } }
+            switch result {
+            case let .success(urls): Task { await chose(Chosen.files(urls)) }
+            case .failure: Task { await chose(nil) }
+            }
         }
         .confirmationDialog("Add \(grouping.count) photos", isPresented: groupingShown, titleVisibility: .visible) {
             Button("\(grouping.count) photos → one document") { add(grouping, together: true) }
@@ -326,7 +331,13 @@ struct ChatBoxView: View {
     }
 
     /// Files chosen: added now, or first asked how when two or more are photos.
-    private func chose(_ files: [Door.Upload]) async {
+    /// When one couldn't be read, none are added: a report must not go in
+    /// part, so the person chooses them again.
+    private func chose(_ files: [Door.Upload]?) async {
+        guard let files else {
+            shell.addProblem = "Rufi couldn't read one of them, so it added none. Choose them again."
+            return
+        }
         guard !files.isEmpty else { return }
         if files.filter({ $0.type.hasPrefix("image/") }).count >= 2 {
             grouping = files
@@ -339,12 +350,16 @@ struct ChatBoxView: View {
         grouping = []
         Task { await shell.attach(files, together: together) }
     }
+}
 
+/// What the person chose in Photos or Files, read into memory: all of it,
+/// or nothing when one couldn't be read.
+enum Chosen {
     /// The chosen photos as they are kept, named by their kind.
-    private static func uploads(_ items: [PhotosPickerItem]) async -> [Door.Upload] {
+    static func photos(_ items: [PhotosPickerItem]) async -> [Door.Upload]? {
         var files: [Door.Upload] = []
         for (index, item) in items.enumerated() {
-            guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
+            guard let data = try? await item.loadTransferable(type: Data.self) else { return nil }
             let type = item.supportedContentTypes.first(where: { $0.conforms(to: .image) }) ?? .jpeg
             files.append(Door.Upload(name: "Photo \(index + 1).\(type.preferredFilenameExtension ?? "jpg")",
                                      type: type.preferredMIMEType ?? "image/jpeg", data: data))
@@ -353,15 +368,17 @@ struct ChatBoxView: View {
     }
 
     /// The chosen files, read while Files lets the app see them.
-    private static func uploads(_ urls: [URL]) -> [Door.Upload] {
-        urls.compactMap { url in
+    static func files(_ urls: [URL]) -> [Door.Upload]? {
+        var files: [Door.Upload] = []
+        for url in urls {
             let seen = url.startAccessingSecurityScopedResource()
             defer { if seen { url.stopAccessingSecurityScopedResource() } }
             guard let data = try? Data(contentsOf: url) else { return nil }
             let type = UTType(filenameExtension: url.pathExtension) ?? .data
-            return Door.Upload(name: url.lastPathComponent, type: type.preferredMIMEType ?? "application/octet-stream",
-                               data: data)
+            files.append(Door.Upload(name: url.lastPathComponent,
+                                     type: type.preferredMIMEType ?? "application/octet-stream", data: data))
         }
+        return files
     }
 }
 

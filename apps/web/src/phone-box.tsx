@@ -17,7 +17,7 @@ import {
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
-import { addedByApp, useAttachNotice } from "./attach.tsx";
+import { useAttachNotice } from "./attach.tsx";
 import { useBoxLogic } from "./box.tsx";
 import { CONTEXT_WORDS, contextUsed } from "./context-meter.tsx";
 import { chipKey } from "./draft.ts";
@@ -31,7 +31,7 @@ import {
   SIGN_IN,
 } from "./model-menu.tsx";
 import { openPanel, usePanel, whyClosed } from "./panel.ts";
-import { type BoxView, onAdded, onBox, tell } from "./phone.ts";
+import { type BoxView, onBox, tell } from "./phone.ts";
 import { useStatus } from "./reads.ts";
 
 export function PhoneBox({
@@ -156,14 +156,6 @@ export function PhoneBox({
             usePanel.setState({ open: false, focusBefore: null });
             break;
         }
-      }),
-    [person.id],
-  );
-  // What the app adds from its box: the chips go in the box.
-  useEffect(
-    () =>
-      onAdded((answer) => {
-        addedByApp(person.id, answer);
       }),
     [person.id],
   );

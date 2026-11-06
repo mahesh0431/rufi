@@ -393,7 +393,7 @@ test("in the iPhone app, View original asks the app to show the document's file"
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
-test("in the iPhone app, what the app adds from its box comes back as a chip, even after another tab", async ({
+test("in the iPhone app, what the app adds from its box comes back as a chip, even when it lands on Help", async ({
   page,
   rufi,
 }) => {
@@ -406,9 +406,14 @@ test("in the iPhone app, what the app adds from its box comes back as a chip, ev
   await expect.poll(phone.box).toMatchObject({ ready: true, closed: null });
   await phone.ask({ type: "text", text: "What does this report say?" });
 
-  // While the app uploads the files, the person goes to Medicines; then
-  // the door's answer comes back.
-  await phone.open("/people/asha/record/medicine_use");
+  // While the app uploads the files, the person goes to Help, which has
+  // no box; then the door's answer comes back.
+  await phone.open("/help");
+  await expect
+    .poll(phone.told)
+    .toContainEqual(
+      expect.objectContaining({ type: "page", path: "/help", box: null }),
+    );
   await phone.added({ added: ["doc-asha-aug"], already: [] });
 
   await phone.open("/people/asha/chat");

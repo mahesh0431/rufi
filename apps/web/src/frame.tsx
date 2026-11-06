@@ -39,7 +39,8 @@ import { AgentSheet } from "./agents.tsx";
 import { FirstRun } from "./first-run.tsx";
 import { retain } from "./live.ts";
 import { resetPanel } from "./panel.ts";
-import { onPhone, tell, tellTheme, useNamed } from "./phone.ts";
+import { onAdded, onPhone, tell, tellTheme, useNamed } from "./phone.ts";
+import { addedByApp } from "./attach.tsx";
 import { SidebarDog } from "./sidebar-dog.tsx";
 import { isPageKind, KIND_TITLES } from "./record.tsx";
 import { SettingsDialog } from "./settings.tsx";
@@ -376,6 +377,18 @@ function PhoneFrame({
   }, [ended]);
   // The app's own parts match the page's theme.
   useEffect(tellTheme, []);
+  // What the app adds from its box: the chips go in the box. Here, not in
+  // the box, so an add that finishes on a page with no box (Help) is kept.
+  const personId = person?.id;
+  useEffect(
+    () =>
+      personId === undefined
+        ? undefined
+        : onAdded((answer) => {
+            addedByApp(personId, answer);
+          }),
+    [personId],
+  );
   return (
     <>
       {connection === "offline" && (
