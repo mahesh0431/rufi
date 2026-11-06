@@ -140,9 +140,9 @@ export function Frame() {
     [streaming],
   );
   // Another page, or another person's: the panel closes, and forgets where
-  // focus was.
+  // focus was. On a phone the app says, as it opens the page (phone.ts).
   useEffect(() => {
-    resetPanel();
+    if (!onPhone) resetPanel();
   }, [pathname]);
   // During first run, another page's address leads home, where Rufi opens
   // once first run is done.
@@ -355,7 +355,7 @@ function PhoneFrame({
     select: (state) => state.location.pathname + state.location.searchStr,
   });
   const named = useNamed((state) => state.named);
-  const title = named?.path === path ? named.title : titleOf(pathname);
+  const title = named?.path === pathname ? named.title : titleOf(pathname);
   useEffect(() => {
     tell({ type: "page", path, title });
   }, [path, title]);
@@ -381,7 +381,7 @@ function PhoneFrame({
         className={
           isChatPage(pathname)
             ? "h-full"
-            : `min-h-full pt-(--bar-top) ${bar ? "pb-[calc(var(--bar-bottom,0px)+76px)]" : "pb-(--bar-bottom)"}`
+            : `min-h-full pt-(--bar-top) ${bar ? "pb-[calc(var(--bar-bottom,0px)+2.75rem+32px)]" : "pb-(--bar-bottom)"}`
         }
       >
         {/* Ended: the app opens Rufi again, or says this iPhone is unpaired. */}

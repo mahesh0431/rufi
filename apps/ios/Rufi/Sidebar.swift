@@ -166,13 +166,15 @@ struct SidebarView: View {
 struct Initials: View {
     let name: String
     let size: CGFloat
+    // The theme's own accent: a list's rows don't always take the tint.
+    @Environment(Theme.self) private var theme
 
     var body: some View {
         Text(letters)
             .font(.system(size: size * 0.38, weight: .semibold))
-            .foregroundStyle(.tint)
+            .foregroundStyle(theme.accent)
             .frame(width: size, height: size)
-            .background(.tint.opacity(0.18), in: .circle)
+            .background(theme.accent.opacity(0.18), in: .circle)
             .accessibilityHidden(true)
     }
 

@@ -64,7 +64,8 @@ final class Theme {
     private func uiColour(_ key: KeyPath<Colours, String>, or fallback: UIColor) -> UIColor {
         let light = light.flatMap { UIColor(hex: $0[keyPath: key]) }
         let dark = dark.flatMap { UIColor(hex: $0[keyPath: key]) }
-        return UIColor { traits in
+        // SwiftUI can resolve it off the main thread: it holds only colours.
+        return UIColor { @Sendable traits in
             (traits.userInterfaceStyle == .dark ? dark : light) ?? fallback.resolvedColor(with: traits)
         }
     }

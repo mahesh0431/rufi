@@ -66,9 +66,11 @@ test("in the iPhone app, a page shows alone, a link goes to the app, and the app
     .getByRole("link", { name: /Lab results/ })
     .first()
     .click();
-  await expect
-    .poll(told)
-    .toContainEqual({ type: "go", path: "/people/asha/record/lab_result" });
+  await expect.poll(told).toContainEqual({
+    type: "go",
+    path: "/people/asha/record/lab_result",
+    chat: false,
+  });
   await expect(page.getByRole("heading", { name: "Lab results" })).toHaveCount(
     0,
   );
@@ -126,7 +128,50 @@ test("in the iPhone app, a reading page has the chat bar: a tap opens the chat o
   await page.getByRole("button", { name: "Open as page" }).click();
   await expect
     .poll(told)
-    .toContainEqual({ type: "go", path: "/people/asha/chat" });
+    .toContainEqual({ type: "go", path: "/people/asha/chat", chat: false });
+});
+
+test("in the iPhone app, a link in the chat over a page opens on top, and Back opens the chat again", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family();
+  await rufi.start();
+  await asPhone(page);
+  const told = () => page.evaluate(() => window.told);
+  const open = (path: string, chat = false) =>
+    page.evaluate(
+      ([path, chat]) => {
+        const app = window as unknown as {
+          rufi: { open: (path: string, chat: boolean) => void };
+        };
+        app.rufi.open(path, chat);
+      },
+      [path, chat] as const,
+    );
+  await page.goto(rufi.link());
+  await open("/people/asha/record/medicine_use");
+  await page.getByRole("button", { name: /^Open the chat/ }).click();
+  const box = page.getByRole("textbox", { name: "Message to Rufi" });
+  await box.fill("See [your Metformin](rufi:/record/medicine_use?open=med-1)");
+  await page.getByRole("button", { name: "Send" }).click();
+
+  // A row of the page under the chat: the app opens it on top.
+  await page.getByRole("link", { name: "your Metformin" }).click();
+  await expect.poll(told).toContainEqual({
+    type: "go",
+    path: "/people/asha/record/medicine_use?open=med-1",
+    chat: true,
+  });
+  await open("/people/asha/record/medicine_use?open=med-1");
+  await expect(box).toBeHidden();
+
+  // Back: the page under it, with its chat open again.
+  await open("/people/asha/record/medicine_use", true);
+  await expect(box).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "your Metformin" }),
+  ).toBeVisible();
 });
 
 test("in the iPhone app, signed out on the Mac, the chat says to sign in there and keeps the words", async ({

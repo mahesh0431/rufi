@@ -21,6 +21,20 @@ struct RouteTests {
         #expect(navigator.page(navigator.top)?.title == "Chat with Rufi")
     }
 
+    @Test func aRowLinkedInTheChatOverMedicinesOpensOnTopAndBackOpensThatChatAgain() {
+        var navigator = Navigator(person: "asha", at: .medicines)
+        // "Your Metformin": its link, in a reply in the chat over Medicines.
+        let row = navigator.go("/people/asha/record/medicine_use?open=med-1", chat: true)
+        #expect(navigator.stack == [row])
+        #expect(navigator.current == .medicines)
+        navigator.popped(to: [])
+        #expect(navigator.page(navigator.top)?.chat == true)
+        // A link on the page itself: Back shows the page with the chat closed.
+        navigator.go("/people/asha/documents/doc-1")
+        navigator.popped(to: [])
+        #expect(navigator.page(navigator.top)?.chat == false)
+    }
+
     @Test func aLinkToAPlacesOwnPageReplacesWhatIsShownWithNoBack() {
         var navigator = Navigator(person: "asha", at: .chat)
         navigator.go("/people/asha/tests/tst-hba1c")

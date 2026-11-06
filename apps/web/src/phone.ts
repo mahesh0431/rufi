@@ -8,7 +8,7 @@
 // `window.rufi.added(answer)` after it uploaded a scan.
 import {
   createMemoryHistory,
-  useRouterState,
+  useMatch,
   type RouterHistory,
 } from "@tanstack/react-router";
 import { useEffect } from "react";
@@ -19,8 +19,11 @@ export const onPhone = document.documentElement.dataset["place"] === "phone";
 
 /** What the screens tell the iPhone app. */
 export type ToApp =
-  /** The person tapped a link to another page: the app opens it. */
-  | { type: "go"; path: string }
+  /**
+   * The person tapped a link to another page: the app opens it. `chat`:
+   * they tapped it in the chat open over the page, which Back opens again.
+   */
+  | { type: "go"; path: string; chat: boolean }
   /** A page has drawn: the app's bar takes its title. */
   | { type: "page"; path: string; title: string }
   /** The session has ended: the app opens Rufi again, or says it's unpaired. */
@@ -84,7 +87,10 @@ declare global {
         rufi?: { postMessage: (message: ToApp) => void };
       };
     };
-    rufi?: { open: (path: string) => void; added: (answer: unknown) => void };
+    rufi?: {
+      open: (path: string, chat?: boolean) => void;
+      added: (answer: unknown) => void;
+    };
   }
 }
 
@@ -108,12 +114,11 @@ export const useNamed = create<{
 
 /**
  * Gives the app's title bar the page's own name ("HbA1c", a document's
- * name) instead of its kind, once the page has it.
+ * name) instead of its kind, once the page has it. At the page's own
+ * address: as another page opens, this one can still draw once.
  */
 export function useAppTitle(title: string | undefined): void {
-  const path = useRouterState({
-    select: (state) => state.location.pathname + state.location.searchStr,
-  });
+  const path = useMatch({ strict: false, select: (match) => match.pathname });
   useEffect(() => {
     if (onPhone && title !== undefined) {
       useNamed.setState({ named: { path, title } });
@@ -128,11 +133,15 @@ export function tell(message: ToApp): void {
 
 /**
  * The router's history on a phone: one page at a time, in memory. A tap that
- * would push another page tells the app instead (`go`); the app opens it,
- * here or in another tab, by `window.rufi.open`, which replaces the page. A
- * change within the same page (what it opens, a dialog) stays here.
+ * would push another page tells the app instead (`go`); the app opens it
+ * by `window.rufi.open`, which replaces the page and opens its chat over it
+ * or closes it (`chat`). A change within the same page (what it opens, a
+ * dialog) stays here.
  */
-export function phoneHistory(): RouterHistory {
+export function phoneHistory(chat: {
+  open: () => boolean;
+  show: (open: boolean) => void;
+}): RouterHistory {
   const history = createMemoryHistory({
     initialEntries: [location.pathname + location.search],
   });
@@ -141,13 +150,18 @@ export function phoneHistory(): RouterHistory {
     blockerFn: ({ currentLocation, nextLocation, action }) => {
       if (action !== "PUSH") return false;
       if (nextLocation.pathname === currentLocation.pathname) return false;
-      tell({ type: "go", path: nextLocation.pathname + nextLocation.search });
+      tell({
+        type: "go",
+        path: nextLocation.pathname + nextLocation.search,
+        chat: chat.open(),
+      });
       return true;
     },
   });
   window.rufi = {
-    open: (path) => {
+    open: (path, open = false) => {
       history.replace(path);
+      chat.show(open);
     },
     added: (answer) => {
       scanning.added?.(answer);

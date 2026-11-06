@@ -34,11 +34,12 @@ export const openPanel = () => {
 
 /**
  * Another page or person: the panel closes and forgets where focus was,
- * or opens when the last page asked for that (`openNext`).
+ * or opens when the last page asked for that (`openNext`) or the iPhone
+ * app does (`open`: Back to a page whose chat was open).
  */
-export const resetPanel = () => {
+export const resetPanel = (open = false) => {
   usePanel.setState((now) => ({
-    open: now.openNext,
+    open: open || now.openNext,
     openNext: false,
     focusBefore: null,
     refused: null,

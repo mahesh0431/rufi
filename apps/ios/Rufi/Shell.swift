@@ -77,7 +77,7 @@ final class Shell {
         let navigator = Navigator(person: pairing.person.id, at: .chat)
         self.navigator = navigator
         holder = navigator.root.id
-        screens.onGo = { [weak self] path in Task { await self?.go(path) } }
+        screens.onGo = { [weak self] path, chat in Task { await self?.go(path, chat: chat) } }
         screens.onPage = { [weak self] path, title in self?.drawn(path, title) }
         screens.onEnded = { [weak self] in Task { await self?.reopen() } }
         screens.onUnreachable = { [weak self] in self?.state = .unreachable }
@@ -100,9 +100,10 @@ final class Shell {
         stills[screen.id]
     }
 
-    /// Whether the page on top is Medicines' own, which has the bell.
+    /// Whether the page on top is Medicines' own, which has the bell, a row
+    /// of it open or not.
     var onMedicines: Bool {
-        navigator.stack.isEmpty && navigator.page(navigator.root)?.path == Place.medicines.path(pairing.person.id)
+        navigator.stack.isEmpty && navigator.current == .medicines
     }
 
     /// Opens Rufi's screens at the holder's page with a new launch link.
@@ -206,10 +207,11 @@ final class Shell {
         original = originals.first
     }
 
-    /// The person tapped a link to `path` in the page.
-    func go(_ path: String) async {
+    /// The person tapped a link to `path` in the page, or in the chat open
+    /// over it (`chat`), which opens again on Back.
+    func go(_ path: String, chat: Bool = false) async {
         await keepStill()
-        await hold(navigator.go(path))
+        await hold(navigator.go(path, chat: chat))
     }
 
     /// A place chosen in the sidebar: the sidebar closes on its page.
@@ -242,8 +244,9 @@ final class Shell {
         stills = stills.filter { kept.contains($0.key) }
         holder = screen.id
         guard let path = navigator.page(screen)?.path else { return }
+        // The same page stays as it is, its chat closed or opened as it was.
         covered = screens.path != path
-        if covered { screens.open(path) }
+        screens.open(path, chat: navigator.page(screen)?.chat ?? false)
     }
 
     private func drawn(_ path: String, _ title: String) {
@@ -332,8 +335,10 @@ struct ShellView: View {
 
     /// What a place shows at the bottom of its stack: Rufi's page for it
     /// from the Mac. A place that gets a screen of the app's own returns it
-    /// here, with the same bar items (`page`'s toolbar); what it opens goes
-    /// on top through `shell.go`, as a link in a page does.
+    /// here. That screen also needs the bar items, which are `page`'s
+    /// toolbar today, and the shell must then leave the web view where it
+    /// is (`hold` moves it to every place); a screen of its own on top
+    /// needs a kind of screen besides a page's address.
     @ViewBuilder
     private func first(_ place: Place) -> some View {
         page(shell.navigator.root, root: true)

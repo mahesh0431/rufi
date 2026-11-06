@@ -1,4 +1,3 @@
-import ObjectiveC
 import SwiftUI
 import UIKit
 import WebKit
@@ -25,8 +24,9 @@ final class Screens: NSObject {
     /// The page shown now, as it last said.
     private(set) var path: String?
 
-    /// The person tapped a link to another page.
-    var onGo: (String) -> Void = { _ in }
+    /// The person tapped a link to another page; true when they tapped it
+    /// in the chat open over this one.
+    var onGo: (String, Bool) -> Void = { _, _ in }
     /// A page has drawn, with its title.
     var onPage: (String, String) -> Void = { _, _ in }
     /// The session ended, or the page couldn't load.
@@ -58,7 +58,7 @@ final class Screens: NSObject {
         cleared = Task { await store.removeData(ofTypes: others, modifiedSince: .distantPast) }
         configuration.dataDetectorTypes = []
         configuration.allowsInlineMediaPlayback = true
-        view = WKWebView(frame: .zero, configuration: configuration)
+        view = PageView(frame: .zero, configuration: configuration)
         super.init()
         view.allowsLinkPreview = false
         view.allowsBackForwardNavigationGestures = false
@@ -66,7 +66,6 @@ final class Screens: NSObject {
         view.scrollView.keyboardDismissMode = .interactive
         // Rufi's pages are laid out for the phone; a pinch doesn't zoom them.
         view.scrollView.pinchGestureRecognizer?.isEnabled = false
-        view.hideFormBar()
         view.isOpaque = false
         view.backgroundColor = .systemBackground
         view.navigationDelegate = self
@@ -93,10 +92,10 @@ final class Screens: NSObject {
             ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast)
     }
 
-    /// Shows `path` in the page that is open.
-    func open(_ path: String) {
+    /// Shows `path` in the page that is open, with its chat open over it or not.
+    func open(_ path: String, chat: Bool) {
         guard let json = try? JSONEncoder().encode(path), let text = String(data: json, encoding: .utf8) else { return }
-        view.evaluateJavaScript("window.rufi.open(\(text))") { [weak self] _, error in
+        view.evaluateJavaScript("window.rufi.open(\(text), \(chat))") { [weak self] _, error in
             if error != nil { self?.onEnded() }
         }
     }
@@ -158,7 +157,7 @@ final class Screens: NSObject {
         else { return }
         switch type {
         case "go":
-            if let path = body["path"] as? String { onGo(path) }
+            if let path = body["path"] as? String { onGo(path, body["chat"] as? Bool ?? false) }
         case "page":
             if let path = body["path"] as? String, let title = body["title"] as? String {
                 self.path = path
@@ -215,27 +214,11 @@ extension Screens: WKNavigationDelegate, WKUIDelegate {
     }
 }
 
-extension WKWebView {
-    /// No bar of arrows and Done above the keyboard: the box is the only
-    /// field, and a swipe down on the page puts the keyboard away. WebKit
-    /// has no setting for it, so its content view, the field's responder,
-    /// becomes a subclass of itself with no accessory view.
-    func hideFormBar() {
-        guard let content = scrollView.subviews.first(where: { String(describing: type(of: $0)).hasPrefix("WKContent") })
-        else { return }
-        let base: AnyClass = type(of: content)
-        let name = "\(NSStringFromClass(base))_NoFormBar"
-        if NSStringFromClass(base) == name { return }
-        var bare: AnyClass? = NSClassFromString(name)
-        if bare == nil, let made = objc_allocateClassPair(base, name, 0) {
-            let none: @convention(block) (AnyObject) -> UIView? = { _ in nil }
-            class_addMethod(made, #selector(getter: UIResponder.inputAccessoryView),
-                            imp_implementationWithBlock(none), "@@:")
-            objc_registerClassPair(made)
-            bare = made
-        }
-        if let bare { object_setClass(content, bare) }
-    }
+/// No bar of arrows and Done above the keyboard: the box is the only
+/// field, and a swipe down on the page puts the keyboard away. WebKit asks
+/// its web view for the keyboard's accessory view; this one has none.
+private final class PageView: WKWebView {
+    override var inputAccessoryView: UIView? { nil }
 }
 
 /// The message handler, holding the screens weakly: the web view's

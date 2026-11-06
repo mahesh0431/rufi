@@ -101,6 +101,8 @@ struct Navigator {
     struct Page: Equatable {
         var path: String
         var title: String
+        /// Its chat was open over it when a link in the chat covered it.
+        var chat = false
     }
 
     let person: String
@@ -137,10 +139,13 @@ struct Navigator {
     /// Every screen in the stack, bottom first.
     var screens: [Screen] { [root] + stack }
 
-    /// A tap on a link to `path`: a place's page replaces what is shown, any
-    /// other opens on top. Gives the screen that shows it.
+    /// A tap on a link to `path`, in the page on top or in the chat open
+    /// over it (`chat`): a place's page replaces what is shown, any other
+    /// opens on top, and Back opens that chat again. Gives the screen that
+    /// shows it.
     @discardableResult
-    mutating func go(_ path: String) -> Screen {
+    mutating func go(_ path: String, chat: Bool = false) -> Screen {
+        pages[top.id]?.chat = chat
         switch Route.of(path, person: person) {
         case let .place(place):
             return choose(place)
@@ -165,7 +170,8 @@ struct Navigator {
     /// The page in `screen` drew at `path`, with its title.
     mutating func drawn(_ screen: Screen.ID, _ path: String, _ title: String) {
         guard pages[screen] != nil else { return }
-        pages[screen] = Page(path: path, title: title)
+        pages[screen]?.path = path
+        pages[screen]?.title = title
     }
 
     /// Back, or the edge swipe: what is left of the stack.
