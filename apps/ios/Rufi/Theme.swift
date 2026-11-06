@@ -82,10 +82,10 @@ extension UIColor {
 }
 
 extension View {
-    /// A settings sheet in the theme: the page's colour behind, its rows on
-    /// the surface's.
+    /// A settings sheet in the theme, grouped as iOS draws it: the
+    /// sidebar's colour behind, its rows on the surface's.
     func themed(_ theme: Theme) -> some View {
         scrollContentBackground(.hidden)
-            .background(theme.page)
+            .background(theme.side)
     }
 }

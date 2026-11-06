@@ -191,7 +191,8 @@ html {
   -webkit-user-select: none;
   user-select: none;
 }
-:root[data-place="phone"] :is(input, textarea, [contenteditable], [role="log"]) {
+:root[data-place="phone"]
+  :is(input, textarea, [contenteditable], [role="log"]) {
   -webkit-user-select: text;
   user-select: text;
 }

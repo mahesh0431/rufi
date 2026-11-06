@@ -30,6 +30,7 @@ struct Drawer<Content: View, Sidebar: View>: View {
                         .frame(width: width)
                         .offset(x: (out - 1) * width)
                         .gesture(closing(width))
+                        .accessibilityElement(children: .contain)
                         .accessibilityAddTraits(.isModal)
                         .accessibilityAction(.escape) { close() }
                 }
@@ -83,7 +84,7 @@ struct SidebarView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Image("Dog").resizable().scaledToFit().frame(width: 40, height: 40)
+                Image(decorative: "Dog").resizable().scaledToFit().frame(width: 40, height: 40)
                     .clipShape(.rect(cornerRadius: 10))
                     .accessibilityHidden(true)
                 Text("Rufi").font(.title2.bold())
@@ -169,9 +170,9 @@ struct Initials: View {
     var body: some View {
         Text(letters)
             .font(.system(size: size * 0.38, weight: .semibold))
-            .foregroundStyle(Color.accentColor)
+            .foregroundStyle(.tint)
             .frame(width: size, height: size)
-            .background(Color.accentColor.opacity(0.18), in: .circle)
+            .background(.tint.opacity(0.18), in: .circle)
             .accessibilityHidden(true)
     }
 

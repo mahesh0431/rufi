@@ -381,7 +381,7 @@ function PhoneFrame({
         className={
           isChatPage(pathname)
             ? "h-full"
-            : `min-h-full pt-(--bar-top) ${bar ? "pb-[calc(var(--bar-bottom)+76px)]" : "pb-(--bar-bottom)"}`
+            : `min-h-full pt-(--bar-top) ${bar ? "pb-[calc(var(--bar-bottom,0px)+76px)]" : "pb-(--bar-bottom)"}`
         }
       >
         {/* Ended: the app opens Rufi again, or says this iPhone is unpaired. */}

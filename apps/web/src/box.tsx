@@ -279,7 +279,8 @@ export function Box({
               <Added chips={chips} />{" "}
               {reason !== null ? (
                 <span className="truncate text-muted">{reason}</span>
-              ) : (
+              ) : onPhone && chips.length > 0 && text.trim() === "" ? null : (
+                // On a phone an added document alone keeps the room.
                 <span
                   className={`truncate ${text.trim() === "" ? "text-muted" : ""}`}
                 >
@@ -288,7 +289,13 @@ export function Box({
               )}
             </span>
           </button>
-          {choice}
+          {onPhone ? (
+            // On a phone the words keep most of the bar: the model chip
+            // gives up its width first, as in the box.
+            <div className="flex max-w-[45%] min-w-0 justify-end">{choice}</div>
+          ) : (
+            choice
+          )}
           {working ? whileWorking : sendButton}
         </div>
       ) : (
@@ -419,7 +426,7 @@ function Added({ chips }: { chips: readonly BoxChip[] }) {
   return (
     <span
       title={chips.map((chip) => chip.label).join("\n")}
-      className="inline-flex max-w-[180px] shrink-0 items-center gap-1 rounded-lg border border-line bg-side px-1.5 text-xs"
+      className="inline-flex max-w-[180px] min-w-0 items-center gap-1 rounded-lg border border-line bg-side px-1.5 text-xs"
     >
       <span className="truncate">
         {first.label === "" ? "Adding…" : first.label}

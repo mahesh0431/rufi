@@ -154,8 +154,8 @@ export function ChatDock({ person }: { person: Person }) {
           className={
             onPhone
               ? open
-                ? "fixed inset-x-2 top-[calc(var(--bar-top)+4px)] bottom-[calc(var(--bar-bottom)+8px)] z-20 flex flex-col overflow-hidden rounded-[20px] bg-surface/95 shadow-float backdrop-blur-xl"
-                : "fixed inset-x-3 bottom-[calc(var(--bar-bottom)+8px)] z-20 flex flex-col"
+                ? "fixed inset-x-2 top-[calc(var(--bar-top,0px)+4px)] bottom-[calc(var(--bar-bottom,0px)+8px)] z-20 flex flex-col overflow-hidden rounded-[20px] bg-surface/95 shadow-float backdrop-blur-xl"
+                : "fixed inset-x-3 bottom-[calc(var(--bar-bottom,0px)+8px)] z-20 flex flex-col"
               : open
                 ? "fixed right-5 bottom-5 z-20 flex h-[min(660px,calc(100vh-40px))] w-[500px] max-w-[calc(100vw-40px)] flex-col overflow-hidden rounded-[20px] bg-surface/95 shadow-float backdrop-blur-xl"
                 : "fixed right-5 bottom-5 z-20 flex w-[480px] max-w-[calc(100vw-280px)] flex-col"
@@ -275,7 +275,7 @@ export function ChatPage({ person }: { person: Person }) {
           personId={person.id}
           onOlder={() => void loadOlder(person.id)}
           className="flex-1 overflow-auto"
-          inner="mx-auto max-w-[760px] px-gutter py-6 phone:pt-[calc(var(--bar-top)+1.5rem)]"
+          inner="mx-auto max-w-[760px] px-gutter py-6 phone:pt-[calc(var(--bar-top,0px)+1.5rem)]"
           room={room}
         />
         <div className="mx-auto w-full max-w-[760px] px-gutter pb-1 phone:pb-(--bar-bottom)">

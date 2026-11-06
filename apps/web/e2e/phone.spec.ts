@@ -59,9 +59,6 @@ test("in the iPhone app, a page shows alone, a link goes to the app, and the app
     .toContainEqual({ type: "page", path: "/", title: "Overview" });
   // The app's chrome, not the Mac's.
   await expect(page.getByRole("complementary")).toHaveCount(0);
-  await expect(
-    page.getByRole("button", { name: /^Open the chat/ }),
-  ).toHaveCount(0);
 
   // A tap on another page tells the app, which pushes it; the page stays.
   await page
@@ -87,6 +84,42 @@ test("in the iPhone app, a page shows alone, a link goes to the app, and the app
     title: "Lab results",
   });
   await expect(page.getByRole("main")).toContainText("HbA1c");
+});
+
+test("in the iPhone app, a reading page has the chat bar: a tap opens the chat over the page, and Open as page asks the app for the chat", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family();
+  await rufi.start();
+  await asPhone(page);
+  const told = () => page.evaluate(() => window.told);
+  await page.goto(rufi.link());
+  // The app's own parts take the page's theme.
+  await expect
+    .poll(told)
+    .toContainEqual(expect.objectContaining({ type: "theme" }));
+
+  // A page opened on top says its own name.
+  await page.evaluate(() => {
+    const app = window as unknown as { rufi: { open: (path: string) => void } };
+    app.rufi.open("/people/asha/tests/tst-hba1c");
+  });
+  await expect.poll(told).toContainEqual({
+    type: "page",
+    path: "/people/asha/tests/tst-hba1c",
+    title: "HbA1c",
+  });
+
+  await page.getByRole("button", { name: /^Open the chat/ }).click();
+  await expect(
+    page.getByRole("textbox", { name: "Message to Rufi" }),
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "HbA1c" })).toBeVisible();
+  await page.getByRole("button", { name: "Open as page" }).click();
+  await expect
+    .poll(told)
+    .toContainEqual({ type: "go", path: "/people/asha/chat" });
 });
 
 test("in the iPhone app, signed out on the Mac, the chat says to sign in there and keeps the words", async ({
