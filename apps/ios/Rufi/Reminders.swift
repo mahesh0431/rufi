@@ -146,8 +146,9 @@ protocol NoticeCenter {
 /// is every notice removed.
 @Observable
 final class Reminders {
-    /// The background refresh's task (Info.plist).
-    static let task = "com.maheshpalavalli.rufi.refresh"
+    /// The background refresh's task (Info.plist), named after the app, so
+    /// Rufi and Rufi Dev each have their own.
+    static let task = Bundle.main.bundleIdentifier! + ".refresh"
 
     /// The last dose time set on this iPhone; none when nothing is.
     private(set) var until: Date?

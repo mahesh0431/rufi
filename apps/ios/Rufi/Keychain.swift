@@ -3,12 +3,13 @@ import Security
 
 /// The paired app's key, in the Keychain on this iPhone only, readable after
 /// the first unlock since a restart (so a reminder's Taken can send while
-/// Rufi is closed). Not synced, not backed up to another device.
+/// Rufi is closed). Not synced, not backed up to another device. Kept under
+/// the app's own bundle ID, so Rufi and Rufi Dev each pair on their own.
 nonisolated enum Keychain {
     private static var item: [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "com.maheshpalavalli.rufi",
+            kSecAttrService as String: Bundle.main.bundleIdentifier!,
             kSecAttrAccount as String: "door-key",
         ]
     }
