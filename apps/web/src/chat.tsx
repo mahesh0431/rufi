@@ -20,6 +20,7 @@ import { liveStore, loadOlder, retain } from "./live.ts";
 import { Menus } from "./model-menu.tsx";
 import { chatPage, isSmall, openPanel, usePanel } from "./panel.ts";
 import { onPhone } from "./phone.ts";
+import { PhoneBox } from "./phone-box.tsx";
 import { TranscriptView } from "./transcript.tsx";
 import { IconButton } from "./ui.tsx";
 import { FloatingWaiting } from "./waiting.tsx";
@@ -141,6 +142,8 @@ export function ChatDock({ person }: { person: Person }) {
     };
   }, [open]);
 
+  // On a phone the app draws the box: closed, nothing shows here.
+  if (onPhone && !open) return null;
   return (
     <section ref={dock} aria-label="Chat">
       <Menus value={menus}>
@@ -224,20 +227,42 @@ export function ChatDock({ person }: { person: Person }) {
                 />
               )}
               {open && <AgentsAtWork personId={person.id} />}
-              <Box
-                person={person}
-                live={live}
-                size={open ? "panel" : "bar"}
-                inputRef={field}
-                onOpen={openChat}
-              />
+              {!onPhone && (
+                <Box
+                  person={person}
+                  live={live}
+                  size={open ? "panel" : "bar"}
+                  inputRef={field}
+                  onOpen={openChat}
+                />
+              )}
             </div>
           </FileDrop>
-          {open && <AiCanMakeMistakes />}
+          {open && !onPhone && <AiCanMakeMistakes />}
         </div>
       </Menus>
       <div ref={menus} />
     </section>
+  );
+}
+
+/**
+ * In the iPhone app: the page keeps the box's rules for the app's own box,
+ * and, on a reading page (`panel`), draws the panel over it.
+ */
+export function PhoneChat({
+  person,
+  panel,
+}: {
+  person: Person;
+  panel: boolean;
+}) {
+  const live = useLive(person.id);
+  return (
+    <>
+      <PhoneBox person={person} live={live} />
+      {panel && <ChatDock person={person} />}
+    </>
   );
 }
 
@@ -287,8 +312,13 @@ export function ChatPage({ person }: { person: Person }) {
               className="inset-x-0 bottom-full"
             />
             <AgentsAtWork personId={person.id} />
-            <Box person={person} live={live} size="page" inputRef={field} />
-            <AiCanMakeMistakes />
+            {/* On a phone the app draws the box and the words under it. */}
+            {!onPhone && (
+              <>
+                <Box person={person} live={live} size="page" inputRef={field} />
+                <AiCanMakeMistakes />
+              </>
+            )}
           </div>
         </div>
       </Menus>

@@ -7,7 +7,7 @@
 import type { useNavigate } from "@tanstack/react-router";
 import { Added } from "@rufi/contracts/documents";
 import { Schema } from "effect";
-import { Paperclip, ScanLine } from "lucide-react";
+import { Paperclip } from "lucide-react";
 import {
   type DragEvent,
   type ReactNode,
@@ -30,7 +30,6 @@ import {
 import { messageOf } from "./live.ts";
 import { Menus } from "./model-menu.tsx";
 import { chatPage, isSmall, openPanel, whyClosed } from "./panel.ts";
-import { scan } from "./phone.ts";
 import { queries } from "./reads.ts";
 import { IconButton } from "./ui.tsx";
 
@@ -171,29 +170,10 @@ export function AttachButton({ personId }: { personId: string }) {
 }
 
 /**
- * In the iPhone app, beside the paperclip: the iPhone's document camera. The
- * app adds the pages, together as one document, and they come back here as
- * a chip, as from the paperclip.
+ * The iPhone app's answer to what it added from its box (Photos, Files,
+ * Camera): the chips go in the person's box, open or not.
  */
-export function ScanButton({ personId }: { personId: string }) {
-  return (
-    <IconButton
-      label="Scan a document"
-      icon={ScanLine}
-      onClick={() => {
-        const why = whyClosed(boxFor(personId).store.getState());
-        if (why === null) {
-          scan((answer) => {
-            scanned(personId, answer);
-          });
-        } else attaching(personId).setState({ notice: why });
-      }}
-    />
-  );
-}
-
-/** The app's answer to a scan: its chip goes in the person's box, open or not. */
-function scanned(personId: string, answer: unknown) {
+export function addedByApp(personId: string, answer: unknown) {
   try {
     place(personId, Schema.decodeUnknownSync(Added)(answer));
   } catch (error) {
@@ -202,6 +182,10 @@ function scanned(personId: string, answer: unknown) {
     void queries.invalidateQueries({ queryKey: ["documents", personId] });
   }
 }
+
+/** What the person should know about the last add, for the iPhone app's box. */
+export const useAttachNotice = (personId: string) =>
+  useStore(attaching(personId), (state) => state.notice);
 
 /** Under the box: files on their way, an add's outcome, and the photos' question. */
 export function AttachStatus({ personId }: { personId: string }) {

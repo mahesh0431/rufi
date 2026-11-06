@@ -24,8 +24,14 @@ export type ToApp =
    * they tapped it in the chat open over the page, which Back opens again.
    */
   | { type: "go"; path: string; chat: boolean }
-  /** A page has drawn: the app's bar takes its title. */
-  | { type: "page"; path: string; title: string }
+  /**
+   * A page has drawn: the app's bar takes its title, and the app shows the
+   * chat's box it has (`box`): the chat page's, a reading page's (a tap
+   * opens the panel), or none.
+   */
+  | { type: "page"; path: string; title: string; box: "page" | "bar" | null }
+  /** The chat's box as it is now, for the app's own box (phone-box.tsx). */
+  | ({ type: "box" } & BoxView)
   /** The session has ended: the app opens Rufi again, or says it's unpaired. */
   | { type: "ended" }
   /**
@@ -33,8 +39,6 @@ export type ToApp =
    * refreshes its reminders.
    */
   | { type: "refresh" }
-  /** Scan: the app's document camera, then it adds the pages to the chat. */
-  | { type: "scan" }
 
   /** View original: the app fetches the document's files and shows them. */
   | {
@@ -90,22 +94,13 @@ declare global {
     rufi?: {
       open: (path: string, chat?: boolean) => void;
       added: (answer: unknown) => void;
+      box: (command: BoxCommand) => void;
     };
   }
 }
 
-/**
- * Who takes the app's answer to the last scan asked for. It lives here, not
- * in the button, so an answer that arrives while the person is on another
- * tab still reaches their chat box.
- */
+/** Who takes the app's answer to what it added from its box (`onAdded`). */
 const scanning: { added: ((answer: unknown) => void) | null } = { added: null };
-
-/** Asks the app to scan; `added` takes what it adds, whenever that comes. */
-export function scan(added: (answer: unknown) => void): void {
-  scanning.added = added;
-  tell({ type: "scan" });
-}
 
 /** A page's own name, at its address, for the app's title bar. */
 export const useNamed = create<{
@@ -124,6 +119,80 @@ export function useAppTitle(title: string | undefined): void {
       useNamed.setState({ named: { path, title } });
     }
   }, [path, title]);
+}
+
+/** A chip in the box, for the app. */
+interface BoxChipView {
+  key: string;
+  /** Its name; empty while it is being added. */
+  label: string;
+  kind: "document" | "record" | "other";
+}
+
+/**
+ * The chat's box, for the app's own: what it shows, and what each control
+ * offers. `text` comes only when the page changed it (the draft read, Ask
+ * Rufi's words, a send that cleared it), never for what the app typed.
+ */
+export interface BoxView {
+  text?: string;
+  placeholder: string;
+  chips: BoxChipView[];
+  /** The box takes typing: its draft is read, and no send is on its way. */
+  ready: boolean;
+  /** The round button, and whether it does anything now. */
+  button: "send" | "stop" | "steer" | "queue";
+  canSend: boolean;
+  model: { id: string; name: string };
+  effort: { id: string; name: string };
+  models: { id: string; name: string; available: boolean }[];
+  /** For a provider that isn't signed in: where to sign in. */
+  signIn: string[];
+  efforts: { id: string; name: string }[];
+  effortWords: string;
+  /** How much of the AI's memory the chat uses, once known. */
+  meter: { used: number; words: string } | null;
+  /** Why the box can't keep, send or add, or that its draft isn't saved. */
+  line: string | null;
+  /** The line is "Not saved": Retry saves again. */
+  retry: boolean;
+  /** Why nothing can be added now; null when it can. */
+  closed: string | null;
+  /** Counts the adds from the pages: each one lights the box. */
+  asked: number;
+  /** The panel is open over the page. */
+  panel: boolean;
+}
+
+/** What the app's box asks of the page. */
+export type BoxCommand =
+  | { type: "text"; text: string }
+  | { type: "send" }
+  | { type: "stop" }
+  | { type: "remove"; key: string }
+  | { type: "model"; id: string }
+  | { type: "effort"; id: string }
+  | { type: "retry" }
+  | { type: "open" }
+  | { type: "close" };
+
+/** Who acts on the app's box now; one at a time. */
+const boxed: { on: ((command: BoxCommand) => void) | null } = { on: null };
+
+/** Acts on what the app's box asks, until the returned function. */
+export function onBox(act: (command: BoxCommand) => void): () => void {
+  boxed.on = act;
+  return () => {
+    if (boxed.on === act) boxed.on = null;
+  };
+}
+
+/** Takes what the app adds from its box (Photos, Files, Camera), until the returned function. */
+export function onAdded(added: (answer: unknown) => void): () => void {
+  scanning.added = added;
+  return () => {
+    if (scanning.added === added) scanning.added = null;
+  };
 }
 
 /** Tells the iPhone app; nothing outside it. */
@@ -165,6 +234,9 @@ export function phoneHistory(chat: {
     },
     added: (answer) => {
       scanning.added?.(answer);
+    },
+    box: (command) => {
+      boxed.on?.(command);
     },
   };
   return history;

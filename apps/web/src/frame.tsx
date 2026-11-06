@@ -33,7 +33,7 @@ import { type ReactNode, useEffect } from "react";
 import { type Connection, useConnection } from "./api.ts";
 import { Dog } from "./dog.tsx";
 import { useAppearance } from "./appearance.tsx";
-import { CHAT_TITLE, ChatDock } from "./chat.tsx";
+import { CHAT_TITLE, ChatDock, PhoneChat } from "./chat.tsx";
 import { ReadingSheet } from "./reading.tsx";
 import { AgentSheet } from "./agents.tsx";
 import { FirstRun } from "./first-run.tsx";
@@ -153,9 +153,7 @@ export function Frame() {
   }, [elsewhere, navigate]);
 
   if (onPhone) {
-    return (
-      <PhoneFrame connection={connection} bar={bar ? person : undefined} />
-    );
+    return <PhoneFrame connection={connection} person={person} bar={bar} />;
   }
   if (!welcomed) {
     return (
@@ -343,10 +341,14 @@ function RecordNav({ person }: { person: Person }) {
  */
 function PhoneFrame({
   connection,
+  person,
   bar,
 }: {
   connection: Connection;
-  bar: Person | undefined;
+  /** Whose chat the box is: the page's person, else the first. */
+  person: Person | undefined;
+  /** The page has the chat bar. */
+  bar: boolean;
 }) {
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
@@ -356,10 +358,19 @@ function PhoneFrame({
   });
   const named = useNamed((state) => state.named);
   const title = named?.path === pathname ? named.title : titleOf(pathname);
-  useEffect(() => {
-    tell({ type: "page", path, title });
-  }, [path, title]);
   const ended = connection === "ended";
+  // The chat's box the app shows: the chat page's, the bar, or none.
+  const box =
+    person === undefined || ended
+      ? null
+      : isChatPage(pathname)
+        ? "page"
+        : bar
+          ? "bar"
+          : null;
+  useEffect(() => {
+    tell({ type: "page", path, title, box });
+  }, [path, title, box]);
   useEffect(() => {
     if (ended) tell({ type: "ended" });
   }, [ended]);
@@ -375,19 +386,22 @@ function PhoneFrame({
           Can't reach your Mac. Checking again every few seconds.
         </p>
       )}
-      {/* With the bar, the page ends above the room it floats in, so it
-          never covers a row or a button. */}
+      {/* With the app's box, the page ends above it (`--bar-bottom` is the
+          room it takes), so it never covers a row or a button. */}
       <main
         className={
           isChatPage(pathname)
             ? "h-full"
-            : `min-h-full pt-(--bar-top) ${bar ? "pb-[calc(var(--bar-bottom,0px)+2.75rem+32px)]" : "pb-(--bar-bottom)"}`
+            : `min-h-full pt-(--bar-top) ${box === null ? "pb-(--bar-bottom)" : "pb-[calc(var(--bar-bottom,0px)+16px)]"}`
         }
       >
         {/* Ended: the app opens Rufi again, or says this iPhone is unpaired. */}
         {!ended && <Outlet />}
       </main>
-      {bar && !ended && <ChatDock person={bar} />}
+      {box !== null && person !== undefined && (
+        // The app draws the box; the page keeps its rules and the panel.
+        <PhoneChat person={person} panel={box === "bar"} />
+      )}
       <ReadingSheet />
       <AgentSheet />
     </>

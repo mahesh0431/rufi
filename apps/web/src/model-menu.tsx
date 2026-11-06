@@ -30,7 +30,7 @@ export const Menus = createContext<RefObject<HTMLDivElement | null> | null>(
 );
 
 /** Each effort's name on screen, as the menu shows it. */
-const EFFORT_NAMES: Record<Effort, string> = {
+export const EFFORT_NAMES: Record<Effort, string> = {
   low: "Low",
   medium: "Medium",
   high: "High",
@@ -42,7 +42,7 @@ export const effortName = (effort: string) =>
   effort in EFFORT_NAMES ? EFFORT_NAMES[effort as Effort] : effort;
 
 /** The line that signs a provider in, under its models. */
-const SIGN_IN: Record<Provider, string> = {
+export const SIGN_IN: Record<Provider, string> = {
   codex: "Sign in with ChatGPT",
   claude: "Sign in to Claude",
 };
@@ -52,6 +52,18 @@ const POPUP =
 const LABEL = "px-2 pt-1.5 pb-1 text-xs text-muted";
 const ITEM =
   "flex cursor-default items-center gap-2 rounded-lg px-2 py-1.5 outline-none select-none data-[highlighted]:bg-side";
+
+/** The chat's model, from the next reply. */
+export const chooseModel = (personId: string, model: string) =>
+  request("PUT", `${chatPath(personId)}/model`, { model });
+
+/** The chat's effort, from the next reply. */
+export const chooseEffort = (personId: string, effort: Effort) =>
+  request("PUT", `${chatPath(personId)}/effort`, { effort });
+
+/** What the effort menu says under its choices. */
+export const EFFORT_WORDS =
+  "Medium: careful answers at a good speed. Low is faster; High and XHigh think longer.";
 
 export function ModelMenu({
   live,
@@ -75,7 +87,6 @@ export function ModelMenu({
   const name = modelOf(current)?.name ?? current;
   const effort = chosen?.effort ?? DEFAULT_EFFORT;
   const shownEffort = effortName(effort);
-  const path = chatPath(personId);
   const providers = [...new Set(MODELS.map((m) => m.provider))];
 
   return (
@@ -103,9 +114,7 @@ export function ModelMenu({
                 value={current}
                 onValueChange={(next: string) => {
                   if (next === current) return;
-                  void act(() =>
-                    request("PUT", `${path}/model`, { model: next }),
-                  );
+                  void act(() => chooseModel(personId, next));
                 }}
               >
                 {providers.map((provider) => (
@@ -149,9 +158,7 @@ export function ModelMenu({
                 value={effort}
                 onValueChange={(next: Effort) => {
                   if (next === effort) return;
-                  void act(() =>
-                    request("PUT", `${path}/effort`, { effort: next }),
-                  );
+                  void act(() => chooseEffort(personId, next));
                 }}
                 className="mx-1.5 flex rounded-[10px] bg-side p-[3px]"
               >
@@ -167,8 +174,7 @@ export function ModelMenu({
                 ))}
               </Menu.RadioGroup>
               <p className="px-2 pt-1.5 pb-1 text-xs text-muted">
-                Medium: careful answers at a good speed. Low is faster; High and
-                XHigh think longer.
+                {EFFORT_WORDS}
               </p>
             </Menu.Group>
           </Menu.Popup>
