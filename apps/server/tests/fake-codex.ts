@@ -9,8 +9,9 @@
 // agent's "failed" doesn't), "quiet" makes no tool call and runs no
 // command, "command"
 // starts a long command ("background command": and the turn ends while it
-// runs), "drip" streams its answer in five parts 100 ms
-// apart, "trickle" streams its answer in parts of 24 characters 60 ms
+// runs), "drip" streams its answer in five parts 250 ms
+// apart (on a busy machine, parts closer together can reach the page as
+// one), "trickle" streams its answer in parts of 24 characters 60 ms
 // apart, as a reply is written, "long" streams 200 parts of 1,000 characters, "think" streams a
 // reasoning summary (fake-model.ts's THINKING) before it answers, "commentary"
 // writes a progress note (fake-model.ts's NOTE) before it answers ("whole
@@ -771,7 +772,7 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
       event("item/agentMessage/delta", { itemId: "item-1", delta });
       if (text.includes("drip") || text.includes("trickle"))
         await new Promise((resolve) =>
-          setTimeout(resolve, text.includes("drip") ? 100 : 60),
+          setTimeout(resolve, text.includes("drip") ? 250 : 60),
         );
     }
     event("item/completed", {

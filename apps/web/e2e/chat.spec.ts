@@ -219,7 +219,8 @@ test("the bar, the panel and Chat with Rufi are one chat: the reply streams in, 
   await box(chat(page)).fill("drip: my thyroid results");
   await box(chat(page)).press("Enter");
   const reply = log(chat(page)).locator(".reply");
-  await expect(reply).toHaveText("ok:drip");
+  // The core's first turn: Codex starts first.
+  await expect(reply).toHaveText("ok:drip", { timeout: FIRST_TURN_MS });
   // It streams: the first part showed before the rest had come.
   const shown = await page.evaluate(
     () => (globalThis as unknown as { shown: string[] }).shown,
