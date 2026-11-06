@@ -2347,7 +2347,7 @@ describe("the screens", () => {
     const page = await get("/help/glossary");
     expect(page.status).toBe(200);
     expect(page.headers["content-type"]).toBe("text/html; charset=utf-8");
-    expect(page.headers["cache-control"]).toBe("no-cache");
+    expect(page.headers["cache-control"]).toBe("no-store");
     expect(page.headers["content-security-policy"]).toContain(
       "script-src 'self'",
     );

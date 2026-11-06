@@ -203,5 +203,6 @@ final class AppModel {
         if outbox.logs.isEmpty { lock.forget() }
         reminders = nil
         health = nil
+        Task { await Screens.forget() }
     }
 }

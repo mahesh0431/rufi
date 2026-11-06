@@ -7,6 +7,12 @@ import WebKit
 /// top. One, because the screens keep their session per web view and the
 /// door keeps one session per app; a second would end the first's.
 ///
+/// It keeps Rufi's built files (scripts, styles, fonts: hashed, never
+/// changing) in WebKit's disk cache, so a cold start doesn't fetch them
+/// again from the Mac; nothing else stays: at each start everything but
+/// that cache is cleared before a page loads, and the door sends every page
+/// and every answer as not to be kept (`no-store`).
+///
 /// The page is marked as the phone's before it loads (`data-place`, the
 /// iPhone's body text size and how much the bars cover), and talks to the
 /// app through one message handler, `rufi`, taken only from the door's
@@ -39,10 +45,17 @@ final class Screens: NSObject {
     private var bottom: CGFloat = 0
     private var body = UIFont.preferredFont(forTextStyle: .body).pointSize
 
+    /// Everything of the last run but the disk cache is gone.
+    private let cleared: Task<Void, Never>
+
     init(origin: URL) {
         self.origin = origin
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .nonPersistent()
+        let store = WKWebsiteDataStore.default()
+        configuration.websiteDataStore = store
+        var others = WKWebsiteDataStore.allWebsiteDataTypes()
+        others.remove(WKWebsiteDataTypeDiskCache)
+        cleared = Task { await store.removeData(ofTypes: others, modifiedSince: .distantPast) }
         configuration.dataDetectorTypes = []
         configuration.allowsInlineMediaPlayback = true
         view = WKWebView(frame: .zero, configuration: configuration)
@@ -65,10 +78,19 @@ final class Screens: NSObject {
             name: UIContentSizeCategory.didChangeNotification, object: nil)
     }
 
-    /// Loads a launch link from the door.
+    /// Loads a launch link from the door, once the last run's data is cleared.
     func load(_ url: URL) {
         path = nil
-        view.load(URLRequest(url: url))
+        Task {
+            await cleared.value
+            view.load(URLRequest(url: url))
+        }
+    }
+
+    /// Unpaired: the cached files go too.
+    static func forget() async {
+        await WKWebsiteDataStore.default().removeData(
+            ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast)
     }
 
     /// Shows `path` in the page that is open.
