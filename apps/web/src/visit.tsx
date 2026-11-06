@@ -7,6 +7,7 @@ import { Link } from "@tanstack/react-router";
 import { ArrowUpRight } from "lucide-react";
 import { AskRufi } from "./ask.tsx";
 import { askRufi } from "./panel.ts";
+import { useAppTitle } from "./phone.ts";
 import { useRecordDetail } from "./reads.ts";
 import { SettingsLink } from "./settings-link.tsx";
 import {
@@ -39,6 +40,12 @@ export function VisitPage({
   visitId: string;
 }) {
   const detail = useRecordDetail(person.id, "visit", visitId);
+  const named = detail.data?.row;
+  useAppTitle(
+    named !== undefined && !("problem" in named) && named.kind === "visit"
+      ? visitTitle(named)
+      : undefined,
+  );
   if (detail.data === undefined) {
     return (
       <div className="mx-auto max-w-[790px] px-6 py-8">

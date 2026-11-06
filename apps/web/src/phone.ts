@@ -1,14 +1,18 @@
 // Phone mode: the screens inside Rufi's iPhone app (apps/ios). The app marks
 // the page before it loads (<html data-place="phone">, with the iPhone's
 // body text size and how much its bars cover as CSS values), and draws its
-// own tabs, bars and back. Here the page keeps only its content, and every
-// move to another page goes through the app, which pushes it in a tab's
-// stack or switches tab. The app talks back by `window.rufi.open(path)`, and
-// by `window.rufi.added(answer)` after it uploaded a scan.
+// own sidebar, title bar and Back. Here the page keeps its content and, on
+// the pages where you read your health, the chat bar; every move to another
+// page goes through the app, which opens it on top or switches place. The
+// app talks back by `window.rufi.open(path)`, and by
+// `window.rufi.added(answer)` after it uploaded a scan.
 import {
   createMemoryHistory,
+  useRouterState,
   type RouterHistory,
 } from "@tanstack/react-router";
+import { useEffect } from "react";
+import { create } from "zustand/react";
 
 /** Whether the screens run in Rufi's iPhone app. */
 export const onPhone = document.documentElement.dataset["place"] === "phone";
@@ -58,6 +62,26 @@ const scanning: { added: ((answer: unknown) => void) | null } = { added: null };
 export function scan(added: (answer: unknown) => void): void {
   scanning.added = added;
   tell({ type: "scan" });
+}
+
+/** A page's own name, at its address, for the app's title bar. */
+export const useNamed = create<{
+  named: { path: string; title: string } | null;
+}>(() => ({ named: null }));
+
+/**
+ * Gives the app's title bar the page's own name ("HbA1c", a document's
+ * name) instead of its kind, once the page has it.
+ */
+export function useAppTitle(title: string | undefined): void {
+  const path = useRouterState({
+    select: (state) => state.location.pathname + state.location.searchStr,
+  });
+  useEffect(() => {
+    if (onPhone && title !== undefined) {
+      useNamed.setState({ named: { path, title } });
+    }
+  }, [path, title]);
 }
 
 /** Tells the iPhone app; nothing outside it. */

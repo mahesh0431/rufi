@@ -46,11 +46,11 @@ export const resetPanel = () => {
 };
 
 /**
- * Too small for the panel next to the page, or on a phone: the chat opens as
- * the page.
+ * A Mac window too small for the panel next to the page: the chat opens as
+ * the page. On a phone the panel rises over the page instead.
  */
 export const isSmall = () =>
-  onPhone || matchMedia("(max-width: 799px), (max-height: 499px)").matches;
+  !onPhone && matchMedia("(max-width: 799px), (max-height: 499px)").matches;
 
 /** The page of a person's chat. */
 export const chatPage = (personId: string) =>

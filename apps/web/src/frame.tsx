@@ -2,8 +2,8 @@
 // kind), the toolbar, the chat bar at the bottom right of the pages where
 // you read your health, and what the connection to Rufi is doing. It holds
 // the person's live stream on every page, so a save shows wherever you are.
-// It stays when a page fails. In Rufi's iPhone app it is the page alone,
-// under the app's own bars (phone.ts). Until first run is known to be done, it shows
+// It stays when a page fails. In Rufi's iPhone app it is the page and the
+// chat bar, under the app's own bars and sidebar (phone.ts). Until first run is known to be done, it shows
 // first run only, over the whole window, whatever the address.
 import {
   Link,
@@ -39,7 +39,7 @@ import { AgentSheet } from "./agents.tsx";
 import { FirstRun } from "./first-run.tsx";
 import { retain } from "./live.ts";
 import { resetPanel } from "./panel.ts";
-import { onPhone, tell } from "./phone.ts";
+import { onPhone, tell, useNamed } from "./phone.ts";
 import { SidebarDog } from "./sidebar-dog.tsx";
 import { isPageKind, KIND_TITLES } from "./record.tsx";
 import { SettingsDialog } from "./settings.tsx";
@@ -152,7 +152,11 @@ export function Frame() {
     if (elsewhere) void navigate({ to: "/", replace: true });
   }, [elsewhere, navigate]);
 
-  if (onPhone) return <PhoneFrame connection={connection} />;
+  if (onPhone) {
+    return (
+      <PhoneFrame connection={connection} bar={bar ? person : undefined} />
+    );
+  }
   if (!welcomed) {
     return (
       <div className="flex h-full flex-col bg-page">
@@ -331,18 +335,27 @@ function RecordNav({ person }: { person: Person }) {
 }
 
 /**
- * The frame in the iPhone app (phone.ts): the page alone, under the app's
- * bars, padded by how much they cover. The app's bar takes each page's
- * title. The chat scrolls inside its own page, with its box at the bottom.
+ * The frame in the iPhone app (phone.ts): the page under the app's bars,
+ * padded by how much they cover, and the chat bar at the bottom of the
+ * pages that have it on the Mac (`bar`: whose chat it is). The app's title
+ * bar takes each page's own name, or its kind. The chat scrolls inside its
+ * own page, with its box at the bottom.
  */
-function PhoneFrame({ connection }: { connection: Connection }) {
+function PhoneFrame({
+  connection,
+  bar,
+}: {
+  connection: Connection;
+  bar: Person | undefined;
+}) {
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
   const path = useRouterState({
     select: (state) => state.location.pathname + state.location.searchStr,
   });
-  const title = titleOf(pathname);
+  const named = useNamed((state) => state.named);
+  const title = named?.path === path ? named.title : titleOf(pathname);
   useEffect(() => {
     tell({ type: "page", path, title });
   }, [path, title]);
@@ -360,16 +373,19 @@ function PhoneFrame({ connection }: { connection: Connection }) {
           Can't reach your Mac. Checking again every few seconds.
         </p>
       )}
+      {/* With the bar, the page ends above the room it floats in, so it
+          never covers a row or a button. */}
       <main
         className={
           isChatPage(pathname)
             ? "h-full"
-            : "min-h-full pt-(--bar-top) pb-(--bar-bottom)"
+            : `min-h-full pt-(--bar-top) ${bar ? "pb-[calc(var(--bar-bottom)+76px)]" : "pb-(--bar-bottom)"}`
         }
       >
         {/* Ended: the app opens Rufi again, or says this iPhone is unpaired. */}
         {!ended && <Outlet />}
       </main>
+      {bar && !ended && <ChatDock person={bar} />}
       <ReadingSheet />
       <AgentSheet />
     </>

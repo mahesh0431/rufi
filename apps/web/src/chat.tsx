@@ -4,11 +4,15 @@
 // lights up a moment. Click it or press ⌘J and the panel opens over the
 // page, always the same size; –, Esc or a click outside it steps back to
 // the bar. "Open as page" shows the chat at its own address, Chat with Rufi
-// in the sidebar. A small window opens the page instead of the panel.
+// in the sidebar. A small window opens the page instead of the panel. On a
+// phone the bar spans the bottom, and the panel rises from it to under the
+// app's title bar, with the keyboard; the arrow down, or a swipe down on
+// its top, steps back to the bar.
 import type { Person } from "@rufi/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { Maximize2, Minus } from "lucide-react";
+import { ChevronDown, Maximize2, Minus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { AgentsAtWork } from "./agents.tsx";
 import { FileDrop } from "./attach.tsx";
 import { Box } from "./box.tsx";
@@ -49,10 +53,19 @@ export function ChatDock({ person }: { person: Person }) {
   const menus = useRef<HTMLDivElement | null>(null);
   const dock = useRef<HTMLElement | null>(null);
 
+  /** Where a swipe on the panel's top started. */
+  const swipe = useRef<number | null>(null);
+
   const openChat = () => {
     if (usePanel.getState().open) return;
     if (isSmall()) {
       void navigate(chatPage(person.id));
+      return;
+    }
+    if (onPhone) {
+      // The keyboard shows only for a focus within the tap itself.
+      flushSync(openPanel);
+      field.current?.focus();
       return;
     }
     openPanel();
@@ -139,14 +152,34 @@ export function ChatDock({ person }: { person: Person }) {
             }
           }}
           className={
-            open
-              ? "fixed right-5 bottom-5 z-20 flex h-[min(660px,calc(100vh-40px))] w-[500px] max-w-[calc(100vw-40px)] flex-col overflow-hidden rounded-[20px] bg-surface/95 shadow-float backdrop-blur-xl"
-              : "fixed right-5 bottom-5 z-20 flex w-[480px] max-w-[calc(100vw-280px)] flex-col"
+            onPhone
+              ? open
+                ? "fixed inset-x-2 top-[calc(var(--bar-top)+4px)] bottom-[calc(var(--bar-bottom)+8px)] z-20 flex flex-col overflow-hidden rounded-[20px] bg-surface/95 shadow-float backdrop-blur-xl"
+                : "fixed inset-x-3 bottom-[calc(var(--bar-bottom)+8px)] z-20 flex flex-col"
+              : open
+                ? "fixed right-5 bottom-5 z-20 flex h-[min(660px,calc(100vh-40px))] w-[500px] max-w-[calc(100vw-40px)] flex-col overflow-hidden rounded-[20px] bg-surface/95 shadow-float backdrop-blur-xl"
+                : "fixed right-5 bottom-5 z-20 flex w-[480px] max-w-[calc(100vw-280px)] flex-col"
           }
         >
           {open && (
-            <div className="flex h-11 shrink-0 items-center gap-1.5 border-b border-line px-2">
-              <IconButton label="Minimise" icon={Minus} onClick={close} />
+            <div
+              className="flex h-11 shrink-0 touch-none items-center gap-1.5 border-b border-line px-2"
+              onPointerDown={(event) => {
+                swipe.current = event.clientY;
+              }}
+              onPointerUp={(event) => {
+                const from = swipe.current;
+                swipe.current = null;
+                if (onPhone && from !== null && event.clientY - from > 40) {
+                  close();
+                }
+              }}
+            >
+              <IconButton
+                label="Minimise"
+                icon={onPhone ? ChevronDown : Minus}
+                onClick={close}
+              />
               <h2 className="flex-1 truncate px-1 font-semibold">
                 {CHAT_TITLE}
               </h2>
