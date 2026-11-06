@@ -1,17 +1,42 @@
 import Testing
 @testable import Rufi
 
-/// A tapped link opens where the plan says: a tab's own first page switches
-/// to that tab; any other page is pushed in the tab you are in.
+/// What the chrome shows follows where the pages go: the sidebar's current
+/// place, the title and Back come from the page on top, as it last said.
 struct RouteTests {
-    @Test func aTabsFirstPageSwitchesToIt() {
-        #expect(Route.of("/people/asha/documents", person: "asha") == .tab(.documents))
-        #expect(Route.of("/people/asha/chat", person: "asha") == .tab(.chat))
-        #expect(Route.of("/", person: "asha") == .tab(.record))
+    @Test func aLinkInTheChatToADocumentMarksDocumentsAndBackReturnsToTheChat() {
+        var navigator = Navigator(person: "asha", at: .chat)
+        #expect(navigator.current == .chat)
+
+        // "Your kidney and blood record PDF is being read": its link, in a reply.
+        let document = navigator.go("/people/asha/documents/doc-kidney")
+        #expect(navigator.current == .documents)
+        #expect(navigator.stack == [document])
+        navigator.drawn(document.id, "/people/asha/documents/doc-kidney", "Kidney and blood record.pdf")
+        #expect(navigator.page(navigator.top)?.title == "Kidney and blood record.pdf")
+
+        // Back, or the edge swipe.
+        navigator.popped(to: [])
+        #expect(navigator.current == .chat)
+        #expect(navigator.page(navigator.top)?.title == "Chat with Rufi")
     }
 
-    @Test func anyOtherPageIsPushed() {
-        #expect(Route.of("/people/asha/tests/tst-hba1c", person: "asha") == .push("/people/asha/tests/tst-hba1c"))
-        #expect(Route.of("/people/asha/documents?open=doc-1", person: "asha") == .push("/people/asha/documents?open=doc-1"))
+    @Test func aLinkToAPlacesOwnPageReplacesWhatIsShownWithNoBack() {
+        var navigator = Navigator(person: "asha", at: .chat)
+        navigator.go("/people/asha/tests/tst-hba1c")
+        // Open as page, from the chat over a page; or a reply's link to Medicines.
+        navigator.go("/people/asha/record/medicine_use")
+        #expect(navigator.current == .medicines)
+        #expect(navigator.stack.isEmpty)
+        #expect(navigator.page(navigator.top)?.title == "Medicines")
+    }
+
+    @Test func aPageNoPlaceHoldsMarksNoneAsOnTheMac() {
+        var navigator = Navigator(person: "asha", at: .labResults)
+        navigator.go("/people/asha/tests/tst-hba1c")
+        #expect(navigator.current == nil)
+        #expect(Place.current(at: "/people/asha/documents?open=doc-1", person: "asha") == .documents)
+        #expect(Place.current(at: "/help/iphone", person: "asha") == .help)
+        #expect(Place.current(at: "/", person: "asha") == .overview)
     }
 }

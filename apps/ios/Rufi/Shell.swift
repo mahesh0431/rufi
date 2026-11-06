@@ -1,16 +1,11 @@
 import QuickLook
 import SwiftUI
 
-/// One page in a tab's stack. Its address and title can change as the page
-/// says (a page that leads elsewhere).
-struct Screen: Hashable, Identifiable {
-    let id = UUID()
-}
-
-/// The tab bar and each tab's stack of screens, around Rufi's screens. The
-/// web view moves to the screen on top; a screen below shows a still of
-/// itself, taken as it was covered, so Back and the edge swipe show it at
-/// once; when it is on top again, the page is opened there.
+/// The place shown and the pages on top of it, around Rufi's screens, with
+/// the sidebar to go to another place. The web view moves to the screen on
+/// top; a screen below shows a still of itself, taken as it was covered, so
+/// Back and the edge swipe show it at once; when it is on top again, the
+/// page is opened there.
 @Observable
 final class Shell {
     enum State: Equatable {
@@ -26,22 +21,22 @@ final class Shell {
     private let unpaired: () -> Void
 
     var state = State.opening
-    var tab = Tab.chat {
-        didSet { if tab != oldValue { Task { await moved(from: oldValue) } } }
+    /// Where the person is: what the sidebar marks, the title and Back.
+    private(set) var navigator: Navigator
+    /// The sidebar is open over the page.
+    var sidebar = false {
+        didSet { if sidebar, !oldValue { Task { await count() } } }
     }
-    /// Each tab's pushed screens, above its first page.
-    var stacks: [Tab: [Screen]] = [:]
-    let roots: [Tab: Screen] = Dictionary(uniqueKeysWithValues: Tab.allCases.map { ($0, Screen()) })
-    /// Each screen's address and title.
-    private(set) var pages: [Screen.ID: (path: String, title: String)] = [:]
+    /// The sidebar's counts, as last read.
+    private(set) var counts: Door.Counts?
     private(set) var stills: [Screen.ID: UIImage] = [:]
     /// The screen holding the web view.
     private(set) var holder: Screen.ID
     /// The holder's page hasn't drawn yet: its still, or a blank page, covers it.
     private(set) var covered = true
     private var reopening = false
-    /// A tab to show once the first page has drawn: a notice tapped as Rufi opened.
-    private var wanted: Tab?
+    /// A place to show once the first page has drawn: a notice tapped as Rufi opened.
+    private var wanted: Place?
 
     /// The document camera is up.
     var scanning = false
@@ -77,11 +72,9 @@ final class Shell {
         self.door = Door(origin: pairing.origin, key: key)
         self.unpaired = unpaired
         screens = Screens(origin: pairing.origin)
-        holder = UUID()
-        holder = roots[.chat]!.id
-        for tab in Tab.allCases {
-            pages[roots[tab]!.id] = (tab.root(pairing.person.id), tab.title)
-        }
+        let navigator = Navigator(person: pairing.person.id, at: .chat)
+        self.navigator = navigator
+        holder = navigator.root.id
         screens.onGo = { [weak self] path in Task { await self?.go(path) } }
         screens.onPage = { [weak self] path, title in self?.drawn(path, title) }
         screens.onEnded = { [weak self] in Task { await self?.reopen() } }
@@ -91,18 +84,17 @@ final class Shell {
         screens.onOriginal = { [weak self] document, files in Task { await self?.show(document, files) } }
     }
 
-    /// The screen on top in `tab`.
-    func top(_ tab: Tab) -> Screen {
-        stacks[tab]?.last ?? roots[tab]!
-    }
-
     func title(_ screen: Screen) -> String {
-        if let tab = Tab.allCases.first(where: { roots[$0] == screen }) { return tab.title }
-        return pages[screen.id]?.title ?? ""
+        navigator.page(screen)?.title ?? ""
     }
 
     func still(_ screen: Screen) -> UIImage? {
         stills[screen.id]
+    }
+
+    /// Whether the page on top is Medicines' own, which has the bell.
+    var onMedicines: Bool {
+        navigator.stack.isEmpty && navigator.page(navigator.root)?.path == Place.medicines.path(pairing.person.id)
     }
 
     /// Opens Rufi's screens at the holder's page with a new launch link.
@@ -113,7 +105,7 @@ final class Shell {
         state = .opening
         covered = true
         do {
-            let url = try await door.open(pages[holder]?.path ?? Tab.chat.root(pairing.person.id))
+            let url = try await door.open(navigator.page(at: holder)?.path ?? Place.chat.path(pairing.person.id))
             screens.load(url)
             state = .open
         } catch .unreachable {
@@ -127,6 +119,11 @@ final class Shell {
         } catch {
             state = .unreachable
         }
+    }
+
+    /// Reads the sidebar's counts; when they can't be read, the last stay.
+    func count() async {
+        if let counts = try? await door.counts(for: pairing.person.id) { self.counts = counts }
     }
 
     /// Scan: the document camera, where the iPhone has one.
@@ -203,36 +200,29 @@ final class Shell {
 
     /// The person tapped a link to `path` in the page.
     func go(_ path: String) async {
-        switch Route.of(path, person: pairing.person.id) {
-        case let .tab(tab):
-            await keepStill()
-            stacks[tab] = []
-            if self.tab == tab { await hold(top(tab)) } else { self.tab = tab }
-        case let .push(path):
-            await keepStill()
-            let screen = Screen()
-            pages[screen.id] = (path, "")
-            stacks[tab, default: []].append(screen)
-            await hold(screen)
-        }
-    }
-
-    /// Shows `tab` at its first page: a notice was tapped. When Rufi is still
-    /// opening, once its first page has drawn.
-    func show(_ tab: Tab) async {
-        if state == .open, !covered { await go(tab.root(pairing.person.id)) } else { wanted = tab }
-    }
-
-    /// A tab's stack changed: Back, or the edge swipe, finished.
-    func popped() async {
-        let top = top(tab)
-        if top.id != holder { await hold(top) }
-    }
-
-    /// The tab changed: its top screen takes the web view.
-    private func moved(from: Tab) async {
         await keepStill()
-        await hold(top(tab))
+        await hold(navigator.go(path))
+    }
+
+    /// A place chosen in the sidebar: the sidebar closes on its page.
+    func choose(_ place: Place) async {
+        sidebar = false
+        await keepStill()
+        await hold(navigator.choose(place))
+    }
+
+    /// Shows `place` at its page: a notice was tapped. When Rufi is still
+    /// opening, once its first page has drawn.
+    func show(_ place: Place) async {
+        if state == .open, !covered { await go(place.path(pairing.person.id)) } else { wanted = place }
+    }
+
+    /// The stack changed: Back, or the edge swipe, finished. The stack
+    /// follows at once; the page on top takes the web view.
+    func popped(to stack: [Screen]) {
+        navigator.popped(to: stack)
+        let top = navigator.top
+        if top.id != holder { Task { await hold(top) } }
     }
 
     private func keepStill() async {
@@ -240,26 +230,26 @@ final class Shell {
     }
 
     private func hold(_ screen: Screen) async {
-        let kept = Set(Tab.allCases.flatMap { [roots[$0]!] + (stacks[$0] ?? []) }.map(\.id))
+        let kept = Set(navigator.screens.map(\.id))
         stills = stills.filter { kept.contains($0.key) }
         holder = screen.id
-        guard let path = pages[screen.id]?.path else { return }
+        guard let path = navigator.page(screen)?.path else { return }
         covered = screens.path != path
         if covered { screens.open(path) }
     }
 
     private func drawn(_ path: String, _ title: String) {
-        pages[holder] = (path, title)
+        navigator.drawn(holder, path, title)
         covered = false
         state = .open
-        if let tab = wanted {
+        if let place = wanted {
             wanted = nil
-            Task { await go(tab.root(pairing.person.id)) }
+            Task { await go(place.path(pairing.person.id)) }
         }
     }
 }
 
-/// The tabs, each a stack of Rufi's pages with Apple's bars.
+/// The stack of Rufi's pages with Apple's bars, and the sidebar over it.
 struct ShellView: View {
     @Bindable var shell: Shell
     @State private var settings = false
@@ -267,14 +257,20 @@ struct ShellView: View {
     let app: AppModel
 
     var body: some View {
-        TabView(selection: $shell.tab) {
-            ForEach(Tab.allCases, id: \.self) { tab in
-                SwiftUI.Tab(tab.label, systemImage: tab.symbol, value: tab) {
-                    NavigationStack(path: stack(tab)) {
-                        page(shell.roots[tab]!, root: true)
-                            .navigationDestination(for: Screen.self) { page($0, root: false) }
-                    }
-                }
+        Drawer(open: $shell.sidebar, enabled: shell.navigator.stack.isEmpty) {
+            NavigationStack(path: stack) {
+                page(shell.navigator.root, root: true)
+                    .navigationDestination(for: Screen.self) { page($0, root: false) }
+            }
+            // Another place: a stack of its own.
+            .id(shell.navigator.root.id)
+        } sidebar: {
+            SidebarView(name: shell.pairing.person.name, current: shell.navigator.current,
+                        counts: shell.counts) { place in
+                Task { await shell.choose(place) }
+            } thisIPhone: {
+                shell.sidebar = false
+                settings = true
             }
         }
         .sheet(isPresented: $settings) {
@@ -304,7 +300,10 @@ struct ShellView: View {
         .onChange(of: app.seen) { _, seen in
             if seen { shell.appeared() }
         }
-        .task { await shell.reopen() }
+        .task {
+            await shell.reopen()
+            await shell.count()
+        }
     }
 
     private var scanProblemShown: Binding<Bool> {
@@ -315,12 +314,11 @@ struct ShellView: View {
         Binding { shell.originalProblem != nil } set: { if !$0 { shell.originalProblem = nil } }
     }
 
-    private func stack(_ tab: Tab) -> Binding<[Screen]> {
+    private var stack: Binding<[Screen]> {
         Binding {
-            shell.stacks[tab] ?? []
+            shell.navigator.stack
         } set: { screens in
-            shell.stacks[tab] = screens
-            Task { await shell.popped() }
+            shell.popped(to: screens)
         }
     }
 
@@ -330,19 +328,19 @@ struct ShellView: View {
             .navigationTitle(shell.title(screen))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if root, screen == shell.roots[.medicines] {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Reminders", systemImage: "bell") { reminding = true }
+                if root {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            shell.sidebar = true
+                        } label: {
+                            Initials(name: shell.pairing.person.name, size: 32)
+                        }
+                        .accessibilityLabel("Show Sidebar")
                     }
                 }
-                if root {
+                if root, shell.onMedicines {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            settings = true
-                        } label: {
-                            Image("Dog").resizable().scaledToFit().frame(width: 30, height: 30).clipShape(.circle)
-                        }
-                        .accessibilityLabel("This iPhone")
+                        Button("Reminders", systemImage: "bell") { reminding = true }
                     }
                 }
             }

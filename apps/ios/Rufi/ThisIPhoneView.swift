@@ -18,7 +18,7 @@ struct ThisIPhoneView: View {
             Form {
                 Section {
                     HStack(spacing: 14) {
-                        Image("Dog").resizable().scaledToFit().frame(width: 52, height: 52).clipShape(.circle)
+                        Initials(name: pairing.person.name, size: 52)
                         VStack(alignment: .leading) {
                             Text(pairing.person.name).font(.headline)
                             Text("Paired with Rufi on \(pairing.mac)").foregroundStyle(.secondary)

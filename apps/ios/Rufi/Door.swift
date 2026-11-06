@@ -70,6 +70,33 @@ nonisolated struct Door: Sendable {
         return opened.url
     }
 
+    /// What the sidebar counts, as the Mac's does: each record page's
+    /// records (on Lab results, its tests) and the open follow-ups.
+    struct Counts: Decodable, Equatable, Sendable {
+        struct Tile: Decodable, Equatable, Sendable {
+            let kind: String
+            let count: Int
+        }
+
+        let tiles: [Tile]
+        let openFollowUps: Int
+
+        /// The count beside `place`; none for a place the Mac counts nothing on.
+        func of(_ place: Place) -> Int? {
+            if place == .followUps { return openFollowUps }
+            guard Place.record.contains(place) else { return nil }
+            return tiles.first { $0.kind == place.rawValue }?.count ?? 0
+        }
+    }
+
+    /// The person's counts, from their Overview.
+    func counts(for person: String) async throws(Problem) -> Counts {
+        struct Answer: Decodable { let overview: Counts }
+        let answer: Answer = try await Self.call(origin: origin, key: key, method: "GET",
+                                                 path: "\(Self.people)/\(person)/overview", body: nil)
+        return answer.overview
+    }
+
     /// The person's reminder setting: what a notice shows, where it rings.
     struct Setting: Codable, Equatable, Sendable {
         var show: ReminderPlan.Show
