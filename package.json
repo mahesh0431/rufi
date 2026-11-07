@@ -27,12 +27,12 @@
     "@playwright/test": "1.64.1",
     "@types/node": "24.19.2",
     "fflate": "0.8.3",
-    "knip": "6.43.0",
-    "oxfmt": "0.75.0",
-    "oxlint": "1.90.0",
+    "knip": "6.44.1",
+    "oxfmt": "0.76.0",
+    "oxlint": "1.91.0",
     "oxlint-tsgolint": "7.0.2005",
     "typescript": "7.0.2",
-    "vitest": "5.0.5"
+    "vitest": "5.1.0"
   },
   "engines": {
     "node": ">=24.21.0"
