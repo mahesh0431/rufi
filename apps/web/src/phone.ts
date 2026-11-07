@@ -4,8 +4,9 @@
 // own sidebar, title bar and Back. Here the page keeps its content and, on
 // the pages where you read your health, the chat bar; every move to another
 // page goes through the app, which opens it on top or switches place. The
-// app talks back by `window.rufi.open(path)`, and by
-// `window.rufi.added(answer)` after it added files from its box.
+// app talks back by `window.rufi.open(path)`, by `window.rufi.added(answer)`
+// after it added files from its box, and by `window.rufi.reconnect()` when it
+// reached Rufi again.
 import {
   createMemoryHistory,
   useMatch,
@@ -13,6 +14,7 @@ import {
 } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { create } from "zustand/react";
+import { checkNow } from "./api.ts";
 
 /** Whether the screens run in Rufi's iPhone app. */
 export const onPhone = document.documentElement.dataset["place"] === "phone";
@@ -34,6 +36,11 @@ export type ToApp =
   | ({ type: "box" } & BoxView)
   /** The session has ended: the app opens Rufi again, or says it's unpaired. */
   | { type: "ended" }
+  /**
+   * Whether Rufi can be reached now: the app shows its own line and asks
+   * again; the page draws none.
+   */
+  | { type: "connection"; reachable: boolean }
   /**
    * Doses, medicines or the reminder setting may have changed: the app
    * refreshes its reminders.
@@ -96,6 +103,7 @@ declare global {
       open: (path: string, chat?: boolean) => void;
       added: (answer: unknown) => void;
       box: (command: BoxCommand) => void;
+      reconnect: () => void;
     };
   }
 }
@@ -239,6 +247,8 @@ export function phoneHistory(chat: {
     box: (command) => {
       boxed.on?.(command);
     },
+    // The app reached Rufi: the page asks now, and reads again.
+    reconnect: checkNow,
   };
   return history;
 }

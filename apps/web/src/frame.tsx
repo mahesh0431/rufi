@@ -375,6 +375,11 @@ function PhoneFrame({
   useEffect(() => {
     if (ended) tell({ type: "ended" });
   }, [ended]);
+  // The app shows that Rufi can't be reached, and asks again.
+  const reachable = connection !== "offline";
+  useEffect(() => {
+    tell({ type: "connection", reachable });
+  }, [reachable]);
   // The app's own parts match the page's theme.
   useEffect(tellTheme, []);
   // What the app adds from its box: the chips go in the box. Here, not in
@@ -391,14 +396,6 @@ function PhoneFrame({
   );
   return (
     <>
-      {connection === "offline" && (
-        <p
-          role="status"
-          className="fixed inset-x-0 top-(--bar-top) z-10 bg-accent-soft px-4 py-2 text-accent-ink"
-        >
-          Can't reach your Mac. Checking again every few seconds.
-        </p>
-      )}
       {/* With the app's box, the page ends above it (`--bar-bottom` is the
           room it takes), so it never covers a row or a button. */}
       <main
