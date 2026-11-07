@@ -152,11 +152,8 @@ struct ChatBoxView: View {
     @FocusState private var focused: Bool
     @State private var lit = false
     @State private var meter = false
-    @State private var photos = false
-    @State private var files = false
-    @State private var picked: [PhotosPickerItem] = []
-    /// Two or more photos, waiting to be added as one document or each its own.
-    @State private var grouping: [Door.Upload] = []
+    /// Where the paperclip adds from now.
+    @State private var adding: AddFrom?
 
     var body: some View {
         let state = box.state
@@ -248,29 +245,7 @@ struct ChatBoxView: View {
                 lit = false
             }
         }
-        .photosPicker(isPresented: $photos, selection: $picked, maxSelectionCount: 20, matching: .images)
-        .onChange(of: picked) { _, items in
-            guard !items.isEmpty else { return }
-            picked = []
-            Task { await chose(await Chosen.photos(items)) }
-        }
-        .fileImporter(isPresented: $files, allowedContentTypes: [.pdf, .jpeg, .png, .heic, .heif],
-                      allowsMultipleSelection: true) { result in
-            switch result {
-            case let .success(urls): Task { await chose(Chosen.files(urls)) }
-            case .failure: Task { await chose(nil) }
-            }
-        }
-        .confirmationDialog("Add \(grouping.count) photos", isPresented: groupingShown, titleVisibility: .visible) {
-            Button("\(grouping.count) photos → one document") { add(grouping, together: true) }
-            Button("\(grouping.count) documents") { add(grouping, together: false) }
-        } message: {
-            Text("Usually one report, photographed page by page.")
-        }
-    }
-
-    private var groupingShown: Binding<Bool> {
-        Binding { !grouping.isEmpty } set: { if !$0 { grouping = [] } }
+        .addingDocuments(shell: shell, from: $adding)
     }
 
     /// Send, or while a reply runs: Stop, or Steer or Queue once there are words.
@@ -310,9 +285,7 @@ struct ChatBoxView: View {
     /// The paperclip: Photos, Files and Camera.
     private func attach(_ state: ChatBox.State) -> some View {
         Menu {
-            Button("Photos", systemImage: "photo.on.rectangle") { photos = true }
-            Button("Files", systemImage: "folder") { files = true }
-            Button("Camera", systemImage: "camera") { shell.scan() }
+            AddFrom.choices { adding = $0 }
         } label: {
             Image(systemName: "paperclip")
                 .font(.system(size: 17))
@@ -385,56 +358,6 @@ struct ChatBoxView: View {
         }
     }
 
-    /// Files chosen: added now, or first asked how when two or more are photos.
-    /// When one couldn't be read, none are added: a report must not go in
-    /// part, so the person chooses them again.
-    private func chose(_ files: [Door.Upload]?) async {
-        guard let files else {
-            shell.addProblem = "Rufi couldn't read one of them, so it added none. Choose them again."
-            return
-        }
-        guard !files.isEmpty else { return }
-        if files.filter({ $0.type.hasPrefix("image/") }).count >= 2 {
-            grouping = files
-        } else {
-            add(files, together: true)
-        }
-    }
-
-    private func add(_ files: [Door.Upload], together: Bool) {
-        grouping = []
-        Task { await shell.attach(files, together: together) }
-    }
-}
-
-/// What the person chose in Photos or Files, read into memory: all of it,
-/// or nothing when one couldn't be read.
-enum Chosen {
-    /// The chosen photos as they are kept, named by their kind.
-    static func photos(_ items: [PhotosPickerItem]) async -> [Door.Upload]? {
-        var files: [Door.Upload] = []
-        for (index, item) in items.enumerated() {
-            guard let data = try? await item.loadTransferable(type: Data.self) else { return nil }
-            let type = item.supportedContentTypes.first(where: { $0.conforms(to: .image) }) ?? .jpeg
-            files.append(Door.Upload(name: "Photo \(index + 1).\(type.preferredFilenameExtension ?? "jpg")",
-                                     type: type.preferredMIMEType ?? "image/jpeg", data: data))
-        }
-        return files
-    }
-
-    /// The chosen files, read while Files lets the app see them.
-    static func files(_ urls: [URL]) -> [Door.Upload]? {
-        var files: [Door.Upload] = []
-        for url in urls {
-            let seen = url.startAccessingSecurityScopedResource()
-            defer { if seen { url.stopAccessingSecurityScopedResource() } }
-            guard let data = try? Data(contentsOf: url) else { return nil }
-            let type = UTType(filenameExtension: url.pathExtension) ?? .data
-            files.append(Door.Upload(name: url.lastPathComponent,
-                                     type: type.preferredMIMEType ?? "application/octet-stream", data: data))
-        }
-        return files
-    }
 }
 
 /// A message waiting to send, above the box: its words, and Pending.

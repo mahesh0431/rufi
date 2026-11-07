@@ -177,6 +177,28 @@ final class Shell {
         }
     }
 
+    /// Posts for a page drawn here: a delete. Out of reach or unpaired, as a read.
+    func post<Answer: Decodable>(_ path: String, body: [String: String]) async throws(Door.Problem) -> Answer {
+        do {
+            return try await door.post(path, for: pairing.person.id, body: body)
+        } catch {
+            if error == .unreachable { lost() }
+            if error == .unpaired { unpaired() }
+            throw error
+        }
+    }
+
+    /// A document's page as an image, for its page drawn here.
+    func page(of document: String, at position: Int) async throws(Door.Problem) -> Data {
+        do {
+            return try await door.page(person: pairing.person.id, document: document, position: position)
+        } catch {
+            if error == .unreachable, !Task.isCancelled { lost() }
+            if error == .unpaired { unpaired() }
+            throw error
+        }
+    }
+
     /// Whether the page on top is Medicines' own, which has the bell, a row
     /// of it open or not.
     var onMedicines: Bool {
@@ -374,6 +396,8 @@ final class Shell {
         defer { adding = false }
         do {
             screens.added(try await door.add(person: pairing.person.id, files: files, together: together))
+            // Added on a page drawn here (Documents): the chat opens, with their chips.
+            if native(navigator.top) != nil { await choose(.chat) }
         } catch .unpaired {
             unpaired()
         } catch .unreachable {
@@ -383,6 +407,14 @@ final class Shell {
         } catch {
             addProblem = "Update Rufi on your iPhone (or on your Mac) so they match."
         }
+    }
+
+    /// From a page drawn here: chips, and text after what is typed, go in
+    /// the chat's box, as Ask Rufi does on the Mac's pages, and the chat
+    /// opens on them. When the box can't take them now, its line says why.
+    func ask(_ chips: [BoxChip], text: String = "") async {
+        screens.box(["type": "ask", "chips": chips.map(\.json), "text": text])
+        await choose(.chat)
     }
 
     /// View original: fetches the document's files with the key and shows

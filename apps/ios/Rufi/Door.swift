@@ -106,6 +106,12 @@ nonisolated struct Door: Sendable {
                             query: query, body: nil)
     }
 
+    /// Posts `body` to `path` under the person's routes, as the Mac's pages do.
+    func post<Answer: Decodable>(_ path: String, for person: String, body: [String: String])
+        async throws(Problem) -> Answer {
+        try await Self.call(origin: origin, key: key, method: "POST", path: "\(Self.people)/\(person)/\(path)", body: body)
+    }
+
     /// The person's reminder setting: what a notice shows, where it rings.
     struct Setting: Codable, Equatable, Sendable {
         var show: ReminderPlan.Show
@@ -132,6 +138,23 @@ nonisolated struct Door: Sendable {
     /// original may be large, so it has 5 minutes.
     func file(person: String, document: String, file: String, into staging: URL) async throws(Problem) -> URL {
         try await fetch(["api", "people", person, "documents", document, "files", file], into: staging).file
+    }
+
+    /// A document's page as Rufi AI saw it, in memory: a PDF's page drawn
+    /// 1600 px on its longer side, a photo as it came (a HEIC as its JPEG).
+    func page(person: String, document: String, position: Int) async throws(Problem) -> Data {
+        let parts = ["api", "people", person, "documents", document, "pages", String(position)]
+            .map { $0.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(.init(charactersIn: "-_."))) ?? "" }
+        var request = URLRequest(url: origin.appending(path: "/" + parts.joined(separator: "/")), timeoutInterval: Self.fileSeconds)
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await Self.files.data(for: request)
+        } catch {
+            throw .unreachable
+        }
+        return try Self.taken(data, response)
     }
 
     /// Fetches a visit brief's PDF, which Rufi makes fresh, into `staging`,

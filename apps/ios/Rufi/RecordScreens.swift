@@ -21,6 +21,8 @@ struct NativePageView: View {
             case let .visit(id): VisitView(shell: shell, screen: screen, id: id)
             case let .row(kind, id): RowView(shell: shell, screen: screen, kind: kind, id: id)
             case .followUps: FollowUpsView(shell: shell)
+            case .documents: DocumentsView(shell: shell)
+            case let .document(id): DocumentView(shell: shell, screen: screen, id: id)
             }
         }
         // Inset grouped, as This iPhone's sheets: the sidebar's colour
@@ -30,11 +32,15 @@ struct NativePageView: View {
     }
 }
 
-/// Reads `path` for a page, again when Rufi is back and on a pull; the last
+/// Reads `path` for a page, again when Rufi is back and on a pull, and
+/// every 3 seconds while `again` says so (a document being read); the last
 /// read stays while Rufi can't be reached.
 struct Reading<Answer: Decodable & Sendable, Content: View>: View {
     let shell: Shell
     let path: String
+    var again: (Answer) -> Bool = { _ in false }
+    /// The read itself: `path` under the person's routes, unless a page reads more.
+    var load: ((Shell) async throws(Door.Problem) -> Answer)?
     @ViewBuilder let content: (Answer, Date) -> Content
     @State private var read: Kept?
     @State private var problem: String?
@@ -55,11 +61,17 @@ struct Reading<Answer: Decodable & Sendable, Content: View>: View {
         }
         .task(id: shell.fresh) { await read() }
         .refreshable { await read() }
+        // Each read that says so starts the next after a moment.
+        .task(id: read?.at) {
+            guard let answer = read?.answer, again(answer) else { return }
+            try? await Task.sleep(for: .seconds(3))
+            if !Task.isCancelled { await read() }
+        }
     }
 
     private func read() async {
-        do {
-            let answer: Answer = try await shell.read(path)
+        do throws(Door.Problem) {
+            let answer: Answer = if let load { try await load(shell) } else { try await shell.read(path) }
             read = Kept(answer: answer, at: .now)
             shell.kept[path] = read
             problem = nil

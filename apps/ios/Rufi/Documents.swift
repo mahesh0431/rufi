@@ -48,6 +48,8 @@ nonisolated struct DocumentSummary: Decodable, Equatable, Identifiable, Sendable
     let notSorted: Bool
     /// not_read, reading, done or failed.
     let status: String
+    /// The agent Rufi AI set to read it; none when none.
+    let reader: String?
     let reading: Reading?
     let files: [File]
 }
