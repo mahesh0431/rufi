@@ -22,6 +22,8 @@ export type BriefSource = typeof BriefSource.Type;
 export const Brief = Schema.Struct({
   id: Schema.String,
   createdAt: Schema.String,
+  /** When the last save the brief saw was made; null when it saw none. */
+  recordUpTo: Schema.NullOr(Schema.String),
   markdown: Schema.String,
   /** A save after the brief was made changed the record. */
   changedSince: Schema.Boolean,
