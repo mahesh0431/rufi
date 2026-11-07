@@ -1,7 +1,7 @@
 // Rufi's door for the iPhone app in the Simulator, on this Mac only, with
 // fictional data. It is the screens' test setup (apps/web/e2e/rufi.ts): a
 // fresh folder with the fictional family, and a scripted Rufi AI whose
-// every reply is REPLY. Tailscale is never run: a stand-in serves HTTPS at
+// every reply thinks, then answers REPLY, with a visual. Tailscale is never run: a stand-in serves HTTPS at
 // this Mac's network address on the door's port, with a certificate from a
 // certificate authority made here, and passes it on to the door on
 // 127.0.0.1, as Tailscale Serve does. The Simulator trusts that authority
@@ -29,12 +29,29 @@ import { promisify } from "node:util";
 import { Rufi } from "../../web/e2e/rufi.ts";
 import type { Tailscale } from "../../server/src/server/tailscale.ts";
 
-/** What Rufi AI answers every message: a result of the family's, linked. */
+/** A visual of the family's HbA1c, as Rufi AI draws one (ADR 0034). */
+const VISUAL = [
+  "<style>.r{font-family:var(--font-ui);color:var(--ink)}.row{display:flex;align-items:center;gap:8px;margin:6px 0}",
+  ".d{width:5.5em;color:var(--muted)}.bar{height:12px;border-radius:6px;background:var(--accent)}</style>",
+  '<div class="r"><div class="row"><span class="d">Feb 2026</span><div class="bar" style="width:74%"></div><span>7.4 %</span></div>',
+  '<div class="row"><span class="d">May 2026</span><div class="bar" style="width:71%"></div><span>7.1 %</span></div>',
+  '<div class="row"><span class="d">Aug 2026</span><div class="bar" style="width:68%"></div><span>6.8 %</span></div></div>',
+].join("\n");
+
+/**
+ * What Rufi AI answers every message, after a thought: a result of the
+ * family's, drawn, and linked.
+ */
 const REPLY = [
   "Your **HbA1c** was 6.8 % on 12 Aug 2026, above the 4.0–5.6 range.",
   "",
+  "```rufi-visual",
+  VISUAL,
+  "```",
+  "",
   "[See your HbA1c results](rufi:/tests/tst-hba1c) · [What HbA1c measures](https://example.com/hba1c)",
 ].join("\n");
+const THOUGHT = "**Reading the record**\n\nAsha's HbA1c results, newest first.";
 
 const run = promisify(execFile);
 const folder = process.argv[2];
@@ -208,7 +225,10 @@ const said = Object.fromEntries(
     },
   ]),
 ) as unknown as Tailscale;
-await rufi.start({ scenario: { answer: REPLY }, tailscale: said });
+await rufi.start({
+  scenario: { answer: REPLY, reasoning: [THOUGHT] },
+  tailscale: said,
+});
 console.log(`The Simulator trusts ${ca} once added to it.`);
 console.log("Rufi on this Mac (its link works once):");
 console.log(rufi.link());

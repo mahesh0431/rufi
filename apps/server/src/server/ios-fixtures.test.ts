@@ -53,6 +53,9 @@ const ROUTES: readonly (readonly [string, string])[] = [
   ["document-delete", "/api/people/asha/documents/doc-asha-aug/delete"],
   ["record-visit", "/api/people/asha/record/visit"],
   ["detail-visit", "/api/people/asha/record/visit/vis-a1"],
+  ["chat", "/api/people/asha/chat"],
+  ["chat-draft", "/api/people/asha/chat/draft"],
+  ["chat-queue", "/api/people/asha/chat/queue"],
 ];
 
 let home: string;

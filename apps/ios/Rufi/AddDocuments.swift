@@ -119,19 +119,3 @@ enum Chosen {
         return files
     }
 }
-
-/// A chip a page drawn here puts in the chat's box: what it points at
-/// (a document, or a draft item), and its label.
-nonisolated struct BoxChip: Sendable {
-    let type: String
-    let id: String
-    var readAgain = false
-    let label: String
-
-    /// As the page's box takes it (apps/web/src/draft.ts, BoxChip).
-    var json: [String: Any] {
-        var pointer: [String: Any] = ["type": type, "id": id]
-        if readAgain { pointer["readAgain"] = true }
-        return ["pointer": pointer, "label": label, "detail": ""]
-    }
-}

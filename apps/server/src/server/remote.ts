@@ -33,7 +33,7 @@ import { body, HttpError, shared, type App } from "./http.ts";
 import { personRoutes, type PersonDeps } from "./person-routes.ts";
 import { appSessions } from "./session.ts";
 import { TailscaleProblem, type Tailscale } from "./tailscale.ts";
-import { visualFrameRoute } from "./visual-frame.ts";
+import { visualCardRoute, visualFrameRoute } from "./visual-frame.ts";
 
 /** How long a pairing code works. */
 const CODE_MS = 10 * 60 * 1000;
@@ -409,6 +409,7 @@ export function remote(deps: RemoteDeps): Remote {
   // What a person does here is their paired app's.
   personRoutes(door, deps.person, adds, (c) => `app:${asker(c).app.id}`);
   visualFrameRoute(door);
+  visualCardRoute(door);
   screensRoute(door, deps.screens, deps.read);
 
   /** Listens on `at` (0: a free port, then kept); the port it got. */

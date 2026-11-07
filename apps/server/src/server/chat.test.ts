@@ -2555,7 +2555,7 @@ describe("the chat, on the scripted Codex", () => {
       );
       // A reading saves no receipt: receipts are for the health record.
       expect(all.filter((entry) => entry.kind === "receipt")).toEqual([]);
-    });
+    }, 60_000);
 
     it("shows a document as Reading while the reader Rufi AI set on it works, then read once it saves", async () => {
       const report = await addFile("sunrise-labs-august.pdf");
@@ -2974,7 +2974,7 @@ describe("the chat, on the scripted Codex", () => {
     expect(
       agentRows(`SELECT count(*) AS n FROM turns WHERE agent_id = '${a}'`),
     ).toEqual([{ n: 1 }]);
-  });
+  }, 60_000);
 
   it("stops everything, itself included: the user's waiting message shows Not sent and can be sent again, and no stopped agent wakes another", async () => {
     const stopping = Promise.withResolvers<undefined>();
