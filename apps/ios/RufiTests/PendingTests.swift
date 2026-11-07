@@ -10,13 +10,13 @@ struct PendingTests {
         FileManager.default.temporaryDirectory.appending(path: "pending-\(UUID().uuidString)/pending.json")
     }
 
-    @Test func theyGoInOrderWhenRufiAnswersAndARefusedOneStays() async throws {
+    @Test func theyGoInOrderWhenRufiAnswersAndARefusedOneComesBack() async throws {
         let file = Self.file()
         let pending = Pending(file: file)
         let at = ISO8601DateFormatter().date(from: "2026-11-07T09:10:00Z")!
         try pending.add("I took my Metformin", at: at)
-        try pending.add("And my blood pressure was 128/82", at: at)
         try pending.add("Too long", at: at)
+        try pending.add("And my blood pressure was 128/82", at: at)
         #expect(pending.messages.first?.writtenAt.count == 16)
 
         var sent: [String] = []
@@ -26,20 +26,18 @@ struct PendingTests {
             if message.text == "Too long" { throw .refused("That message is too long.") }
             sent.append(message.text)
         }
-        // Rufi away: all of them wait.
-        try await pending.send(take)
-        #expect(pending.messages.count == 3)
+        // Rufi away: all of them wait, as kept in their file.
+        #expect(try await pending.send(take).isEmpty)
+        #expect(Pending(file: file).messages.count == 3)
 
         away = false
-        try await pending.send(take)
+        let back = try await pending.send(take)
         #expect(sent == ["I took my Metformin", "And my blood pressure was 128/82"])
-        #expect(pending.messages.map(\.text) == ["Too long"])
-        #expect(pending.messages.first?.refused == "That message is too long.")
-        // Refused: not sent again.
-        try await pending.send(take)
-        #expect(sent.count == 2)
-        // As kept in its file.
-        #expect(Pending(file: file).messages == pending.messages)
+        // Refused: off the list, its words and Rufi's back for the box.
+        #expect(back.map(\.text) == ["Too long"])
+        #expect(back.map(\.refused) == ["That message is too long."])
+        #expect(pending.messages.isEmpty)
+        #expect(Pending(file: file).messages.isEmpty)
     }
 
     @Test func unpairingRemovesThemAndStopsASendUnderWay() async throws {

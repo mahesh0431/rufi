@@ -68,6 +68,9 @@ final class ChatBox {
     var asking: ([String: Any]) -> Void = { _ in }
     /// Rufi can't be reached: Send keeps the message on the iPhone.
     var away = false
+    /// Why Rufi refused a waiting message now back in the box: until the
+    /// box changes.
+    var said: String?
     /// Typed while Rufi couldn't be reached: these words, not the draft the
     /// page reads when it is back, stay in the box.
     private var typedAway = false
@@ -77,6 +80,7 @@ final class ChatBox {
     func took(_ data: Data) {
         guard let state = try? JSONDecoder().decode(State.self, from: data) else { return }
         if let text = state.text {
+            if text != self.text { said = nil }
             if typedAway, !self.text.isEmpty {
                 ask(["type": "text", "text": self.text])
             } else {
@@ -91,6 +95,7 @@ final class ChatBox {
     func typed(_ text: String) {
         guard text != self.text else { return }
         self.text = text
+        said = nil
         if away { typedAway = true }
         ask(["type": "text", "text": text])
     }
@@ -133,10 +138,10 @@ struct ChatBoxView: View {
         let kind = shell.boxKind
         VStack(spacing: 4) {
             ForEach(shell.pending.messages) { PendingRow(message: $0) }
-            if !away, let line = state?.line {
+            if !away, let line = box.said ?? state?.line {
                 HStack(spacing: 8) {
                     Text(line)
-                    if state?.retry == true {
+                    if box.said == nil, state?.retry == true {
                         Button("Retry", systemImage: "arrow.clockwise") { box.ask(["type": "retry"]) }
                     }
                 }
@@ -405,8 +410,7 @@ enum Chosen {
     }
 }
 
-/// A message waiting to send, above the box: its words, and Pending (or
-/// why Rufi refused it).
+/// A message waiting to send, above the box: its words, and Pending.
 private struct PendingRow: View {
     let message: PendingMessage
     @Environment(Theme.self) private var theme
@@ -415,11 +419,7 @@ private struct PendingRow: View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(message.text).font(.subheadline).lineLimit(1)
-                if let refused = message.refused {
-                    Text(refused).font(.caption).foregroundStyle(.red)
-                } else {
-                    Label("Pending", systemImage: "clock").font(.caption).foregroundStyle(.secondary)
-                }
+                Label("Pending", systemImage: "clock").font(.caption).foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

@@ -252,10 +252,18 @@ final class Shell {
         Task { await check() }
     }
 
+    /// Sends the waiting messages. One Rufi refused comes back into the box,
+    /// with Rufi's words, to change and send again, or clear.
     private func sendPending() async {
         do {
             let person = pairing.person.id
-            try await pending.send { message throws(Door.Problem) in try await door.send(message, for: person) }
+            let back = try await pending.send { message throws(Door.Problem) in
+                try await door.send(message, for: person)
+            }
+            for (text, refused) in back {
+                box.typed(box.text.isEmpty ? text : box.text + "\n" + text)
+                box.said = refused
+            }
         } catch {
             unpaired()
         }

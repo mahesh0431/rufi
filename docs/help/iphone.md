@@ -96,7 +96,7 @@ If your Mac is asleep or off, Rufi isn't running there, Tailscale is off on eith
 
 Meanwhile, everything that doesn't need your Mac works: the sidebar, **This iPhone**, and the reminders, which keep ringing. The page you were reading stays as it was. A page that hasn't loaded shows only the dog, resting.
 
-The chat box stays too, with your words and **Send**; the paperclip, the model and the context used come back with Rufi. A message you send meanwhile waits above the box, marked **Pending**, and goes by itself when Rufi answers, in the order you sent them; Rufi AI is told when you wrote it, so "I just took my Metformin" means then. If Rufi refuses one (for example, too long), its words show instead of Pending, and it isn't sent again. Words you typed and didn't send stay in the box, and take the place of the draft on your Mac when it is back.
+The chat box stays too, with your words and **Send**; the paperclip, the model and the context used come back with Rufi. A message you send meanwhile waits above the box, marked **Pending**, and goes by itself when Rufi answers, in the order you sent them; Rufi AI is told when you wrote it, so "I just took my Metformin" means then. If Rufi refuses one (for example, too long), it goes back into the box with Rufi's reason under it: change it and send it again, or clear it. Words you typed and didn't send stay in the box, and take the place of the draft on your Mac when it is back.
 
 If the iPhone says to update Rufi on your iPhone or on your Mac so they match, they were built for different versions: update the older one.
 

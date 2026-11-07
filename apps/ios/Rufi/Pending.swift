@@ -9,8 +9,6 @@ nonisolated struct PendingMessage: Codable, Equatable, Identifiable, Sendable {
     let text: String
     /// When it was written, on the iPhone's clock: 'YYYY-MM-DDTHH:MM'.
     let writtenAt: String
-    /// Rufi refused it, in its words: kept, not sent again.
-    var refused: String?
 }
 
 /// The messages waiting to go, and the one file they are kept in, beside the
@@ -51,39 +49,40 @@ final class Pending {
         if (try? FileManager.default.removeItem(at: file)) == nil { try? write([]) }
     }
 
-    /// Sends, in order, each message Rufi hasn't refused, one at a time, each
-    /// under its own id. Out of reach: the rest waits for the next time.
-    /// Throws `unpaired` as the Mac says it, unless this iPhone was unpaired
-    /// meanwhile: then the send just stops.
-    func send(_ deliver: (PendingMessage) async throws(Door.Problem) -> Void) async throws(Door.Problem) {
-        guard !sending else { return }
+    /// Sends them in order, one at a time, each under its own id. Out of
+    /// reach: the rest waits for the next time. One Rufi refused leaves the
+    /// list: its words and Rufi's come back, for the box. Throws `unpaired`
+    /// as the Mac says it, unless this iPhone was unpaired meanwhile: then
+    /// the send just stops.
+    @discardableResult
+    func send(_ deliver: (PendingMessage) async throws(Door.Problem) -> Void)
+        async throws(Door.Problem) -> [(text: String, refused: String)] {
+        guard !sending else { return [] }
         sending = true
         let run = generation
         defer { if generation == run { sending = false } }
-        while let message = messages.first(where: { $0.refused == nil }) {
+        var back: [(text: String, refused: String)] = []
+        while let message = messages.first {
             var refused: String?
             do {
                 try await deliver(message)
             } catch .unpaired {
                 if generation == run { throw .unpaired }
-                return
+                return []
             } catch let .refused(words) {
                 refused = words
             } catch {
-                return
+                return back
             }
             // Unpaired meanwhile: the rest isn't this run's.
-            guard generation == run else { return }
-            var now = messages
-            if let refused {
-                if let at = now.firstIndex(where: { $0.id == message.id }) { now[at].refused = refused }
-            } else {
-                now.removeAll { $0.id == message.id }
-            }
+            guard generation == run else { return [] }
+            let now = messages.filter { $0.id != message.id }
             // A write that fails keeps it in both, and stops: sent again, it is one message.
-            guard (try? write(now)) != nil else { return }
+            guard (try? write(now)) != nil else { return back }
             messages = now
+            if let refused { back.append((message.text, refused)) }
         }
+        return back
     }
 
     private func write(_ messages: [PendingMessage]) throws {
