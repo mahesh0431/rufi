@@ -412,6 +412,7 @@ enum Chosen {
 private struct PendingRow: View {
     let message: PendingMessage
     let takeBack: () -> Void
+    @Environment(Theme.self) private var theme
 
     var body: some View {
         HStack(spacing: 8) {
@@ -433,7 +434,9 @@ private struct PendingRow: View {
         .padding(.leading, 14)
         .padding(.trailing, 6)
         .padding(.vertical, 6)
-        .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 16))
+        .background(theme.surface, in: .rect(cornerRadius: 16))
+        .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(Color(.separator), lineWidth: 0.5) }
+        .shadow(color: .black.opacity(0.06), radius: 6, y: 2)
     }
 }
 

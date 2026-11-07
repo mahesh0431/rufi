@@ -39,8 +39,9 @@ final class Shell {
     /// The web view holds a page that drew: when Rufi comes back, the page
     /// reads again; without one, Rufi opens again.
     private var live = false
-    /// Asking again, after a wait that grows, while Rufi can't be reached.
-    private var trying: Task<Void, Never>?
+    /// Counts the runs of asking again, after a wait that grows, while Rufi
+    /// can't be reached: only the latest run goes on.
+    private var tries = 0
     private var checking = false
     /// A change of network is a moment to ask again.
     private let network = NWPathMonitor()
@@ -205,12 +206,15 @@ final class Shell {
     private func lost() {
         guard reach != .away else { return }
         reach = .away
-        trying?.cancel()
-        trying = Task { [weak self] in
+        tries += 1
+        let these = tries
+        // Never cancelled: a check it runs that reaches Rufi must finish.
+        // It stops when Rufi answers, or when another run starts.
+        Task { [weak self] in
             var waits = [2, 5, 10, 20]
-            while !Task.isCancelled {
+            while true {
                 try? await Task.sleep(for: .seconds(waits.isEmpty ? 30 : waits.removeFirst()))
-                guard let self, !Task.isCancelled, away else { return }
+                guard let self, tries == these, away else { return }
                 if seen() { await check() }
             }
         }
@@ -218,8 +222,7 @@ final class Shell {
 
     /// Rufi answered: the line says so a moment, then goes.
     private func connected() {
-        trying?.cancel()
-        trying = nil
+        tries += 1
         guard reach == .away else { return }
         reach = .back
         Task {
