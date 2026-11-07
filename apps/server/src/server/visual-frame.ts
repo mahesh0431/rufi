@@ -71,9 +71,12 @@ const CARD = `(() => {
  * job in a drawing of HTML, CSS and SVG and can reach out. A link's hints
  * (preconnect, dns-prefetch) reach the network in WebKit whatever the policy
  * says, a script's integrity can match a hash the policy allows, and a meta
- * can refresh or set a policy of its own.
+ * can refresh or set a policy of its own. A visual has no links either: its
+ * `a` elements, HTML and SVG, give way to what they hold, and an image map's
+ * `area` goes. A click on one reaches Rufi's own address, value in hand, and
+ * one for a new window connects in WebKit though the window never opens.
  */
-const REFUSED = "link, meta, base, script, iframe, frame, object, embed";
+const REFUSED = "link, meta, base, script, iframe, frame, object, embed, area";
 
 /** JSON that can sit inside a script element: no "</script>" in it. */
 const inScript = (value: unknown) =>
@@ -82,7 +85,7 @@ const inScript = (value: unknown) =>
 /**
  * The page's own script: it takes the visual once, from the screen that
  * framed it. It parses the HTML in a template, which loads and runs nothing,
- * and takes out what REFUSED names. It writes in a document with the theme
+ * takes out what REFUSED names, and unwraps every link. It writes in a document with the theme
  * as data and the card script, which keeps this page's policy, and then puts
  * the visual in its body as parsed, never parsing it a second time.
  */
@@ -97,6 +100,7 @@ const HOST = `(() => {
     const inert = document.createElement("template");
     inert.innerHTML = data.html;
     for (const element of inert.content.querySelectorAll(${JSON.stringify(REFUSED)})) element.remove();
+    for (const link of inert.content.querySelectorAll("a")) link.replaceWith(...link.childNodes);
     const theme = JSON.stringify(data.theme ?? null).replace(/</g, "\\\\u003c");
     document.open();
     document.write('<!doctype html><html><head><meta charset="utf-8"><script type="application/json" id="${THEME_ID}">' + theme + '</' + 'script><script>' + card + '</' + 'script></head><body></body></html>');
