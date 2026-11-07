@@ -1,9 +1,9 @@
 // A reply's visual (ADR 0034), on the real core with its real headers: the
 // AI's HTML in a `rufi-visual` block draws in its locked frame, in Rufi's
 // theme and at its own height, waits while its block is written and never
-// reloads as the reply goes on; nothing in it reaches the network or Rufi's
-// page; one that tries says part of it didn't load; and one that starts
-// above what you read and grows keeps your place.
+// reloads as the reply goes on; it runs no script of its own and reaches
+// neither the network nor Rufi's page; one that tries says part of it didn't
+// load; and one that starts above what you read and grows keeps your place.
 import { AxeBuilder } from "@axe-core/playwright";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -80,7 +80,7 @@ const pageColour = (page: Page, token: string) =>
     return colour;
   }, token);
 
-test("a visual draws in the reply in Rufi's theme at its own height, follows a new theme without reloading, and never reloads as the reply goes on", async ({
+test("a visual draws in the reply in Rufi's theme at its own height, doesn't reload as the reply's text goes on, follows a new theme without reloading, and stays drawn once the reply ends", async ({
   page,
   rufi,
 }) => {
@@ -92,7 +92,8 @@ test("a visual draws in the reply in Rufi's theme at its own height, follows a n
   ].join("\n");
   // The reply streams in small parts: the text after the visual goes on
   // after the visual draws.
-  const after = `${"These are the values your record keeps. ".repeat(30)}trickle end.`;
+  const more = "These are the values your record keeps. ".repeat(15);
+  const after = `${more}halfway. ${more}trickle end.`;
   await send(page, withVisual(chart, after));
   const card = cards(page);
   const inside = page.frameLocator(".reply iframe[title='Visual']");
@@ -101,10 +102,16 @@ test("a visual draws in the reply in Rufi's theme at its own height, follows a n
   const began = async () =>
     (await frameOf(card)).evaluate(() => performance.timeOrigin);
   const loaded = await began();
+  await expect(log(page).locator(".reply").getByText("halfway.")).toBeVisible();
+  expect(await began()).toBe(loaded);
+  // Once the reply ends, the visual is still drawn: its line may move in
+  // the chat, and a frame the browser loads again gets it again.
   await expect(
     log(page).locator(".reply").getByText("trickle end."),
   ).toBeVisible();
   await expect(log(page)).toHaveAttribute("aria-busy", "false");
+  await expect(inside.locator("circle")).toBeVisible();
+  const ended = await began();
   // At its own height, with nothing to scroll inside.
   await expect
     .poll(() =>
@@ -130,7 +137,7 @@ test("a visual draws in the reply in Rufi's theme at its own height, follows a n
   });
   await expect.poll(ink).not.toBe(light);
   expect(await ink()).toBe(await pageColour(page, "--ink"));
-  expect(await began()).toBe(loaded);
+  expect(await began()).toBe(ended);
   expect(await card.count()).toBe(1);
 
   await expect(
@@ -158,7 +165,7 @@ test("a visual still being written holds its place quietly, and its code never s
   await expect(log(page).getByText("Half")).toHaveCount(0);
 });
 
-test("nothing in a visual reaches the network or Rufi's page, and one that tries says part of it didn't load", async ({
+test("a visual runs no script of its own and reaches neither the network nor Rufi's page; one that tries says part of it didn't load", async ({
   page,
   rufi,
 }) => {
@@ -175,35 +182,28 @@ test("nothing in a visual reaches the network or Rufi's page, and one that tries
     await opened(page, rufi);
     const hostile = [
       '<p id="drawn">Drawn</p>',
-      // As a model writes a chart: a library from a CDN.
+      // As a model writes a chart: a library from a CDN, then its script.
       `<script src="${out}/chart.js"></script>`,
+      `<script>document.body.dataset.ran = "yes"; fetch(${JSON.stringify(out)} + "/fetch");</script>`,
+      '<img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" onload="document.body.dataset.handler = \'yes\'">',
       `<img src="${out}/picture.png" alt="">`,
       `<link rel="stylesheet" href="${out}/style.css">`,
       `<link rel="prefetch" href="${out}/prefetch">`,
-      `<form id="form" action="${out}/form" method="post"><input name="a" value="b"></form>`,
-      "<script>",
-      `const out = ${JSON.stringify(out)};`,
-      'fetch(out + "/fetch").catch(() => {});',
-      'try { const x = new XMLHttpRequest(); x.open("GET", out + "/xhr"); x.send(); } catch {}',
-      'try { navigator.sendBeacon(out + "/beacon", "x"); } catch {}',
-      'try { new WebSocket(out.replace("http", "ws") + "/socket"); } catch {}',
-      'try { new EventSource(out + "/events"); } catch {}',
-      'try { window.open(out + "/opened"); } catch {}',
-      'try { document.getElementById("form").submit(); } catch {}',
-      'try { top.location.href = out + "/top"; } catch {}',
-      "</script>",
+      `<style>@import url("${out}/imported.css"); #drawn { background: url("${out}/background.png"); }</style>`,
+      `<iframe src="${out}/framed"></iframe>`,
+      `<form action="${out}/form" method="post"><button id="post">Post</button></form>`,
+      `<a id="away" href="${out}/followed" target="_top">Away</a>`,
     ].join("\n");
     await send(page, withVisual(hostile));
-    const card = cards(page);
-    await expect(
-      page.frameLocator(".reply iframe[title='Visual']").getByText("Drawn"),
-    ).toBeVisible();
+    const inside = page.frameLocator(".reply iframe[title='Visual']");
+    await expect(inside.getByText("Drawn")).toBeVisible();
     await expect(
       log(page).getByText("Part of this visual didn't load"),
     ).toBeVisible();
 
-    // Nothing of Rufi's page, session or storage, and no WebRTC.
-    const frame = await frameOf(card);
+    // None of the AI's script ran, and the visual has nothing of Rufi's
+    // page, session or storage.
+    const frame = await frameOf(cards(page));
     expect(
       await frame.evaluate(() => {
         const tried = (what: () => unknown) => {
@@ -214,25 +214,40 @@ test("nothing in a visual reaches the network or Rufi's page, and one that tries
           }
         };
         return {
+          ran: document.body.dataset["ran"] ?? "no",
+          handler: document.body.dataset["handler"] ?? "no",
           page: tried(() => window.parent.document.title),
           cookie: tried(() => document.cookie),
           storage: tried(() => localStorage.length),
-          webrtc: typeof (window as { RTCPeerConnection?: unknown })
-            .RTCPeerConnection,
         };
       }),
     ).toEqual({
+      ran: "no",
+      handler: "no",
       page: "refused",
       cookie: "refused",
       storage: "refused",
-      webrtc: "undefined",
     });
+    // A form or a link in it goes nowhere.
+    await inside.locator("#post").click();
+    await inside.locator("#away").click();
+
     // Nor can it take itself somewhere else.
-    await frame.evaluate((address) => {
-      setTimeout(() => {
-        location.href = `${address}/moved`;
-      });
-    }, out);
+    await send(
+      page,
+      withVisual(`<meta http-equiv="refresh" content="0;url=${out}/moved">`),
+    );
+    await expect(cards(page)).toHaveCount(2);
+    // One that loads itself again and again stops, and says so.
+    await send(
+      page,
+      withVisual(
+        '<meta http-equiv="refresh" content="0;url=/visual-frame.html">',
+      ),
+    );
+    await expect(
+      log(page).getByText("Part of this visual didn't load"),
+    ).toHaveCount(2);
     await page.waitForTimeout(500);
 
     expect(reached).toEqual([]);
@@ -240,7 +255,7 @@ test("nothing in a visual reaches the network or Rufi's page, and one that tries
     await expect(
       page.getByRole("heading", { name: "Health record" }),
     ).toBeVisible();
-    // Rufi's page refused only the frame's move.
+    // Rufi's page refused only a frame's move.
     for (const refusal of await refusedIn(page)) {
       expect(refusal).toMatch(/^frame-src /);
     }

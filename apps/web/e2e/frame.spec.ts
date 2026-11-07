@@ -1023,7 +1023,7 @@ test("Settings › Advanced shows what Rufi AI is told; an edited part is marked
   await page.goto(rufi.link());
   const settings = await openSettings(page, "Advanced");
   const rules = settings.getByRole("region", {
-    name: "Reply instructions: rules",
+    name: "Visual instructions",
   });
   const box = rules.getByRole("textbox");
   const own = await box.inputValue();
