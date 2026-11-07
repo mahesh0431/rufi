@@ -9,6 +9,11 @@ struct ChatView: View {
     /// Shown as a sheet over a page.
     var sheet = false
     @State private var position = ScrollPosition(edge: .bottom)
+    /// The view follows the end as the chat grows: until the person
+    /// scrolls up from it, and again when they come back to it or send.
+    @State private var pinned = true
+    /// How far the end is below what shows.
+    @State private var below: CGFloat = 0
     /// A step opened: its details.
     @State private var opened: Entry?
 
@@ -33,6 +38,13 @@ struct ChatView: View {
         .defaultScrollAnchor(.bottom, for: .initialOffset)
         .defaultScrollAnchor(.bottom, for: .sizeChanges)
         .scrollPosition($position)
+        .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height - $0.visibleRect.maxY } action: { below = $1 }
+        .onScrollPhaseChange { _, phase in
+            if phase == .idle { pinned = below < 40 }
+        }
+        .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { was, now in
+            if pinned, now > was { position.scrollTo(edge: .bottom) }
+        }
         .scrollDismissesKeyboard(.interactively)
         .overlay {
             switch chat.status {
@@ -51,7 +63,10 @@ struct ChatView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ChatBoxView(shell: shell, chat: chat)
         }
-        .onChange(of: chat.sends) { position.scrollTo(edge: .bottom) }
+        .onChange(of: chat.sends) {
+            pinned = true
+            position.scrollTo(edge: .bottom)
+        }
         .environment(\.openURL, OpenURLAction { url in
             switch ReplyLink.of(url, person: shell.pairing.person.id) {
             case .web: return .systemAction

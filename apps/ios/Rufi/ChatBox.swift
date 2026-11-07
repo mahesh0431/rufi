@@ -76,6 +76,8 @@ struct ChatBoxView: View {
         }
         .padding(.horizontal, 10)
         .padding(.bottom, focused ? 6 : 2)
+        // The chat ends above it: its words never show under the reminder.
+        .background(theme.page)
         .animation(.snappy(duration: 0.2), value: open)
         .onChange(of: chat.asked) {
             lit = true
