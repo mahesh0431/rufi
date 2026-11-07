@@ -108,18 +108,15 @@ final class HealthSync {
     private let door: any BatchSending
     private let memory: HealthMemory
     private let unpaired: () -> Void
-    private let pause: (Duration) async throws -> Void
     private var run: Task<Void, Never>?
     @ObservationIgnored private var background = UIBackgroundTaskIdentifier.invalid
 
     init(reader: any HealthReading, door: any BatchSending, memory: HealthMemory,
-         unpaired: @escaping () -> Void,
-         pause: @escaping (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
+         unpaired: @escaping () -> Void) {
         self.reader = reader
         self.door = door
         self.memory = memory
         self.unpaired = unpaired
-        self.pause = pause
         last = memory.last
     }
 
@@ -203,7 +200,7 @@ final class HealthSync {
                     continue
                 }
                 do {
-                    _ = try await send(page.body)
+                    _ = try await door.batch(page.body)
                 } catch {
                     if Task.isCancelled { return finish(readings, batches, stopped: nil) }
                     if error == .unpaired { unpaired() }
@@ -216,19 +213,6 @@ final class HealthSync {
             }
         }
         finish(readings, batches, stopped: nil)
-    }
-
-    /// The same bytes and batch ID, tried twice more when the Mac can't be
-    /// reached, after 2 and 5 seconds.
-    private func send(_ body: Data) async throws(Door.Problem) -> Door.Received {
-        var waits: [Duration] = [.seconds(2), .seconds(5)]
-        while true {
-            do {
-                return try await door.batch(body)
-            } catch .unreachable where !waits.isEmpty && !Task.isCancelled {
-                do { try await pause(waits.removeFirst()) } catch { throw .unreachable }
-            }
-        }
     }
 
     private func finish(_ readings: Int, _ batches: Int, stopped: String?) {

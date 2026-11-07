@@ -411,7 +411,7 @@ struct ShellView: View {
     var body: some View {
         Drawer(open: $shell.sidebar, enabled: shell.navigator.stack.isEmpty) {
             NavigationStack(path: stack) {
-                first(shell.navigator.place)
+                page(shell.navigator.root, root: true)
                     .navigationDestination(for: Screen.self) { page($0, root: false) }
             }
             // Another place: a stack of its own.
@@ -492,17 +492,6 @@ struct ShellView: View {
         } set: { screens in
             shell.popped(to: screens)
         }
-    }
-
-    /// What a place shows at the bottom of its stack: Rufi's page for it
-    /// from the Mac. A place that gets a screen of the app's own returns it
-    /// here. That screen also needs the bar items, which are `page`'s
-    /// toolbar today, and the shell must then leave the web view where it
-    /// is (`hold` moves it to every place); a screen of its own on top
-    /// needs a kind of screen besides a page's address.
-    @ViewBuilder
-    private func first(_ place: Place) -> some View {
-        page(shell.navigator.root, root: true)
     }
 
     @ViewBuilder

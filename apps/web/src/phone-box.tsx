@@ -152,9 +152,6 @@ export function PhoneBox({
           case "open":
             openPanel();
             break;
-          case "close":
-            usePanel.setState({ open: false, focusBefore: null });
-            break;
         }
       }),
     [person.id],

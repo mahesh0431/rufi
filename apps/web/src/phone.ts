@@ -182,8 +182,7 @@ export type BoxCommand =
   | { type: "model"; id: string }
   | { type: "effort"; id: string }
   | { type: "retry" }
-  | { type: "open" }
-  | { type: "close" };
+  | { type: "open" };
 
 /** Who acts on the app's box now; one at a time. */
 const boxed: { on: ((command: BoxCommand) => void) | null } = { on: null };
