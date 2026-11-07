@@ -289,6 +289,48 @@ test("a reply the AI wrote in OpenUI draws in the chat under Rufi's strict CSP: 
   expect(page.context().pages()).toHaveLength(1);
 });
 
+test("a follow-up clicked in an earlier reply, scrolled up to, brings the chat to its end: the message and its reply show", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi);
+  await send(
+    page,
+    [
+      "root = Card([intro, followUps])",
+      'intro = TextContent("Your CRP was high in March.")',
+      'followUps = FollowUpBlock([FollowUpItem("Show my ferritin too")])',
+    ].join("\n"),
+  );
+  const followUp = log(page)
+    .locator(".reply")
+    .first()
+    .getByText("Show my ferritin too");
+  await expect(followUp).toBeVisible();
+  // A long reply after it, then a scroll up to the follow-up, as you read.
+  await send(
+    page,
+    Array.from({ length: 60 }, (_, i) => `Note ${String(i + 1)}`).join("\n\n"),
+  );
+  await expect(
+    log(page).locator(".reply").last().getByText("Note 60"),
+  ).toBeInViewport();
+  await log(page).hover();
+  await page.mouse.wheel(0, -10_000);
+  await expect(followUp).toBeInViewport();
+
+  await followUp.click();
+  await expect(
+    log(page)
+      .locator(".reply")
+      .last()
+      .getByText("ok:User clicked: Show my ferritin too"),
+  ).toBeInViewport();
+  await expect(
+    log(page).locator("p", { hasText: /^Show my ferritin too$/ }),
+  ).toBeInViewport();
+});
+
 /** Replies with a piece OpenUI leaves out: what shows, and what's left out. */
 const LEFT_OUT = [
   // A name it uses but never gives.

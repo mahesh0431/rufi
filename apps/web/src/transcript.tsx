@@ -440,7 +440,7 @@ export function TranscriptView({
     const element = scroller.current;
     if (!element) return;
     return boxFor(personId).store.subscribe((state, before) => {
-      if (!state.sending || before.sending) return;
+      if (state.sends === before.sends) return;
       pinned.current = true;
       element.scrollTop = element.scrollHeight;
       seen.current = viewOf(element);
