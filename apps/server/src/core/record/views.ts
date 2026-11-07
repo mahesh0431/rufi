@@ -907,6 +907,7 @@ async function today(db: Db, personId: string, now: Date): Promise<Today> {
   }
   return {
     day,
+    zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     doses: doses.toSorted(
       (a, b) =>
         a.at.localeCompare(b.at) ||

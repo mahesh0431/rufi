@@ -141,7 +141,10 @@ nonisolated enum Words {
             return Cells(title: row.title ?? "", status: state, date: date)
         case "result":
             return Cells(title: [row.test, row.value, row.unit].compactMap { $0 }.joined(separator: " "),
+                         detail: row.range ?? "", status: joined([row.flag, row.context]),
                          date: printed(row.measured) ?? "")
+        case "test":
+            return Cells(title: row.name ?? "", detail: joined([row.section, row.unit]))
         case "medicine_use":
             return Cells(title: [row.name, row.strength].compactMap { $0 }.joined(separator: " "),
                          detail: joined([row.amount, row.directions, row.times?.joined(separator: ", ")]),
@@ -167,6 +170,9 @@ nonisolated enum Words {
     /// Where a row opens: on its page, by its id, with its kind when the
     /// page's is another ("No known allergies" on Allergies).
     static func address(of row: RecordRow, person: String) -> String? {
+        if row.kind == "visit" { return "/people/\(person)/visits/\(row.id)" }
+        if row.kind == "follow_up" { return "/people/\(person)/follow-ups?open=\(row.id)" }
+        if row.kind == "test" { return "/people/\(person)/tests/\(row.id)" }
         guard let page = page(of: row) else { return nil }
         return "/people/\(person)/record/\(page)?open=\(row.id)" + (row.kind == page ? "" : "&kind=\(row.kind)")
     }
@@ -278,6 +284,158 @@ nonisolated enum Words {
         guard let first = lines.first else { return "Saved" }
         if !first.hasPrefix("- ") || lines.count == 1 { return plain(first) }
         return "\(plain(first)) · and \(lines.count - 1) more"
+    }
+
+    // MARK: Results
+
+    /// A result's value as printed: "6.8 %".
+    static func value(of row: RecordRow) -> String {
+        [row.value, row.unit].compactMap { $0 }.joined(separator: " ")
+    }
+
+    /// A result's value in its test's unit, when that isn't what was
+    /// printed: "= 97 µmol/L".
+    static func converted(_ row: RecordRow, unit: String?) -> String? {
+        guard let first = row.test_number,
+              first != row.number || row.test_second_number != row.second_number else { return nil }
+        let numbers = [first, row.test_second_number].compactMap { $0 }.map(number).joined(separator: "/")
+        return "= " + [(row.comparator ?? "") + numbers, unit].compactMap { $0 }.joined(separator: " ")
+    }
+
+    /// A day of measurements: "20 Sep 2026" and "2 measurements".
+    static func day(_ group: RecordGroup) -> (name: String, detail: String) {
+        (group.date.map(printed) ?? "No date", plural(group.rows.rows.count, "measurement", "measurements"))
+    }
+
+    /// A measurement's own date, only where its day's doesn't say it: on the
+    /// same day only its time.
+    static func measured(_ row: RecordRow, on day: String?) -> String {
+        guard let measured = row.measured?.date, measured != day else { return "" }
+        if let day, measured.hasPrefix(day + "T") { return String(measured.dropFirst(11)) }
+        return printed(measured)
+    }
+
+    /// "Measured 12 Aug 2026 · entered in Rufi at 09:01 on 13 Aug 2026".
+    static func entered(_ row: RecordRow, at entered: String?) -> String {
+        [row.measured.map { "Measured \(printed($0.date))" }, entered.map { "entered in Rufi \(time($0))" }]
+            .compactMap { $0 }.joined(separator: " · ")
+    }
+
+    private static func number(_ value: Double) -> String {
+        value.rounded() == value ? String(Int(value)) : String(value)
+    }
+
+    // MARK: Medicines
+
+    /// "until 6 Nov, 08:00"; this year's year left out.
+    static func until(_ until: Dated?, now: Date, calendar: Calendar = .current) -> String? {
+        guard let until else { return nil }
+        let parts = until.date.split(separator: "T", maxSplits: 1).map(String.init)
+        let printed = printed(parts[0]).replacingOccurrences(of: " \(calendar.component(.year, from: now))", with: "")
+        return "until \(printed)" + (parts.count > 1 ? ", \(parts[1])" : "")
+    }
+
+    /// A day of the Mac's ('YYYY-MM-DD') as Today's heading says it: "Sunday 8 November".
+    static func day(of day: String) -> String {
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(identifier: "UTC")!
+        guard let at = try? Date(day + "T12:00:00Z", strategy: .iso8601) else { return day }
+        return today(at, calendar: utc)
+    }
+
+    /// The day `count` days before `day`, both 'YYYY-MM-DD'.
+    static func days(before day: String, _ count: Int) -> String? {
+        guard let at = try? Date(day + "T12:00:00Z", strategy: .iso8601) else { return nil }
+        return String(at.addingTimeInterval(TimeInterval(-count * 86_400)).ISO8601Format().prefix(10))
+    }
+
+    /// A log waiting on the iPhone: "Taken 08:12", "Skipped", "Undone".
+    static func unsent(_ log: UnsentLog, calendar: Calendar = .current) -> String {
+        switch log.state {
+        case .taken: log.takenAt.map { "Taken \(clock($0, calendar: calendar))" } ?? "Taken"
+        case .skipped: "Skipped"
+        case .cleared: "Undone"
+        }
+    }
+
+    /// Where a dose was logged: "Mac", "iPhone" or "Rufi AI".
+    static func loggedWhere(_ by: String) -> String {
+        by == "mac" ? "Mac" : by == "rufi_ai" ? "Rufi AI" : by.hasPrefix("app:") ? "iPhone" : by
+    }
+
+    /// An instant's local time: "21:02".
+    static func clock(_ iso: String, calendar: Calendar = .current) -> String {
+        guard let at = instant(iso) else { return iso }
+        return clock(calendar.dateComponents([.hour, .minute], from: at))
+    }
+
+    /// A dose logged, on Today: "Taken 08:12 · iPhone", "Skipped · Mac".
+    static func logged(_ logged: DoseLogged, calendar: Calendar = .current) -> String {
+        let what = logged.state == "skipped" ? "Skipped" : logged.takenAt.map { "Taken \(clock($0, calendar: calendar))" } ?? "Taken"
+        return "\(what) · \(loggedWhere(logged.by))"
+    }
+
+    /// One log in a medicine's doses: "08:00 taken 08:12 (iPhone, arrived 19:02)".
+    static func dose(_ log: Doses.Log, calendar: Calendar = .current) -> String {
+        let what = switch log.state {
+        case "taken": log.takenAt.map { "taken \(clock($0, calendar: calendar))" } ?? "taken"
+        case "skipped": "skipped"
+        case "cleared": "undone"
+        default: log.state
+        }
+        let place = log.by == "rufi_ai" ? "told Rufi AI" : loggedWhere(log.by)
+        var late = ""
+        if let logged = instant(log.loggedAt), let received = instant(log.receivedAt),
+           received.timeIntervalSince(logged) >= 5 * 60 {
+            late = ", arrived \(clock(log.receivedAt, calendar: calendar))"
+        }
+        return "\(log.doseAt.dropFirst(11)) \(what) (\(place)\(late))"
+    }
+
+    /// A day of doses: "Today", "Yesterday", "Wed 4 Nov", with its year when
+    /// it isn't this one. `day` and `today` are 'YYYY-MM-DD'.
+    static func doseDay(_ day: String, today: String) -> String {
+        let weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(identifier: "UTC")!
+        guard let at = try? Date(day + "T00:00:00Z", strategy: .iso8601),
+              let now = try? Date(today + "T00:00:00Z", strategy: .iso8601) else { return day }
+        if day == today { return "Today" }
+        if utc.date(byAdding: .day, value: -1, to: now) == at { return "Yesterday" }
+        let parts = utc.dateComponents([.year, .month, .day, .weekday], from: at)
+        let words = "\(weekdays[(parts.weekday ?? 1) - 1]) \(parts.day ?? 0) \(months[(parts.month ?? 1) - 1])"
+        return day.prefix(4) == today.prefix(4) ? words : "\(words) \(parts.year ?? 0)"
+    }
+
+    // MARK: Visits
+
+    /// Rufi's or a doctor's Markdown as lines: bold and italics kept, a
+    /// list's lines with their bullet. Until the chat brings a Markdown view.
+    static func markdown(_ text: String) -> AttributedString {
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { $0.hasPrefix("- ") ? "• " + $0.dropFirst(2) : String($0) }
+            .joined(separator: "\n")
+        return (try? AttributedString(markdown: lines, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+            ?? AttributedString(lines)
+    }
+
+    /// A visit's setting and date: "clinic · 5 Oct 2026".
+    static func visitWhen(_ row: RecordRow) -> String {
+        joined([row.setting, cells(row).date])
+    }
+
+    /// What a record is, by its kind: "Lab result", "Medicine".
+    static func noun(_ row: RecordRow) -> String {
+        if row.kind == "result" { return row.category == "measurement" ? "Measurement" : "Lab result" }
+        return [
+            "test": "Test", "medicine_use": "Medicine", "visit": "Visit", "condition": "Condition",
+            "allergy": "Allergy", "symptom": "Symptom", "care_event": "Care event", "none_known": "Statement",
+            "follow_up": "Follow-up", "profile": "Profile",
+        ][row.kind] ?? "Record"
+    }
+
+    private static func joined(_ parts: [String?]) -> String {
+        parts.compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     // MARK: Follow-ups

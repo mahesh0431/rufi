@@ -46,7 +46,15 @@
         "names": ["Creatine 5 g", "Metformin 500 mg"],
         "now": 2
       },
-      { "kind": "visit", "count": 0, "names": [] },
+      {
+        "kind": "visit",
+        "count": 1,
+        "names": [],
+        "latest": {
+          "label": "Dr A. Fictional · Lakeview Family Clinic",
+          "date": "2026-10-05"
+        }
+      },
       {
         "kind": "condition",
         "count": 3,

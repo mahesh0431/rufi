@@ -61,7 +61,13 @@ struct RouteTests {
         #expect(NativePage.of("/people/asha/follow-ups", person: "asha") == .followUps)
         #expect(NativePage.of("/people/asha/follow-ups?open=fu-1", person: "asha") == .row(kind: "follow_up", id: "fu-1"))
         // Until they are drawn here too.
-        #expect(NativePage.of("/people/asha/record/lab_result", person: "asha") == nil)
+        #expect(NativePage.of("/people/asha/record/lab_result", person: "asha") == .labResults)
+        #expect(NativePage.of("/people/asha/record/measurement?open=res-a9", person: "asha") == .row(kind: "result", id: "res-a9"))
+        // A reply's link to HbA1c, and to one of its values.
+        #expect(NativePage.of("/people/asha/tests/tst-hba1c", person: "asha") == .test("tst-hba1c"))
+        #expect(NativePage.of("/people/asha/tests/tst-hba1c?open=res-a1", person: "asha") == .row(kind: "result", id: "res-a1"))
+        #expect(NativePage.of("/people/asha/visits/vis-a1", person: "asha") == .visit("vis-a1"))
+        #expect(NativePage.of("/people/asha/record/visit?open=vis-a1", person: "asha") == .visit("vis-a1"))
         #expect(NativePage.of("/people/asha/documents/doc-1", person: "asha") == nil)
         #expect(NativePage.of("/people/asha/chat", person: "asha") == nil)
         // Someone else's page is never Asha's.

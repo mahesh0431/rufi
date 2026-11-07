@@ -156,7 +156,7 @@ final class AppModel {
     }
 
     private func shell(_ pairing: Pairing, _ key: String) -> Shell {
-        Shell(pairing: pairing, key: key, theme: theme, pending: pending,
+        Shell(pairing: pairing, key: key, theme: theme, pending: pending, outbox: outbox,
               seen: { [weak self] in self?.seen ?? false }) { [weak self] in
             Task { await self?.refresh() }
         } unpaired: { [weak self] in

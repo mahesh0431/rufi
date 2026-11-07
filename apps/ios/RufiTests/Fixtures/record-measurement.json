@@ -1,0 +1,81 @@
+{
+  "groups": [
+    {
+      "id": "day:2026-09-20",
+      "type": "day",
+      "date": "2026-09-20",
+      "rows": [
+        {
+          "kind": "result",
+          "id": "res-a9",
+          "test": "Blood pressure",
+          "value": "128/84",
+          "category": "measurement",
+          "unit": "mmHg",
+          "measured": { "date": "2026-09-20" },
+          "in_test": "tst-bp"
+        },
+        {
+          "kind": "result",
+          "id": "res-a10",
+          "test": "Weight",
+          "value": "61.5",
+          "category": "measurement",
+          "number": 61.5,
+          "unit": "kg",
+          "measured": { "date": "2026-09-20" },
+          "in_test": "tst-weight",
+          "test_number": 61.5
+        }
+      ]
+    },
+    {
+      "id": "day:2026-08",
+      "type": "day",
+      "date": "2026-08",
+      "rows": [
+        {
+          "kind": "result",
+          "id": "res-a11",
+          "test": "Weight",
+          "value": "62",
+          "category": "measurement",
+          "number": 62,
+          "unit": "kg",
+          "measured": { "date": "2026-08" },
+          "in_test": "tst-weight",
+          "test_number": 62
+        }
+      ]
+    }
+  ],
+  "next": null,
+  "trends": {
+    "res-a10": [
+      {
+        "kind": "result",
+        "id": "res-a11",
+        "test": "Weight",
+        "value": "62",
+        "category": "measurement",
+        "number": 62,
+        "unit": "kg",
+        "measured": { "date": "2026-08" },
+        "in_test": "tst-weight",
+        "test_number": 62
+      },
+      {
+        "kind": "result",
+        "id": "res-a10",
+        "test": "Weight",
+        "value": "61.5",
+        "category": "measurement",
+        "number": 61.5,
+        "unit": "kg",
+        "measured": { "date": "2026-09-20" },
+        "in_test": "tst-weight",
+        "test_number": 61.5
+      }
+    ]
+  }
+}

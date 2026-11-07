@@ -1,0 +1,23 @@
+{
+  "groups": [
+    {
+      "id": "visit:vis-a1",
+      "type": "row",
+      "date": "2026-10-05",
+      "rows": [
+        {
+          "kind": "visit",
+          "id": "vis-a1",
+          "setting": "clinic",
+          "date": { "date": "2026-10-05" },
+          "doctor": "Dr A. Fictional",
+          "place": "Lakeview Family Clinic",
+          "reason": "Diabetes review",
+          "as_written": "**Diabetes review**\n\n- HbA1c 6.8 %, above target\n- Flu vaccine given today\n- Continue Metformin 500 mg twice a day",
+          "cited": 1
+        }
+      ]
+    }
+  ],
+  "next": null
+}

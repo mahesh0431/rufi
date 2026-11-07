@@ -1,0 +1,192 @@
+{
+  "sections": [
+    {
+      "section": "Inflammation",
+      "tests": [
+        {
+          "test": {
+            "kind": "test",
+            "id": "tst-crp",
+            "name": "CRP",
+            "section": "Inflammation",
+            "unit": "mg/L"
+          },
+          "latest": {
+            "kind": "result",
+            "id": "res-a3",
+            "test": "CRP",
+            "value": "<5",
+            "category": "lab",
+            "comparator": "<",
+            "number": 5,
+            "unit": "mg/L",
+            "range": "<10",
+            "measured": { "date": "2026-08-12" },
+            "in_test": "tst-crp",
+            "test_number": 5
+          },
+          "count": 1
+        }
+      ]
+    },
+    {
+      "section": "Sugar",
+      "tests": [
+        {
+          "test": {
+            "kind": "test",
+            "id": "tst-glucose",
+            "name": "Glucose, fasting",
+            "section": "Sugar",
+            "unit": "mg/dL"
+          },
+          "latest": {
+            "kind": "result",
+            "id": "res-a2",
+            "test": "Glucose",
+            "value": "118",
+            "category": "lab",
+            "number": 118,
+            "unit": "mg/dL",
+            "range": "70 - 99",
+            "flag": "High",
+            "context": "Fasting",
+            "measured": { "date": "2026-08-12" },
+            "in_test": "tst-glucose",
+            "test_number": 118
+          },
+          "count": 1
+        },
+        {
+          "test": {
+            "kind": "test",
+            "id": "tst-hba1c",
+            "name": "HbA1c",
+            "section": "Sugar",
+            "unit": "%"
+          },
+          "latest": {
+            "kind": "result",
+            "id": "res-a1",
+            "test": "HbA1c",
+            "value": "6.8",
+            "category": "lab",
+            "number": 6.8,
+            "unit": "%",
+            "range": "4.0 - 5.6",
+            "flag": "High",
+            "measured": { "date": "2026-08-12" },
+            "in_test": "tst-hba1c",
+            "test_number": 6.8
+          },
+          "count": 1
+        }
+      ]
+    },
+    {
+      "section": "Thyroid",
+      "tests": [
+        {
+          "test": {
+            "kind": "test",
+            "id": "tst-ft4",
+            "name": "Free T4",
+            "section": "Thyroid",
+            "unit": "ng/dL"
+          },
+          "latest": {
+            "kind": "result",
+            "id": "res-a6",
+            "test": "Free T4",
+            "value": "1.1",
+            "category": "lab",
+            "number": 1.1,
+            "unit": "ng/dL",
+            "range": "0.8 - 1.8",
+            "context": "Direct",
+            "measured": { "date": "2026-09-01" },
+            "in_test": "tst-ft4",
+            "test_number": 1.1
+          },
+          "count": 1
+        },
+        {
+          "test": {
+            "kind": "test",
+            "id": "tst-tsh",
+            "name": "TSH",
+            "section": "Thyroid",
+            "unit": "mIU/L"
+          },
+          "latest": {
+            "kind": "result",
+            "id": "res-a5",
+            "test": "TSH",
+            "value": "4.6",
+            "category": "lab",
+            "number": 4.6,
+            "unit": "mIU/L",
+            "range": "0.4 - 4.0",
+            "flag": "High",
+            "measured": { "date": "2026-08-12" },
+            "replaces": "res-a4",
+            "in_test": "tst-tsh",
+            "test_number": 4.6
+          },
+          "count": 1
+        }
+      ]
+    },
+    {
+      "section": "Vitamins",
+      "tests": [
+        {
+          "test": {
+            "kind": "test",
+            "id": "tst-vitd",
+            "name": "Vitamin D",
+            "section": "Vitamins",
+            "unit": "ng/mL"
+          },
+          "latest": {
+            "kind": "result",
+            "id": "res-a7",
+            "test": "Vitamin D",
+            "value": "22",
+            "category": "lab",
+            "number": 22,
+            "unit": "ng/mL",
+            "range": "30 - 100",
+            "flag": "Low",
+            "measured": { "date": "2026-05" },
+            "in_test": "tst-vitd",
+            "test_number": 22
+          },
+          "count": 1
+        }
+      ]
+    },
+    {
+      "section": null,
+      "tests": [
+        {
+          "test": {
+            "kind": "test",
+            "id": "tst-blood-group",
+            "name": "Blood group"
+          },
+          "latest": {
+            "kind": "result",
+            "id": "res-a8",
+            "test": "Blood group",
+            "value": "B positive",
+            "category": "lab",
+            "in_test": "tst-blood-group"
+          },
+          "count": 1
+        }
+      ]
+    }
+  ],
+  "trends": {}
+}
