@@ -11,9 +11,7 @@
           "type": "immunisation",
           "name": "Flu vaccine",
           "status": "done",
-          "date": {
-            "date": "2026-10-05"
-          },
+          "date": { "date": "2026-10-05" },
           "provider": "Lakeview Family Clinic"
         }
       ]

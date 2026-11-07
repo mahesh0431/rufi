@@ -20,9 +20,10 @@ struct NativePageView: View {
             case .followUps: FollowUpsView(shell: shell)
             }
         }
+        // Inset grouped, as This iPhone's sheets: the sidebar's colour
+        // behind, the rows on the surface's.
         .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
-        .background(shell.theme.page)
+        .themed(shell.theme)
     }
 }
 
@@ -45,16 +46,10 @@ struct Reading<Answer: Decodable & Sendable, Content: View>: View {
         Group {
             if let shown = read ?? shell.kept[path] as? Kept {
                 content(shown.answer, shown.at)
-            } else if let problem {
-                ContentUnavailableView("Can't Show This", systemImage: "exclamationmark.triangle",
-                                       description: Text(problem))
-            } else if shell.away {
-                Resting()
             } else {
-                ProgressView()
+                Waiting(shell: shell, problem: problem)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task(id: shell.fresh) { await read() }
         .refreshable { await read() }
     }
@@ -79,6 +74,27 @@ extension Door.Problem {
         case .unreachable, .unpaired: nil
         case .codeExpired, .mismatch: "Update Rufi on your iPhone (or on your Mac) so they match."
         case let .refused(words): words
+        }
+    }
+}
+
+/// A page not read yet: why it can't be shown, the dog resting while Rufi
+/// can't be reached, or a spinner. Over an empty list, so pulling down
+/// reads again.
+struct Waiting: View {
+    let shell: Shell
+    let problem: String?
+
+    var body: some View {
+        List {}.overlay {
+            if let problem {
+                ContentUnavailableView("Can't Show This", systemImage: "exclamationmark.triangle",
+                                       description: Text(problem))
+            } else if shell.away {
+                Resting()
+            } else {
+                ProgressView()
+            }
         }
     }
 }
@@ -309,10 +325,13 @@ struct RecordListView: View {
             if let groups = shown?.groups {
                 let next = shown?.next
                 if groups.isEmpty {
-                    ContentUnavailableView {
-                        Text("Nothing here yet.")
-                    } actions: {
-                        AskRufiButton(shell: shell)
+                    // Over an empty list, so pulling down reads again.
+                    List {}.overlay {
+                        ContentUnavailableView {
+                            Text("Nothing here yet.")
+                        } actions: {
+                            AskRufiButton(shell: shell)
+                        }
                     }
                 } else {
                     List {
@@ -328,16 +347,10 @@ struct RecordListView: View {
                         .listRowBackground(shell.theme.surface)
                     }
                 }
-            } else if let problem {
-                ContentUnavailableView("Can't Show This", systemImage: "exclamationmark.triangle",
-                                       description: Text(problem))
-            } else if shell.away {
-                Resting()
             } else {
-                ProgressView()
+                Waiting(shell: shell, problem: problem)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task(id: shell.fresh) { await first() }
         .refreshable { await first() }
     }
@@ -377,6 +390,9 @@ struct RowLine: View {
     var body: some View {
         if row.problem != nil {
             Text("Can't show this row.").foregroundStyle(.secondary)
+        } else if !NativePage.kinds.contains(row.kind) {
+            // "No known allergies": a statement, with nothing more to open.
+            RowCells(cells: Words.cells(row))
         } else {
             Opens {
                 Task { await shell.go("/people/\(shell.pairing.person.id)/record/\(row.kind)?open=\(row.id)") }
@@ -509,9 +525,11 @@ struct AboutLine: View {
     @State private var failed = false
 
     private var path: String { "record/\(about.kind)/\(about.id)" }
+    /// Kept apart from the row's own page, which keeps its read with its time.
+    private var key: String { "about:" + path }
 
     var body: some View {
-        let detail = read ?? shell.kept[path] as? RecordDetail
+        let detail = read ?? shell.kept[key] as? RecordDetail
         Group {
             if let detail, detail.row.problem == nil, let page = Words.page(of: detail.row) {
                 let cells = Words.cells(detail.row)
@@ -535,7 +553,7 @@ struct AboutLine: View {
             do throws(Door.Problem) {
                 let answer: RecordDetail = try await shell.read(path)
                 read = answer
-                shell.kept[path] = answer
+                shell.kept[key] = answer
             } catch {
                 if error.shown != nil { failed = true }
             }
@@ -552,10 +570,12 @@ struct FollowUpsView: View {
     var body: some View {
         Reading(shell: shell, path: "follow-ups") { (read: FollowUps, at: Date) in
             if read.groups.isEmpty {
-                ContentUnavailableView {
-                    Text("Nothing to come back to yet. When a report or you mention a recheck, Rufi offers to add it here.")
-                } actions: {
-                    AskRufiButton(shell: shell)
+                List {}.overlay {
+                    ContentUnavailableView {
+                        Text("Nothing to come back to yet. When a report or you mention a recheck, Rufi offers to add it here.")
+                    } actions: {
+                        AskRufiButton(shell: shell)
+                    }
                 }
             } else {
                 List {

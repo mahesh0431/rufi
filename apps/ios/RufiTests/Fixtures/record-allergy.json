@@ -1,4 +1,34 @@
 {
-  "groups": [],
+  "groups": [
+    {
+      "id": "none_known:nk-a1",
+      "type": "row",
+      "date": "2026-10-10",
+      "rows": [
+        {
+          "kind": "none_known",
+          "id": "nk-a1",
+          "category": "allergies",
+          "asserted": "2026-10-10"
+        }
+      ]
+    },
+    {
+      "id": "allergy:all-a1",
+      "type": "row",
+      "date": "2019",
+      "rows": [
+        {
+          "kind": "allergy",
+          "id": "all-a1",
+          "substance": "Penicillin",
+          "reaction": "rash",
+          "status": "inactive",
+          "certainty": "confirmed",
+          "reacted": { "date": "2019" }
+        }
+      ]
+    }
+  ],
   "next": null
 }

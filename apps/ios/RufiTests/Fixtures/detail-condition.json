@@ -5,9 +5,7 @@
     "name": "Type 2 diabetes",
     "certainty": "diagnosed",
     "status": "ongoing",
-    "recognised": {
-      "date": "2024-03"
-    },
+    "recognised": { "date": "2024-03" },
     "details": "Diet and Metformin"
   },
   "removed": false,
@@ -34,11 +32,7 @@
       "at": "2026-10-03T11:30:00Z",
       "action": "change",
       "fields": [
-        {
-          "field": "status",
-          "before": "unknown",
-          "after": "ongoing"
-        }
+        { "field": "status", "before": "unknown", "after": "ongoing" }
       ],
       "fromMessage": false,
       "fromVisit": false

@@ -11,6 +11,13 @@ INSERT INTO conditions (id, person_id, name, certainty, status, recognised, deta
   -- A date that isn't one: the row can't be shown.
   ('cond-a3', 'asha', 'Thyroid trouble', 'suspected', 'ongoing', '13/2025', NULL);
 
+-- An allergy she had, and her saying she has none now.
+INSERT INTO allergies (id, person_id, substance, reaction, status, certainty, reacted) VALUES
+  ('all-a1', 'asha', 'Penicillin', 'rash', 'inactive', 'confirmed', '2019');
+
+INSERT INTO none_known (id, person_id, category, asserted) VALUES
+  ('nk-a1', 'asha', 'allergies', '2026-10-10');
+
 INSERT INTO symptoms (id, person_id, name, status, onset, severity, location, intermittent) VALUES
   ('sym-a1', 'asha', 'Headache', 'ongoing', '2026-10-28', 'mild', 'forehead', 1);
 

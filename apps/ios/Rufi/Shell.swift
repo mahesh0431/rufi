@@ -157,7 +157,9 @@ final class Shell {
     func read<Answer: Decodable>(_ path: String, query: [String: String] = [:]) async throws(Door.Problem) -> Answer {
         do {
             let answer: Answer = try await door.read(path, for: pairing.person.id, query: query)
-            if away { await reached() }
+            // Apart from the page's read: reaching Rufi reads the pages
+            // again, which ends the read that asked.
+            if away { Task { await reached() } }
             return answer
         } catch {
             // A read stopped because its page went isn't Rufi out of reach.
@@ -476,11 +478,8 @@ struct ShellView: View {
             // Another place: a stack of its own.
             .id(shell.navigator.root.id)
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if shell.native(shell.navigator.top) != nil {
-                    AskBar(name: shell.pairing.person.name, theme: shell.theme) {
-                        Task { await shell.choose(.chat) }
-                    }
-                } else if boxShown {
+                // A page drawn here has its own bar (`page`).
+                if shell.native(shell.navigator.top) == nil, boxShown {
                     ChatBoxView(box: shell.box, shell: shell)
                         .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: {
                             shell.screens.box(top: $0)
@@ -562,6 +561,14 @@ struct ShellView: View {
         ScreenView(shell: shell, screen: screen)
             .safeAreaInset(edge: .top, spacing: 0) {
                 ReachLine(reach: shell.reach) { Task { await shell.check() } }
+            }
+            // On the page itself, so its last row scrolls above the bar.
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if shell.native(screen) != nil {
+                    AskBar(name: shell.pairing.person.name, theme: shell.theme) {
+                        Task { await shell.choose(.chat) }
+                    }
+                }
             }
             .navigationTitle(shell.title(screen))
             .navigationBarTitleDisplayMode(.inline)

@@ -9,14 +9,9 @@
             "kind": "follow_up",
             "id": "fu-a1",
             "title": "Repeat HbA1c",
-            "due": {
-              "date": "2020-02"
-            },
+            "due": { "date": "2020-02" },
             "status": "open",
-            "about": {
-              "kind": "result",
-              "id": "res-a1"
-            }
+            "about": { "kind": "result", "id": "res-a1" }
           }
         }
       ],
@@ -51,11 +46,7 @@
         "names": ["Creatine 5 g", "Metformin 500 mg"],
         "now": 2
       },
-      {
-        "kind": "visit",
-        "count": 0,
-        "names": []
-      },
+      { "kind": "visit", "count": 0, "names": [] },
       {
         "kind": "condition",
         "count": 3,
@@ -64,27 +55,22 @@
       },
       {
         "kind": "allergy",
-        "count": 0,
+        "count": 1,
         "names": [],
-        "now": 0
+        "now": 0,
+        "noneKnown": "2026-10-10"
       },
       {
         "kind": "symptom",
         "count": 1,
         "names": [],
-        "latest": {
-          "label": "Headache",
-          "date": "2026-10-28"
-        }
+        "latest": { "label": "Headache", "date": "2026-10-28" }
       },
       {
         "kind": "care_event",
         "count": 1,
         "names": [],
-        "latest": {
-          "label": "Flu vaccine",
-          "date": "2026-10-05"
-        }
+        "latest": { "label": "Flu vaccine", "date": "2026-10-05" }
       }
     ],
     "recent": [

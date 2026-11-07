@@ -10,9 +10,7 @@
           "id": "sym-a1",
           "name": "Headache",
           "status": "ongoing",
-          "onset": {
-            "date": "2026-10-28"
-          },
+          "onset": { "date": "2026-10-28" },
           "severity": "mild",
           "location": "forehead",
           "intermittent": true

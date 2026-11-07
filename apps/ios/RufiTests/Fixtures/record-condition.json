@@ -11,9 +11,7 @@
           "name": "Type 2 diabetes",
           "certainty": "diagnosed",
           "status": "ongoing",
-          "recognised": {
-            "date": "2024-03"
-          },
+          "recognised": { "date": "2024-03" },
           "details": "Diet and Metformin"
         }
       ]
@@ -29,9 +27,7 @@
           "name": "Iron deficiency anaemia",
           "certainty": "diagnosed",
           "status": "resolved",
-          "recognised": {
-            "date": "2021"
-          }
+          "recognised": { "date": "2021" }
         }
       ]
     },

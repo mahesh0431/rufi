@@ -32,8 +32,9 @@ struct RecordTests {
             == ["Latest: Sunrise Labs · 1 Sep 2026 · 2 results", "1 with a lab note"])
         #expect(Words.tileLines(try #require(tiles["medicine_use"])) == ["2 taking now: Creatine 5 g, Metformin 500 mg"])
         #expect(Words.tileLines(try #require(tiles["condition"])) == ["2 ongoing: Thyroid trouble, Type 2 diabetes"])
-        // Visits and Allergies have nothing: they go on "Nothing yet".
-        #expect(overview.tiles.filter { !Words.hasTile($0) }.map(\.kind) == ["visit", "allergy"])
+        // "None known" is something: Allergies has its tile; Visits has nothing.
+        #expect(Words.tileLines(try #require(tiles["allergy"])) == ["None known (as of 10 Oct 2026)", "1 inactive"])
+        #expect(overview.tiles.filter { !Words.hasTile($0) }.map(\.kind) == ["visit"])
 
         let latest = try #require(overview.recent.first)
         #expect(Words.summary(latest.receipt) == "Changed condition Type 2 diabetes: status ongoing")
@@ -54,7 +55,11 @@ struct RecordTests {
                                                     status: "Ongoing", date: "since 28 Oct 2026"))
         let flu = try #require(read("record-care_event", as: RecordPage.self).groups.first?.rows.rows.first)
         #expect(Words.cells(flu).detail == "immunisation · Lakeview Family Clinic")
-        #expect(try read("record-allergy", as: RecordPage.self).groups.isEmpty)
+        let allergies = try read("record-allergy", as: RecordPage.self).groups.flatMap(\.rows.rows)
+        #expect(allergies.map { Words.cells($0) } == [
+            Words.Cells(title: "No known allergies", date: "as of 10 Oct 2026"),
+            Words.Cells(title: "Penicillin", detail: "rash", status: "Inactive", date: "2019"),
+        ])
     }
 
     @Test func aRowOpenedSaysWhereItCameFromAndEverySave() throws {
