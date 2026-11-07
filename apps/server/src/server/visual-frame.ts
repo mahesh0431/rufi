@@ -1,46 +1,31 @@
-// The page a reply's visual draws in (ADR 0034). A visual is the AI's HTML,
-// in a `rufi-visual` block of its reply; the screens show it in a frame of
-// this page, which holds nothing until the reply's screen sends it the HTML
-// and Rufi's theme. Its policy, in place of the screens' own, makes it an
-// opaque origin (no cookies, storage or reach into Rufi's page) that loads
-// and sends nothing: no connections, no outside script, style, picture,
-// font, frame or form. The screens' frame-src keeps the frame from moving
-// itself to another origin. The page's script writes the visual in with the
-// card script below first: it removes WebRTC, which no policy covers, and
+// The page a reply's visual draws in (ADR 0034). A visual is the AI's HTML
+// and CSS, in a `rufi-visual` block of its reply; the screens show it in a
+// frame of this page, which holds nothing until the reply's screen sends it
+// the HTML and Rufi's theme. Its policy, in place of the screens' own, makes
+// it an opaque origin (no cookies, storage or reach into Rufi's page) that
+// loads and sends nothing, and runs only this page's two scripts, by their
+// hashes: never one the AI wrote, so nothing in a visual can reach the
+// network by a way a policy doesn't cover, such as WebRTC. The screens'
+// frame-src keeps the frame from moving itself to another origin. The page's
+// script writes the visual in after the card script, which sets the theme and
 // tells the screen the visual's height and whether part of it didn't load.
 // The messages are the same for every screen that draws a visual (ADR 0034).
+import { createHash } from "node:crypto";
 import type { App } from "./http.ts";
 
 /** Where the page is, on either listener. */
 const VISUAL_FRAME_PATH = "/visual-frame.html";
 
-/** Its own policy: in place of the screens', not beside it. */
-const VISUAL_CSP = [
-  "sandbox allow-scripts",
-  "default-src 'none'",
-  "script-src 'unsafe-inline'",
-  "style-src 'unsafe-inline'",
-  "img-src data: blob:",
-  "font-src data:",
-  "connect-src 'none'",
-  "frame-src 'none'",
-  "child-src 'none'",
-  "worker-src 'none'",
-  "form-action 'none'",
-  "base-uri 'none'",
-  "frame-ancestors 'self'",
-].join("; ");
+/** Where the written document keeps the theme it starts with. */
+const THEME_ID = "rufi-theme";
 
 /**
- * The visual's own document runs this first, with the theme. Rufi's theme
- * as CSS variables, under its own names (tokens.css), and the base look:
- * no background, Rufi's text and font at the chat's size. Then the height,
- * each time it changes, and once, that something didn't load or failed.
+ * The visual's own document runs this first. Rufi's theme as CSS variables,
+ * under its own names (tokens.css), and the base look: no background,
+ * Rufi's text and font at the chat's size. Then the height, each time it
+ * changes, and once, that something was refused or didn't load.
  */
-const CARD = `(theme) => {
-  for (const name of ["RTCPeerConnection", "webkitRTCPeerConnection", "RTCDataChannel"]) {
-    try { delete window[name]; } catch {}
-  }
+const CARD = `(() => {
   const parent = window.parent;
   const style = document.createElement("style");
   document.head.append(style);
@@ -55,7 +40,7 @@ const CARD = `(theme) => {
     }
     style.textContent = css + "}" + BASE;
   };
-  paint(theme);
+  try { paint(JSON.parse(document.getElementById("${THEME_ID}").textContent)); } catch {}
   addEventListener("message", (event) => {
     if (event.source === parent && event.data && event.data.type === "rufi-visual-theme") paint(event.data.theme);
   });
@@ -78,7 +63,7 @@ const CARD = `(theme) => {
   // The root's size follows the body's; it is there from the start.
   new ResizeObserver(measure).observe(document.documentElement);
   addEventListener("load", measure);
-}`;
+})();`;
 
 /** JSON that can sit inside a script element: no "</script>" in it. */
 const inScript = (value: unknown) =>
@@ -86,8 +71,8 @@ const inScript = (value: unknown) =>
 
 /**
  * The page's own script: it takes the visual once, from the screen that
- * framed it, and writes it in with the card script first. The written
- * document keeps this page's policy.
+ * framed it, and writes it in: the theme as data, then the card script,
+ * then the visual. The written document keeps this page's policy.
  */
 const HOST = `(() => {
   const parent = window.parent;
@@ -99,7 +84,7 @@ const HOST = `(() => {
     removeEventListener("message", take);
     const theme = JSON.stringify(data.theme ?? null).replace(/</g, "\\\\u003c");
     document.open();
-    document.write('<!doctype html><html><head><meta charset="utf-8"><script>(' + card + ')(' + theme + ')</' + 'script></head><body>' + data.html + '</body></html>');
+    document.write('<!doctype html><html><head><meta charset="utf-8"><script type="application/json" id="${THEME_ID}">' + theme + '</' + 'script><script>' + card + '</' + 'script></head><body>' + data.html + '</body></html>');
     document.close();
   };
   addEventListener("message", take);
@@ -107,10 +92,31 @@ const HOST = `(() => {
 
 const PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Visual</title></head><body><script>${HOST}</script></body></html>`;
 
+const hash = (script: string) =>
+  `'sha256-${createHash("sha256").update(script).digest("base64")}'`;
+
+/**
+ * Its own policy, in place of the screens', not beside it: only the two
+ * scripts above, inline styles, and pictures and fonts in the visual itself.
+ * Connections, frames and workers fall back to none.
+ */
+const VISUAL_CSP = [
+  "sandbox allow-scripts",
+  "default-src 'none'",
+  `script-src ${hash(HOST)} ${hash(CARD)}`,
+  "style-src 'unsafe-inline'",
+  "img-src data:",
+  "font-src data:",
+  "form-action 'none'",
+  "base-uri 'none'",
+  "frame-ancestors 'self'",
+].join("; ");
+
 /** Serves the page a visual draws in, with its own policy. */
 export function visualFrameRoute(app: App): void {
   app.get(VISUAL_FRAME_PATH, (c) => {
     c.header("Content-Security-Policy", VISUAL_CSP);
+    // A link's DNS lookup is no request a policy sees.
     c.header("X-DNS-Prefetch-Control", "off");
     c.header("Cache-Control", "no-store");
     c.header("Content-Type", "text/html; charset=utf-8");

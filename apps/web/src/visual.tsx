@@ -1,7 +1,7 @@
 // A reply's visual: the AI's HTML, drawn in a frame of the core's visual
 // page (apps/server/src/server/visual-frame.ts, ADR 0034), which loads and
 // sends nothing and can't reach Rufi's page or session. The screen sends it
-// the HTML once the frame loads, and Rufi's theme then and on each change;
+// the HTML when the frame loads, and Rufi's theme then and on each change;
 // it reads back only the visual's height and that part of it didn't load,
 // from that frame alone. Until its height comes, and while its block is
 // written, a quiet box holds its place; a change of height above what you
@@ -18,6 +18,11 @@ import {
 const FRAME = "/visual-frame.html";
 /** The tallest a visual is drawn; a taller one scrolls inside. */
 const TALLEST = 800;
+/**
+ * The most loads a visual's frame gets it on: one that loads itself again
+ * and again (a refresh in its HTML) stops there, and says it didn't load.
+ */
+const MOST_LOADS = 20;
 /** The box that holds a visual's place until its height comes. */
 const WAITING = 160;
 /** Rufi's theme, by its own names (packages/brand/tokens.css). */
@@ -67,7 +72,7 @@ export function VisualWaiting() {
 export function Visual({ html }: { html: string }) {
   const box = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
-  const sent = useRef(false);
+  const loads = useRef(0);
   const [height, setHeight] = useState<number>();
   const [broken, setBroken] = useState(false);
   const keepPlace = use(KeepPlace);
@@ -95,7 +100,7 @@ export function Visual({ html }: { html: string }) {
     addEventListener("message", heard);
     // A new theme, colour or text size reaches a visual already drawn.
     const changes = new MutationObserver(() => {
-      if (!sent.current || !box.current) return;
+      if (loads.current === 0 || !box.current) return;
       frame.current?.contentWindow?.postMessage(
         { type: "rufi-visual-theme", theme: themeAt(box.current) },
         "*",
@@ -131,9 +136,15 @@ export function Visual({ html }: { html: string }) {
         className={`block w-full rounded-lg border-0 ${height === undefined ? "bg-side" : ""}`}
         style={{ height: shown }}
         onLoad={() => {
-          // Once: a frame that moved on gets nothing more.
-          if (sent.current || !box.current) return;
-          sent.current = true;
+          // On every load: a frame the browser loaded again (as when it
+          // moves in the page) is empty until it gets the visual again. A
+          // visual already written in takes no second one.
+          if (!box.current) return;
+          loads.current += 1;
+          if (loads.current > MOST_LOADS) {
+            setBroken(true);
+            return;
+          }
           frame.current?.contentWindow?.postMessage(
             { type: "rufi-visual", html, theme: themeAt(box.current) },
             "*",
