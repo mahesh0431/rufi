@@ -8,45 +8,38 @@ import SwiftUI
 /// Skipped or Undo. A log not on the Mac yet shows Pending.
 struct TodaySection: View {
     let shell: Shell
-    @State private var read: Today?
+    let today: Today
+    /// Reads Today again: a log was made.
+    let reread: () async -> Void
     /// Why the last log couldn't be kept, in a few words.
     @State private var problem: String?
 
     var body: some View {
-        let today = read ?? shell.kept["today"] as? Today
-        Group {
-            if let today, !today.doses.isEmpty || today.upcoming {
-                Section {
-                    if today.doses.isEmpty {
-                        Text("Nothing to take today.").foregroundStyle(.secondary)
-                    }
-                    ForEach(today.doses, id: \.self.key) { dose in
-                        DoseLine(shell: shell, dose: dose, day: today.day) { state in
-                            problem = await shell.log(state, medicine: dose.medicine, doseAt: "\(today.day)T\(dose.at)")
-                            await reread()
-                        }
-                    }
-                } header: {
-                    Text("Today · \(Words.day(of: today.day))")
-                } footer: {
-                    if let problem { Text(problem) }
+        if !today.doses.isEmpty || today.upcoming {
+            Section {
+                if today.doses.isEmpty {
+                    Text("Nothing to take today.").foregroundStyle(.secondary)
                 }
-                .listRowBackground(shell.theme.surface)
-            } else if today == nil {
-                // Its place held while it reads, so the read runs.
-                Color.clear.frame(height: 0).listRowBackground(Color.clear)
+                ForEach(today.doses, id: \.self.key) { dose in
+                    DoseLine(shell: shell, dose: dose, day: today.day) { state in
+                        problem = await shell.log(state, medicine: dose.medicine, doseAt: "\(today.day)T\(dose.at)")
+                        await reread()
+                    }
+                }
+            } header: {
+                Text("Today · \(Words.day(of: today.day))")
+            } footer: {
+                if let problem { Text(problem) }
             }
+            .listRowBackground(shell.theme.surface)
         }
-        .task(id: shell.fresh) { await reread() }
-        // A log the outbox sent: the Mac's answer shows.
-        .onChange(of: shell.outbox.logs.count) { Task { await reread() } }
     }
 
-    private func reread() async {
-        if let answer: Today = try? await shell.read("today") {
-            read = answer
-            shell.kept["today"] = answer
-        }
+    /// Reads Today for its page, kept for when the page opens again.
+    static func read(_ shell: Shell) async -> Today? {
+        guard let answer: Today = try? await shell.read("today") else { return nil }
+        shell.kept["today"] = answer
+        return answer
     }
 }
 
@@ -128,10 +121,7 @@ struct MedicineTiming: View {
             LabeledContent("Times", value: row.times?.joined(separator: ", ") ?? "Not set")
             LabeledContent("Days", value: row.days_words ?? row.days ?? (row.times != nil ? "Every day" : "Not set"))
             LabeledContent("Until", value: Words.until(row.until, now: now).map { String($0.dropFirst(6)) } ?? "No end set")
-            LabeledContent("Reminders") {
-                Label(row.remind == true ? "Reminders on" : "Reminders off",
-                      systemImage: row.remind == true ? "bell" : "bell.slash")
-            }
+            LabeledContent("Reminders", value: row.remind == true ? "On" : "Off")
         }
     }
 }
@@ -139,51 +129,42 @@ struct MedicineTiming: View {
 /// A medicine's doses in the last 14 days, on the Mac's days: each day's
 /// logs as they were logged. A dose with no log has nothing.
 struct MedicineDoses: View {
-    let shell: Shell
-    let medicine: RecordRow
-    @State private var read: Read?
+    let doses: Read
 
+    /// The Mac's day, and the medicine's logs in the 14 days to it.
     struct Read: Sendable {
         let day: String
         let doses: Doses
     }
 
-    private var key: String { "doses:\(medicine.id)" }
-
     var body: some View {
-        let shown = read ?? shell.kept[key] as? Read
-        Group {
-            if let shown {
-                if medicine.times != nil || !shown.doses.doses.isEmpty {
-                    Section("Doses · last 14 days") {
-                        let days = Dictionary(grouping: shown.doses.doses) { String($0.doseAt.prefix(10)) }
-                        if days.isEmpty {
-                            Text("No doses logged in the last 14 days.").foregroundStyle(.secondary)
-                        }
-                        ForEach(days.keys.sorted(by: >), id: \.self) { day in
-                            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                                Text(Words.doseDay(day, today: shown.day)).foregroundStyle(.secondary)
-                                    .frame(width: 96, alignment: .leading)
-                                Text((days[day] ?? []).map { Words.dose($0) }.joined(separator: " · "))
-                            }
-                            .font(.subheadline)
-                        }
-                    }
+        Section("Doses · last 14 days") {
+            let days = Dictionary(grouping: doses.doses.doses) { String($0.doseAt.prefix(10)) }
+            if days.isEmpty {
+                Text("No doses logged in the last 14 days.").foregroundStyle(.secondary)
+            }
+            ForEach(days.keys.sorted(by: >), id: \.self) { day in
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text(Words.doseDay(day, today: doses.day)).foregroundStyle(.secondary)
+                        .frame(width: 96, alignment: .leading)
+                    Text((days[day] ?? []).map { Words.dose($0) }.joined(separator: " · "))
                 }
-            } else {
-                // Its place held while it reads, so the read runs.
-                Color.clear.frame(height: 0).listRowBackground(Color.clear)
+                .font(.subheadline)
             }
         }
-        .task(id: shell.fresh) {
-            guard let today: Today = (try? await shell.read("today")) ?? shell.kept["today"] as? Today,
-                  let from = Words.days(before: today.day, 13) else { return }
-            if let doses: Doses = try? await shell.read(
-                "doses", query: ["from": from, "to": today.day, "medicine": medicine.id]) {
-                let answer = Read(day: today.day, doses: doses)
-                read = answer
-                shell.kept[key] = answer
-            }
+    }
+
+    /// Reads a medicine's doses on the Mac's last 14 days, kept for when it opens again.
+    static func read(_ shell: Shell, medicine: String) async -> Read? {
+        let key = "doses:\(medicine)"
+        guard let today: Today = (try? await shell.read("today")) ?? shell.kept["today"] as? Today,
+              let from = Words.days(before: today.day, 13),
+              let doses: Doses = try? await shell.read(
+                "doses", query: ["from": from, "to": today.day, "medicine": medicine]) else {
+            return shell.kept[key] as? Read
         }
+        let answer = Read(day: today.day, doses: doses)
+        shell.kept[key] = answer
+        return answer
     }
 }

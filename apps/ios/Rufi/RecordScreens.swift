@@ -340,6 +340,8 @@ struct RecordListView: View {
     @State private var read: RecordPage?
     @State private var problem: String?
     @State private var reading = false
+    /// On Medicines: today's doses.
+    @State private var today: Today?
 
     private var path: String { "record/\(kind)" }
     /// Every row read so far, and where to read on.
@@ -360,7 +362,9 @@ struct RecordListView: View {
                     }
                 } else {
                     List {
-                        if kind == "medicine_use" { TodaySection(shell: shell) }
+                        if kind == "medicine_use", let today = today ?? shell.kept["today"] as? Today {
+                            TodaySection(shell: shell, today: today) { self.today = await TodaySection.read(shell) }
+                        }
                         if kind == "measurement" {
                             // By the day they were taken, newest first.
                             ForEach(groups) { group in
@@ -391,10 +395,17 @@ struct RecordListView: View {
         }
         .task(id: shell.fresh) { await first() }
         .refreshable { await first() }
+        // A dose log the outbox sent, or still holds: Today says so.
+        .onChange(of: shell.outbox.logs.count) { Task { await readToday() } }
+    }
+
+    private func readToday() async {
+        if kind == "medicine_use" { today = await TodaySection.read(shell) }
     }
 
     /// The first page again: what is newest now.
     private func first() async {
+        await readToday()
         do {
             let page: RecordPage = try await shell.read(path)
             keep(page)
@@ -473,6 +484,8 @@ private struct RowDetailList: View {
     let shell: Shell
     let detail: RecordDetail
     let now: Date
+    /// A medicine's doses.
+    @State private var doses: MedicineDoses.Read?
 
     private var person: String { shell.pairing.person.id }
     private var surface: Color { shell.theme.surface }
@@ -498,7 +511,10 @@ private struct RowDetailList: View {
             .listRowBackground(surface)
             if row.kind == "medicine_use", row.problem == nil {
                 MedicineTiming(row: row, now: now).listRowBackground(surface)
-                MedicineDoses(shell: shell, medicine: row).listRowBackground(surface)
+                if let doses = doses ?? shell.kept["doses:\(row.id)"] as? MedicineDoses.Read,
+                   row.times != nil || !doses.doses.doses.isEmpty {
+                    MedicineDoses(doses: doses).listRowBackground(surface)
+                }
             }
             if row.kind == "result", let test = row.in_test {
                 Section {
@@ -509,6 +525,9 @@ private struct RowDetailList: View {
                 .listRowBackground(surface)
             }
             DetailSections(shell: shell, detail: detail)
+        }
+        .task(id: shell.fresh) {
+            if detail.row.kind == "medicine_use" { doses = await MedicineDoses.read(shell, medicine: detail.row.id) }
         }
     }
 
