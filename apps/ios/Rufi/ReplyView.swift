@@ -13,36 +13,37 @@ struct ReplyView: View {
 
     var body: some View {
         let visuals = Visuals.scan(entry.text)
-        RufiMarkdown(text: entry.text)
-            .markdownBlockStyle(\.codeBlock) { configuration in
-                if Visuals.isVisual(configuration.language) {
-                    let html = Visuals.trimmed(configuration.content)
-                    let place = visuals.firstIndex { $0.html == html }
-                    if streaming, place.map({ !visuals[$0].whole }) ?? true {
-                        RoundedRectangle(cornerRadius: 8).fill(.quaternary)
-                            .frame(height: VisualCard.waiting)
-                            .padding(.bottom, 8)
-                    } else {
-                        VisualCard(html: html, key: "\(entry.id):\(place ?? 0)", chat: chat, origin: origin)
-                    }
+        RufiMarkdown(text: entry.text) { configuration in
+            if Visuals.isVisual(configuration.language) {
+                let html = Visuals.trimmed(configuration.content)
+                let place = visuals.firstIndex { $0.html == html }
+                if streaming, place.map({ !visuals[$0].whole }) ?? true {
+                    RoundedRectangle(cornerRadius: 8).fill(.quaternary)
+                        .frame(height: VisualCard.waiting)
+                        .padding(.bottom, 8)
                 } else {
-                    CodeBlock(configuration: configuration)
+                    VisualCard(html: html, key: "\(entry.id):\(place ?? 0)", chat: chat, origin: origin)
                 }
+            } else {
+                CodeBlock(configuration: configuration)
             }
+        }
     }
 }
 
 /// Markdown as the chat draws it: the Mac's sizes, no pictures from the web,
 /// links as the chat's `openURL` takes them.
-struct RufiMarkdown: View {
+struct RufiMarkdown<Code: View>: View {
     let text: String
     var muted = false
+    /// How a code block draws: a reply's visual draws as a card.
+    @ViewBuilder var code: (CodeBlockConfiguration) -> Code
     @Environment(Rufi.Theme.self) private var theme
     @ScaledMetric(relativeTo: .body) private var size: CGFloat = 17
 
     var body: some View {
         Markdown(text)
-            .markdownTheme(.rufi(size: muted ? size * 0.88 : size, theme: theme))
+            .markdownTheme(MarkdownUI.Theme.rufi(size: muted ? size * 0.88 : size, theme: theme).codeBlock(body: code))
             .markdownImageProvider(NoImages())
             .markdownInlineImageProvider(NoImages())
             .foregroundStyle(muted ? .secondary : .primary)
@@ -50,8 +51,14 @@ struct RufiMarkdown: View {
     }
 }
 
+extension RufiMarkdown where Code == CodeBlock {
+    init(text: String, muted: Bool = false) {
+        self.init(text: text, muted: muted) { CodeBlock(configuration: $0) }
+    }
+}
+
 /// A code block: its text in a box that scrolls sideways.
-private struct CodeBlock: View {
+struct CodeBlock: View {
     let configuration: CodeBlockConfiguration
     @Environment(Rufi.Theme.self) private var theme
 
