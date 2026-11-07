@@ -349,6 +349,7 @@ private struct PageImage: View {
         }
         .frame(maxWidth: .infinity)
         .task(id: key) {
+            problem = nil
             guard shell.kept[key] == nil else { return }
             do throws(Door.Problem) {
                 let data = try await shell.page(of: document, at: position)
