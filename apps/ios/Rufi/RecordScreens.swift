@@ -325,11 +325,14 @@ private struct RecentLine: View {
         .accessibilityHint(open ? "Hides what was saved" : "Shows what was saved")
     }
 
-    /// The receipt as Rufi wrote it, its Markdown as a line each.
+    /// The receipt as Rufi wrote it, its Markdown as a line each, a list's
+    /// lines with their bullet.
     private var receipt: AttributedString {
-        (try? AttributedString(markdown: change.receipt,
-                               options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-            ?? AttributedString(change.receipt)
+        let text = change.receipt.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { $0.hasPrefix("- ") ? "• " + $0.dropFirst(2) : String($0) }
+            .joined(separator: "\n")
+        return (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+            ?? AttributedString(text)
     }
 }
 
