@@ -462,17 +462,20 @@ final class ChatModel {
     }
 
     /// Keeps the box as the draft, after the saves before it; Retry too.
+    /// A chat whose pairing ended never saves: not even one waiting its turn.
     func save(keepingNotice: Bool = false) {
+        guard !ended else { return }
         pause?.cancel()
         let before = saves
         saves = Task {
             await before?.value
+            guard !ended else { return }
             await keep(keepingNotice: keepingNotice)
         }
     }
 
     private func keep(keepingNotice: Bool) async {
-        guard loaded, text.count <= Self.maxText, chips.count <= Self.maxChips else { return }
+        guard loaded, !ended, text.count <= Self.maxText, chips.count <= Self.maxChips else { return }
         let text = text
         let refs = chips.map(\.ref)
         // The refused messages whose words this save holds: only these leave the outbox when it is kept.
@@ -480,6 +483,7 @@ final class ChatModel {
         if !failed, let kept, kept.text == text, kept.refs.map(\.ref) == refs, restoring.isEmpty { return }
         do {
             let draft = try await door.save(draft: text, refs: refs, for: person)
+            guard !ended else { return }
             kept = draft
             // The Mac's names for the chips still in the box.
             let named = Dictionary(draft.refs.map { ($0.ref.key, $0) }, uniquingKeysWith: { $1 })

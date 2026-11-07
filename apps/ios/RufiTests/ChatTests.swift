@@ -169,12 +169,36 @@ struct ChatTests {
         try pending.add("Fictional symptom message")
         await chat.deliver()
         #expect(chat.text == "Earlier draft\n\nFictional symptom message")
-        // The earlier save comes back; the one with the message can't reach the Mac.
-        ChatDoor.savesAway = true
+        // The earlier save is kept, with only its own words; the one with the message can't reach the Mac.
+        ChatDoor.awayFor = "Fictional symptom message"
         held.signal()
         try await Self.until { chat.failed }
+        #expect(ChatDoor.saves == ["Earlier draft"])
         #expect(Pending(file: file).messages.map(\.text) == ["Fictional symptom message"])
         chat.end()
+    }
+
+    /// A chat whose pairing ended saves nothing more: not a save waiting
+    /// behind one on its way, whose words would replace the new pairing's draft.
+    @Test func anEndedChatNeverSavesAgain() async throws {
+        let chat = ChatModel(door: Door(origin: URL(string: "https://chat.test")!, key: "a-key"), person: "asha",
+                             pending: Pending(file: PendingTests.file()))
+        chat.open()
+        try await Self.until { chat.loaded }
+        let held = DispatchSemaphore(value: 0)
+        ChatDoor.holds["PUT /api/people/asha/chat/draft"] = held
+        chat.typed("First old draft")
+        chat.save()
+        try await Self.until { ChatDoor.holds.isEmpty }
+        chat.typed("Second old draft")
+        chat.save()
+        chat.typed("Old pairing's unsent words")
+        chat.save()
+        chat.end()
+        // The save on its way comes back; nothing after it goes.
+        held.signal()
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(ChatDoor.saves == ["First old draft"])
     }
 
     /// The box's first read, asked again as Rufi goes to the background and
@@ -232,10 +256,14 @@ enum ChatDoor {
     nonisolated(unsafe) static var refusing = false
     /// Draft saves can't reach the Mac.
     nonisolated(unsafe) static var savesAway = false
+    /// A save whose words have this can't reach the Mac.
+    nonisolated(unsafe) static var awayFor: String?
+    /// The words of each save that reached the Mac, in order.
+    nonisolated(unsafe) static var saves: [String] = []
 
     static func reset() {
-        (away, sent, draft, holds, draftReads, refusing, savesAway) =
-            (false, [], #"{"text":"","refs":[]}"#, [:], 0, false, false)
+        (away, sent, draft, holds, draftReads, refusing, savesAway, awayFor, saves) =
+            (false, [], #"{"text":"","refs":[]}"#, [:], 0, false, false, nil, [])
     }
 
     /// The hold for this request, if the test holds it.
@@ -252,10 +280,11 @@ enum ChatDoor {
         case ("GET", "/api/people/asha/chat/draft"):
             return (200, draft)
         case ("PUT", "/api/people/asha/chat/draft"):
-            if savesAway { return (502, "") }
             // Kept as it came: its words come back.
             struct Saved: Decodable { let text: String }
             let text = (try? JSONDecoder().decode(Saved.self, from: body(request)))?.text ?? ""
+            if savesAway || awayFor.map(text.contains) == true { return (502, "") }
+            saves.append(text)
             let answer = try? JSONSerialization.data(withJSONObject: ["text": text, "refs": []])
             return (200, answer.map { String(decoding: $0, as: UTF8.self) } ?? "")
         case ("POST", "/api/people/asha/chat/messages"):
