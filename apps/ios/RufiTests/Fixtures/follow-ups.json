@@ -1,0 +1,64 @@
+{
+  "groups": [
+    {
+      "group": "overdue",
+      "rows": [
+        {
+          "kind": "follow_up",
+          "id": "fu-a1",
+          "title": "Repeat HbA1c",
+          "due": { "date": "2020-02" },
+          "status": "open",
+          "about": { "kind": "result", "id": "res-a1" }
+        }
+      ]
+    },
+    {
+      "group": "later",
+      "rows": [
+        {
+          "kind": "follow_up",
+          "id": "fu-a3",
+          "title": "Dental cleaning",
+          "due": { "date": "2099-03" },
+          "status": "open"
+        },
+        {
+          "kind": "follow_up",
+          "id": "fu-a5",
+          "title": "Recheck TSH",
+          "due": { "date": "2099-06" },
+          "status": "open",
+          "about": { "kind": "result", "id": "res-a4" }
+        }
+      ]
+    },
+    {
+      "group": "next_visit",
+      "rows": [
+        {
+          "kind": "follow_up",
+          "id": "fu-a2",
+          "title": "Ask about the headaches",
+          "due": "next_visit",
+          "status": "open",
+          "about": { "kind": "symptom", "id": "sym-a1" }
+        }
+      ]
+    },
+    {
+      "group": "done",
+      "rows": [
+        {
+          "kind": "follow_up",
+          "id": "fu-a4",
+          "title": "Vitamin D recheck",
+          "due": { "date": "2026-10-01" },
+          "status": "done",
+          "outcome": "Done at Sunrise Labs",
+          "about": { "kind": "result", "id": "res-a7" }
+        }
+      ]
+    }
+  ]
+}

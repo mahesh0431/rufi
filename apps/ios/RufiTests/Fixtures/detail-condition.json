@@ -1,0 +1,41 @@
+{
+  "row": {
+    "kind": "condition",
+    "id": "cond-a1",
+    "name": "Type 2 diabetes",
+    "certainty": "diagnosed",
+    "status": "ongoing",
+    "recognised": { "date": "2024-03" },
+    "details": "Diet and Metformin"
+  },
+  "removed": false,
+  "sources": [
+    {
+      "type": "document",
+      "document": "doc-asha-aug",
+      "page": 1,
+      "file": "Sunrise Labs August.pdf",
+      "deleted": false
+    }
+  ],
+  "history": [
+    {
+      "save": "op-a1",
+      "at": "2026-10-02T10:00:00Z",
+      "action": "add",
+      "fields": [],
+      "fromMessage": false,
+      "fromVisit": false
+    },
+    {
+      "save": "op-a2",
+      "at": "2026-10-03T11:30:00Z",
+      "action": "change",
+      "fields": [
+        { "field": "status", "before": "unknown", "after": "ongoing" }
+      ],
+      "fromMessage": false,
+      "fromVisit": false
+    }
+  ]
+}
