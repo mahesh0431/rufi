@@ -58,6 +58,8 @@ final class Shell {
     private var reopening = false
     /// A place to show once the first page has drawn: a notice tapped as Rufi opened.
     private var wanted: Place?
+    /// Goes up when the pages drawn here should read again: Rufi is back.
+    private(set) var fresh = 0
 
     /// The document camera is up.
     var scanning = false
@@ -132,6 +134,33 @@ final class Shell {
 
     func still(_ screen: Screen) -> UIImage? {
         stills[screen.id]
+    }
+
+    /// The page `screen` shows when the iPhone draws it.
+    func native(_ screen: Screen) -> NativePage? {
+        navigator.page(screen).flatMap { NativePage.of($0.path, person: pairing.person.id) }
+    }
+
+    /// A page drawn here named itself: the title shows it.
+    func titled(_ screen: Screen, _ title: String) {
+        guard let page = navigator.page(screen), page.title != title else { return }
+        navigator.drawn(screen.id, page.path, title)
+    }
+
+    /// Reads `path` under the person's routes for a page drawn here. Out of
+    /// reach, the line shows and Rufi asks again; reached again, the pages
+    /// read again.
+    func read<Answer: Decodable>(_ path: String, query: [String: String] = [:]) async throws(Door.Problem) -> Answer {
+        do {
+            let answer: Answer = try await door.read(path, for: pairing.person.id, query: query)
+            if away { await reached() }
+            return answer
+        } catch {
+            // A read stopped because its page went isn't Rufi out of reach.
+            if error == .unreachable, !Task.isCancelled { lost() }
+            if error == .unpaired { unpaired() }
+            throw error
+        }
     }
 
     /// Whether the page on top is Medicines' own, which has the bell, a row
@@ -222,6 +251,7 @@ final class Shell {
     private func reached() async {
         let page = live
         connected()
+        fresh += 1
         if page {
             screens.reconnect()
             await sendPending()
@@ -257,6 +287,7 @@ final class Shell {
     /// The box the place on top has: the page's, once one drew; until then,
     /// the place's own (Help has none).
     var boxKind: ChatBox.Kind? {
+        if native(navigator.top) != nil { return nil }
         if live { return box.kind }
         switch navigator.place {
         case .help: return nil
@@ -369,14 +400,14 @@ final class Shell {
     /// over it (`chat`), which opens again on Back.
     func go(_ path: String, chat: Bool = false) async {
         await keepStill()
-        await hold(navigator.go(path, chat: chat))
+        await show(navigator.go(path, chat: chat))
     }
 
     /// A place chosen in the sidebar: the sidebar closes on its page.
     func choose(_ place: Place) async {
         sidebar = false
         await keepStill()
-        await hold(navigator.choose(place))
+        await show(navigator.choose(place))
     }
 
     /// Shows `place` at its page: a notice was tapped. When Rufi is still
@@ -390,7 +421,13 @@ final class Shell {
     func popped(to stack: [Screen]) {
         navigator.popped(to: stack)
         let top = navigator.top
-        if top.id != holder { Task { await hold(top) } }
+        if top.id != holder, native(top) == nil { Task { await hold(top) } }
+    }
+
+    /// A screen to show: a page drawn here needs nothing more; any other
+    /// takes the web view.
+    private func show(_ screen: Screen) async {
+        if native(screen) == nil { await hold(screen) }
     }
 
     private func keepStill() async {
@@ -435,7 +472,11 @@ struct ShellView: View {
             // Another place: a stack of its own.
             .id(shell.navigator.root.id)
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if boxShown {
+                if shell.native(shell.navigator.top) != nil {
+                    AskBar(name: shell.pairing.person.name, theme: shell.theme) {
+                        Task { await shell.choose(.chat) }
+                    }
+                } else if boxShown {
                     ChatBoxView(box: shell.box, shell: shell)
                         .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: {
                             shell.screens.box(top: $0)
@@ -542,6 +583,14 @@ struct ScreenView: View {
     let screen: Screen
 
     var body: some View {
+        if let page = shell.native(screen) {
+            NativePageView(shell: shell, screen: screen, page: page)
+        } else {
+            web
+        }
+    }
+
+    private var web: some View {
         ZStack {
             shell.theme.page.ignoresSafeArea(.container)
             switch shell.state {

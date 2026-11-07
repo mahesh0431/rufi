@@ -98,6 +98,14 @@ nonisolated struct Door: Sendable {
         return answer.overview
     }
 
+    /// Reads `path` under the person's routes, as the Mac's pages read it:
+    /// "overview", "record/condition", "follow-ups".
+    func read<Answer: Decodable>(_ path: String, for person: String, query: [String: String] = [:])
+        async throws(Problem) -> Answer {
+        try await Self.call(origin: origin, key: key, method: "GET", path: "\(Self.people)/\(person)/\(path)",
+                            query: query, body: nil)
+    }
+
     /// The person's reminder setting: what a notice shows, where it rings.
     struct Setting: Codable, Equatable, Sendable {
         var show: ReminderPlan.Show

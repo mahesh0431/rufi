@@ -1,0 +1,104 @@
+{
+  "overview": {
+    "person": "Asha Fictional",
+    "needsYou": {
+      "followUps": [
+        {
+          "state": "overdue",
+          "followUp": {
+            "kind": "follow_up",
+            "id": "fu-a1",
+            "title": "Repeat HbA1c",
+            "due": {
+              "date": "2020-02"
+            },
+            "status": "open",
+            "about": {
+              "kind": "result",
+              "id": "res-a1"
+            }
+          }
+        }
+      ],
+      "documents": []
+    },
+    "tiles": [
+      {
+        "kind": "lab_result",
+        "count": 7,
+        "names": [],
+        "latest": {
+          "label": "Sunrise Labs",
+          "date": "2026-09-01",
+          "results": 2,
+          "flagged": 1
+        }
+      },
+      {
+        "kind": "measurement",
+        "count": 3,
+        "names": ["Blood pressure", "Weight"],
+        "latest": {
+          "label": "Blood pressure, Weight",
+          "date": "2026-09-20",
+          "results": 2,
+          "flagged": 0
+        }
+      },
+      {
+        "kind": "medicine_use",
+        "count": 2,
+        "names": ["Creatine 5 g", "Metformin 500 mg"],
+        "now": 2
+      },
+      {
+        "kind": "visit",
+        "count": 0,
+        "names": []
+      },
+      {
+        "kind": "condition",
+        "count": 3,
+        "names": ["Thyroid trouble", "Type 2 diabetes"],
+        "now": 2
+      },
+      {
+        "kind": "allergy",
+        "count": 0,
+        "names": [],
+        "now": 0
+      },
+      {
+        "kind": "symptom",
+        "count": 1,
+        "names": [],
+        "latest": {
+          "label": "Headache",
+          "date": "2026-10-28"
+        }
+      },
+      {
+        "kind": "care_event",
+        "count": 1,
+        "names": [],
+        "latest": {
+          "label": "Flu vaccine",
+          "date": "2026-10-05"
+        }
+      }
+    ],
+    "recent": [
+      {
+        "id": "op-a2",
+        "at": "2026-10-03T11:30:00Z",
+        "receipt": "**Saved**\n\n- Changed condition Type 2 diabetes: status ongoing"
+      },
+      {
+        "id": "op-a1",
+        "at": "2026-10-02T10:00:00Z",
+        "receipt": "**Saved**\n\n- Added condition Type 2 diabetes"
+      }
+    ],
+    "openFollowUps": 3
+  }
+}
