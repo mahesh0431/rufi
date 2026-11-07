@@ -68,7 +68,8 @@ struct RouteTests {
         #expect(NativePage.of("/people/asha/tests/tst-hba1c?open=res-a1", person: "asha") == .row(kind: "result", id: "res-a1"))
         #expect(NativePage.of("/people/asha/visits/vis-a1", person: "asha") == .visit("vis-a1"))
         #expect(NativePage.of("/people/asha/record/visit?open=vis-a1", person: "asha") == .visit("vis-a1"))
-        #expect(NativePage.of("/people/asha/documents/doc-1", person: "asha") == nil)
+        #expect(NativePage.of("/people/asha/documents", person: "asha") == .documents)
+        #expect(NativePage.of("/people/asha/documents/doc-1", person: "asha") == .document("doc-1"))
         #expect(NativePage.of("/people/asha/chat", person: "asha") == nil)
         // Someone else's page is never Asha's.
         #expect(NativePage.of("/people/ravi/record/condition", person: "asha") == nil)
@@ -80,7 +81,7 @@ struct RouteTests {
         let row = navigator.go("/people/asha/record/condition?open=cond-a1")
         #expect(navigator.current == .conditions)
         navigator.drawn(row.id, "/people/asha/record/condition?open=cond-a1", "Type 2 diabetes")
-        // Its source, a document still on the Mac's screens.
+        // Its source, a document.
         let document = navigator.go("/people/asha/documents/doc-asha-aug")
         #expect(navigator.stack == [row, document])
         navigator.popped(to: [row])
