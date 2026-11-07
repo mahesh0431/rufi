@@ -69,6 +69,8 @@ import { boxFor } from "./boxes.ts";
 import { ChipView } from "./chips.tsx";
 import { fileIn, NativePicture, Picture } from "./files.tsx";
 import { OpenUIReply, picturesShownBy } from "./openui/reply.tsx";
+import { rehypeVisuals, visualHtml } from "./visual-blocks.ts";
+import { KeepPlace, Visual, VisualWaiting } from "./visual.tsx";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
 import {
   openAgent,
@@ -194,8 +196,14 @@ function RufiLink({ path, children }: { path: string; children: ReactNode }) {
   );
 }
 
-/** A reply's parts: its links and the files it names. */
+/** A reply's parts: its links, the files it names and its visuals. */
 const REPLY: Components = {
+  pre: ({ node, children, ...rest }) => {
+    const visual = node?.properties["dataVisual"];
+    if (visual === "wait") return <VisualWaiting />;
+    if (visual === "draw" && node) return <Visual html={visualHtml(node)} />;
+    return <pre {...rest}>{children}</pre>;
+  },
   a: ({ href, children, node, ...rest }) => {
     const group = href === undefined ? undefined : settingsGroupOf(href);
     if (group !== undefined) {
@@ -254,6 +262,13 @@ function picturesIn(text: string): string[] {
   return [...paths];
 }
 
+const WRITTEN: Options["rehypePlugins"] = [
+  [rehypeVisuals, { streaming: false }],
+];
+const WHILE_WRITTEN: Options["rehypePlugins"] = [
+  [rehypeVisuals, { streaming: true }],
+];
+
 const readableReply = (text: string, streaming: boolean) =>
   streaming ? remend(text, { linkMode: "text-only" }) : text;
 
@@ -265,16 +280,20 @@ export function Marked({
   text,
   links = true,
   reply,
+  streaming = false,
 }: {
   text: string;
   links?: boolean;
-  /** A reply: it shows the files it names. */
+  /** A reply: it shows the files it names, and draws its visuals. */
   reply?: boolean;
+  /** A reply still being written: a visual draws once it is whole. */
+  streaming?: boolean;
 }) {
   if (reply) {
     return (
       <Markdown
         remarkPlugins={REMARK}
+        rehypePlugins={streaming ? WHILE_WRITTEN : WRITTEN}
         components={REPLY}
         urlTransform={keepFiles}
         skipHtml
@@ -293,6 +312,13 @@ export function Marked({
     >
       {text}
     </Markdown>
+  );
+}
+
+/** A reply as one Markdown document, its visuals in place (visual-blocks.ts). */
+function ReplyText({ text, streaming }: { text: string; streaming: boolean }) {
+  return (
+    <Marked text={readableReply(text, streaming)} reply streaming={streaming} />
   );
 }
 
@@ -339,7 +365,7 @@ function Reply({
         {/* A reply with no OpenUI in it. While it streams, half-written
             Markdown is closed so it reads right; a half-written link shows
             as its text. */}
-        <Marked text={readableReply(text, streaming)} reply />
+        <ReplyText text={text} streaming={streaming} />
       </OpenUIReply>
     </div>
   );
@@ -466,6 +492,19 @@ export function TranscriptView({
     };
   }, [before, older, onOlder]);
 
+  // A visual that starts above what you read and changes height moves the
+  // view with it, so what you read stays still; at the end, the chat follows
+  // anyway.
+  const keepPlace = (node: Element, change: number) => {
+    const root = scroller.current;
+    if (!root || pinned.current) return;
+    if (node.getBoundingClientRect().top >= root.getBoundingClientRect().top) {
+      return;
+    }
+    root.scrollTop += change;
+    seen.current = viewOf(root);
+  };
+
   // What you read stays where it is when a page comes in above it: the
   // first entry is measured before, and the view moves by what was added.
   // A new latest page (a reconnect) opens at its end, as the chat opens.
@@ -552,15 +591,17 @@ export function TranscriptView({
                 ) : null}
               </div>
             )}
-            <Whose value={personId}>
-              <Today value={now}>
-                <WorkingClock value={clock}>
-                  {shown.map((line) => (
-                    <Line key={line} live={live} line={line} />
-                  ))}
-                </WorkingClock>
-              </Today>
-            </Whose>
+            <KeepPlace value={keepPlace}>
+              <Whose value={personId}>
+                <Today value={now}>
+                  <WorkingClock value={clock}>
+                    {shown.map((line) => (
+                      <Line key={line} live={live} line={line} />
+                    ))}
+                  </WorkingClock>
+                </Today>
+              </Whose>
+            </KeepPlace>
             {/* Being given to the AI: sent, before the chat has it. */}
             {going.map((item) => (
               <MessageView

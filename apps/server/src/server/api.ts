@@ -57,6 +57,7 @@ import type { Remote } from "./remote.ts";
 import { screen } from "./screens.ts";
 import { sameSecret, type Sessions } from "./session.ts";
 import type { SignInFlow } from "./signin.ts";
+import { visualFrameRoute } from "./visual-frame.ts";
 
 export interface ApiDeps extends PersonDeps {
   sessions: Sessions;
@@ -469,6 +470,7 @@ export function api(deps: ApiDeps): App {
     return c.body(new Uint8Array(bytes));
   });
 
+  visualFrameRoute(app);
   screensRoute(app, deps.screens, read);
 
   return app;

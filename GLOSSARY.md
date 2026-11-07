@@ -195,6 +195,10 @@ _Avoid_: commentary, progress message, interim reply
 Rufi AI's answer in the chat, which it writes in OpenUI Lang and Rufi draws with OpenUI's chat parts, as it is written. Once it ended, a reply that isn't whole draws what works, says part of it isn't shown and keeps its text a click away; one with no OpenUI shows as Markdown. A follow-up or button in it sends its words as the person's message, and Rufi AI gets them as a click, with what it is about. Its links open by Rufi's rule, wherever they are in it. An agent's message, a note, a receipt and a visit brief are Markdown.
 _Avoid_: answer card, widget, generated UI
 
+**Visual (in a reply)**:
+A chart, comparison or process the AI draws in HTML and CSS, as a `rufi-visual` block in its reply's Markdown, in its place. Rufi shows it as a card in a locked frame, in Rufi's theme, that can't load or send anything or reach Rufi. A picture is a file the AI made; a visual is part of the reply's text.
+_Avoid_: artifact, widget, embed, chart block
+
 **Picture (in a reply)**:
 A picture the AI made because the person asked for one, or one it generated, shown in a reply. Pictures are files in the AI's folder (or where it keeps the pictures it generates), shown as they are now: Rufi keeps no copy, and a file that is gone shows as such.
 _Avoid_: artifact, attachment, image
