@@ -1,0 +1,21 @@
+{
+  "groups": [
+    {
+      "id": "care_event:care-a1",
+      "type": "row",
+      "date": "2026-10-05",
+      "rows": [
+        {
+          "kind": "care_event",
+          "id": "care-a1",
+          "type": "immunisation",
+          "name": "Flu vaccine",
+          "status": "done",
+          "date": { "date": "2026-10-05" },
+          "provider": "Lakeview Family Clinic"
+        }
+      ]
+    }
+  ],
+  "next": null
+}
