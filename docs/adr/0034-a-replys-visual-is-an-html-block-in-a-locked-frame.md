@@ -11,7 +11,7 @@ A visual is a fenced code block whose info string starts with the word `rufi-vis
 - it opens with up to three spaces, then three or more backticks or tildes, then the info string;
 - it closes at the next line of the same character, at least as many, with nothing else on the line.
 
-Its content is an HTML fragment for a document's body, with a `<style>` when it needs one. A `<script>` in it never runs.
+Its content is an HTML fragment for a document's body, with a `<style>` when it needs one. A `<script>` in it never runs, and the frame takes it out (below).
 
 ````markdown
 Your HbA1c went down over the year.
@@ -23,9 +23,9 @@ Your HbA1c went down over the year.
 It is now under the lab's 6.0 % line.
 ````
 
-- **The reply is stored as written.** Nothing is extracted or copied, and the stored reply is plain Markdown. Any other fence stays code, also one that shows a `rufi-visual` block inside it.
+- **The reply is stored as written, and read as one Markdown document.** Nothing is extracted or copied. A link before a visual still finds its definition after it. Any other fence stays code, also one that shows a `rufi-visual` block inside it, or one inside a list or quote.
 - **While the reply is written,** a visual is whole once its closing fence is in the text. An unclosed one runs to the end, as a fence does, and draws once the reply ended. Until it is whole, a quiet box holds its place, and its code never shows.
-- **Any screen that draws visuals finds them the same way:** a line scan for the opening fence and the next closing one (`apps/web/src/visual-blocks.ts`). Wherever Rufi doesn't draw visuals, such as an agent's message, the block shows as code, never as live HTML.
+- **Any screen that draws visuals finds them the same way,** as its Markdown parser reads the reply's top-level fences. The web screens mark them in the reply's parsed document (`apps/web/src/visual-blocks.ts`) and draw them there. Wherever Rufi doesn't draw visuals, such as an agent's message, the block shows as code, never as live HTML.
 
 **Why a fence, not a raw HTML tag.** CommonMark ends a raw HTML block at its first blank line, except for a handful of tags. The AI's HTML and CSS have blank lines, and the rest would read as Markdown. A fence keeps every character to its closing fence, makes "whole" one clear rule, and reads as code anywhere it isn't drawn.
 
@@ -33,15 +33,19 @@ It is now under the lab's 6.0 % line.
 
 The screens draw each visual in a frame of `/visual-frame.html`, a page the core serves on both listeners, the Mac's and the remote door's (`apps/server/src/server/visual-frame.ts`).
 
-- **The page holds nothing.** It loads with no visual in it and waits for one message from the screen that framed it: `{type: "rufi-visual", html, theme}`. Its script then writes in a document whose head holds the theme as JSON (a `<script type="application/json" id="rufi-theme">`, data that never runs) and the card script, and whose body is the visual's HTML. Writing it in keeps the page's own policy.
-- **The screen sends it on every load of the frame.** A browser loads a frame again when it moves in the page, as a reply's line can when the reply ends, and that frame is empty until it gets the visual again; a visual already written in takes no second one. A visual that keeps loading its frame again, such as by a refresh in its HTML, gets it 20 times at most, then shows as broken (below).
-- **Its policy replaces the screens' own:**
+- **The page holds nothing.** It loads with no visual in it and waits for one message from the screen that framed it: `{type: "rufi-visual", html, theme}`. Then its script:
+  1. parses the HTML in a `<template>`, where nothing loads or runs;
+  2. takes out every `link`, `meta`, `base`, `script`, `iframe`, `frame`, `object` and `embed`: elements with no job in a drawing of HTML, CSS and SVG that can reach out;
+  3. writes in a document whose head holds the theme as JSON (a `<script type="application/json" id="rufi-theme">`, data that never runs) and the card script, which keeps the page's own policy;
+  4. puts the parsed visual in its body, never parsing it a second time.
+- **The screen sends it on every load of the frame.** A browser loads a frame again when it moves in the page, as a reply's line can when the reply ends, and that frame is empty until it gets the visual again; a visual already written in takes no second one.
+- **Its policy replaces the screens' own.** It is two policies in one header, by a comma, and the browser holds each:
 
   ```
-  sandbox allow-scripts; default-src 'none'; script-src 'sha256-<the page's script>' 'sha256-<the card script>'; style-src 'unsafe-inline'; img-src data:; font-src data:; form-action 'none'; base-uri 'none'; frame-ancestors 'self'
+  sandbox allow-scripts; default-src 'none'; script-src 'sha256-<the page's script>' 'sha256-<the card script>'; style-src 'unsafe-inline'; img-src data:; font-src data:; form-action 'none'; base-uri 'none'; frame-ancestors 'self', script-src 'unsafe-inline'
   ```
 
-  Only the page's two scripts run, by their hashes: no script of the visual's, inline, from a file or in an attribute such as `onload`. Connections, frames and workers fall back to `default-src 'none'`. It also sends `X-DNS-Prefetch-Control: off` and `no-store`.
+  Only the page's two scripts run, by their hashes: no script of the visual's, inline or in an attribute such as `onload`. A hash alone would also allow a script file whose `integrity` names it, and the file's request, with whatever its address holds, leaves before the file is checked. The second policy allows no script file at all. Connections, frames and workers fall back to `default-src 'none'`. It also sends `X-DNS-Prefetch-Control: off` and `no-store`.
 
 - **The frame element:** `sandbox="allow-scripts"` (for the page's own two scripts), `referrerpolicy="no-referrer"`, titled "Visual". With no other sandbox flag, it gets no popups, top navigation, forms or same-origin access.
 
@@ -49,10 +53,11 @@ The screens draw each visual in a frame of `/visual-frame.html`, a page the core
 
 ## The two rules
 
-**Nothing reaches the network.**
+**Nothing reaches the network.** Two layers, each tested in Chromium and WebKit (`apps/web/e2e/visual.spec.ts`), with a listener that counts every connection as well as every request.
 
+- **The markup:** what can reach out is taken out before the visual is live. A link's hints are the reason it can't be the policy alone: WebKit opens a `preconnect` link's connection, and looks up a `dns-prefetch` link's name, whatever the policy says.
 - **No script of the visual's runs.** CSP doesn't cover every way out: WebRTC, for one, isn't covered, as no browser enforces CSP's `webrtc` directive. A visual that can't run script can't use them. A chart is inline SVG and CSS, with positions the AI works out itself.
-- The policy refuses every connection, outside script, style, picture, font, frame, worker and form.
+- The policies refuse every connection, outside script, style, picture, font, frame, worker and form.
 - The screens' own `frame-src` is `blob: 'self'`: a visual's frame can't move itself to another origin. Rufi's own pages, its only other address, refuse to be framed (`frame-ancestors 'none'`), and its API needs the tab proof that a frame doesn't have.
 - **The Mac app** stops any frame leaving Rufi (`will-frame-navigate`), and a visual's frame, or anything inside it, doesn't count among the frames that keep a link from opening in the browser: its sandbox and policy forbid popups.
 - **The iPhone app's web view** opens only the page's own web links in Safari; a frame's web navigation is cancelled (`Screens.route`).
@@ -85,13 +90,17 @@ Both are posted to the framing page:
   - Until the first height comes, the frame keeps a 160 px quiet box.
   - When a visual that starts above what the person reads changes height, the chat moves the view by as much, so what they read doesn't jump. At the chat's end, it follows as it always does.
   - A browser doesn't draw a frame that is wholly out of view, so such a visual reports a change of height only once it shows.
-- **`{type: "rufi-visual-broken"}`** is sent once, when the policy refused something (a `securitypolicyviolation`, such as a script of the visual's) or a resource failed (an `error`).
-  - The visual stays as drawn, perhaps blank, and the screen says under it "Part of this visual didn't load". There is no button: the person can ask again.
+- **`{type: "rufi-visual-broken"}`** is sent once, when the policy refused something (a `securitypolicyviolation`, such as a picture from outside) or a resource failed (an `error`).
+  - The visual stays as drawn, perhaps blank, and the screen says under it "Part of this visual didn't load". It says the same for a visual whose height is 0, such as one the frame took everything out of. There is no button: the person can ask again.
   - The usual cause is a model reaching for a script or a chart library on a CDN, which the instructions tell it not to do.
 
 ## For a screen of its own, such as the iPhone's native chat
 
-It finds blocks by the same fence rule, sends the same theme names, and acts on the same two messages. It may host a visual its own way, such as a web view of its own with `loadHTMLString`, under its own policy. That policy must hold both rules: no script of the visual's, no connections and no outside resources, no access to the app or its session, and no navigation that leaves.
+It finds blocks by the same fence rule, sends the same theme names, and acts on the same two messages. It draws each visual in a frame of this same page, from the core it reaches (the remote door on the iPhone), so the guard and the policies are one implementation:
+
+- The page writes a visual in only when it is framed: as the top document it does nothing, and `frame-ancestors 'self'` lets only a page of the core's own origin frame it.
+- The headers must reach the web view as the core sends them. WebKit holds both comma-joined policies (the WebKit test above). A page loaded with `loadHTMLString` has no headers, so it can't be the visual's page.
+- Its web view stops any navigation that leaves, as the iPhone's does (`Screens.route`).
 
 ## Considered
 
@@ -101,6 +110,10 @@ It finds blocks by the same fence rule, sends the same theme names, and acts on 
 - **T3 Code's server-side measuring at several widths:** a headless browser in the core for something the kept place already solves.
 - **A separate tool call for a visual:** a block in place keeps the reply one stored text, streamed and read as written.
 - **Inline script for drawing, with WebRTC removed before it runs:** a visual's script can make a blank frame of its own, which no frame policy covers, and take WebRTC from it.
+- **The policy alone:** it doesn't cover WebKit's link hints, and a hash allows a script file that names it.
+- **Taking elements out after the visual is written in,** such as by a `MutationObserver`: a link starts its connection as it is parsed, before any observer sees it.
+- **A general HTML sanitizer library:** a short list of elements, taken out of an inert parse, is all a drawing needs; the policies hold the rest.
+- **A cap on how often a visual loads its frame:** with no `meta` and no script, a visual can't load itself again.
 
 **Not now:**
 

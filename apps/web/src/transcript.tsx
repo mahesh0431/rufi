@@ -69,7 +69,7 @@ import { boxFor } from "./boxes.ts";
 import { ChipView } from "./chips.tsx";
 import { fileIn, NativePicture, Picture } from "./files.tsx";
 import { OpenUIReply, picturesShownBy } from "./openui/reply.tsx";
-import { replyParts } from "./visual-blocks.ts";
+import { rehypeVisuals, visualHtml } from "./visual-blocks.ts";
 import { KeepPlace, Visual, VisualWaiting } from "./visual.tsx";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
 import {
@@ -196,8 +196,14 @@ function RufiLink({ path, children }: { path: string; children: ReactNode }) {
   );
 }
 
-/** A reply's parts: its links and the files it names. */
+/** A reply's parts: its links, the files it names and its visuals. */
 const REPLY: Components = {
+  pre: ({ node, children, ...rest }) => {
+    const visual = node?.properties["dataVisual"];
+    if (visual === "wait") return <VisualWaiting />;
+    if (visual === "draw" && node) return <Visual html={visualHtml(node)} />;
+    return <pre {...rest}>{children}</pre>;
+  },
   a: ({ href, children, node, ...rest }) => {
     const group = href === undefined ? undefined : settingsGroupOf(href);
     if (group !== undefined) {
@@ -256,6 +262,13 @@ function picturesIn(text: string): string[] {
   return [...paths];
 }
 
+const WRITTEN: Options["rehypePlugins"] = [
+  [rehypeVisuals, { streaming: false }],
+];
+const WHILE_WRITTEN: Options["rehypePlugins"] = [
+  [rehypeVisuals, { streaming: true }],
+];
+
 const readableReply = (text: string, streaming: boolean) =>
   streaming ? remend(text, { linkMode: "text-only" }) : text;
 
@@ -267,16 +280,20 @@ export function Marked({
   text,
   links = true,
   reply,
+  streaming = false,
 }: {
   text: string;
   links?: boolean;
-  /** A reply: it shows the files it names. */
+  /** A reply: it shows the files it names, and draws its visuals. */
   reply?: boolean;
+  /** A reply still being written: a visual draws once it is whole. */
+  streaming?: boolean;
 }) {
   if (reply) {
     return (
       <Markdown
         remarkPlugins={REMARK}
+        rehypePlugins={streaming ? WHILE_WRITTEN : WRITTEN}
         components={REPLY}
         urlTransform={keepFiles}
         skipHtml
@@ -298,29 +315,10 @@ export function Marked({
   );
 }
 
-/**
- * A reply's Markdown with its visuals in place (visual-blocks.ts). A visual
- * draws once its block is whole, or the reply ended; until then its place
- * waits. Only the last part is still being written.
- */
+/** A reply as one Markdown document, its visuals in place (visual-blocks.ts). */
 function ReplyText({ text, streaming }: { text: string; streaming: boolean }) {
-  const parts = replyParts(text);
-  return parts.map((part, n) =>
-    part.kind === "markdown" ? (
-      <Marked
-        key={n}
-        text={
-          n === parts.length - 1
-            ? readableReply(part.text, streaming)
-            : part.text
-        }
-        reply
-      />
-    ) : part.whole || !streaming ? (
-      <Visual key={n} html={part.html} />
-    ) : (
-      <VisualWaiting key={n} />
-    ),
+  return (
+    <Marked text={readableReply(text, streaming)} reply streaming={streaming} />
   );
 }
 
