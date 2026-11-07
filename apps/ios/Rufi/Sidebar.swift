@@ -29,8 +29,12 @@ struct Drawer<Content: View, Sidebar: View>: View {
                 sidebar
                     .frame(width: width)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                    .accessibilityHidden(!open)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityAddTraits(open ? .isModal : [])
                     .accessibilityAction(.escape) { open = false }
+                    .animation(dragged == nil ? settle : nil) {
+                        $0.modifier(Uncovered(out: out))
+                    }
                 content
                     .overlay {
                         if open {
@@ -78,8 +82,24 @@ struct Drawer<Content: View, Sidebar: View>: View {
     }
 }
 
+/// The sidebar is there only while the card is out, so nothing reaches it
+/// under the page: no tap, and no screen reader.
+private struct Uncovered: ViewModifier, Animatable {
+    var out: CGFloat
+
+    var animatableData: CGFloat {
+        get { out }
+        set { out = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        if out > 0 { content }
+    }
+}
+
 /// The card at `out`, from 0 (closed) to 1: held between the two, so even a
-/// fast swipe never leaves a gap; rounded and shadowed once it moves.
+/// fast swipe never leaves a gap; once it moves, rounded as the screen is
+/// (at least as the smallest iPhone screen corners are) and shadowed.
 private struct Slide: ViewModifier, Animatable {
     var out: CGFloat
     let width: CGFloat
@@ -91,11 +111,12 @@ private struct Slide: ViewModifier, Animatable {
 
     func body(content: Content) -> some View {
         let out = min(max(out, 0), 1)
-        let shape = out > 0 ? AnyShape(ConcentricRectangle()) : AnyShape(Rectangle())
+        let shape = out > 0 ? AnyShape(ConcentricRectangle(corners: .concentric(minimum: .fixed(47)), isUniform: true)) : AnyShape(Rectangle())
+        // To the screen's edges, as the bars reach under the status bar.
         content
-            .clipShape(shape)
+            .mask { shape.ignoresSafeArea() }
             .background {
-                shape.fill(.background).shadow(color: .black.opacity(0.2 * out), radius: 24)
+                shape.fill(.background).shadow(color: .black.opacity(0.2 * out), radius: 24).ignoresSafeArea()
             }
             .offset(x: width * out)
     }
