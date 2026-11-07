@@ -4,15 +4,17 @@
 // which day, from the record up to which save, and not medically validated,
 // so a doctor reading it printed or copied knows. Printed, it is the same
 // page without the buttons, under Rufi's dog (the frame stays on the screen:
-// styles.css). A brief never changes; when a later save changed the record,
-// the page says so.
+// styles.css). In the iPhone app, Export PDF takes Print's place: the app
+// prints the page to a PDF and shows it in Quick Look. A brief never changes;
+// when a later save changed the record, the page says so.
 import type { Person } from "@rufi/contracts";
 import type { Brief, BriefSource } from "@rufi/contracts/briefs";
 import { Link } from "@tanstack/react-router";
-import { Copy, Info, Printer } from "lucide-react";
+import { Copy, FileDown, Info, Printer } from "lucide-react";
 import { useEffect, useState } from "react";
 import { printedDay } from "./dates.ts";
 import { Dog } from "./dog.tsx";
+import { onPhone, tell } from "./phone.ts";
 import { useBrief } from "./reads.ts";
 import { isPageKind } from "./record.tsx";
 import { SettingsLink } from "./settings-link.tsx";
@@ -49,11 +51,12 @@ function Shown({ brief, person }: { brief: Brief; person: Person }) {
   const origin = `${made} ${caveat}`;
   return (
     <>
-      <div className="mb-3.5 flex items-start gap-3">
+      {/* On a phone, the buttons go under the title. */}
+      <div className="mb-3.5 flex flex-wrap items-start gap-3">
         <span className="hidden pt-1 print:block">
           <Dog size={24} />
         </span>
-        <div className="flex-1">
+        <div className="min-w-56 flex-1">
           <h2 className="text-[1.375rem] font-bold">Visit brief</h2>
           <p className="text-muted">
             {made} <span className="whitespace-nowrap">{caveat}</span>
@@ -61,14 +64,28 @@ function Shown({ brief, person }: { brief: Brief; person: Person }) {
         </div>
         <div className="flex items-start gap-3 print:hidden">
           <CopyButton text={() => asText(brief, origin)} />
-          <Button
-            icon={Printer}
-            onClick={() => {
-              window.print();
-            }}
-          >
-            Print
-          </Button>
+          {onPhone ? (
+            <Button
+              icon={FileDown}
+              onClick={() => {
+                tell({
+                  type: "pdf",
+                  name: `Visit brief – ${person.displayName} – ${printedDay(brief.createdAt)}.pdf`,
+                });
+              }}
+            >
+              Export PDF
+            </Button>
+          ) : (
+            <Button
+              icon={Printer}
+              onClick={() => {
+                window.print();
+              }}
+            >
+              Print
+            </Button>
+          )}
         </div>
       </div>
       {brief.changedSince && (
@@ -207,7 +224,12 @@ function CopyButton({ text }: { text: () => string }) {
   }, [said]);
   return (
     <>
-      <span role="status" className="self-center text-xs text-muted">
+      {/* Kept in place to be read out when it says something; while empty, it
+          takes no room. */}
+      <span
+        role="status"
+        className="self-center text-xs text-muted empty:-me-3"
+      >
         {said}
       </span>
       <Button

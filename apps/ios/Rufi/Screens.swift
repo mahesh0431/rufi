@@ -40,6 +40,8 @@ final class Screens: NSObject {
     var onConnection: (Bool) -> Void = { _ in }
     /// View original: a document and its files, each an id and a name.
     var onOriginal: (String, [(id: String, name: String)]) -> Void = { _, _ in }
+    /// Export PDF: the page open now, as a PDF of this name.
+    var onPDF: (String) -> Void = { _ in }
     /// The page drew in these colours, in dark or light.
     var onTheme: (Theme.Colours, Bool) -> Void = { _, _ in }
 
@@ -237,6 +239,8 @@ final class Screens: NSObject {
                 (file["id"] as? String).flatMap { id in (file["name"] as? String).map { (id: id, name: $0) } }
             }
             if let document = body["documentId"] as? String, !files.isEmpty { onOriginal(document, files) }
+        case "pdf":
+            if let name = body["name"] as? String { onPDF(name) }
         default:
             break
         }

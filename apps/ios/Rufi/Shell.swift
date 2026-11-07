@@ -117,6 +117,7 @@ final class Shell {
         box.asking = { [weak screens] command in screens?.box(command) }
         box.restored = { [weak pending] ids in pending?.remove(ids) }
         screens.onOriginal = { [weak self] document, files in Task { await self?.show(document, files) } }
+        screens.onPDF = { [weak self] name in Task { await self?.export(name) } }
         screens.view.backgroundColor = theme.pageColour
         screens.onTheme = { [weak self] colours, dark in
             guard let self else { return }
@@ -338,6 +339,26 @@ final class Shell {
         }
         originals = copies
         if seen() { original = copies.first } else { waiting = true }
+    }
+
+    /// Export PDF: the page open now, printed to a PDF and shown in Quick
+    /// Look like an original, with its share button; deleted on close.
+    func export(_ name: String) async {
+        guard !fetching, originals.isEmpty else { return }
+        fetching = true
+        defer { fetching = false }
+        let pdf = await Printout.pdf(of: screens.view)
+        let made = Originals.shown.staging.appending(path: UUID().uuidString)
+        do {
+            try FileManager.default.createDirectory(at: Originals.shown.staging, withIntermediateDirectories: true)
+            try pdf.write(to: made, options: .completeFileProtection)
+            originals = [try Originals.shown.keep(made, named: name)]
+        } catch {
+            try? FileManager.default.removeItem(at: made)
+            originalProblem = "Rufi couldn't keep a copy to show. Try again."
+            return
+        }
+        if seen() { original = originals.first } else { waiting = true }
     }
 
     /// Rufi is on screen and unlocked again: an original fetched meanwhile shows.
