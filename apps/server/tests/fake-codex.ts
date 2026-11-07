@@ -19,8 +19,7 @@
 // commentary": only when it completes; "cut commentary": half of it, and
 // the turn never ends), "seeded" gives the first words of the note and the
 // answer as each starts, before their deltas, "crash" ends the fake as the
-// turn starts, and anything else answers "ok:<text>", or a message in
-// OpenUI Lang ("root = …") as it is, a reply Rufi AI wrote. A scenario's
+// turn starts, and anything else answers "ok:<text>". A scenario's
 // `words` count as part of every message.
 // Like Codex, it calls Rufi's tools on the MCP server a thread was given
 // (its config's mcp_servers.rufi), checking it answers when the thread starts
@@ -860,9 +859,8 @@ const usageOf = (totalTokens: number) => ({
   reasoningOutputTokens: 0,
 });
 
-/** The answer to a message: "ok:" and it, or OpenUI Lang as it is. */
-const said = (text: string) =>
-  text.startsWith("root = ") ? text : `ok:${text}`;
+/** The answer to a message: "ok:" and it. */
+const said = (text: string) => `ok:${text}`;
 
 function answer(
   thread: Thread,

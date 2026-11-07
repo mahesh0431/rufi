@@ -1083,7 +1083,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
   },
   /**
    * The analysis story: the AI reads the record and shows a chart in its
-   * OpenUI reply, one of OpenUI's charts, not a picture (none was asked for).
+   * reply as a visual it draws itself, not a picture (none was asked for).
    */
   chart_in_reply: async (api, home) => {
     const c = chat(api);
@@ -1099,7 +1099,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         {
           check: "shows_a_chart",
           criterion:
-            "The reply is OpenUI Lang (root = Card(...)) that shows fasting glucose and HbA1c over the years in one or more of OpenUI's charts, not a picture, with the values of the records read.",
+            "The reply is Markdown with at least one ```rufi-visual block: an HTML fragment that draws fasting glucose and HbA1c over the years in HTML, CSS and inline SVG alone, with no script anywhere and every point and label written in the HTML, loads nothing from outside (no script, style, font or picture from a web address), uses Rufi's colour variables such as var(--ink) and var(--accent), and shows the values of the records read. Not a picture.",
           evidence: replyOf(snapshot),
         },
       ],

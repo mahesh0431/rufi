@@ -7,7 +7,6 @@ import {
   REPLY_SETTINGS,
   toldOf,
 } from "./instructions.ts";
-import { REPLY_PARTS } from "./replies.ts";
 
 describe("Rufi AI's instructions", () => {
   it("end with the reply style the user chose, then their own words, after all of Rufi's rules; blank words add nothing", () => {
@@ -36,26 +35,28 @@ describe("Rufi AI's instructions", () => {
     };
     const own = await told();
 
-    kept.set(editSetting("replyRules", "visual"), "- Answer in French.");
+    const visuals = own.parts.find((part) => part.id === "visual")?.text;
+    expect(visuals).toBeDefined();
+    kept.set(editSetting("visual", "visual"), "Never add visuals.");
     const edited = await told();
-    expect(edited.instructions).toContain("- Answer in French.");
-    expect(edited.instructions).not.toContain(REPLY_PARTS.replyRules);
+    expect(edited.instructions).toContain("Never add visuals.");
+    expect(edited.instructions).not.toContain(visuals);
     expect(edited.parts.filter((part) => part.edited)).toEqual([
-      { id: "replyRules", text: "- Answer in French.", edited: true },
+      { id: "visual", text: "Never add visuals.", edited: true },
     ]);
     // The others are as Rufi has them now.
     expect(edited.parts.filter((part) => !part.edited)).toEqual(
-      own.parts.filter((part) => part.id !== "replyRules"),
+      own.parts.filter((part) => part.id !== "visual"),
     );
 
-    kept.delete(editSetting("replyRules", "visual"));
+    kept.delete(editSetting("visual", "visual"));
     expect((await told()).instructions).toBe(own.instructions);
   });
 
-  it("are the parts as shown, each told on its own: a rewritten OpenUI guide keeps the edited reply rules, and the line before the user's words is a part too", async () => {
+  it("are the parts as shown, each told on its own: edited core and visual instructions both stay, and the line before the user's words is a part too", async () => {
     const kept = new Map<string, string>([
-      [editSetting("openui", "visual"), "My shorter guide."],
-      [editSetting("replyRules", "visual"), "- Answer in French."],
+      [editSetting("core", "visual"), "My shorter core."],
+      [editSetting("visual", "visual"), "- Draw only tables."],
       [REPLY_SETTINGS.words, "Use kg and cm."],
     ]);
     const now = await toldOf((key) => Promise.resolve(kept.get(key)));
@@ -71,7 +72,7 @@ describe("Rufi AI's instructions", () => {
     expect(
       instructions.length - parts.map((part) => part.text).join("").length,
     ).toBeLessThan(parts.length * 2);
-    expect(instructions).toContain("My shorter guide.");
-    expect(instructions).toContain("- Answer in French.");
+    expect(instructions).toContain("My shorter core.");
+    expect(instructions).toContain("- Draw only tables.");
   });
 });

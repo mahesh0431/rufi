@@ -6,7 +6,6 @@
     "mise.lock",
     "apps/server/src/agent/codex/protocol/**",
     "apps/server/tools.json",
-    "apps/server/src/core/chat/openui.md",
     "packages/brand/mark/**"
   ]
 }

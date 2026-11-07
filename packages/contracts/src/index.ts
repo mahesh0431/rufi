@@ -471,8 +471,9 @@ export const TextSize = Schema.Literals(["default", "large", "larger"]);
 export type TextSize = typeof TextSize.Type;
 
 /**
- * How Rufi AI's replies look, as the user chose: visual (built from OpenUI's
- * parts), balanced (text first) or simple (short text). Visual until chosen.
+ * How Rufi AI's replies look, as the user chose: visual (a visual wherever
+ * one helps), balanced (text first) or simple (short text). Visual until
+ * chosen.
  */
 export const ReplyStyle = Schema.Literals(["visual", "balanced", "simple"]);
 export type ReplyStyle = typeof ReplyStyle.Type;

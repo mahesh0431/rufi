@@ -4,7 +4,7 @@
 // the page as it was. Rufi AI and the help pages write such a link as
 // rufi:/settings/<group>. What you typed and left unsaved is saved before
 // it closes (useSavedOnClose).
-import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { Link, useSearch } from "@tanstack/react-router";
 import {
   createContext,
   type ReactNode,
@@ -50,16 +50,6 @@ export function settingsGroupOf(href: string): Group | undefined {
 /** Which Settings group is open over the page; undefined when it is shut. */
 export const useSettingsGroup = (): Group | undefined =>
   useSearch({ strict: false, select: (search) => search.settings });
-
-/** Opens Settings at a group over the page you are on, as SettingsLink does. */
-export function useOpenSettings(): (group: Group) => void {
-  const navigate = useNavigate();
-  return (group) =>
-    void navigate({
-      to: ".",
-      search: (previous) => ({ ...previous, settings: group }),
-    });
-}
 
 /**
  * A link that opens Settings at `group` over the page you are on. Over the

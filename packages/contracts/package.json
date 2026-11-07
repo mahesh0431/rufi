@@ -11,11 +11,9 @@
     "./record": "./src/record.ts",
     "./devices": "./src/devices.ts",
     "./remote": "./src/remote.ts",
-    "./instructions": "./src/instructions.ts",
-    "./jitless": "./src/jitless.ts"
+    "./instructions": "./src/instructions.ts"
   },
   "dependencies": {
-    "effect": "4.0.7",
-    "zod": "4.6.7"
+    "effect": "4.0.7"
   }
 }

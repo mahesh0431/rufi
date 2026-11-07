@@ -24,26 +24,10 @@ const PARTS: Record<InstructionPartId, { title: string; about: string }> = {
     about:
       "How Rufi AI reads and changes your health record, asks before it saves, and uses its tools and skills.",
   },
-  replyPreamble: {
-    title: "Reply instructions: preamble",
-    about: "How a reply is shown: it opens OpenUI's guide.",
-  },
-  openui: {
-    title: "OpenUI's guide: the language and examples",
+  visual: {
+    title: "Visual instructions",
     about:
-      "Made by OpenUI from the parts Rufi AI can build a reply from: how to write them, and its examples.",
-  },
-  replyExample: {
-    title: "Reply instructions: example",
-    about: "Rufi's own example reply, after OpenUI's.",
-  },
-  openuiRules: {
-    title: "OpenUI's guide: its rules",
-    about: "OpenUI's rules for a reply, and its checks before one is done.",
-  },
-  replyRules: {
-    title: "Reply instructions: rules",
-    about: "Rufi's own rules for a reply, after OpenUI's.",
+      "When and how Rufi AI draws a chart, a comparison or a process as a visual in a reply.",
   },
   style: {
     title: "Reply style in use",
@@ -120,7 +104,7 @@ function PartEditor({ part }: { part: InstructionPart }) {
         aria-label={title}
         value={text.text}
         spellCheck={false}
-        rows={part.id === "openui" || part.id === "core" ? 16 : 6}
+        rows={part.id === "core" ? 16 : 6}
         onChange={(event) => {
           text.type(event.target.value);
         }}
