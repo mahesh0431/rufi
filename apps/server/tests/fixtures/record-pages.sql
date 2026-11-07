@@ -119,7 +119,7 @@ INSERT INTO transcript_entries (id, person_id, chat_id, seq, turn_id, kind, text
   ('ent-a1', 'asha', 'c-asha', 1, NULL, 'message', 'How is my HbA1c doing?', NULL, NULL, NULL, NULL, 1, '2026-10-05T08:00:00Z', '2026-10-05T08:00:00Z'),
   ('ent-a2', 'asha', 'c-asha', 2, 'turn-a1', 'reasoning', '**Reading the record**
 
-Asha''s HbA1c results, newest first.', NULL, NULL, NULL, NULL, 2, '2026-10-05T08:00:02Z', '2026-10-05T08:00:03Z'),
+Asha''s HbA1c results, newest first.', NULL, NULL, '{"type":"reasoning"}', NULL, 2, '2026-10-05T08:00:02Z', '2026-10-05T08:00:03Z'),
   ('ent-a3', 'asha', 'c-asha', 3, 'turn-a1', 'activity', 'ls', 'command', 'exit 0', '{"type":"commandExecution","command":"ls","aggregatedOutput":"notes.txt\n","exitCode":0,"durationMs":40}', 'done', 3, '2026-10-05T08:00:04Z', '2026-10-05T08:00:04Z'),
   ('ent-a4', 'asha', 'c-asha', 4, 'turn-a1', 'reply', 'Your **HbA1c** was 6.8 % on 12 Aug 2026, above the 4.0–5.6 range.
 
