@@ -10,7 +10,7 @@ import Testing
 struct HealthSyncTests {
     let memory = HealthMemory(defaults: UserDefaults(suiteName: "health-\(UUID())")!, app: "app-asha")
 
-    @Test(arguments: [Door.Problem.refused("Rufi on your Mac refused a batch (no_batch_id)."), .unpaired, .mismatch])
+    @Test(arguments: [Door.Problem.refused("Rufi on your Mac refused a batch (no_batch_id)."), .unpaired, .mismatch, .unreachable])
     func movesTheBookmarkOnlyWhenTheMacHasThePage(problem: Door.Problem) async {
         let reader = StubReader { type, anchor, _ in
             switch (type, anchor) {
@@ -37,23 +37,6 @@ struct HealthSyncTests {
         #expect(door.sent.count == 3)
         #expect(health.state.stopped)
         #expect(unpaired == (problem == .unpaired))
-    }
-
-    @Test func triesTheSameBatchTwiceMoreWhenTheMacCantBeReached() async {
-        let reader = StubReader { type, anchor, _ in
-            type == .restingHeartRate && anchor == nil ? .page("r1", values: 3) : .nothingNew
-        }
-        let door = StubDoor { _ throws(Door.Problem) in throw .unreachable }
-        let waited = Mutex<[Duration]>([])
-        let health = HealthSync(reader: reader, door: door, memory: memory, unpaired: {},
-                                pause: { wait in waited.withLock { $0.append(wait) } })
-
-        await health.sync().value
-
-        #expect(door.sent == Array(repeating: Data("r1".utf8), count: 3))
-        #expect(waited.withLock { $0 } == [.seconds(2), .seconds(5)])
-        #expect(memory.anchor(.restingHeartRate) == nil)
-        #expect(health.state.stopped)
     }
 
     @Test func readsATooLargePageAgainWithHalfTheLimitAndStopsAtOneValueTooLarge() async {

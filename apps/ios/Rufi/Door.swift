@@ -202,20 +202,10 @@ nonisolated struct Door: Sendable {
     /// draft on the Mac, which isn't this message, stays. Rufi refused it:
     /// its words. The Mac out of reach: `unreachable`, for the next time.
     func send(_ message: PendingMessage, for person: String) async throws(Problem) {
-        var request = URLRequest(url: origin.appending(path: "\(Self.people)/\(person)/chat/messages"))
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONEncoder().encode(["id": message.id, "text": message.text,
-                                                      "aiText": message.text])
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await Self.session.data(for: request)
-        } catch {
-            throw .unreachable
-        }
-        _ = try Self.taken(data, response)
+        struct Nothing: Decodable {}
+        let _: Nothing = try await Self.call(origin: origin, key: key, method: "POST",
+                                             path: "\(Self.people)/\(person)/chat/messages",
+                                             body: ["id": message.id, "text": message.text, "aiText": message.text])
     }
 
     /// What the Mac said of a batch it took.
