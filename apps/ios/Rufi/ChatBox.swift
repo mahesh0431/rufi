@@ -132,9 +132,7 @@ struct ChatBoxView: View {
         let away = box.away
         let kind = shell.boxKind
         VStack(spacing: 4) {
-            ForEach(shell.pending.messages.filter { $0.matches(shell.pairing) }) { message in
-                PendingRow(message: message) { shell.takeBack(message) }
-            }
+            ForEach(shell.pending.messages) { PendingRow(message: $0) }
             if !away, let line = state?.line {
                 HStack(spacing: 8) {
                     Text(line)
@@ -407,11 +405,10 @@ enum Chosen {
     }
 }
 
-/// A message waiting to send, above the box: its words, Pending (or why
-/// Rufi refused it), and ✕ to take it back into the box.
+/// A message waiting to send, above the box: its words, and Pending (or
+/// why Rufi refused it).
 private struct PendingRow: View {
     let message: PendingMessage
-    let takeBack: () -> Void
     @Environment(Theme.self) private var theme
 
     var body: some View {
@@ -425,15 +422,9 @@ private struct PendingRow: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Button("Take Back", systemImage: "xmark", action: takeBack)
-                .labelStyle(.iconOnly)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 30, height: 30)
         }
-        .padding(.leading, 14)
-        .padding(.trailing, 6)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
         .background(theme.surface, in: .rect(cornerRadius: 16))
         .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(Color(.separator), lineWidth: 0.5) }
         .shadow(color: .black.opacity(0.06), radius: 6, y: 2)

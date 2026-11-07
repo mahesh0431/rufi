@@ -247,20 +247,15 @@ final class Shell {
     /// and Rufi asks again at once. Kept only once it is in its file.
     func pend(_ text: String) {
         let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !words.isEmpty, (try? pending.add(words, for: pairing)) != nil else { return }
+        guard !words.isEmpty, (try? pending.add(words)) != nil else { return }
         box.typed("")
         Task { await check() }
     }
 
-    /// The person took a waiting message back: its words go in the box.
-    func takeBack(_ message: PendingMessage) {
-        guard (try? pending.remove(message.id)) != nil else { return }
-        box.typed(box.text.isEmpty ? message.text : box.text + "\n" + message.text)
-    }
-
     private func sendPending() async {
         do {
-            try await pending.send(to: pairing, door.send)
+            let person = pairing.person.id
+            try await pending.send { message throws(Door.Problem) in try await door.send(message, for: person) }
         } catch {
             unpaired()
         }

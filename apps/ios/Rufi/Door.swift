@@ -197,12 +197,11 @@ nonisolated struct Door: Sendable {
         }
     }
 
-    /// Sends a message kept while Rufi couldn't be reached into its
-    /// person's chat, under its own id, with when it was written. Refused:
-    /// Rufi's words. The Mac out of reach, or failing: `unreachable`, for the
-    /// next time.
-    func send(_ message: PendingMessage) async throws(Problem) {
-        var request = URLRequest(url: origin.appending(path: "\(Self.people)/\(message.person)/chat/messages"))
+    /// Sends a message kept while Rufi couldn't be reached into `person`'s
+    /// chat, under its own id, with when it was written. Rufi refused it:
+    /// its words. The Mac out of reach: `unreachable`, for the next time.
+    func send(_ message: PendingMessage, for person: String) async throws(Problem) {
+        var request = URLRequest(url: origin.appending(path: "\(Self.people)/\(person)/chat/messages"))
         request.httpMethod = "POST"
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -215,14 +214,7 @@ nonisolated struct Door: Sendable {
         } catch {
             throw .unreachable
         }
-        guard let http = response as? HTTPURLResponse else { throw .unreachable }
-        let refusal = try? JSONDecoder().decode(Refusal.self, from: data)
-        switch http.statusCode {
-        case 200..<300: return
-        case 401 where refusal?.problem == "unpaired": throw .unpaired
-        case 400, 404, 409, 413: throw .refused(refusal?.error ?? "Rufi refused this message.")
-        default: throw .unreachable
-        }
+        _ = try Self.taken(data, response)
     }
 
     /// What the Mac said of a batch it took.

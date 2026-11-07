@@ -433,12 +433,13 @@ test("in the iPhone app, what the app adds from its box comes back as a chip, ev
   expect((await phone.boxes()).some((m) => m["text"] === "")).toBe(false);
 });
 
-test("in the iPhone app, Rufi not running behind Tailscale tells the app it can't be reached, with no line on the page, and the app's reconnect reads the page again", async ({
+test("in the iPhone app, Rufi not running behind Tailscale tells the app it can't be reached, with no line on the page and no retries of its own, and the app's reconnect reads the page again", async ({
   page,
   rufi,
 }) => {
   await rufi.family();
   await rufi.start();
+  await page.clock.install();
   await asPhone(page);
   const phone = app(page);
   await page.goto(rufi.link());
@@ -456,6 +457,12 @@ test("in the iPhone app, Rufi not running behind Tailscale tells the app it can'
   await expect(page.getByRole("img", { name: "Rufi, resting" })).toBeVisible();
   await expect(page.getByRole("status")).toHaveCount(0);
   await expect(page.getByText("Rufi can't be reached.")).toHaveCount(0);
+  // The app retries: the page doesn't ask again by itself.
+  const asked = page
+    .waitForRequest("**/api/status", { timeout: 1_000 })
+    .catch(() => undefined);
+  await page.clock.fastForward(10_000);
+  expect(await asked).toBeUndefined();
 
   // Back: the app tells the page, which reads again.
   await page.unroute("**/api/**");

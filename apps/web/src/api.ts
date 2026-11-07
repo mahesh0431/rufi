@@ -24,10 +24,13 @@ let retrying: ReturnType<typeof setTimeout> | undefined;
 /** Aborts every request when the session ends. */
 const ending = new AbortController();
 
+/** In the iPhone app, which retries itself and asks the page (`checkNow`). */
+const inApp = document.documentElement.dataset["place"] === "phone";
+
 function setConnection(next: Connection): void {
   if (connection === "ended") return;
-  // Each failure while offline schedules the next check.
-  if (next === "offline") retry();
+  // Each failure while offline schedules the next check, except in the app.
+  if (next === "offline" && !inApp) retry();
   else clearTimeout(retrying);
   if (connection === next) return;
   connection = next;
