@@ -26,7 +26,13 @@ A brief uses only what is saved in your record. A document that Rufi read but th
 
 ## The brief's page
 
-The page shows when the brief was made, the brief as the AI wrote it, and **Sources**: each record the brief rests on, as it was when the brief was made, with where that record came from. For example:
+Under its title, the page says where the brief came from, for example:
+
+> Prepared by Rufi (AI) on 10 Oct 2026 from Asha's records up to 3 Oct 2026 · not medically validated
+
+The first date is the day the brief was made. The second is when the last change saved to your record before then was made, so anyone reading the brief knows how fresh your record was. This line is on the printed page and at the top of copied text too, so a doctor reading it knows an AI made it. If nothing was ever saved to your record before the brief, the line has no "up to" date.
+
+Below it are the brief as the AI wrote it and **Sources**: each record the brief rests on, as it was when the brief was made, with where that record came from. For example:
 
 | Kind         | Record                     | From                                                                 |
 | ------------ | -------------------------- | -------------------------------------------------------------------- |
@@ -39,11 +45,11 @@ Click a record to open it on its page, with its sources and history (see [Open a
 
 ## Copy a brief
 
-Click **Copy**. Rufi puts the brief on the clipboard as plain text: the date, the brief and its Sources. **Copied** shows for a moment. Paste it into an email, a note or a message to your doctor.
+Click **Copy**. Rufi puts the brief on the clipboard as plain text: the line saying where it came from, the brief and its Sources. **Copied** shows for a moment. Paste it into an email, a note or a message to your doctor.
 
 ## Print a brief
 
-Click **Print**. Your Mac's print window opens with the brief's page alone: Rufi's dog, when it was made and from whose record, the brief and its Sources, without the sidebar or the chat. It prints on white paper, also when Rufi is dark. A long brief goes on to more pages, and each page's foot says its number, for example "Page 1 of 2". To keep a file of it, choose **Save as PDF** in the print window.
+Click **Print**. Your Mac's print window opens with the brief's page alone: Rufi's dog, the line saying where it came from, the brief and its Sources, without the sidebar or the chat. It prints on white paper, also when Rufi is dark. A long brief goes on to more pages, and each page's foot says its number, for example "Page 1 of 2". To keep a file of it, choose **Save as PDF** in the print window.
 
 ## Export a PDF on your iPhone
 

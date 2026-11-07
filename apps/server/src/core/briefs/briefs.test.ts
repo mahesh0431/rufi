@@ -37,13 +37,16 @@ let reader: Store;
 let transcripts: Transcripts;
 let chat: ChatRow;
 let said = 0;
+/** The time of the chat's next message, save or brief. */
+let clock: string;
 
 beforeEach(async () => {
   const path = databasePath(await mkdtemp(join(tmpdir(), "rufi-brief-")));
   store = openWritable(path);
   store.db.exec(family);
   reader = openReadOnly(path) as Store;
-  transcripts = openTranscripts(store, () => "2026-10-04T04:30:00.000Z");
+  clock = "2026-10-04T04:30:00.000Z";
+  transcripts = openTranscripts(store, () => clock);
   chat = (await transcripts.chat("asha")) as ChatRow;
   await transcripts.startTurn(chat, "t-1", {
     id: "thread-1",
@@ -175,6 +178,7 @@ describe("create_brief", () => {
     expect(await readBrief(store.query, "asha", brief?.id ?? "")).toEqual({
       id: brief?.id,
       createdAt: "2026-10-04T04:30:00.000Z",
+      recordUpTo: "2026-10-04T04:30:00.000Z",
       markdown: MARKDOWN,
       changedSince: false,
       sources: [
@@ -236,6 +240,44 @@ describe("create_brief", () => {
       { what: "HbA1c 6.8 % · 12 Aug 2026", changedSince: false },
     ]);
     expect(brief?.markdown).toBe(MARKDOWN);
+    // Made before any save: there is no save to date the record by.
+    expect(brief?.recordUpTo).toBeNull();
+  });
+
+  it("dates the record it was made from by the last save it saw, which a later save doesn't move", async () => {
+    clock = "2026-10-01T05:00:00.000Z";
+    await saveSaid("I started magnesium 200 mg at night", {
+      kind: "medicine_use",
+      action: "add",
+      fields: { name: "Magnesium", strength: "200 mg", directions: "at night" },
+    });
+    clock = "2026-10-03T05:00:00.000Z";
+    await saveSaid("I stopped creatine", {
+      kind: "medicine_use",
+      action: "change",
+      id: "med-a2",
+      fields: { status: "stopped" },
+    });
+    clock = "2026-10-04T04:30:00.000Z";
+    await use(
+      "create_brief",
+      { markdown: MARKDOWN, record_version: await version(), cited: CITED },
+      "brief-1",
+    );
+    const id = (rows("SELECT id FROM briefs")[0] as { id: string }).id;
+    clock = "2026-10-05T05:00:00.000Z";
+    await saveSaid("I stopped metformin", {
+      kind: "medicine_use",
+      action: "change",
+      id: "med-a1",
+      fields: { status: "stopped" },
+    });
+
+    expect(await readBrief(store.query, "asha", id)).toMatchObject({
+      createdAt: "2026-10-04T04:30:00.000Z",
+      recordUpTo: "2026-10-03T05:00:00.000Z",
+      changedSince: true,
+    });
   });
 
   it("names the record each source opens: the result that amends one since, none for a record removed since", async () => {

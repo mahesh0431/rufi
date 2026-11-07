@@ -1573,7 +1573,7 @@ test("after a restart, a reply a crash cut off shows its Activity folded, stoppe
   );
 });
 
-test("the Activity setting: show while working folds at the end; always show stays open; always hide shows one working line, with its spaces, then folds, and still opens by hand; it is kept after a restart", async ({
+test("the Activity setting: show while working folds at the end; always show stays open; always hide shows one working line, with its spaces, then folds, and still opens by hand, a thinking line that is only its heading too; it is kept after a restart", async ({
   page,
   rufi,
 }) => {
@@ -1621,6 +1621,11 @@ test("the Activity setting: show while working folds at the end; always show sta
   await expect(activity(chat(page))).toHaveAttribute("aria-expanded", "false");
   await activity(chat(page)).click();
   await expect(steps(chat(page))).toHaveCount(3);
+  // A thinking line that is only its heading opens too, to its whole text.
+  await steps(chat(page)).first().locator("summary").click();
+  await expect(steps(chat(page)).first().locator(".thought")).toHaveText(
+    "Reading the saved result and the fictional lab report page",
+  );
   await accessible(page);
 
   await rufi.stop();

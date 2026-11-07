@@ -1,16 +1,18 @@
 // A visit brief's page: the AI's Markdown as it wrote it, dated, with the
 // Sources Rufi built from the records it cites, each opening its record,
-// Print and Copy. Printed, it is the same page without the buttons, under
-// Rufi's dog (the frame stays on the screen: styles.css). In the iPhone app,
-// Export PDF takes Print's place: the app prints the page to a PDF and shows
-// it in Quick Look. A brief never changes; when a later save changed the
-// record, the page says so.
+// Print and Copy. Under its title, where it came from: made by Rufi's AI, on
+// which day, from the record up to which save, and not medically validated,
+// so a doctor reading it printed or copied knows. Printed, it is the same
+// page without the buttons, under Rufi's dog (the frame stays on the screen:
+// styles.css). In the iPhone app, Export PDF takes Print's place: the app
+// prints the page to a PDF and shows it in Quick Look. A brief never changes;
+// when a later save changed the record, the page says so.
 import type { Person } from "@rufi/contracts";
 import type { Brief, BriefSource } from "@rufi/contracts/briefs";
 import { Link } from "@tanstack/react-router";
 import { Copy, FileDown, Info, Printer } from "lucide-react";
 import { useEffect, useState } from "react";
-import { printedDay, printedTime } from "./dates.ts";
+import { printedDay } from "./dates.ts";
 import { Dog } from "./dog.tsx";
 import { onPhone, tell } from "./phone.ts";
 import { useBrief } from "./reads.ts";
@@ -41,7 +43,12 @@ export function BriefPage({
 }
 
 function Shown({ brief, person }: { brief: Brief; person: Person }) {
-  const made = `Made ${printedTime(brief.createdAt)}, from ${person.displayName}'s saved record`;
+  const upTo =
+    brief.recordUpTo === null ? "" : ` up to ${printedDay(brief.recordUpTo)}`;
+  const made = `Prepared by Rufi (AI) on ${printedDay(brief.createdAt)} from ${person.displayName}'s records${upTo}`;
+  // Kept whole: a line that wraps breaks before it, never inside it.
+  const caveat = "· not medically validated";
+  const origin = `${made} ${caveat}`;
   return (
     <>
       {/* On a phone, the buttons go under the title. */}
@@ -51,10 +58,12 @@ function Shown({ brief, person }: { brief: Brief; person: Person }) {
         </span>
         <div className="min-w-56 flex-1">
           <h2 className="text-[1.375rem] font-bold">Visit brief</h2>
-          <p className="text-muted">{made}</p>
+          <p className="text-muted">
+            {made} <span className="whitespace-nowrap">{caveat}</span>
+          </p>
         </div>
         <div className="flex items-start gap-3 print:hidden">
-          <CopyButton text={() => asText(brief, made)} />
+          <CopyButton text={() => asText(brief, origin)} />
           {onPhone ? (
             <Button
               icon={FileDown}
@@ -189,13 +198,13 @@ function Cited({
   return what;
 }
 
-/** The brief as plain text, to paste anywhere: its date, the brief and its Sources. */
-function asText(brief: Brief, made: string): string {
+/** The brief as plain text, to paste anywhere: where it came from, the brief and its Sources. */
+function asText(brief: Brief, origin: string): string {
   const sources = brief.sources.map(
     (source) => `- ${source.kind}: ${source.what} (${source.from})`,
   );
   return [
-    `Visit brief · ${made}`,
+    `Visit brief\n${origin}`,
     brief.markdown,
     ["Sources", ...sources].join("\n"),
   ].join("\n\n");
