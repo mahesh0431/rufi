@@ -28,6 +28,9 @@ const ROUTES: readonly (readonly [string, string])[] = [
   ["record-symptom", "/api/people/asha/record/symptom"],
   ["record-care_event", "/api/people/asha/record/care_event"],
   ["detail-condition", "/api/people/asha/record/condition/cond-a1"],
+  ["detail-none_known", "/api/people/asha/record/none_known/nk-a1"],
+  ["detail-result-amended", "/api/people/asha/record/result/res-a4"],
+  ["detail-result-current", "/api/people/asha/record/result/res-a5"],
   ["follow-ups", "/api/people/asha/follow-ups"],
 ];
 

@@ -275,14 +275,7 @@ private struct OverviewList: View {
             if !overview.recent.isEmpty {
                 Section("Recent changes") {
                     ForEach(overview.recent) { change in
-                        DisclosureGroup {
-                            Text(receipt(change.receipt)).font(.subheadline)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(Words.summary(change.receipt)).lineLimit(2)
-                                Text(Words.savedAt(change.at, now: now)).font(.subheadline).foregroundStyle(.secondary)
-                            }
-                        }
+                        RecentLine(change: change, now: now)
                     }
                 }
                 .listRowBackground(surface)
@@ -298,11 +291,45 @@ private struct OverviewList: View {
     private func go(_ path: String) {
         Task { await shell.go(path) }
     }
+}
 
-    /// A receipt as Rufi wrote it, its Markdown as a line each.
-    private func receipt(_ text: String) -> AttributedString {
-        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-            ?? AttributedString(text)
+/// One of the latest saves: its first change and when, opening in place to
+/// its receipt. Its chevron is every row's, turned down while open.
+private struct RecentLine: View {
+    let change: Overview.Change
+    let now: Date
+    @State private var open = false
+
+    var body: some View {
+        Button {
+            withAnimation(.snappy) { open.toggle() }
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(Words.summary(change.receipt)).lineLimit(2)
+                        Text(Words.savedAt(change.at, now: now)).font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(open ? 90 : 0))
+                }
+                if open { Text(receipt).font(.subheadline) }
+            }
+            .padding(.vertical, 2)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(open ? "Hides what was saved" : "Shows what was saved")
+    }
+
+    /// The receipt as Rufi wrote it, its Markdown as a line each.
+    private var receipt: AttributedString {
+        (try? AttributedString(markdown: change.receipt,
+                               options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+            ?? AttributedString(change.receipt)
     }
 }
 
@@ -390,15 +417,14 @@ struct RowLine: View {
     var body: some View {
         if row.problem != nil {
             Text("Can't show this row.").foregroundStyle(.secondary)
-        } else if !NativePage.kinds.contains(row.kind) {
-            // "No known allergies": a statement, with nothing more to open.
-            RowCells(cells: Words.cells(row))
-        } else {
+        } else if let address = Words.address(of: row, person: shell.pairing.person.id) {
             Opens {
-                Task { await shell.go("/people/\(shell.pairing.person.id)/record/\(row.kind)?open=\(row.id)") }
+                Task { await shell.go(address) }
             } label: {
                 RowCells(cells: Words.cells(row))
             }
+        } else {
+            RowCells(cells: Words.cells(row))
         }
     }
 }
@@ -521,37 +547,44 @@ struct SourceLine: View {
 struct AboutLine: View {
     let shell: Shell
     let about: RecordRow.About
-    @State private var read: RecordDetail?
+    @State private var read: About?
     @State private var failed = false
 
-    private var path: String { "record/\(about.kind)/\(about.id)" }
-    /// Kept apart from the row's own page, which keeps its read with its time.
-    private var key: String { "about:" + path }
+    /// The record named, and the one it is now: itself, or what amended it.
+    struct About: Sendable {
+        let named: RecordRow
+        let now: RecordDetail
+    }
+
+    private var key: String { "about:\(about.kind)/\(about.id)" }
 
     var body: some View {
-        let detail = read ?? shell.kept[key] as? RecordDetail
+        let shown = read ?? shell.kept[key] as? About
         Group {
-            if let detail, detail.row.problem == nil, let page = Words.page(of: detail.row) {
-                let cells = Words.cells(detail.row)
-                let label = [cells.title, cells.date].filter { !$0.isEmpty }.joined(separator: " · ")
-                if detail.removed {
+            if let shown, shown.now.row.problem == nil,
+               let address = Words.address(of: shown.now.row, person: shell.pairing.person.id) {
+                let label = Words.about(shown.named, now: shown.now.row)
+                if shown.now.removed {
                     Text("About: \(label) (removed from your health record)")
                 } else {
-                    Opens {
-                        Task { await shell.go("/people/\(shell.pairing.person.id)/record/\(page)?open=\(about.id)") }
-                    } label: {
-                        Text("About: \(label)")
-                    }
+                    Opens { Task { await shell.go(address) } } label: { Text("About: \(label)") }
                 }
             } else {
                 // While it reads, the row's place is held, so its read runs.
-                Text(failed || detail != nil ? "About: a record Rufi can't show" : "About:")
+                Text(failed || shown != nil ? "About: a record Rufi can't show" : "About:")
                     .foregroundStyle(.secondary)
             }
         }
         .task(id: shell.fresh) {
             do throws(Door.Problem) {
-                let answer: RecordDetail = try await shell.read(path)
+                let named: RecordDetail = try await shell.read("record/\(about.kind)/\(about.id)")
+                // Each amendment in turn, to the current one.
+                var now = named
+                for _ in 0..<10 {
+                    guard let newer = now.replacedBy, newer.problem == nil else { break }
+                    now = try await shell.read("record/\(newer.kind)/\(newer.id)")
+                }
+                let answer = About(named: named.row, now: now)
                 read = answer
                 shell.kept[key] = answer
             } catch {

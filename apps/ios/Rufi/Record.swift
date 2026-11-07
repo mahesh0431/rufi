@@ -71,6 +71,18 @@ nonisolated struct RecordRow: Decodable, Equatable, Identifiable, Sendable {
     var unit: String?
     var category: String?
     var measured: Dated?
+    var replaces: String?
+    // A visit and a medicine, as a follow-up names what it is about.
+    var doctor: String?
+    var place: String?
+    var reason: String?
+    var setting: String?
+    var cited: Int?
+    var strength: String?
+    var amount: String?
+    var directions: String?
+    var times: [String]?
+    var started: Dated?
 
     /// A row that couldn't be read at all, as one that doesn't fit.
     static func unreadable(_ problem: String) -> RecordRow {
@@ -153,6 +165,8 @@ nonisolated struct RecordDetail: Decodable, Equatable, Sendable {
     let removed: Bool
     let sources: [RecordSource]
     let history: [RecordChange]
+    /// The result amended since: the one that replaces it.
+    var replacedBy: RecordRow?
 }
 
 /// A page's tile on Overview.

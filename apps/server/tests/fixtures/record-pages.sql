@@ -28,7 +28,9 @@ INSERT INTO follow_ups (id, person_id, title, due, status, outcome, linked_kind,
   ('fu-a1', 'asha', 'Repeat HbA1c', '2020-02', 'open', NULL, 'result', 'res-a1'),
   ('fu-a2', 'asha', 'Ask about the headaches', 'next_visit', 'open', NULL, 'symptom', 'sym-a1'),
   ('fu-a3', 'asha', 'Dental cleaning', '2099-03', 'open', NULL, NULL, NULL),
-  ('fu-a4', 'asha', 'Vitamin D recheck', '2026-10-01', 'done', 'Done at Sunrise Labs', 'result', 'res-a7');
+  ('fu-a4', 'asha', 'Vitamin D recheck', '2026-10-01', 'done', 'Done at Sunrise Labs', 'result', 'res-a7'),
+  -- About the TSH the lab amended since (res-a4, replaced by res-a5).
+  ('fu-a5', 'asha', 'Recheck TSH', '2099-06', 'open', NULL, 'result', 'res-a4');
 
 -- Two saves: the diabetes added, then its status changed.
 INSERT INTO operations (id, seq, person_id, origin, chat_id, call_id, request, receipt, created_at) VALUES

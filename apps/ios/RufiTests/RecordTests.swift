@@ -62,6 +62,34 @@ struct RecordTests {
         ])
     }
 
+    @Test func everyRowTheRoutesAnswerIsReadableWithItsWords() throws {
+        // A field renamed or retyped on the Mac turns a row unreadable or
+        // blank here: only the one stored row that doesn't fit may be.
+        for page in ["record-condition", "record-allergy", "record-symptom", "record-care_event"] {
+            for row in try read(page, as: RecordPage.self).groups.flatMap(\.rows.rows) where row.id != "cond-a3" {
+                #expect(row.problem == nil && !Words.cells(row).title.isEmpty, "\(page): \(row.id)")
+            }
+        }
+    }
+
+    @Test func noKnownAllergiesOpensOnAllergiesAsTheStatementItIs() throws {
+        let statement = try #require(read("record-allergy", as: RecordPage.self).groups.first?.rows.rows.first)
+        let address = try #require(Words.address(of: statement, person: "asha"))
+        #expect(address == "/people/asha/record/allergy?open=nk-a1&kind=none_known")
+        #expect(NativePage.of(address, person: "asha") == .row(kind: "none_known", id: "nk-a1"))
+        #expect(try read("detail-none_known", as: RecordDetail.self).row.asserted == "2026-10-10")
+    }
+
+    @Test func aFollowUpAboutAnAmendedResultSaysWhatItWasAmendedToAndOpensTheCurrentOne() throws {
+        // The lab amended TSH 2.1 to 4.6: the follow-up names the first.
+        let named = try read("detail-result-amended", as: RecordDetail.self)
+        #expect(named.replacedBy?.id == "res-a5")
+        let current = try read("detail-result-current", as: RecordDetail.self)
+        #expect(current.replacedBy == nil)
+        #expect(Words.about(named.row, now: current.row) == "TSH 2.1 mIU/L · 12 Aug 2026 · amended to 4.6 mIU/L")
+        #expect(Words.address(of: current.row, person: "asha") == "/people/asha/record/lab_result?open=res-a5&kind=result")
+    }
+
     @Test func aRowOpenedSaysWhereItCameFromAndEverySave() throws {
         let detail = try read("detail-condition", as: RecordDetail.self)
         let source = try #require(detail.sources.first)
@@ -79,7 +107,7 @@ struct RecordTests {
         let due = groups.flatMap { group in
             group.rows.rows.map { Words.whenDue(group.group, $0.due, now: now, calendar: calendar) }
         }
-        #expect(due == ["Overdue · was due Feb 2020", "Due Mar 2099", "At the next visit", "Was due 1 Oct 2026"])
+        #expect(due == ["Overdue · was due Feb 2020", "Due Mar 2099", "Due Jun 2099", "At the next visit", "Was due 1 Oct 2026"])
         #expect(groups.last?.rows.rows.first?.outcome == "Done at Sunrise Labs")
     }
 

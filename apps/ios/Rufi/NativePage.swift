@@ -26,7 +26,9 @@ nonisolated enum NativePage: Equatable, Sendable {
         case ("follow-ups", 1):
             return opened.map { .row(kind: "follow_up", id: $0) } ?? .followUps
         case ("record", 2) where kinds.contains(String(rest[1])):
-            return opened.map { .row(kind: String(rest[1]), id: $0) } ?? .list(String(rest[1]))
+            // A row whose kind isn't its page's says so: "No known allergies".
+            let kind = components.queryItems?.first { $0.name == "kind" }?.value ?? String(rest[1])
+            return opened.map { .row(kind: kind, id: $0) } ?? .list(String(rest[1]))
         default:
             return nil
         }

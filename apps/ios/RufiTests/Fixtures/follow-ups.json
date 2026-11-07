@@ -22,6 +22,14 @@
           "title": "Dental cleaning",
           "due": { "date": "2099-03" },
           "status": "open"
+        },
+        {
+          "kind": "follow_up",
+          "id": "fu-a5",
+          "title": "Recheck TSH",
+          "due": { "date": "2099-06" },
+          "status": "open",
+          "about": { "kind": "result", "id": "res-a4" }
         }
       ]
     },

@@ -142,6 +142,16 @@ nonisolated enum Words {
         case "result":
             return Cells(title: [row.test, row.value, row.unit].compactMap { $0 }.joined(separator: " "),
                          date: printed(row.measured) ?? "")
+        case "medicine_use":
+            return Cells(title: [row.name, row.strength].compactMap { $0 }.joined(separator: " "),
+                         detail: joined([row.amount, row.directions, row.times?.joined(separator: ", ")]),
+                         status: state, date: span(row.started, row.ended) ?? "")
+        case "visit":
+            let title = joined([row.doctor, row.place])
+            let date = row.ended.map { "\(printed(row.date) ?? "?") to \(printed($0.date))" } ?? printed(row.date) ?? ""
+            return Cells(title: title.isEmpty ? row.reason ?? "Visit" : title,
+                         detail: joined([row.reason, row.cited.map { plural($0, "record", "records") + " from it" }]),
+                         status: row.setting ?? "", date: date)
         default:
             return Cells(title: row.name ?? row.title ?? "")
         }
@@ -150,7 +160,25 @@ nonisolated enum Words {
     /// The page a row is on: a result on its category's.
     static func page(of row: RecordRow) -> String? {
         if row.kind == "result" { return row.category == "measurement" ? "measurement" : "lab_result" }
+        if row.kind == "none_known" { return "allergy" }
         return titles[row.kind] == nil ? nil : row.kind
+    }
+
+    /// Where a row opens: on its page, by its id, with its kind when the
+    /// page's is another ("No known allergies" on Allergies).
+    static func address(of row: RecordRow, person: String) -> String? {
+        guard let page = page(of: row) else { return nil }
+        return "/people/\(person)/record/\(page)?open=\(row.id)" + (row.kind == page ? "" : "&kind=\(row.kind)")
+    }
+
+    /// What a follow-up is about, by the record it names, and what that was
+    /// amended to: "TSH 2.1 mIU/L · 12 Aug 2026 · amended to 4.6 mIU/L".
+    static func about(_ named: RecordRow, now current: RecordRow) -> String {
+        let cells = cells(named)
+        let label = [cells.title, cells.date].filter { !$0.isEmpty }.joined(separator: " · ")
+        guard current.id != named.id else { return label }
+        let value = [current.value, current.unit].compactMap { $0 }.joined(separator: " ")
+        return "\(label) · amended to \(value.isEmpty ? Words.cells(current).title : value)"
     }
 
     /// A field's value in a change, as a person reads it.
