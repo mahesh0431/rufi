@@ -22,6 +22,9 @@ struct TodaySection: View {
                 }
                 ForEach(today.doses, id: \.self.key) { dose in
                     DoseLine(shell: shell, dose: dose, day: today.day) { state in
+                        // Past the Mac's midnight, this page is yesterday's: not
+                        // logged, so the person taps on today's.
+                        if state != .cleared, today.isOver(at: .now) { return await reread() }
                         problem = await shell.log(state, medicine: dose.medicine, doseAt: "\(today.day)T\(dose.at)")
                         await reread()
                     }
@@ -40,6 +43,16 @@ struct TodaySection: View {
         guard let answer: Today = try? await shell.read("today") else { return nil }
         shell.kept["today"] = answer
         return answer
+    }
+}
+
+extension Today {
+    /// Whether the Mac's day has ended since Today was read.
+    func isOver(at now: Date) -> Bool {
+        var mac = Calendar(identifier: .gregorian)
+        mac.timeZone = TimeZone(identifier: zone) ?? .current
+        let at = mac.dateComponents([.year, .month, .day], from: now)
+        return String(format: "%04d-%02d-%02d", at.year ?? 0, at.month ?? 0, at.day ?? 0) != day
     }
 }
 

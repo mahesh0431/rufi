@@ -136,6 +136,10 @@ struct RecordTests {
         #expect(Words.doseDay("2026-10-05", today: "2026-10-07") == "Mon 5 Oct")
         #expect(Words.doseDay("2025-12-31", today: "2026-01-02") == "Wed 31 Dec 2025")
         #expect(Words.days(before: "2026-10-14", 13) == "2026-10-01")
+        // Today read on the Mac's 8 Nov is over at its midnight, not the iPhone's.
+        let today = Today(day: "2026-11-08", zone: "Asia/Kolkata", doses: [], upcoming: false)
+        #expect(!today.isOver(at: try Date("2026-11-08T18:29:00Z", strategy: .iso8601)))
+        #expect(today.isOver(at: try Date("2026-11-08T18:31:00Z", strategy: .iso8601)))
         let logged = DoseLogged(state: "taken", takenAt: doses[0].takenAt, loggedAt: doses[0].loggedAt, by: doses[0].by)
         #expect(Words.logged(logged, calendar: india) == "Taken 08:12 · iPhone")
     }

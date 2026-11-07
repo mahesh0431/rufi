@@ -596,10 +596,11 @@ export type ReminderPlan = typeof ReminderPlan.Type;
  * local day, by time, then name. A past dose is only earlier today. A
  * dose's `logged` is its latest log, taken or skipped; with none, or an
  * undo last, it is not logged. `upcoming`: a dose of one of them falls
- * after today.
+ * after today. `zone`: the Mac's time zone, which says when `day` ends.
  */
 export const Today = Schema.Struct({
   day: RecordDate,
+  zone: Schema.String,
   doses: Schema.Array(
     Schema.Struct({
       at: Schema.String,

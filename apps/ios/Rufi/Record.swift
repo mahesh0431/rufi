@@ -240,6 +240,8 @@ nonisolated struct Today: Decodable, Equatable, Sendable {
     }
 
     let day: String
+    /// The Mac's time zone: `day` ends at its midnight.
+    let zone: String
     let doses: [Dose]
     /// A dose is still to come on another day: the section shows.
     let upcoming: Bool
