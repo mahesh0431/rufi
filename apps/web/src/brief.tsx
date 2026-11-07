@@ -43,7 +43,10 @@ export function BriefPage({
 function Shown({ brief, person }: { brief: Brief; person: Person }) {
   const upTo =
     brief.recordUpTo === null ? "" : ` up to ${printedDay(brief.recordUpTo)}`;
-  const origin = `Prepared by Rufi (AI) on ${printedDay(brief.createdAt)} from ${person.displayName}'s records${upTo} · not medically validated`;
+  const made = `Prepared by Rufi (AI) on ${printedDay(brief.createdAt)} from ${person.displayName}'s records${upTo}`;
+  // Kept whole: a line that wraps breaks before it, never inside it.
+  const caveat = "· not medically validated";
+  const origin = `${made} ${caveat}`;
   return (
     <>
       <div className="mb-3.5 flex items-start gap-3">
@@ -52,7 +55,9 @@ function Shown({ brief, person }: { brief: Brief; person: Person }) {
         </span>
         <div className="flex-1">
           <h2 className="text-[1.375rem] font-bold">Visit brief</h2>
-          <p className="text-muted">{origin}</p>
+          <p className="text-muted">
+            {made} <span className="whitespace-nowrap">{caveat}</span>
+          </p>
         </div>
         <div className="flex items-start gap-3 print:hidden">
           <CopyButton text={() => asText(brief, origin)} />
