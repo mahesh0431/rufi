@@ -752,6 +752,13 @@ export const SendMessage = Schema.Struct({
       Schema.isMaxLength(MAX_MESSAGE_CHARS),
     ),
   ),
+  /**
+   * A message the iPhone kept while it couldn't reach Rufi: when it was
+   * written, the phone's local 'YYYY-MM-DDTHH:MM'. Rufi AI is told.
+   */
+  writtenAt: Schema.optionalKey(
+    Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/)),
+  ),
 });
 
 /** The box's text and chips, saved over the draft unless a send holds it. */

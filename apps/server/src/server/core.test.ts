@@ -1123,6 +1123,42 @@ describe("the local API", () => {
     );
   });
 
+  it("tells Rufi AI when a message kept on the iPhone was written, shows the person's words, and leaves the box's draft", async () => {
+    const core = await start();
+    const page = await session(core);
+    const c = await chat(page);
+    await page.api("PUT", c.draft, { text: "Typed on the Mac" });
+    const id = randomUUID();
+    expect(
+      await page.api("POST", `${c.path}/messages`, {
+        id,
+        text: "I took my Metformin",
+        writtenAt: "2026-11-07T09:10",
+      }),
+    ).toMatchObject({
+      status: 202,
+      body: { draft: { text: "Typed on the Mac" } },
+    });
+    const given = () => {
+      const db = new DatabaseSync(databasePath(home), { readOnly: true });
+      try {
+        return db
+          .prepare(
+            "SELECT text, ai_text FROM transcript_entries WHERE id = ? UNION ALL SELECT text, ai_text FROM chat_queue WHERE id = ?",
+          )
+          .get(id, id);
+      } finally {
+        db.close();
+      }
+    };
+    await until(() => given() !== undefined);
+    expect(given()).toEqual({
+      text: "I took my Metformin",
+      ai_text:
+        "I took my Metformin\n\n(Written on the iPhone at 2026-11-07T09:10, its local time, while it couldn't reach Rufi; it arrived later.)",
+    });
+  });
+
   it("refuses one person's send of an id another person's send is using", async () => {
     const core = await start({
       adapters: scripted({ slow: ["turn/steer"], slowMs: 600 }),
