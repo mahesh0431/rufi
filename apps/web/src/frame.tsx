@@ -397,12 +397,13 @@ function PhoneFrame({
   return (
     <>
       {/* With the app's box, the page ends above it (`--bar-bottom` is the
-          room it takes), so it never covers a row or a button. */}
+          room it takes), so it never covers a row or a button. Printed
+          (Export PDF), the bars' room goes. */}
       <main
         className={
           isChatPage(pathname)
             ? "h-full"
-            : `min-h-full pt-(--bar-top) ${box === null ? "pb-(--bar-bottom)" : "pb-[calc(var(--bar-bottom,0px)+16px)]"}`
+            : `min-h-full pt-(--bar-top) print:p-0 ${box === null ? "pb-(--bar-bottom)" : "pb-[calc(var(--bar-bottom,0px)+16px)]"}`
         }
       >
         {/* Ended: the app opens Rufi again, or says this iPhone is unpaired. */}

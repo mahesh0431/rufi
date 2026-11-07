@@ -44,11 +44,12 @@ function Shown({ brief, person }: { brief: Brief; person: Person }) {
   const made = `Made ${printedTime(brief.createdAt)}, from ${person.displayName}'s saved record`;
   return (
     <>
-      <div className="mb-3.5 flex items-start gap-3">
+      {/* On a phone, the buttons go under the title. */}
+      <div className="mb-3.5 flex flex-wrap items-start gap-3">
         <span className="hidden pt-1 print:block">
           <Dog size={24} />
         </span>
-        <div className="flex-1">
+        <div className="min-w-56 flex-1">
           <h2 className="text-[1.375rem] font-bold">Visit brief</h2>
           <p className="text-muted">{made}</p>
         </div>
@@ -214,7 +215,12 @@ function CopyButton({ text }: { text: () => string }) {
   }, [said]);
   return (
     <>
-      <span role="status" className="self-center text-xs text-muted">
+      {/* Kept in place to be read out when it says something; while empty, it
+          takes no room. */}
+      <span
+        role="status"
+        className="self-center text-xs text-muted empty:-me-3"
+      >
         {said}
       </span>
       <Button
