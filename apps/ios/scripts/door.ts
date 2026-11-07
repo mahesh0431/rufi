@@ -187,7 +187,13 @@ const tailscale: Tailscale = {
 };
 
 const rufi = new Rufi(await mkdtemp(join(folder, "data-")));
-await rufi.family();
+// The family, with a row of each kind the iPhone's own pages show.
+await rufi.family(
+  await readFile(
+    join(import.meta.dirname, "../../server/tests/fixtures/record-pages.sql"),
+    "utf8",
+  ),
+);
 /** Each step of the stand-in, and what failed, in this script's output. */
 const said = Object.fromEntries(
   Object.entries(tailscale).map(([step, does]) => [

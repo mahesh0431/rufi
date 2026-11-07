@@ -1,0 +1,42 @@
+{
+  "row": {
+    "kind": "result",
+    "id": "res-a5",
+    "test": "TSH",
+    "value": "4.6",
+    "category": "lab",
+    "number": 4.6,
+    "unit": "mIU/L",
+    "range": "0.4 - 4.0",
+    "flag": "High",
+    "measured": { "date": "2026-08-12" },
+    "replaces": "res-a4",
+    "in_test": "tst-tsh",
+    "test_number": 4.6
+  },
+  "removed": false,
+  "sources": [
+    {
+      "type": "document",
+      "document": "doc-asha-sep",
+      "page": 1,
+      "file": "thyroid recheck.jpg",
+      "deleted": false
+    }
+  ],
+  "history": [],
+  "entered": "2026-09-02T18:31:00Z",
+  "replaces": {
+    "kind": "result",
+    "id": "res-a4",
+    "test": "TSH",
+    "value": "2.1",
+    "category": "lab",
+    "number": 2.1,
+    "unit": "mIU/L",
+    "range": "0.4 - 4.0",
+    "measured": { "date": "2026-08-12" },
+    "in_test": "tst-tsh",
+    "test_number": 2.1
+  }
+}

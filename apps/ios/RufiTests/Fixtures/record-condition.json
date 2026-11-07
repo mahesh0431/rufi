@@ -1,0 +1,47 @@
+{
+  "groups": [
+    {
+      "id": "condition:cond-a1",
+      "type": "row",
+      "date": "2024-03",
+      "rows": [
+        {
+          "kind": "condition",
+          "id": "cond-a1",
+          "name": "Type 2 diabetes",
+          "certainty": "diagnosed",
+          "status": "ongoing",
+          "recognised": { "date": "2024-03" },
+          "details": "Diet and Metformin"
+        }
+      ]
+    },
+    {
+      "id": "condition:cond-a2",
+      "type": "row",
+      "date": "2021",
+      "rows": [
+        {
+          "kind": "condition",
+          "id": "cond-a2",
+          "name": "Iron deficiency anaemia",
+          "certainty": "diagnosed",
+          "status": "resolved",
+          "recognised": { "date": "2021" }
+        }
+      ]
+    },
+    {
+      "id": "condition:cond-a3",
+      "type": "row",
+      "rows": [
+        {
+          "kind": "condition",
+          "id": "cond-a3",
+          "problem": "Its stored values don't fit a condition."
+        }
+      ]
+    }
+  ],
+  "next": null
+}

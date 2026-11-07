@@ -53,4 +53,33 @@ struct RouteTests {
         #expect(Place.current(at: "/help/iphone", person: "asha") == .help)
         #expect(Place.current(at: "/", person: "asha") == .overview)
     }
+
+    @Test func theIPhoneDrawsOverviewTheSimpleRecordPagesAndFollowUpsAndTheMacsScreensTheRest() {
+        #expect(NativePage.of("/", person: "asha") == .overview)
+        #expect(NativePage.of("/people/asha/record/condition", person: "asha") == .list("condition"))
+        #expect(NativePage.of("/people/asha/record/allergy?open=all-1", person: "asha") == .row(kind: "allergy", id: "all-1"))
+        #expect(NativePage.of("/people/asha/follow-ups", person: "asha") == .followUps)
+        #expect(NativePage.of("/people/asha/follow-ups?open=fu-1", person: "asha") == .row(kind: "follow_up", id: "fu-1"))
+        // Until they are drawn here too.
+        #expect(NativePage.of("/people/asha/record/lab_result", person: "asha") == nil)
+        #expect(NativePage.of("/people/asha/documents/doc-1", person: "asha") == nil)
+        #expect(NativePage.of("/people/asha/chat", person: "asha") == nil)
+        // Someone else's page is never Asha's.
+        #expect(NativePage.of("/people/ravi/record/condition", person: "asha") == nil)
+    }
+
+    @Test func aReplysLinkToAConditionOpensItOverTheChatAndItsDocumentOverThat() {
+        var navigator = Navigator(person: "asha", at: .chat)
+        // "Your diabetes": its link, in a reply.
+        let row = navigator.go("/people/asha/record/condition?open=cond-a1")
+        #expect(navigator.current == .conditions)
+        navigator.drawn(row.id, "/people/asha/record/condition?open=cond-a1", "Type 2 diabetes")
+        // Its source, a document still on the Mac's screens.
+        let document = navigator.go("/people/asha/documents/doc-asha-aug")
+        #expect(navigator.stack == [row, document])
+        navigator.popped(to: [row])
+        #expect(navigator.page(navigator.top)?.title == "Type 2 diabetes")
+        navigator.popped(to: [])
+        #expect(navigator.current == .chat)
+    }
 }
