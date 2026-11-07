@@ -69,6 +69,8 @@ import { boxFor } from "./boxes.ts";
 import { ChipView } from "./chips.tsx";
 import { fileIn, NativePicture, Picture } from "./files.tsx";
 import { OpenUIReply, picturesShownBy } from "./openui/reply.tsx";
+import { replyParts } from "./visual-blocks.ts";
+import { KeepPlace, Visual, VisualWaiting } from "./visual.tsx";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
 import {
   openAgent,
@@ -296,6 +298,32 @@ export function Marked({
   );
 }
 
+/**
+ * A reply's Markdown with its visuals in place (visual-blocks.ts). A visual
+ * draws once its block is whole, or the reply ended; until then its place
+ * waits. Only the last part is still being written.
+ */
+function ReplyText({ text, streaming }: { text: string; streaming: boolean }) {
+  const parts = replyParts(text);
+  return parts.map((part, n) =>
+    part.kind === "markdown" ? (
+      <Marked
+        key={n}
+        text={
+          n === parts.length - 1
+            ? readableReply(part.text, streaming)
+            : part.text
+        }
+        reply
+      />
+    ) : part.whole || !streaming ? (
+      <Visual key={n} html={part.html} />
+    ) : (
+      <VisualWaiting key={n} />
+    ),
+  );
+}
+
 function Reply({
   id,
   text,
@@ -339,7 +367,7 @@ function Reply({
         {/* A reply with no OpenUI in it. While it streams, half-written
             Markdown is closed so it reads right; a half-written link shows
             as its text. */}
-        <Marked text={readableReply(text, streaming)} reply />
+        <ReplyText text={text} streaming={streaming} />
       </OpenUIReply>
     </div>
   );
@@ -466,6 +494,19 @@ export function TranscriptView({
     };
   }, [before, older, onOlder]);
 
+  // A visual that starts above what you read and changes height moves the
+  // view with it, so what you read stays still; at the end, the chat follows
+  // anyway.
+  const keepPlace = (node: Element, change: number) => {
+    const root = scroller.current;
+    if (!root || pinned.current) return;
+    if (node.getBoundingClientRect().top >= root.getBoundingClientRect().top) {
+      return;
+    }
+    root.scrollTop += change;
+    seen.current = viewOf(root);
+  };
+
   // What you read stays where it is when a page comes in above it: the
   // first entry is measured before, and the view moves by what was added.
   // A new latest page (a reconnect) opens at its end, as the chat opens.
@@ -552,15 +593,17 @@ export function TranscriptView({
                 ) : null}
               </div>
             )}
-            <Whose value={personId}>
-              <Today value={now}>
-                <WorkingClock value={clock}>
-                  {shown.map((line) => (
-                    <Line key={line} live={live} line={line} />
-                  ))}
-                </WorkingClock>
-              </Today>
-            </Whose>
+            <KeepPlace value={keepPlace}>
+              <Whose value={personId}>
+                <Today value={now}>
+                  <WorkingClock value={clock}>
+                    {shown.map((line) => (
+                      <Line key={line} live={live} line={line} />
+                    ))}
+                  </WorkingClock>
+                </Today>
+              </Whose>
+            </KeepPlace>
             {/* Being given to the AI: sent, before the chat has it. */}
             {going.map((item) => (
               <MessageView

@@ -1,0 +1,305 @@
+// A reply's visual (ADR 0034), on the real core with its real headers: the
+// AI's HTML in a `rufi-visual` block draws in its locked frame, in Rufi's
+// theme and at its own height, waits while its block is written and never
+// reloads as the reply goes on; nothing in it reaches the network or Rufi's
+// page; one that tries says part of it didn't load; and one that starts
+// above what you read and grows keeps your place.
+import { AxeBuilder } from "@axe-core/playwright";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import type { Frame, Locator, Page } from "@playwright/test";
+import { expect, test, type Rufi } from "./rufi.ts";
+
+// The CSP's refusals in Rufi's own page.
+test.beforeEach(async ({ context }) => {
+  await context.addInitScript(() => {
+    const refused: string[] = [];
+    Object.assign(globalThis, { refused });
+    (globalThis as unknown as EventTarget).addEventListener(
+      "securitypolicyviolation",
+      (event) => {
+        const { violatedDirective, blockedURI } = event as Event & {
+          violatedDirective: string;
+          blockedURI: string;
+        };
+        refused.push(`${violatedDirective} ${blockedURI}`);
+      },
+    );
+  });
+});
+const refusedIn = (page: Page) =>
+  page.evaluate(() => (globalThis as unknown as { refused: string[] }).refused);
+
+const chat = (page: Page) => page.getByRole("region", { name: "Chat" });
+const log = (page: Page) => chat(page).getByRole("log", { name: "Messages" });
+const cards = (page: Page) =>
+  log(page).locator(".reply iframe[title='Visual']");
+
+async function opened(
+  page: Page,
+  rufi: Rufi,
+  options?: Parameters<Rufi["start"]>[0],
+) {
+  await rufi.family();
+  await rufi.start(options);
+  await page.goto(rufi.link());
+  await expect(
+    page.getByRole("heading", { name: "Health record" }),
+  ).toBeVisible();
+}
+
+/** Sends a message; the scripted Codex answers "ok:" and the message. */
+async function send(page: Page, text: string) {
+  const opener = chat(page).getByRole("button", { name: "Open the chat" });
+  const box = chat(page).getByRole("textbox", { name: "Message to Rufi" });
+  await expect(opener.or(box).first()).toBeVisible();
+  if (await opener.isVisible()) await opener.click();
+  await box.fill(text);
+  await box.press("Enter");
+  await expect(box).toHaveValue("");
+}
+
+/** A reply with `html` as its visual, between two lines of text. */
+const withVisual = (html: string, after = "As your record keeps it.") =>
+  `Your HbA1c, drawn:\n\n\`\`\`rufi-visual\n${html}\n\`\`\`\n\n${after}`;
+
+async function frameOf(card: Locator): Promise<Frame> {
+  const frame = await (await card.elementHandle()).contentFrame();
+  if (!frame) throw new Error("The visual has no frame.");
+  return frame;
+}
+
+/** The colour Rufi's page gives `token` now, as a computed colour. */
+const pageColour = (page: Page, token: string) =>
+  page.evaluate((name) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${name})`;
+    document.body.append(probe);
+    const colour = getComputedStyle(probe).color;
+    probe.remove();
+    return colour;
+  }, token);
+
+test("a visual draws in the reply in Rufi's theme at its own height, follows a new theme without reloading, and never reloads as the reply goes on", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi);
+  const chart = [
+    '<div id="chart" style="height:300px;color:var(--ink)">',
+    '<svg viewBox="0 0 100 50" width="100%"><circle cx="20" cy="25" r="5" fill="var(--accent)"/></svg>',
+    "</div>",
+  ].join("\n");
+  // The reply streams in small parts: the text after the visual goes on
+  // after the visual draws.
+  const after = `${"These are the values your record keeps. ".repeat(30)}trickle end.`;
+  await send(page, withVisual(chart, after));
+  const card = cards(page);
+  const inside = page.frameLocator(".reply iframe[title='Visual']");
+  await expect(inside.locator("circle")).toBeVisible();
+  // When the visual's document began: the same while it isn't reloaded.
+  const began = async () =>
+    (await frameOf(card)).evaluate(() => performance.timeOrigin);
+  const loaded = await began();
+  await expect(
+    log(page).locator(".reply").getByText("trickle end."),
+  ).toBeVisible();
+  await expect(log(page)).toHaveAttribute("aria-busy", "false");
+  // At its own height, with nothing to scroll inside.
+  await expect
+    .poll(() =>
+      card.evaluate((element) => element.getBoundingClientRect().height),
+    )
+    .toBe(300);
+  // In Rufi's colours.
+  const ink = async () =>
+    (await frameOf(card)).evaluate(
+      () => getComputedStyle(document.getElementById("chart") as Element).color,
+    );
+  expect(await ink()).toBe(await pageColour(page, "--ink"));
+  // The block shows as the visual, not as its code.
+  await expect(log(page).locator(".reply pre")).toHaveCount(0);
+  await expect(
+    log(page).locator(".reply").getByText("Your HbA1c, drawn:"),
+  ).toBeVisible();
+
+  // Dark: the same document takes the new colours.
+  const light = await ink();
+  await page.evaluate(() => {
+    document.documentElement.dataset["appearance"] = "dark";
+  });
+  await expect.poll(ink).not.toBe(light);
+  expect(await ink()).toBe(await pageColour(page, "--ink"));
+  expect(await began()).toBe(loaded);
+  expect(await card.count()).toBe(1);
+
+  await expect(
+    log(page).getByText("Part of this visual didn't load"),
+  ).toHaveCount(0);
+  const { violations } = await new AxeBuilder({ page }).analyze();
+  expect(violations.map((violation) => violation.id)).toEqual([]);
+  expect(await refusedIn(page)).toEqual([]);
+});
+
+test("a visual still being written holds its place quietly, and its code never shows", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi, {
+    scenario: {
+      answer: 'Here is your chart.\n\n```rufi-visual\n<p id="half">Half',
+    },
+  });
+  await send(page, "partial");
+  await expect(log(page).getByText("Here is your chart.")).toBeVisible();
+  await expect(log(page).locator(".reply .visual[aria-hidden]")).toBeVisible();
+  await expect(cards(page)).toHaveCount(0);
+  await expect(log(page).locator(".reply pre")).toHaveCount(0);
+  await expect(log(page).getByText("Half")).toHaveCount(0);
+});
+
+test("nothing in a visual reaches the network or Rufi's page, and one that tries says part of it didn't load", async ({
+  page,
+  rufi,
+}) => {
+  // Anything that reaches here got out, whatever it was.
+  const reached: string[] = [];
+  const outside: Server = createServer((request, response) => {
+    reached.push(request.url ?? "");
+    response.end("out");
+  });
+  outside.on("connection", () => reached.push("a connection"));
+  await new Promise<void>((resolve) => outside.listen(0, "127.0.0.1", resolve));
+  const out = `http://127.0.0.1:${String((outside.address() as AddressInfo).port)}`;
+  try {
+    await opened(page, rufi);
+    const hostile = [
+      '<p id="drawn">Drawn</p>',
+      // As a model writes a chart: a library from a CDN.
+      `<script src="${out}/chart.js"></script>`,
+      `<img src="${out}/picture.png" alt="">`,
+      `<link rel="stylesheet" href="${out}/style.css">`,
+      `<link rel="prefetch" href="${out}/prefetch">`,
+      `<form id="form" action="${out}/form" method="post"><input name="a" value="b"></form>`,
+      "<script>",
+      `const out = ${JSON.stringify(out)};`,
+      'fetch(out + "/fetch").catch(() => {});',
+      'try { const x = new XMLHttpRequest(); x.open("GET", out + "/xhr"); x.send(); } catch {}',
+      'try { navigator.sendBeacon(out + "/beacon", "x"); } catch {}',
+      'try { new WebSocket(out.replace("http", "ws") + "/socket"); } catch {}',
+      'try { new EventSource(out + "/events"); } catch {}',
+      'try { window.open(out + "/opened"); } catch {}',
+      'try { document.getElementById("form").submit(); } catch {}',
+      'try { top.location.href = out + "/top"; } catch {}',
+      "</script>",
+    ].join("\n");
+    await send(page, withVisual(hostile));
+    const card = cards(page);
+    await expect(
+      page.frameLocator(".reply iframe[title='Visual']").getByText("Drawn"),
+    ).toBeVisible();
+    await expect(
+      log(page).getByText("Part of this visual didn't load"),
+    ).toBeVisible();
+
+    // Nothing of Rufi's page, session or storage, and no WebRTC.
+    const frame = await frameOf(card);
+    expect(
+      await frame.evaluate(() => {
+        const tried = (what: () => unknown) => {
+          try {
+            return String(what());
+          } catch {
+            return "refused";
+          }
+        };
+        return {
+          page: tried(() => window.parent.document.title),
+          cookie: tried(() => document.cookie),
+          storage: tried(() => localStorage.length),
+          webrtc: typeof (window as { RTCPeerConnection?: unknown })
+            .RTCPeerConnection,
+        };
+      }),
+    ).toEqual({
+      page: "refused",
+      cookie: "refused",
+      storage: "refused",
+      webrtc: "undefined",
+    });
+    // Nor can it take itself somewhere else.
+    await frame.evaluate((address) => {
+      setTimeout(() => {
+        location.href = `${address}/moved`;
+      });
+    }, out);
+    await page.waitForTimeout(500);
+
+    expect(reached).toEqual([]);
+    expect(page.context().pages()).toHaveLength(1);
+    await expect(
+      page.getByRole("heading", { name: "Health record" }),
+    ).toBeVisible();
+    // Rufi's page refused only the frame's move.
+    for (const refusal of await refusedIn(page)) {
+      expect(refusal).toMatch(/^frame-src /);
+    }
+  } finally {
+    outside.closeAllConnections();
+    await new Promise((resolve) => outside.close(resolve));
+  }
+});
+
+test("a visual that starts above what you read and grows keeps your place", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi);
+  await send(page, withVisual('<div style="height:120px"></div>'));
+  const card = cards(page);
+  await expect
+    .poll(() =>
+      card.evaluate((element) => element.getBoundingClientRect().height),
+    )
+    .toBe(120);
+  await send(
+    page,
+    `Further words. ${"A plain line of made-up words. ".repeat(120)}`,
+  );
+  const reading = log(page).locator(".reply").getByText("Further words.");
+  await expect(reading).toBeVisible();
+
+  // Read further down: the visual starts 40 px above the view, far from
+  // the end. (A frame wholly out of view isn't drawn, so it reports no
+  // change until it shows.)
+  await card.evaluate((element) => {
+    let scroller = element.parentElement;
+    while (scroller && getComputedStyle(scroller).overflowY !== "auto") {
+      scroller = scroller.parentElement;
+    }
+    if (!scroller) throw new Error("No scrolling area.");
+    scroller.scrollTop +=
+      element.getBoundingClientRect().top -
+      scroller.getBoundingClientRect().top +
+      40;
+  });
+  const at = () =>
+    reading.evaluate((element) =>
+      Math.round(element.getBoundingClientRect().top),
+    );
+  const before = await at();
+  // The visual grows by 200 px.
+  await (
+    await frameOf(card)
+  ).evaluate(() => {
+    const more = document.createElement("div");
+    more.style.height = "200px";
+    document.body.append(more);
+  });
+  await expect
+    .poll(() =>
+      card.evaluate((element) => element.getBoundingClientRect().height),
+    )
+    .toBe(320);
+  expect(await at()).toBe(before);
+});

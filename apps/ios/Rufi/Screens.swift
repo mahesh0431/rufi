@@ -202,6 +202,21 @@ final class Screens: NSObject {
         view.evaluateJavaScript(values)
     }
 
+    /// Where a navigation goes. Only the page's own web links open in
+    /// Safari: a frame inside it, such as a reply's visual, never takes
+    /// anything out of the app, and its web address loads nothing.
+    enum Route: Equatable { case load, safari, nothing }
+    /// The frame a navigation is for: the page, a frame in it, or a new
+    /// window (`nil`, a link that asks for one).
+    enum Frame { case page, frame }
+
+    static func route(_ url: URL?, door: Bool, frame: Frame?) -> Route {
+        if door { return .load }
+        if frame == .frame { return url?.scheme == "about" ? .load : .nothing }
+        if let url, url.scheme == "https" || url.scheme == "http" { return .safari }
+        return .nothing
+    }
+
     private func isDoor(_ url: URL?) -> Bool {
         url?.scheme == origin.scheme && url?.host() == origin.host() && url?.port == origin.port
     }
@@ -260,12 +275,13 @@ extension Screens: WKNavigationDelegate, WKUIDelegate {
     /// else (`tel:`, `mailto:`, another app's, `file:`, `data:`) does nothing.
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
         let url = action.request.url
-        if isDoor(url) { return .allow }
-        if action.targetFrame?.isMainFrame == false, url?.scheme == "about" { return .allow }
-        if let url, url.scheme == "https" || url.scheme == "http" {
-            await UIApplication.shared.open(url)
+        switch Screens.route(url, door: isDoor(url), frame: action.targetFrame.map { $0.isMainFrame ? .page : .frame }) {
+        case .load: return .allow
+        case .safari:
+            if let url { await UIApplication.shared.open(url) }
+            return .cancel
+        case .nothing: return .cancel
         }
-        return .cancel
     }
 
     /// No new windows: a link that asks for one went through the rule above.
