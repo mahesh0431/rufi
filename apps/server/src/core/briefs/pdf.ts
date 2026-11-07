@@ -198,11 +198,13 @@ function inline(
         return inline(node.children, marks);
       case "break":
         return [{ text: "\n" }];
-      // Not shown, as on the page: raw HTML, images and footnotes.
+      // A footnote's mark, as written; its words are where it is defined.
+      case "footnoteReference":
+        return [{ text: `[${node.label ?? node.identifier}]`, ...marks }];
+      // Not shown, as on the page: raw HTML and images.
       case "html":
       case "image":
       case "imageReference":
-      case "footnoteReference":
         return [];
     }
   });
@@ -224,13 +226,18 @@ function table(node: Table): Content {
     bold,
   });
   const [head, ...rows] = node.children;
+  const width = head?.children.length ?? 0;
+  // As GFM reads a table: each row as wide as the header, a missing cell
+  // empty and an extra one dropped.
+  const full = (cells: Content[]) =>
+    Array.from({ length: width }, (_, i) => cells[i] ?? "");
   return {
     table: {
       headerRows: 1,
-      widths: (head?.children ?? []).map(() => "auto"),
+      widths: Array.from({ length: width }, () => "auto"),
       body: [
-        (head?.children ?? []).map(cell(true)),
-        ...rows.map((row) => row.children.map(cell(false))),
+        full((head?.children ?? []).map(cell(true))),
+        ...rows.map((row) => full(row.children.map(cell(false)))),
       ],
     },
     layout: {
@@ -282,23 +289,31 @@ function block(node: RootContent): Content {
         ],
         margin: [0, 4, 0, 8],
       };
+    // A footnote's words, under its mark.
+    case "footnoteDefinition":
+      return {
+        columns: [
+          { text: `[${node.label ?? node.identifier}]`, width: "auto" },
+          { stack: node.children.map(block) },
+        ],
+        columnGap: 4,
+      };
     // Words outside a paragraph, which Markdown doesn't make.
     case "break":
     case "delete":
     case "emphasis":
+    case "footnoteReference":
     case "inlineCode":
     case "link":
     case "linkReference":
     case "strong":
     case "text":
       return { text: inline([node]) };
-    // Not shown, as on the page: raw HTML, link definitions, footnotes,
-    // images and front matter; the parts of lists and tables, which their
-    // list or table draws.
+    // Not shown, as on the page: raw HTML, link definitions, images and
+    // front matter; the parts of lists and tables, which their list or
+    // table draws.
     case "html":
     case "definition":
-    case "footnoteDefinition":
-    case "footnoteReference":
     case "image":
     case "imageReference":
     case "yaml":

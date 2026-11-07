@@ -611,10 +611,15 @@ describe("a brief's PDF", () => {
       (_, n) => `Fictional observation ${String(n + 1)}.`,
     ).join(" ");
     const table = `| Note | Detail |\n| --- | --- |\n| Sugar | ${tall} |`;
+    // GFM's short row: its missing cell is empty.
+    const short =
+      "| Medicine | Dose |\n| --- | --- |\n| Metformin | 500 mg |\n| Fictional tonic |";
+    const footnote =
+      "Metformin since March.[^note]\n\n[^note]: Fictional nausea after the evening dose.";
     await use(
       "create_brief",
       {
-        markdown: [MARKDOWN, table, ...lines].join("\n\n"),
+        markdown: [MARKDOWN, table, short, footnote, ...lines].join("\n\n"),
         record_version: await version(),
         cited: CITED,
       },
@@ -636,8 +641,17 @@ describe("a brief's PDF", () => {
     expect(all).toContain("Fictional observation 1. Fictional observation 2.");
     expect(all).toContain("Fictional observation 400.");
     expect(all).toContain("Fictional line 120");
-    expect(all).toContain("HbA1c 6.8 % · 12 Aug 2026");
-    expect(all).toContain("Sunrise Labs August.pdf, page 1");
+    expect(all).toContain("Fictional tonic");
+    expect(all).toContain("Metformin since March.[note]");
+    expect(all).toContain("[note] Fictional nausea after the evening dose.");
+    // Every source, its record and where it came from.
+    for (const row of [
+      "Medicine use Metformin 500 mg · Mar 2024 · current Saved before Rufi kept sources",
+      "Medicine use Creatine 5 g · Jun 2026 · current Saved before Rufi kept sources",
+      "Result HbA1c 6.8 % · 12 Aug 2026 Sunrise Labs report, collected 12 Aug 2026 · Sunrise Labs August.pdf, page 1",
+    ]) {
+      expect(all).toContain(row);
+    }
     expect(all).not.toContain("The record changed since");
 
     // A save after it: the PDF says so, as the page does.
