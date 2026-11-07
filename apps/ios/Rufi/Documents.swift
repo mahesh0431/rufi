@@ -126,11 +126,55 @@ nonisolated struct DraftItem: Decodable, Equatable, Identifiable, Sendable {
 /// A document's reading as View reading shows it: the reader's work.
 nonisolated struct ReadingView: Decodable, Equatable, Sendable {
     struct Page: Decodable, Equatable, Sendable {
+        /// An older reader's entry for the page: what it read, as printed.
+        struct Entry: Decodable, Equatable, Sendable {
+            struct Facts: Decodable, Equatable, Sendable {
+                struct Printed: Decodable, Equatable, Sendable {
+                    let label: String
+                    let date: String
+                }
+
+                let issuer: String?
+                let dates: [Printed]?
+            }
+
+            struct Item: Decodable, Equatable, Sendable {
+                let test_name: String
+                let value_text: String
+                let unit: String?
+                let reference_range: String?
+                let flag_text: String?
+                let column: String?
+                let unsure: String?
+            }
+
+            /// read, nothing_here or unreadable.
+            let outcome: String
+            let why: String?
+            let facts: Facts?
+            let items: [Item]
+            let issues: [String]?
+        }
+
+        /// An older Rufi's checks of the entry: they flag, never change it.
+        struct Checks: Decodable, Equatable, Sendable {
+            struct Flag: Decodable, Equatable, Sendable {
+                /// The item, from 1.
+                let item: Int
+                let why: String
+            }
+
+            let incomplete: DocumentItems.Page.Incomplete?
+            let items: [Flag]
+        }
+
         let position: Int
         let state: String?
         let why: String?
         /// The reader's copy of the page, as printed.
         let copy: String?
+        let entry: Entry?
+        let checks: Checks?
     }
 
     struct Usage: Decodable, Equatable, Sendable {

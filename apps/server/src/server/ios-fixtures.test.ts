@@ -49,6 +49,7 @@ const ROUTES: readonly (readonly [string, string])[] = [
   ["documents", "/api/people/asha/documents"],
   ["document-items", "/api/people/asha/documents/doc-asha-aug/items"],
   ["document-reading", "/api/people/asha/documents/doc-asha-aug/reading"],
+  ["document-reading-older", "/api/people/asha/documents/doc-asha-sep/reading"],
   ["document-delete", "/api/people/asha/documents/doc-asha-aug/delete"],
   ["record-visit", "/api/people/asha/record/visit"],
   ["detail-visit", "/api/people/asha/record/visit/vis-a1"],

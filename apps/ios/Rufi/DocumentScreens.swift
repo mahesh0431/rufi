@@ -143,9 +143,9 @@ struct DocumentView: View {
             let list: DocumentList = try await shell.read("documents")
             let items: DocumentItems = try await shell.read("documents/\(id)/items")
             return Read(document: list.documents.first { $0.id == id }, items: items)
-        }) { (read: Read, _: Date) in
+        }) { (read: Read, at: Date) in
             if let document = read.document {
-                DocumentPage(shell: shell, screen: screen, document: document, items: read.items)
+                DocumentPage(shell: shell, screen: screen, document: document, items: read.items, at: at)
             } else {
                 List {}.overlay {
                     Text("There is no such document. It may have been deleted.").foregroundStyle(.secondary).padding()
@@ -160,6 +160,8 @@ private struct DocumentPage: View {
     let screen: Screen
     let document: DocumentSummary
     let items: DocumentItems
+    /// When it was read: a page image not read yet is tried again with it.
+    let at: Date
     /// The page shown, by its position: an item tapped shows its own.
     @State private var shown: Int?
     @State private var lookOnly = false
@@ -234,7 +236,7 @@ private struct DocumentPage: View {
             let page = pages[at]
             Section {
                 PageImage(shell: shell, document: document.id, position: page.position,
-                          label: "Page \(at + 1) of \(pages.count)")
+                          label: "Page \(at + 1) of \(pages.count)", read: self.at)
                     .listRowInsets(EdgeInsets())
             } header: {
                 HStack {
@@ -331,14 +333,17 @@ private struct PageImage: View {
     let document: String
     let position: Int
     let label: String
-    @State private var read: (key: String, data: Data)?
+    /// When the page around it was read; on reconnect or a pull, an image
+    /// not read yet is tried again.
+    let read: Date
+    @State private var image: (key: String, data: Data)?
     @State private var problem: String?
 
     private var key: String { "page:\(document):\(position)" }
 
     var body: some View {
         Group {
-            if let data = read?.key == key ? read?.data : shell.kept[key] as? Data, let image = UIImage(data: data) {
+            if let data = image?.key == key ? image?.data : shell.kept[key] as? Data, let image = UIImage(data: data) {
                 // Room for the items under it; View original shows it whole.
                 Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 420).accessibilityLabel(label)
             } else if let problem {
@@ -348,12 +353,12 @@ private struct PageImage: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .task(id: key) {
+        .task(id: "\(key) \(read.timeIntervalSince1970)") {
             problem = nil
             guard shell.kept[key] == nil else { return }
             do throws(Door.Problem) {
                 let data = try await shell.page(of: document, at: position)
-                read = (key, data)
+                image = (key, data)
                 shell.kept[key] = data
                 problem = nil
             } catch {
@@ -425,17 +430,24 @@ struct ReadingSheet: View {
     nonisolated struct Read: Decodable, Sendable {
         let reading: ReadingView
         let items: DocumentItems
+        /// The document as it is now: a reader may have started or ended.
+        let document: DocumentSummary?
     }
 
     var body: some View {
+        let id = document.id
         NavigationStack {
-            Reading(shell: shell, path: "documents/\(document.id)/reading", again: { $0.reading.status == "reading" },
+            // Read again every 3 seconds while a reader is at work on it, or
+            // an older one's reading goes on.
+            Reading(shell: shell, path: "documents/\(id)/reading",
+                    again: { $0.reading.status == "reading" || $0.document?.status == "reading" },
                     load: { shell async throws(Door.Problem) -> Read in
-                        let reading: ReadingView = try await shell.read("documents/\(document.id)/reading")
-                        let items: DocumentItems = try await shell.read("documents/\(document.id)/items")
-                        return Read(reading: reading, items: items)
+                        let reading: ReadingView = try await shell.read("documents/\(id)/reading")
+                        let items: DocumentItems = try await shell.read("documents/\(id)/items")
+                        let list: DocumentList = try await shell.read("documents")
+                        return Read(reading: reading, items: items, document: list.documents.first { $0.id == id })
                     }) { (read: Read, _: Date) in
-                pages(read.reading, read.items)
+                pages(read.reading, read.items, read.document ?? document)
             }
             .navigationTitle(Words.describe(document).name)
             .navigationBarTitleDisplayMode(.inline)
@@ -449,7 +461,7 @@ struct ReadingSheet: View {
         }
     }
 
-    private func pages(_ reading: ReadingView, _ items: DocumentItems) -> some View {
+    private func pages(_ reading: ReadingView, _ items: DocumentItems, _ document: DocumentSummary) -> some View {
         let surface = shell.theme.surface
         let canRetry = document.status != "reading" && (reading.status == "failed" || (reading.status == "done"
             && reading.pages.contains { $0.state == "unreadable" || $0.state == "not_looked_at" }))
@@ -459,7 +471,7 @@ struct ReadingSheet: View {
                 if reading.status == "failed" { Text(reading.error ?? "it stopped") }
                 Text(Words.settled(items) ?? "What the reader read, not saved: these become part of your health record only when you save them in the chat.")
                     .font(.footnote).foregroundStyle(.secondary)
-                if canRetry { Button("Retry", systemImage: "arrow.clockwise") { again() } }
+                if canRetry { Button("Retry", systemImage: "arrow.clockwise") { again(document) } }
             }
             .listRowBackground(surface)
             if let note = reading.note {
@@ -467,16 +479,27 @@ struct ReadingSheet: View {
             }
             ForEach(reading.pages, id: \.position) { page in
                 Section {
+                    ForEach(Array(Words.rows(page, drafts: items.items).enumerated()), id: \.offset) { _, row in
+                        ReadRowView(row: row)
+                    }
                     if let copy = page.copy, !copy.isEmpty {
                         Text(copy).font(.footnote.monospaced()).textSelection(.enabled)
                     }
-                    if let why = page.why { Text(why) }
+                    if let incomplete = page.checks?.incomplete {
+                        Text("The reader counted \(incomplete.rows_seen) rows and read \(incomplete.items).")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    if let why = page.why ?? page.entry?.why { Text(why) }
+                    ForEach(page.entry?.issues ?? [], id: \.self) { issue in
+                        Text("The reader noted: \(issue)").font(.footnote).foregroundStyle(.secondary)
+                    }
                 } header: {
                     HStack {
-                        Text("Page \(page.position) · \(Words.outcome(page.state))")
+                        Text("Page \(page.position) · \(Words.summary(page))")
+                        if page.checks?.incomplete != nil { Text("· may be incomplete") }
                         if document.status != "reading", page.state == "unreadable" || page.state == "not_looked_at" {
                             Spacer()
-                            Button("Retry", systemImage: "arrow.clockwise") { again() }.textCase(nil)
+                            Button("Retry", systemImage: "arrow.clockwise") { again(document) }.textCase(nil)
                         }
                     }
                 }
@@ -494,9 +517,31 @@ struct ReadingSheet: View {
     }
 
     /// Retry: closes, and the chip goes in the chat's box.
-    private func again() {
+    private func again(_ document: DocumentSummary) {
         dismiss()
         Task { await retry(shell, document) }
+    }
+}
+
+/// A row the reader read: the test, why it may be wrong, its value, range
+/// and marks.
+private struct ReadRowView: View {
+    let row: Words.ReadRow
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.name)
+                if let why = row.why { Text(why).font(.footnote).foregroundStyle(.secondary) }
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(row.value).monospacedDigit()
+                Text(([row.range].compactMap { $0 } + row.marks).joined(separator: " · "))
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            .multilineTextAlignment(.trailing)
+        }
     }
 }
 

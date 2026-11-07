@@ -9,8 +9,18 @@
       "place": null,
       "notSorted": false,
       "reader": null,
-      "status": "not_read",
-      "reading": null,
+      "status": "failed",
+      "reading": {
+        "saved": 1,
+        "of": 1,
+        "results": 0,
+        "hasPending": false,
+        "toCheck": 0,
+        "itemsSaved": 0,
+        "itemsSetAside": 0,
+        "canRetry": true,
+        "error": "The reader stopped before it finished."
+      },
       "files": [
         {
           "id": "a2d64c4aa2a3101f1fc2ee893451ca0f43f547ca48ba5a1ce625c42d52e23562",

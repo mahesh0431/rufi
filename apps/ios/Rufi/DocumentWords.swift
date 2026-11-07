@@ -173,6 +173,52 @@ extension Words {
         }
     }
 
+    /// A page's line in View reading: "read · 1 item · Sunrise Labs ·
+    /// Collected 1 Sep 2026"; an older reader's page not finished, "read so far".
+    static func summary(_ page: ReadingView.Page) -> String {
+        let entry = page.entry
+        let outcome = page.state != nil || entry == nil ? outcome(page.state) : "\(outcome(entry?.outcome)) so far"
+        let items = entry.flatMap { $0.outcome == "read" ? plural($0.items.count, "item", "items") : nil }
+        let dated = entry?.facts?.dates?.first.map { "\($0.label) \($0.date)" }
+        return [outcome, items, entry?.facts?.issuer, dated].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// A page's rows in View reading, as the Mac shows them: none for a
+    /// copied page (its copy shows); a page read, its draft items now; an
+    /// older reader's page not finished, its entry's items.
+    struct ReadRow: Equatable {
+        let name: String
+        let value: String
+        let range: String?
+        let marks: [String]
+        /// Why it may be wrong.
+        let why: String?
+    }
+
+    static func rows(_ page: ReadingView.Page, drafts: [DraftItem]) -> [ReadRow] {
+        guard page.copy == nil else { return [] }
+        let row = { (name: String, column: String?, value: String, unit: String?, range: String?, flag: String?,
+                     fixed: Bool, why: String) in
+            ReadRow(name: name + (column == "earlier" ? " (earlier)" : ""),
+                    value: [value, unit].compactMap { $0 }.joined(separator: " "), range: range,
+                    marks: [flag, fixed ? "fixed by you" : nil, why.isEmpty ? nil : "unsure"].compactMap { $0 },
+                    why: why.isEmpty ? nil : why)
+        }
+        if page.state == "read" {
+            return drafts.filter { $0.page == page.position }.map { item in
+                let fields = item.fields
+                return row(fields.test_name, fields.column, fields.value_text, fields.unit, fields.reference_range,
+                           fields.flag_text, drafted(item) != nil, item.unsure.joined(separator: "; "))
+            }
+        }
+        return (page.entry?.items ?? []).enumerated().map { index, item in
+            let why = [item.unsure, page.checks?.items.first { $0.item == index + 1 }?.why].compactMap { $0 }
+                .joined(separator: "; ")
+            return row(item.test_name, item.column, item.value_text, item.unit, item.reference_range, item.flag_text,
+                       false, why)
+        }
+    }
+
     /// A page in View reading: "read", "nothing here".
     static func outcome(_ state: String?) -> String {
         switch state {

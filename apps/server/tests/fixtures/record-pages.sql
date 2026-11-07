@@ -110,3 +110,13 @@ INSERT INTO draft_items (id, person_id, document_id, page, seq, job_id, kind, ve
    '{"test_name":"HbA1c","value_text":"7.1","value_number":7.1,"unit":"%","column":"earlier"}',
    '{"test_name":"HbA1c","value_text":"7.1","value_number":7.1,"unit":"%","column":"earlier"}',
    '[]', 'HbA1c (previous) | 7.1 | %', '2026-10-01T09:03:00Z');
+
+-- An older Rufi's reading of the September photo that failed partway: its
+-- reader's entry for the page (no copy), with an issue it noted, and Rufi's
+-- check that it may be incomplete.
+INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, error, started_at, run_at, ended_at, created_at) VALUES
+  ('job-sep', 'asha', 'document_read', 'doc-asha-sep', 'failed', 1, '[1]', 'The reader stopped before it finished.', '2026-09-02T18:31:00Z', '2026-09-02T18:31:00Z', '2026-09-02T18:33:00Z', '2026-09-02T18:31:00Z');
+UPDATE document_pages SET entry_job_id = 'job-sep', entry_attempt = 1, entry_at = '2026-09-02T18:32:00Z',
+  entry = '{"outcome":"read","facts":{"issuer":"Sunrise Labs","dates":[{"label":"Collected","date":"1 Sep 2026"}]},"rows_seen":2,"items":[{"test_name":"TSH","value_text":"4.6","unit":"mIU/L","reference_range":"0.4–4.0","flag_text":"H","unsure":"The value is faint."}],"issues":["The bottom of the photo is cut off."]}',
+  entry_checks = '{"incomplete":{"rows_seen":2,"items":1},"items":[{"item":1,"why":"Its unit is not on the page."}]}'
+  WHERE person_id = 'asha' AND document_id = 'doc-asha-sep' AND position = 1;

@@ -79,6 +79,9 @@ final class ChatBox {
     private(set) var restoring: Set<String> = []
     /// The page's box holds the words of these refused waiting messages.
     var restored: (Set<String>) -> Void = { _ in }
+    /// Chips and words from a page drawn here, waiting for a page's box to
+    /// take them: the last web page may have none (Help).
+    private var waiting: [String: Any]?
 
     /// The page told the box as it is. Its text only when the page changed
     /// it, so it never undoes typing.
@@ -105,6 +108,16 @@ final class ChatBox {
             restoring = []
         }
         self.state = state
+        if state.ready, let waiting {
+            self.waiting = nil
+            ask(waiting)
+        }
+    }
+
+    /// Chips and words from a page drawn here: to the page's box now when
+    /// one is there and ready, else once one says it is.
+    func put(_ command: [String: Any]) {
+        if kind != nil, state?.ready == true { ask(command) } else { waiting = command }
     }
 
     /// Puts the words of a waiting message Rufi refused back in the box,

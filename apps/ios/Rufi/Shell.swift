@@ -413,7 +413,7 @@ final class Shell {
     /// the chat's box, as Ask Rufi does on the Mac's pages, and the chat
     /// opens on them. When the box can't take them now, its line says why.
     func ask(_ chips: [BoxChip], text: String = "") async {
-        screens.box(["type": "ask", "chips": chips.map(\.json), "text": text])
+        box.put(["type": "ask", "chips": chips.map(\.json), "text": text])
         await choose(.chat)
     }
 
