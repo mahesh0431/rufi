@@ -8,9 +8,12 @@ import UIKit
 /// own page only (`enabled`): on a page opened on top, the same swipe is Back.
 /// A swipe left, or a tap on the page beside it, closes it. The card follows
 /// the finger and settles with the swipe's speed, never past either end.
+/// `side` is the sidebar's colour: behind the card, and, as the card goes,
+/// what it fades into, so the sidebar reads as the view.
 struct Drawer<Content: View, Sidebar: View>: View {
     @Binding var open: Bool
     let enabled: Bool
+    let side: Color
     @ViewBuilder let content: Content
     @ViewBuilder let sidebar: Sidebar
     /// How far out the card is while a finger moves it, from 0 to 1.
@@ -46,9 +49,10 @@ struct Drawer<Content: View, Sidebar: View>: View {
                     }
                     .accessibilityHidden(open)
                     .animation(dragged == nil ? settle : nil) {
-                        $0.modifier(Slide(out: out, width: width))
+                        $0.modifier(Slide(out: out, width: width, wash: side))
                     }
             }
+            .background(side.ignoresSafeArea())
             .gesture(SidebarSwipe(open: open, enabled: enabled) { moved in
                 if dragged == nil, !open { Self.putKeyboardAway() }
                 dragged = min(max((open ? 1 : 0) + moved / width, 0), 1)
@@ -99,10 +103,12 @@ private struct Uncovered: ViewModifier, Animatable {
 
 /// The card at `out`, from 0 (closed) to 1: held between the two, so even a
 /// fast swipe never leaves a gap; once it moves, rounded as the screen is
-/// (at least as the smallest iPhone screen corners are) and shadowed.
+/// (at least as the smallest iPhone screen corners are), shadowed and
+/// faded, as far as it is out.
 private struct Slide: ViewModifier, Animatable {
     var out: CGFloat
     let width: CGFloat
+    let wash: Color
 
     var animatableData: CGFloat {
         get { out }
@@ -114,6 +120,9 @@ private struct Slide: ViewModifier, Animatable {
         let shape = out > 0 ? AnyShape(ConcentricRectangle(corners: .concentric(minimum: .fixed(47)), isUniform: true)) : AnyShape(Rectangle())
         // To the screen's edges, as the bars reach under the status bar.
         content
+            .overlay {
+                wash.opacity(0.5 * out).ignoresSafeArea().allowsHitTesting(false)
+            }
             .mask { shape.ignoresSafeArea() }
             .background {
                 shape.fill(.background).shadow(color: .black.opacity(0.2 * out), radius: 24).ignoresSafeArea()

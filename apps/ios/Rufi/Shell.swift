@@ -409,7 +409,7 @@ struct ShellView: View {
     let app: AppModel
 
     var body: some View {
-        Drawer(open: $shell.sidebar, enabled: shell.navigator.stack.isEmpty) {
+        Drawer(open: $shell.sidebar, enabled: shell.navigator.stack.isEmpty, side: shell.theme.side) {
             NavigationStack(path: stack) {
                 page(shell.navigator.root, root: true)
                     .navigationDestination(for: Screen.self) { page($0, root: false) }
