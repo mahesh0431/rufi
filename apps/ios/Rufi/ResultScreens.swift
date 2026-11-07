@@ -68,7 +68,7 @@ struct TestView: View {
     let id: String
 
     var body: some View {
-        Reading(shell: shell, path: "tests/\(id)") { (page: TestPage, _: Date) in
+        Reading(shell: shell, path: "tests/\(id)") { (page: TestPage, at: Date) in
             if page.test.problem != nil || page.test.kind != "test" {
                 List {}.overlay { Text("Can't show this test.").foregroundStyle(.secondary) }
             } else {
@@ -85,7 +85,7 @@ struct TestView: View {
                             .compactMap { $0 }.joined(separator: " · "))
                     }
                     .listRowBackground(shell.theme.surface)
-                    TestDetail(shell: shell, id: id)
+                    TestDetail(shell: shell, id: id, page: at)
                 }
                 .onAppear { shell.titled(screen, page.test.name ?? "") }
             }
@@ -133,6 +133,8 @@ private struct ValueLine: View {
 private struct TestDetail: View {
     let shell: Shell
     let id: String
+    /// When the page was read: this reads with it, on a pull too.
+    let page: Date
     @State private var read: RecordDetail?
 
     private var key: String { "record/test/\(id)" }
@@ -148,7 +150,7 @@ private struct TestDetail: View {
                     .listRowBackground(Color.clear)
             }
         }
-        .task(id: shell.fresh) {
+        .task(id: page) {
             if let answer: RecordDetail = try? await shell.read(key) {
                 read = answer
                 shell.kept[key] = answer

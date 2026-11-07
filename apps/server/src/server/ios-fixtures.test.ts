@@ -19,6 +19,9 @@ const FAKE = join(import.meta.dirname, "../../tests/fake-codex.ts");
 const MORE = join(import.meta.dirname, "../../tests/fixtures/record-pages.sql");
 const FIXTURES = join(import.meta.dirname, "../../../ios/RufiTests/Fixtures");
 const WRITE = process.env["WRITE_IOS_FIXTURES"] === "1";
+// One Mac's clock wherever this runs: Today's day, zone and doses are its.
+process.env["TZ"] = "Europe/Berlin";
+const NOW = "2026-10-06T06:30:00.000Z";
 
 /** Each fixture: its file's name and the route that answers it. */
 const ROUTES: readonly (readonly [string, string])[] = [
@@ -38,6 +41,7 @@ const ROUTES: readonly (readonly [string, string])[] = [
   ["record-measurement", "/api/people/asha/record/measurement"],
   ["record-medicine_use", "/api/people/asha/record/medicine_use"],
   ["detail-medicine", "/api/people/asha/record/medicine_use/med-a1"],
+  ["today", "/api/people/asha/today"],
   [
     "doses",
     "/api/people/asha/doses?from=2026-10-01&to=2026-10-14&medicine=med-a1",
@@ -111,6 +115,7 @@ beforeAll(async () => {
         }),
       ],
       log: () => undefined,
+      now: () => NOW,
     }).pipe(Scope.provide(opened)),
   );
   const launch =

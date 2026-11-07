@@ -144,6 +144,53 @@ struct RecordTests {
         #expect(Words.logged(logged, calendar: india) == "Taken 08:12 · iPhone")
     }
 
+    @Test func todaySaysEachDoseLoggedOrNotAsItsRouteAnswers() throws {
+        let today = try read("today", as: Today.self)
+        #expect(today.day == "2026-10-06")
+        #expect(today.zone == "Europe/Berlin")
+        #expect(today.doses.map { "\($0.at) \($0.medicine.name ?? "")" } == ["08:00 Metformin", "20:00 Metformin"])
+        // 08:00 taken on the iPhone; 20:00 taken, then undone on the Mac.
+        let outbox = Outbox(file: OutboxTests.file())
+        let shown = today.doses.map { $0.shown(day: today.day, pairing: OutboxTests.pairing, outbox: outbox).0 }
+        #expect(shown == [.logged(try #require(today.doses[0].logged)), .open])
+    }
+
+    @Test func aDoseTheMacStoredStaysLoggedUntilTodayIsReadAgain() async throws {
+        let today = try read("today", as: Today.self)
+        let pairing = OutboxTests.pairing
+        let outbox = Outbox(file: OutboxTests.file())
+        func log(_ id: String, at: String, _ state: UnsentLog.State) -> UnsentLog {
+            UnsentLog(id: id, made: .init(pairing), medicine: "med-a1", label: "Metformin 500 mg",
+                      doseAt: "2026-10-06T\(at)", state: state, loggedAt: "2026-10-06T18:05:00.000Z",
+                      takenAt: state == .taken ? "2026-10-06T18:05:00.000Z" : nil)
+        }
+        let taken = log("log-20", at: "20:00", .taken)
+        try outbox.add([log("log-08", at: "08:00", .cleared), taken])
+        try await outbox.send(to: pairing, OutboxTests.StandInMac().take)
+        #expect(outbox.logs.isEmpty)
+        // The next Today read fails: the stored logs still show, so neither
+        // dose is offered again as if unlogged, or still logged.
+        let shown = { today.doses.map { $0.shown(day: today.day, pairing: pairing, outbox: outbox).0 } }
+        #expect(shown() == [.open, .logged(DoseLogged(state: "taken", takenAt: taken.takenAt,
+                                                       loggedAt: taken.loggedAt, by: "app:app-m1"))])
+        // A Today read begun after them has them.
+        outbox.forget(storedBefore: .now)
+        #expect(shown() == [.logged(try #require(today.doses[0].logged)), .open])
+    }
+
+    @Test func todayShowsOnlyThisPairingsWaitingLogs() throws {
+        let today = try read("today", as: Today.self)
+        let other = Pairing(origin: OutboxTests.pairing.origin, app: "app-m2", person: OutboxTests.mahesh,
+                            mac: "mahesh-mbp", folder: "fold-2")
+        let outbox = Outbox(file: OutboxTests.file())
+        let waiting = UnsentLog(id: "log-other", made: .init(other), medicine: "med-a1", label: "Metformin 500 mg",
+                                doseAt: "2026-10-06T20:00", state: .taken, loggedAt: "2026-10-06T18:05:00.000Z")
+        try outbox.add([waiting])
+        let dose = today.doses[1]
+        #expect(dose.shown(day: today.day, pairing: OutboxTests.pairing, outbox: outbox).0 == .open)
+        #expect(dose.shown(day: today.day, pairing: other, outbox: outbox).0 == .pending(waiting))
+    }
+
     @Test func aVisitsPageSaysWhenAndWhereAndWhatWasSavedFromIt() throws {
         let detail = try read("detail-visit", as: RecordDetail.self)
         #expect(Words.cells(detail.row).title == "Dr A. Fictional · Lakeview Family Clinic")

@@ -528,7 +528,8 @@ private struct RowDetailList: View {
             }
             DetailSections(shell: shell, detail: detail)
         }
-        .task(id: shell.fresh) {
+        // With each read of the page, on a pull too.
+        .task(id: now) {
             if detail.row.kind == "medicine_use" { doses = await MedicineDoses.read(shell, medicine: detail.row.id) }
         }
     }
@@ -538,7 +539,7 @@ private struct RowDetailList: View {
     private func followUp(_ row: RecordRow) -> some View {
         let closed = row.status == "done" || row.status == "dropped"
         if closed, let outcome = row.outcome { Text("Outcome: \(outcome)") }
-        if let about = row.about { AboutLine(shell: shell, about: about) }
+        if let about = row.about { AboutLine(shell: shell, about: about, page: now) }
     }
 }
 
@@ -634,6 +635,8 @@ struct SourceLine: View {
 struct AboutLine: View {
     let shell: Shell
     let about: RecordRow.About
+    /// When the page was read: this reads with it, on a pull too.
+    let page: Date
     @State private var read: About?
     @State private var failed = false
 
@@ -662,7 +665,7 @@ struct AboutLine: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .task(id: shell.fresh) {
+        .task(id: page) {
             do throws(Door.Problem) {
                 let named: RecordDetail = try await shell.read("record/\(about.kind)/\(about.id)")
                 // Each amendment in turn, to the current one.

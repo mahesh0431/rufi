@@ -61,7 +61,16 @@ final class Outbox {
     static let file = URL.applicationSupportDirectory.appending(path: "Outbox/unsent-logs.json")
 
     private(set) var logs: [UnsentLog]
+    /// Logs the Mac stored, in memory, until a Today read begun after them
+    /// has them: Today shows them meanwhile, so a dose stored isn't offered
+    /// again (`forget(storedBefore:)`).
+    private(set) var stored: [Stored] = []
     private let file: URL
+
+    struct Stored {
+        let log: UnsentLog
+        let at: Date
+    }
     private var sending = false
 
     init(file: URL = Outbox.file) {
@@ -116,9 +125,17 @@ final class Outbox {
                 // The file first, then memory, so they never differ: a write
                 // that fails keeps the log in both, and it is sent again,
                 // which the Mac answers as already stored.
-                if (try? write(now)) != nil { logs = now }
+                if (try? write(now)) != nil {
+                    logs = now
+                    if case .stored = answer { stored.append(Stored(log: log, at: .now)) }
+                }
             }
         } while logs.contains { $0.refused == nil && $0.made.matches(pairing) && !tried.contains($0.id) }
+    }
+
+    /// A Today read begun at `date` has every log stored before it.
+    func forget(storedBefore date: Date) {
+        stored.removeAll { $0.at < date }
     }
 
     private func write(_ logs: [UnsentLog]) throws {

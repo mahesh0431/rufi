@@ -40,7 +40,9 @@ struct TodaySection: View {
 
     /// Reads Today for its page, kept for when the page opens again.
     static func read(_ shell: Shell) async -> Today? {
+        let asked = Date.now
         guard let answer: Today = try? await shell.read("today") else { return nil }
+        shell.outbox.forget(storedBefore: asked)
         shell.kept["today"] = answer
         return answer
     }
@@ -59,6 +61,32 @@ extension Today {
 extension Today.Dose {
     /// The dose: its medicine and its time today.
     var key: String { "\(medicine.id)@\(at)" }
+
+    /// What Today shows for a dose.
+    enum Shown: Equatable {
+        /// Waiting on this iPhone.
+        case pending(UnsentLog)
+        case logged(DoseLogged)
+        case open
+    }
+
+    /// What Today read on `day` shows for this dose under `pairing`: a log
+    /// waiting on this iPhone, else one the Mac stored since Today was read,
+    /// else Today's own; and why the Mac refused a log, if it did.
+    func shown(day: String, pairing: Pairing, outbox: Outbox) -> (Shown, refused: String?) {
+        let this = { (log: UnsentLog) in
+            log.made.matches(pairing) && log.medicine == medicine.id && log.doseAt == "\(day)T\(at)"
+        }
+        let waiting = outbox.logs.last(where: this)
+        if let waiting, waiting.refused == nil { return (.pending(waiting), nil) }
+        let shown: Shown = if let sent = outbox.stored.last(where: { this($0.log) })?.log {
+            sent.state == .cleared ? .open : .logged(DoseLogged(
+                state: sent.state.rawValue, takenAt: sent.takenAt, loggedAt: sent.loggedAt, by: "app:\(sent.made.app)"))
+        } else {
+            logged.map(Shown.logged) ?? .open
+        }
+        return (shown, waiting?.refused)
+    }
 }
 
 /// One dose today: its time and medicine, how to take it, and its log.
@@ -92,22 +120,21 @@ private struct DoseLine: View {
     /// Waiting on the iPhone, logged, or not yet.
     @ViewBuilder
     private var state: some View {
-        let waiting = shell.outbox.logs.last { $0.medicine == dose.medicine.id && $0.doseAt == "\(day)T\(dose.at)" }
-        if let waiting, waiting.refused == nil {
+        let (shown, refused) = dose.shown(day: day, pairing: shell.pairing, outbox: shell.outbox)
+        if let refused { Text(refused).font(.subheadline).foregroundStyle(.secondary) }
+        switch shown {
+        case let .pending(waiting):
             Text("\(Words.unsent(waiting)) · Pending").font(.subheadline)
-        } else {
-            if let refused = waiting?.refused { Text(refused).font(.subheadline).foregroundStyle(.secondary) }
-            if let logged = dose.logged {
-                HStack {
-                    Text(Words.logged(logged)).font(.subheadline)
-                    Spacer()
-                    action("Undo", "arrow.uturn.backward", .cleared)
-                }
-            } else {
-                HStack {
-                    action("Taken", "checkmark", .taken)
-                    action("Skipped", "forward", .skipped)
-                }
+        case let .logged(logged):
+            HStack {
+                Text(Words.logged(logged)).font(.subheadline)
+                Spacer()
+                action("Undo", "arrow.uturn.backward", .cleared)
+            }
+        case .open:
+            HStack {
+                action("Taken", "checkmark", .taken)
+                action("Skipped", "forward", .skipped)
             }
         }
     }
