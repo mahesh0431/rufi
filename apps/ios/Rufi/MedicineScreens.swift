@@ -41,9 +41,25 @@ struct TodaySection: View {
     /// Reads Today for its page, kept for when the page opens again.
     static func read(_ shell: Shell) async -> Today? {
         let asked = Date.now
-        guard let answer: Today = try? await shell.read("today") else { return nil }
+        guard let answer: Today = await shell.todayReads.read({ try? await shell.read("today") }) else { return nil }
         shell.outbox.forget(storedBefore: asked)
         shell.kept["today"] = answer
+        return answer
+    }
+}
+
+/// Reads that may overlap, each numbered as it starts: an answer from a
+/// read older than one already answered is dropped, so an older Today never
+/// replaces a newer one.
+final class NewestRead {
+    private var started = 0
+    private var answered = 0
+
+    func read<Answer>(_ asking: () async -> Answer?) async -> Answer? {
+        started += 1
+        let this = started
+        guard let answer = await asking(), this > answered else { return nil }
+        answered = this
         return answer
     }
 }

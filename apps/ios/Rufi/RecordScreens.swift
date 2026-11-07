@@ -363,7 +363,7 @@ struct RecordListView: View {
                 } else {
                     List {
                         if kind == "medicine_use", let today = today ?? shell.kept["today"] as? Today {
-                            TodaySection(shell: shell, today: today) { self.today = await TodaySection.read(shell) }
+                            TodaySection(shell: shell, today: today) { if let read = await TodaySection.read(shell) { self.today = read } }
                         }
                         if kind == "measurement" {
                             // By the day they were taken, newest first.
@@ -402,7 +402,8 @@ struct RecordListView: View {
     }
 
     private func readToday() async {
-        if kind == "medicine_use" { today = await TodaySection.read(shell) }
+        // None when it failed or a newer read answered first: what is shown stays.
+        if kind == "medicine_use", let read = await TodaySection.read(shell) { today = read }
     }
 
     /// The first page again: what is newest now.

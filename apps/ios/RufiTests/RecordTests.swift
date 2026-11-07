@@ -178,6 +178,25 @@ struct RecordTests {
         #expect(shown() == [.logged(try #require(today.doses[0].logged)), .open])
     }
 
+    @Test func aTodayReadOlderThanOneAnsweredIsDropped() async {
+        let reads = NewestRead()
+        let gate = Gate()
+        // The older read is held; a newer one answers; then the older one does.
+        let older = Task { await reads.read { await gate.wait(); return "unlogged" } }
+        while !gate.waiting { await Task.yield() }
+        #expect(await reads.read { "taken" } == "taken")
+        gate.open()
+        #expect(await older.value == nil)
+    }
+
+    /// Holds a read until it's opened.
+    final class Gate {
+        private var held: CheckedContinuation<Void, Never>?
+        var waiting: Bool { held != nil }
+        func wait() async { await withCheckedContinuation { held = $0 } }
+        func open() { held?.resume() }
+    }
+
     @Test func todayShowsOnlyThisPairingsWaitingLogs() throws {
         let today = try read("today", as: Today.self)
         let other = Pairing(origin: OutboxTests.pairing.origin, app: "app-m2", person: OutboxTests.mahesh,

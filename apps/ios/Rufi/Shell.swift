@@ -68,6 +68,8 @@ final class Shell {
     /// open: shown at once when the page opens again, and while Rufi can't
     /// be reached. Only in memory.
     @ObservationIgnored var kept: [String: any Sendable] = [:]
+    /// Today's reads, which may overlap: only the newest answer is applied.
+    @ObservationIgnored let todayReads = NewestRead()
 
     /// The document camera is up.
     var scanning = false
