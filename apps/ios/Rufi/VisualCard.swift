@@ -7,7 +7,8 @@ import WebKit
 /// the one guard for what the AI wrote; the app adds only what is its own:
 /// nothing navigates, the card is the height the visual says (kept, so a
 /// card drawn again doesn't jump), and when WebKit ends its process the card
-/// loads once more, then says it can't show the visual.
+/// loads once more, then says it can't show the visual. A card whose page
+/// didn't load says so too, and loads again when Rufi is reached.
 struct VisualCard: View {
     let html: String
     /// Its entry and place in the reply: where its height is kept.
@@ -62,6 +63,12 @@ struct VisualCard: View {
             }
         }
         .padding(.bottom, 8)
+        .onChange(of: chat.reaches) {
+            if failed {
+                failed = false
+                loads += 1
+            }
+        }
     }
 
     /// The height a visual says, as the card takes it: whole points, at most 800.
@@ -162,8 +169,10 @@ private struct CardView: UIViewRepresentable {
             nil
         }
 
+        /// The card's page didn't load (Rufi out of reach): it can't show the visual.
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
-            card.broke()
+            ready = false
+            card.ended()
         }
 
         /// WebKit ended the card's process (memory): it loads once more.

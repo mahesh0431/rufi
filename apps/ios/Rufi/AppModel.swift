@@ -204,6 +204,8 @@ final class AppModel {
         UserDefaults.standard.removeObject(forKey: "setup.done")
         // Logs still waiting are shown only behind the lock: it stays.
         if outbox.logs.isEmpty { lock.forget() }
+        // The chat of the pairing that ends stops first: nothing of it sends after.
+        if case let .open(shell) = stage { shell.chat.end() }
         pending.clear()
         reminders = nil
         health = nil

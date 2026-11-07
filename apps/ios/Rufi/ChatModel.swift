@@ -65,6 +65,8 @@ final class ChatModel {
     private(set) var accepted: [PendingMessage] = []
     /// Goes up at each send: the transcript goes to its end.
     private(set) var sends = 0
+    /// Goes up each time the stream opens: a card that couldn't load tries again.
+    private(set) var reaches = 0
     /// Rufi can't be reached: a message kept says Pending.
     var away = false
     /// When the working line's clock started, and for what: a reply, or "starting".
@@ -106,6 +108,13 @@ final class ChatModel {
     @ObservationIgnored private var saves: Task<Void, Never>?
     @ObservationIgnored private var queueReads = 0
     @ObservationIgnored private var delivering = false
+    /// The draft's first read: one at a time, whatever the stream does.
+    @ObservationIgnored private var loading: Task<Void, Never>?
+    /// The pairing this chat is for (the outbox's generation then): only
+    /// it sends the messages kept on the iPhone.
+    @ObservationIgnored private let pairing: Int
+    /// Its pairing ended: it does nothing more.
+    @ObservationIgnored private var ended = false
 
     static let maxText = 10_000
     static let maxChips = 100
@@ -114,16 +123,36 @@ final class ChatModel {
         self.door = door
         self.person = person
         self.pending = pending
+        pairing = pending.generation
     }
 
     // MARK: - The stream
 
     /// Opens the stream, and reads the box and the settings, unless open.
     func open() {
-        guard stream == nil else { return }
+        guard stream == nil, !ended else { return }
         stream = Task { await run() }
-        if !loaded { Task { await load() } }
+        if !loaded, loading == nil {
+            loading = Task {
+                await load()
+                loading = nil
+            }
+        }
         Task { await readSettings() }
+    }
+
+    /// Its pairing ended: the stream, the draft's read and the saves stop,
+    /// and nothing it was waiting for acts any more.
+    func end() {
+        ended = true
+        close()
+        loading?.cancel()
+        pause?.cancel()
+        saves?.cancel()
+        lost = {}
+        reached = {}
+        unpaired = {}
+        changed = { _ in }
     }
 
     /// Closes the stream: Rufi went to the background, or unpaired.
@@ -153,6 +182,7 @@ final class ChatModel {
                 try await read(bytes) {
                     wait = 0.5
                     connected = true
+                    reaches += 1
                     reached()
                 }
             } catch .unpaired {
@@ -304,9 +334,11 @@ final class ChatModel {
     /// Reads the draft until it comes: a second, then longer, between tries.
     private func load() async {
         var wait = 1.0
-        while !loaded {
+        while !loaded, !Task.isCancelled {
             do {
                 let draft: Draft = try await door.read("chat/draft", for: person)
+                // Only the box's first read sets it: never over words typed since.
+                guard !loaded, !Task.isCancelled else { return }
                 kept = draft
                 text = draft.text
                 chips = draft.refs.map(Self.boxed)
@@ -358,6 +390,8 @@ final class ChatModel {
         guard loaded, text.count <= Self.maxText, chips.count <= Self.maxChips else { return }
         let text = text
         let refs = chips.map(\.ref)
+        // The refused messages whose words this save holds: only these leave the outbox when it is kept.
+        let restored = restoring
         if !failed, let kept, kept.text == text, kept.refs.map(\.ref) == refs, restoring.isEmpty { return }
         do {
             let draft = try await door.save(draft: text, refs: refs, for: person)
@@ -367,9 +401,9 @@ final class ChatModel {
             chips = chips.map { chip in named[chip.ref.key].map { Chip(ref: chip.ref, label: $0.label, detail: $0.detail) } ?? chip }
             failed = false
             if !keepingNotice { notice = nil }
-            if !restoring.isEmpty, draft.text == text {
-                pending.remove(restoring)
-                restoring = []
+            if !restored.isEmpty, draft.text == text {
+                pending.remove(restored)
+                restoring.subtract(restored)
             }
         } catch .unpaired {
             unpaired()
@@ -411,11 +445,11 @@ final class ChatModel {
     /// sent until the chat has it; one it refused comes back into the box,
     /// with its words.
     func deliver() async {
-        guard loaded, !delivering else { return }
+        guard loaded, !delivering, !ended else { return }
         delivering = true
         defer { delivering = false }
         do {
-            let back = try await pending.send(skipping: restoring) { message throws(Door.Problem) in
+            let back = try await pending.send(for: pairing, skipping: restoring) { message throws(Door.Problem) in
                 do throws(Door.Problem) {
                     try await door.send(message, for: person)
                 } catch {

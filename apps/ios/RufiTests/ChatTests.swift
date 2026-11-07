@@ -7,9 +7,11 @@ import Testing
 /// card loads only the door's two pages; a reply's links open only the
 /// person's pages; and a send goes through Pending, once.
 @MainActor
+@Suite(.serialized)
 struct ChatTests {
     init() {
         Door.standIn = StandInDoor.self
+        ChatDoor.reset()
     }
 
     private func read<Answer: Decodable>(_ name: String, as: Answer.Type = Answer.self) throws -> Answer {
@@ -124,6 +126,62 @@ struct ChatTests {
         chat.close()
     }
 
+    /// A refused message's words go back in the box, and the message stays
+    /// kept on the iPhone until a save of the box with its words is kept:
+    /// a save that started before it doesn't count.
+    @Test func aRefusedMessageStaysKeptUntilASaveHoldsIt() async throws {
+        let file = PendingTests.file()
+        let pending = Pending(file: file)
+        let chat = ChatModel(door: Door(origin: URL(string: "https://chat.test")!, key: "a-key"), person: "asha",
+                             pending: pending)
+        chat.open()
+        try await Self.until { chat.loaded }
+        let held = DispatchSemaphore(value: 0)
+        ChatDoor.holds["PUT /api/people/asha/chat/draft"] = held
+        chat.typed("Earlier draft")
+        chat.save()
+        try await Self.until { ChatDoor.holds.isEmpty }
+
+        ChatDoor.refusing = true
+        try pending.add("Fictional symptom message")
+        await chat.deliver()
+        #expect(chat.text == "Earlier draft\n\nFictional symptom message")
+        // The earlier save comes back; the one with the message can't reach the Mac.
+        ChatDoor.savesAway = true
+        held.signal()
+        try await Self.until { chat.failed }
+        #expect(Pending(file: file).messages.map(\.text) == ["Fictional symptom message"])
+        chat.end()
+    }
+
+    /// The box's first read, asked again as Rufi goes to the background and
+    /// back, is one read: a late one never replaces words typed since.
+    @Test func aLateFirstReadNeverReplacesWordsTyped() async throws {
+        ChatDoor.draft = #"{"text":"Old draft","refs":[]}"#
+        let held = DispatchSemaphore(value: 0)
+        ChatDoor.holds["GET /api/people/asha/chat/draft"] = held
+        let chat = ChatModel(door: Door(origin: URL(string: "https://chat.test")!, key: "a-key"), person: "asha",
+                             pending: Pending(file: PendingTests.file()))
+        chat.open()
+        try await Self.until { ChatDoor.holds.isEmpty }
+        chat.close()
+        chat.open()
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(ChatDoor.draftReads == 1)
+        held.signal()
+        try await Self.until { chat.loaded }
+        chat.typed("New health question")
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(chat.text == "New health question")
+        chat.end()
+    }
+
+    /// Waits up to two seconds for `done`.
+    static func until(_ done: () -> Bool) async throws {
+        for _ in 0..<100 where !done() { try await Task.sleep(for: .milliseconds(20)) }
+        try #require(done())
+    }
+
     static let berlin = {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Europe/Berlin")!
@@ -141,14 +199,45 @@ enum ChatDoor {
 
     nonisolated(unsafe) static var away = false
     nonisolated(unsafe) static var sent: [Sent] = []
+    /// The draft the Mac has, as its first read answers it.
+    nonisolated(unsafe) static var draft = #"{"text":"","refs":[]}"#
+    /// Requests ("PUT /api/people/asha/chat/draft") the test holds: the
+    /// first of each waits until the test signals.
+    nonisolated(unsafe) static var holds: [String: DispatchSemaphore] = [:]
+    nonisolated(unsafe) static var draftReads = 0
+    /// Messages refused, as when the Mac needs a sign-in.
+    nonisolated(unsafe) static var refusing = false
+    /// Draft saves can't reach the Mac.
+    nonisolated(unsafe) static var savesAway = false
+
+    static func reset() {
+        (away, sent, draft, holds, draftReads, refusing, savesAway) =
+            (false, [], #"{"text":"","refs":[]}"#, [:], 0, false, false)
+    }
+
+    /// The hold for this request, if the test holds it.
+    nonisolated static func gate(_ request: URLRequest) -> DispatchSemaphore? {
+        guard request.url?.host() == "chat.test" else { return nil }
+        let key = "\(request.httpMethod ?? "GET") \(request.url?.path() ?? "")"
+        if key == "GET /api/people/asha/chat/draft" { draftReads += 1 }
+        return holds.removeValue(forKey: key)
+    }
 
     nonisolated static func answer(_ request: URLRequest) -> (Int, String)? {
         guard request.url?.host() == "chat.test" else { return nil }
         switch (request.httpMethod ?? "GET", request.url?.path() ?? "") {
-        case ("GET", "/api/people/asha/chat/draft"), ("PUT", "/api/people/asha/chat/draft"):
-            return (200, #"{"text":"","refs":[]}"#)
+        case ("GET", "/api/people/asha/chat/draft"):
+            return (200, draft)
+        case ("PUT", "/api/people/asha/chat/draft"):
+            if savesAway { return (502, "") }
+            // Kept as it came: its words come back.
+            struct Saved: Decodable { let text: String }
+            let text = (try? JSONDecoder().decode(Saved.self, from: body(request)))?.text ?? ""
+            let answer = try? JSONSerialization.data(withJSONObject: ["text": text, "refs": []])
+            return (200, answer.map { String(decoding: $0, as: UTF8.self) } ?? "")
         case ("POST", "/api/people/asha/chat/messages"):
             if away { return (502, "") }
+            if refusing { return (400, #"{"error":"Sign in to Claude on your Mac."}"#) }
             struct Message: Decodable {
                 struct Ref: Decodable { let id: String }
                 let id: String
