@@ -49,7 +49,17 @@ struct Drawer<Content: View, Sidebar: View>: View {
                     }
                     .accessibilityHidden(open)
                     .animation(dragged == nil ? settle : nil) {
-                        $0.modifier(Slide(out: out, width: width, wash: side))
+                        $0.modifier(Slide(out: out, width: width))
+                    }
+                // The fade, its own layer over the card: drawn inside the card,
+                // over its bars and web page, it blanked the card for some frames
+                // each time the card stopped.
+                Slide.rounded
+                    .fill(side)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                    .animation(dragged == nil ? settle : nil) {
+                        $0.opacity(0.5 * out).offset(x: width * out)
                     }
             }
             .background(side.ignoresSafeArea())
@@ -103,12 +113,13 @@ private struct Uncovered: ViewModifier, Animatable {
 
 /// The card at `out`, from 0 (closed) to 1: held between the two, so even a
 /// fast swipe never leaves a gap; once it moves, rounded as the screen is
-/// (at least as the smallest iPhone screen corners are), shadowed and
-/// faded, as far as it is out.
+/// (at least as the smallest iPhone screen corners are) and shadowed, as
+/// far as it is out.
 private struct Slide: ViewModifier, Animatable {
     var out: CGFloat
     let width: CGFloat
-    let wash: Color
+
+    static let rounded = ConcentricRectangle(corners: .concentric(minimum: .fixed(47)), isUniform: true)
 
     var animatableData: CGFloat {
         get { out }
@@ -117,12 +128,9 @@ private struct Slide: ViewModifier, Animatable {
 
     func body(content: Content) -> some View {
         let out = min(max(out, 0), 1)
-        let shape = out > 0 ? AnyShape(ConcentricRectangle(corners: .concentric(minimum: .fixed(47)), isUniform: true)) : AnyShape(Rectangle())
+        let shape = out > 0 ? AnyShape(Self.rounded) : AnyShape(Rectangle())
         // To the screen's edges, as the bars reach under the status bar.
         content
-            .overlay {
-                wash.opacity(0.5 * out).ignoresSafeArea().allowsHitTesting(false)
-            }
             .mask { shape.ignoresSafeArea() }
             .background {
                 shape.fill(.background).shadow(color: .black.opacity(0.2 * out), radius: 24).ignoresSafeArea()
