@@ -1099,7 +1099,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         {
           check: "shows_a_chart",
           criterion:
-            "The reply is Markdown with at least one ```rufi-visual block: an HTML fragment that draws fasting glucose and HbA1c over the years with inline SVG (and at most a little inline script), loads nothing from outside (no script, style, font or picture from a web address), uses Rufi's colour variables such as var(--ink) and var(--accent), and shows the values of the records read. Not a picture.",
+            "The reply is Markdown with at least one ```rufi-visual block: an HTML fragment that draws fasting glucose and HbA1c over the years in HTML, CSS and inline SVG alone, with no script anywhere and every point and label written in the HTML, loads nothing from outside (no script, style, font or picture from a web address), uses Rufi's colour variables such as var(--ink) and var(--accent), and shows the values of the records read. Not a picture.",
           evidence: replyOf(snapshot),
         },
       ],
