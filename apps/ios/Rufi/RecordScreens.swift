@@ -32,14 +32,19 @@ struct Reading<Answer: Decodable & Sendable, Content: View>: View {
     let shell: Shell
     let path: String
     @ViewBuilder let content: (Answer, Date) -> Content
-    @State private var answer: Answer?
-    @State private var at = Date.now
+    @State private var read: Kept?
     @State private var problem: String?
+
+    /// A read and when it came.
+    private struct Kept: Sendable {
+        let answer: Answer
+        let at: Date
+    }
 
     var body: some View {
         Group {
-            if let answer {
-                content(answer, at)
+            if let shown = read ?? shell.kept[path] as? Kept {
+                content(shown.answer, shown.at)
             } else if let problem {
                 ContentUnavailableView("Can't Show This", systemImage: "exclamationmark.triangle",
                                        description: Text(problem))
@@ -56,9 +61,9 @@ struct Reading<Answer: Decodable & Sendable, Content: View>: View {
 
     private func read() async {
         do {
-            let read: Answer = try await shell.read(path)
-            answer = read
-            at = .now
+            let answer: Answer = try await shell.read(path)
+            read = Kept(answer: answer, at: .now)
+            shell.kept[path] = read
             problem = nil
         } catch {
             problem = error.shown ?? problem
@@ -211,7 +216,6 @@ private struct OverviewList: View {
                         .font(.title2.bold())
                 }
                 .listRowBackground(Color.clear)
-                .listRowInsets(.init(top: 0, leading: 4, bottom: 0, trailing: 4))
             }
             if !overview.needsYou.documents.isEmpty || !overview.needsYou.followUps.isEmpty {
                 Section("Needs you") {
@@ -292,14 +296,18 @@ private struct OverviewList: View {
 struct RecordListView: View {
     let shell: Shell
     let kind: String
-    @State private var groups: [RecordGroup]?
-    @State private var next: String?
+    @State private var read: RecordPage?
     @State private var problem: String?
     @State private var reading = false
 
+    private var path: String { "record/\(kind)" }
+    /// Every row read so far, and where to read on.
+    private var shown: RecordPage? { read ?? shell.kept[path] as? RecordPage }
+
     var body: some View {
         Group {
-            if let groups {
+            if let groups = shown?.groups {
+                let next = shown?.next
                 if groups.isEmpty {
                     ContentUnavailableView {
                         Text("Nothing here yet.")
@@ -337,9 +345,8 @@ struct RecordListView: View {
     /// The first page again: what is newest now.
     private func first() async {
         do {
-            let page: RecordPage = try await shell.read("record/\(kind)")
-            groups = page.groups
-            next = page.next
+            let page: RecordPage = try await shell.read(path)
+            keep(page)
             problem = nil
         } catch {
             problem = error.shown ?? problem
@@ -348,13 +355,17 @@ struct RecordListView: View {
 
     /// The page after the last read; out of reach, it waits for the next scroll.
     private func more() async {
-        guard let after = next, !reading else { return }
+        guard let after = shown?.next, !reading else { return }
         reading = true
         defer { reading = false }
-        guard let page: RecordPage = try? await shell.read("record/\(kind)", query: ["after": after]),
-              next == after else { return }
-        groups = (groups ?? []) + page.groups
-        next = page.next
+        guard let page: RecordPage = try? await shell.read(path, query: ["after": after]),
+              let before = shown, before.next == after else { return }
+        keep(RecordPage(groups: before.groups + page.groups, next: page.next))
+    }
+
+    private func keep(_ page: RecordPage) {
+        read = page
+        shell.kept[path] = page
     }
 }
 
@@ -494,10 +505,13 @@ struct SourceLine: View {
 struct AboutLine: View {
     let shell: Shell
     let about: RecordRow.About
-    @State private var detail: RecordDetail?
+    @State private var read: RecordDetail?
     @State private var failed = false
 
+    private var path: String { "record/\(about.kind)/\(about.id)" }
+
     var body: some View {
+        let detail = read ?? shell.kept[path] as? RecordDetail
         Group {
             if let detail, detail.row.problem == nil, let page = Words.page(of: detail.row) {
                 let cells = Words.cells(detail.row)
@@ -511,14 +525,17 @@ struct AboutLine: View {
                         Text("About: \(label)")
                     }
                 }
-            } else if failed || detail != nil {
-                Text("About: a record Rufi can't show").foregroundStyle(.secondary)
+            } else {
+                // While it reads, the row's place is held, so its read runs.
+                Text(failed || detail != nil ? "About: a record Rufi can't show" : "About:")
+                    .foregroundStyle(.secondary)
             }
         }
         .task(id: shell.fresh) {
             do throws(Door.Problem) {
-                let read: RecordDetail = try await shell.read("record/\(about.kind)/\(about.id)")
-                detail = read
+                let answer: RecordDetail = try await shell.read(path)
+                read = answer
+                shell.kept[path] = answer
             } catch {
                 if error.shown != nil { failed = true }
             }

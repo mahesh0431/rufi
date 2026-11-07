@@ -60,6 +60,10 @@ final class Shell {
     private var wanted: Place?
     /// Goes up when the pages drawn here should read again: Rufi is back.
     private(set) var fresh = 0
+    /// The last read of each page drawn here, by its route, while Rufi is
+    /// open: shown at once when the page opens again, and while Rufi can't
+    /// be reached. Only in memory.
+    @ObservationIgnored var kept: [String: any Sendable] = [:]
 
     /// The document camera is up.
     var scanning = false
