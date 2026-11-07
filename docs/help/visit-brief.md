@@ -45,6 +45,10 @@ Click **Copy**. Rufi puts the brief on the clipboard as plain text: the date, th
 
 Click **Print**. Your Mac's print window opens with the brief's page alone: Rufi's dog, when it was made and from whose record, the brief and its Sources, without the sidebar or the chat. It prints on white paper, also when Rufi is dark. A long brief goes on to more pages, and each page's foot says its number, for example "Page 1 of 2". To keep a file of it, choose **Save as PDF** in the print window.
 
+## Export a PDF on your iPhone
+
+On your iPhone, the brief's page has **Export PDF** in Print's place. Tap it: Rufi makes a PDF of the brief as it prints, on A4 pages, and shows it in iOS's own viewer. Its share button sends it, for example to your doctor on WhatsApp, saves it to Files or prints it. Rufi deletes its copy when you close the viewer.
+
 ## When your record changes
 
 A brief never changes after it is made. When you save something to your record after that, the brief's page says **The record changed since this brief was made**, and each source that changed is marked **changed since**. The brief still shows what it said then. To include the changes, ask Rufi for a new brief.

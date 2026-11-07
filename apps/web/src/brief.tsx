@@ -1,15 +1,18 @@
 // A visit brief's page: the AI's Markdown as it wrote it, dated, with the
 // Sources Rufi built from the records it cites, each opening its record,
 // Print and Copy. Printed, it is the same page without the buttons, under
-// Rufi's dog (the frame stays on the screen: styles.css). A brief never
-// changes; when a later save changed the record, the page says so.
+// Rufi's dog (the frame stays on the screen: styles.css). In the iPhone app,
+// Export PDF takes Print's place: the app prints the page to a PDF and shows
+// it in Quick Look. A brief never changes; when a later save changed the
+// record, the page says so.
 import type { Person } from "@rufi/contracts";
 import type { Brief, BriefSource } from "@rufi/contracts/briefs";
 import { Link } from "@tanstack/react-router";
-import { Copy, Info, Printer } from "lucide-react";
+import { Copy, FileDown, Info, Printer } from "lucide-react";
 import { useEffect, useState } from "react";
-import { printedTime } from "./dates.ts";
+import { printedDay, printedTime } from "./dates.ts";
 import { Dog } from "./dog.tsx";
+import { onPhone, tell } from "./phone.ts";
 import { useBrief } from "./reads.ts";
 import { isPageKind } from "./record.tsx";
 import { SettingsLink } from "./settings-link.tsx";
@@ -51,14 +54,28 @@ function Shown({ brief, person }: { brief: Brief; person: Person }) {
         </div>
         <div className="flex items-start gap-3 print:hidden">
           <CopyButton text={() => asText(brief, made)} />
-          <Button
-            icon={Printer}
-            onClick={() => {
-              window.print();
-            }}
-          >
-            Print
-          </Button>
+          {onPhone ? (
+            <Button
+              icon={FileDown}
+              onClick={() => {
+                tell({
+                  type: "pdf",
+                  name: `Visit brief – ${person.displayName} – ${printedDay(brief.createdAt)}.pdf`,
+                });
+              }}
+            >
+              Export PDF
+            </Button>
+          ) : (
+            <Button
+              icon={Printer}
+              onClick={() => {
+                window.print();
+              }}
+            >
+              Print
+            </Button>
+          )}
         </div>
       </div>
       {brief.changedSince && (

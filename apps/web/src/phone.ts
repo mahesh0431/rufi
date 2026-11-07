@@ -54,6 +54,11 @@ export type ToApp =
       files: { id: string; name: string }[];
     }
   /**
+   * Export PDF: the app prints the page open now to a PDF of this name and
+   * shows it in Quick Look.
+   */
+  | { type: "pdf"; name: string }
+  /**
    * The colours the page draws in now (the theme chosen on the Mac, in the
    * iPhone's light or dark): the app's own parts take them.
    */
