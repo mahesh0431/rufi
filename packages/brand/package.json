@@ -11,7 +11,8 @@
       "default": "./mark/rufi.js"
     },
     "./mark/motion.css": "./mark/motion.css",
-    "./mark/assets/*": "./mark/assets/*"
+    "./mark/assets/*": "./mark/assets/*",
+    "./fonts/*": "./fonts/*"
   },
   "scripts": {
     "regenerate": "node mark/build.mjs"

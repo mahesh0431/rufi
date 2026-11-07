@@ -266,7 +266,7 @@ The doses with reminders on for the days a paired iPhone asks for, worked out on
 _Avoid_: schedule, sync
 
 **Visit brief**:
-A dated summary the AI writes for a doctor's visit from the saved record only, with the records it rests on as its sources. Its page, printout and copied text say Rufi's AI made it, on which day, from the record up to which save, and that it isn't medically validated. It never changes; when a later save changes the record, its page says so.
+A dated summary the AI writes for a doctor's visit from the saved record only, with the records it rests on as its sources. Its page, PDF and copied text say Rufi's AI made it, on which day, from the record up to which save, and that it isn't medically validated. It never changes; when a later save changes the record, its page says so.
 _Avoid_: handoff, summary, report
 
 **Research entry**:

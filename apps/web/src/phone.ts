@@ -53,6 +53,8 @@ export type ToApp =
       documentId: string;
       files: { id: string; name: string }[];
     }
+  /** View PDF: the app fetches the brief's PDF and shows it in Quick Look. */
+  | { type: "brief_pdf"; briefId: string }
   /**
    * The colours the page draws in now (the theme chosen on the Mac, in the
    * iPhone's light or dark): the app's own parts take them.

@@ -117,6 +117,7 @@ final class Shell {
         box.asking = { [weak screens] command in screens?.box(command) }
         box.restored = { [weak pending] ids in pending?.remove(ids) }
         screens.onOriginal = { [weak self] document, files in Task { await self?.show(document, files) } }
+        screens.onBriefPDF = { [weak self] brief in Task { await self?.showBrief(brief) } }
         screens.view.backgroundColor = theme.pageColour
         screens.onTheme = { [weak self] colours, dark in
             guard let self else { return }
@@ -315,16 +316,33 @@ final class Shell {
     /// View original: fetches the document's files with the key and shows
     /// them in Quick Look.
     func show(_ document: String, _ files: [(id: String, name: String)]) async {
-        guard !fetching, originals.isEmpty else { return }
-        fetching = true
-        defer { fetching = false }
-        var copies: [URL] = []
-        do {
+        await present { copies in
             for file in files {
                 let fetched = try await door.file(person: pairing.person.id, document: document, file: file.id,
                                                   into: Originals.shown.staging)
                 copies.append(try Originals.shown.keep(fetched, named: file.name))
             }
+        }
+    }
+
+    /// View PDF: the visit brief's PDF, made by Rufi on the Mac, shown like
+    /// an original, with its share button; deleted on close.
+    func showBrief(_ brief: String) async {
+        await present { copies in
+            let fetched = try await door.briefPDF(person: pairing.person.id, brief: brief, into: Originals.shown.staging)
+            copies.append(try Originals.shown.keep(fetched.file, named: fetched.name))
+        }
+    }
+
+    /// Fetches copies to show in Quick Look, one fetch at a time; on a
+    /// problem, none is kept and the problem shows.
+    private func present(_ fetch: (inout [URL]) async throws -> Void) async {
+        guard !fetching, originals.isEmpty else { return }
+        fetching = true
+        defer { fetching = false }
+        var copies: [URL] = []
+        do {
+            try await fetch(&copies)
         } catch {
             Originals.shown.delete(copies)
             switch error as? Door.Problem {

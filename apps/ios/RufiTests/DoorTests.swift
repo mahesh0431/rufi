@@ -68,6 +68,21 @@ struct DoorTests {
             try await door("old.test").batch(Data("{}".utf8))
         }
     }
+
+    /// A visit brief's PDF comes with the key, under the name Rufi gives it,
+    /// in UTF-8; another person's brief is refused in the Mac's words.
+    @Test func briefPDFComesUnderItsName() async throws {
+        let door = Door(origin: URL(string: "https://pdf.test")!, key: "a-key")
+        let staging = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: staging) }
+
+        let fetched = try await door.briefPDF(person: "asha", brief: "brf-1", into: staging)
+        #expect(fetched.name == "Visit brief – Asha Fictional – 4 Oct 2026.pdf")
+        #expect(try Data(contentsOf: fetched.file) == Data("%PDF-fictional".utf8))
+        await #expect(throws: Door.Problem.refused("There is no such brief.")) {
+            try await door.briefPDF(person: "asha", brief: "brf-ravi", into: staging)
+        }
+    }
 }
 
 /// Answers each call as the door would refuse it; unpair succeeds with a body
@@ -77,6 +92,7 @@ nonisolated private final class StandInDoor: URLProtocol, @unchecked Sendable {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
+        if request.url?.host() == "pdf.test" { return brief() }
         let (status, body): (Int, String) = switch (request.url?.path(), request.url?.host()) {
         case ("/api/batches", "got.test"): (200, #"{"answer":"got_it"}"#)
         case ("/api/batches", "unpaired.test"): (401, #"{"error":"This app isn't paired.","problem":"unpaired"}"#)
@@ -96,6 +112,21 @@ nonisolated private final class StandInDoor: URLProtocol, @unchecked Sendable {
                                        headerFields: ["Content-Type": "application/json"])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    /// As Rufi answers a brief's PDF: with the key, its bytes under its name.
+    private func brief() {
+        let found = request.url?.path() == "/api/people/asha/briefs/brf-1/pdf"
+            && request.value(forHTTPHeaderField: "Authorization") == "Bearer a-key"
+        let response = HTTPURLResponse(
+            url: request.url!, statusCode: found ? 200 : 404, httpVersion: "HTTP/1.1",
+            headerFields: found
+                ? ["Content-Type": "application/pdf",
+                   "Content-Disposition": #"inline; filename="Visit brief - Asha Fictional - 4 Oct 2026.pdf"; filename*=UTF-8''Visit%20brief%20%E2%80%93%20Asha%20Fictional%20%E2%80%93%204%20Oct%202026.pdf"#]
+                : ["Content-Type": "application/json"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data((found ? "%PDF-fictional" : #"{"error":"There is no such brief."}"#).utf8))
         client?.urlProtocolDidFinishLoading(self)
     }
 

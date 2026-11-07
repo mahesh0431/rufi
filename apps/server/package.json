@@ -17,6 +17,7 @@
     "@napi-rs/canvas": "1.0.13",
     "@openai/codex": "0.165.0",
     "@rufi/agents": "workspace:*",
+    "@rufi/brand": "workspace:*",
     "@rufi/contracts": "workspace:*",
     "effect": "4.0.7",
     "fflate": "0.8.3",
@@ -25,11 +26,17 @@
     "hono": "4.13.14",
     "kysely": "0.29.7",
     "pdfjs-dist": "6.4.299",
+    "pdfmake": "0.3.13",
     "proper-lockfile": "4.1.2",
+    "remark-gfm": "4.0.1",
+    "remark-parse": "11.0.0",
     "rrule": "2.8.1",
+    "unified": "11.0.5",
     "uuid": "14.0.3"
   },
   "devDependencies": {
+    "@types/mdast": "4.0.4",
+    "@types/pdfmake": "0.3.3",
     "@types/proper-lockfile": "4.1.4",
     "smol-toml": "1.9.1"
   }

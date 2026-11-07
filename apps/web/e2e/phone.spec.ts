@@ -4,7 +4,7 @@
 // the app keeps what the page tells it. The app itself is tested in
 // apps/ios.
 import type { Page } from "@playwright/test";
-import { expect, SIGNED_OUT, test } from "./rufi.ts";
+import { expect, FIRST_TURN_MS, SIGNED_OUT, test } from "./rufi.ts";
 
 declare global {
   interface Window {
@@ -394,6 +394,55 @@ test("in the iPhone app, View original asks the app to show the document's file"
       documentId: "doc-asha-aug",
       files: [{ id: expect.any(String), name: "Sunrise Labs August.pdf" }],
     });
+  // The app shows it; the page opens no viewer of its own.
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("in the iPhone app, a visit brief's View PDF asks the app to show the brief's PDF", async ({
+  page,
+  context,
+  rufi,
+}) => {
+  await rufi.family();
+  await rufi.start({
+    scenario: {
+      callsByTurn: [
+        [
+          {
+            tool: "create_brief",
+            arguments: {
+              markdown: "## For the visit\n\n- Metformin 500 mg, twice a day",
+              record_version: 0,
+              cited: [{ kind: "medicine_use", id: "med-a1" }],
+            },
+          },
+        ],
+      ],
+    },
+  });
+  // The brief, made in the chat on the Mac.
+  const mac = await context.newPage();
+  await mac.goto(rufi.link());
+  const chat = mac.getByRole("region", { name: "Chat" });
+  await chat.getByRole("button", { name: "Open the chat" }).click();
+  const box = chat.getByRole("textbox", { name: "Message to Rufi" });
+  await box.fill("Make a brief for my visit on Friday");
+  await box.press("Enter");
+  await chat
+    .getByRole("link", { name: /^Open Visit brief/ })
+    .click({ timeout: FIRST_TURN_MS });
+  await expect(mac).toHaveURL(/\/people\/asha\/briefs\/[^/]+$/);
+  const brief = new URL(mac.url()).pathname;
+
+  await asPhone(page);
+  const phone = app(page);
+  await page.goto(rufi.link());
+  await phone.open(brief);
+  await page.getByRole("button", { name: "View PDF" }).click();
+  await expect.poll(phone.told).toContainEqual({
+    type: "brief_pdf",
+    briefId: brief.split("/").at(-1),
+  });
   // The app shows it; the page opens no viewer of its own.
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });

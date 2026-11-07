@@ -4,7 +4,7 @@
 // shows as "the record changed since", and each record it cites with that
 // record's version, so its Sources show what it rested on. The AI cites in
 // plain words; the Sources list is built here from the cited records, and
-// the AI's Markdown is never parsed.
+// the AI's Markdown is only laid out, on the page and in the PDF (pdf.ts).
 import { Schema } from "effect";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { v7 as uuid } from "uuid";
@@ -200,7 +200,7 @@ export async function createBrief(
   const count = cited.length;
   return {
     id,
-    line: `Visit brief · Made ${shownDate(localTime(where.now).slice(0, 10))} · ${String(count)} ${count === 1 ? "record" : "records"} cited`,
+    line: `Visit brief · Made ${madeOn(where.now)} · ${String(count)} ${count === 1 ? "record" : "records"} cited`,
     fresh: true,
   };
 }
@@ -222,8 +222,8 @@ interface Source {
 export interface Brief {
   id: string;
   createdAt: string;
-  /** When the last save the brief saw was made; null when it saw none. */
-  recordUpTo: string | null;
+  /** Where the brief came from, in words, as its page and PDF say it. */
+  origin: string;
   markdown: string;
   /** A save after the brief raised the record version. */
   changedSince: boolean;
@@ -266,14 +266,26 @@ export async function readBrief(
       record: await toOpen(query, kind, personId, record.id),
     });
   }
+  const person = await query
+    .selectFrom("people")
+    .select("display_name")
+    .where("id", "=", personId)
+    .executeTakeFirstOrThrow();
+  const upTo = await savedAt(query, personId, brief.record_version);
   return {
     id: brief.id,
     createdAt: brief.created_at,
-    recordUpTo: await savedAt(query, personId, brief.record_version),
+    // The caveat's spaces don't break, so it stays whole on any line.
+    origin: `Prepared by Rufi (AI) on ${madeOn(brief.created_at)} from ${person.display_name}'s records${upTo === null ? "" : ` up to ${madeOn(upTo)}`} ·\u00a0not\u00a0medically\u00a0validated`,
     markdown: brief.markdown,
     changedSince: (await recordVersion(query, personId)) > brief.record_version,
     sources,
   };
+}
+
+/** A time's day as "4 Oct 2026", in this Mac's time zone. */
+export function madeOn(iso: string): string {
+  return shownDate(localTime(iso).slice(0, 10));
 }
 
 /**

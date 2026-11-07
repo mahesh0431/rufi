@@ -721,6 +721,15 @@ describe("a person's routes through the door", () => {
       INSERT INTO medicine_uses (id, person_id, name, status, times, remind)
         VALUES ('med-r1', 'ravi', 'Atorvastatin', 'current', '["21:00"]', 1);
     `);
+    // A visit brief each, as create_brief saves them.
+    for (const who of ["asha", "ravi"]) {
+      store.db.exec(`
+        INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, revision, created_at, updated_at)
+          VALUES ('brief-${who}', '${who}', 'c-${who}', 1, 'brief', 'Visit brief', 1, '2026-10-04T09:00:00Z', '2026-10-04T09:00:00Z');
+        INSERT INTO briefs (id, person_id, chat_id, call_id, markdown, record_version, cited, created_at)
+          VALUES ('brief-${who}', '${who}', 'c-${who}', 'call-1', '## For the visit', 0, '[]', '2026-10-04T09:00:00Z');
+      `);
+    }
     store.close();
     const core = await start();
     const { port, key } = await paired(await settings(core));
@@ -731,6 +740,7 @@ describe("a person's routes through the door", () => {
       "/api/people/asha/overview",
       "/api/people/asha/reminders",
       "/api/people/asha/reminders/plan?from=2026-11-02&days=8",
+      "/api/people/asha/briefs/brief-asha/pdf",
     ]) {
       expect((await door(port, "GET", path, { key })).status).toBe(200);
     }
@@ -761,6 +771,9 @@ describe("a person's routes through the door", () => {
           "/api/people/ravi/reminders/plan?from=2026-11-02&days=8",
           undefined,
         ],
+        ["GET", "/api/people/ravi/briefs/brief-ravi/pdf", undefined],
+        // Ravi's brief on Asha's path.
+        ["GET", "/api/people/asha/briefs/brief-ravi/pdf", undefined],
       ] as const) {
         expect((await door(port, method, path, by, body)).status).toBe(404);
       }
