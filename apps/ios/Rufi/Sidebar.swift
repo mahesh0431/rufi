@@ -256,6 +256,7 @@ struct SidebarView: View {
                 .tint(theme.accent)
                 .controlSize(.large)
                 .accessibilityLabel(Place.chat.title)
+                .accessibilityAddTraits(current == .chat ? .isSelected : [])
                 Spacer()
                 Button(action: thisIPhone) {
                     Initials(name: name, size: 44)
