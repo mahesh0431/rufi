@@ -12,10 +12,14 @@ import {
   nativeTheme,
   type Session,
   shell,
+  type WebFrameMain,
 } from "electron";
 
 /** Chromium's built-in PDF viewer, which Electron runs as an extension. */
 const PDF_VIEWER = "chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai";
+
+/** The page a reply's visual draws in (apps/server visual-frame.ts). */
+const VISUAL_FRAME = "/visual-frame.html";
 
 /** What the screens look for to know they are in the app (apps/web main.tsx). */
 const MARK = "RufiApp";
@@ -80,6 +84,14 @@ export function followAppearance(session: Session): void {
   });
 }
 
+/** A reply's visual (apps/server visual-frame.ts), or a frame inside one. */
+function inVisual(frame: WebFrameMain): boolean {
+  for (let at: WebFrameMain | null = frame; at; at = at.parent) {
+    if (at.parent && URL.parse(at.url)?.pathname === VISUAL_FRAME) return true;
+  }
+  return false;
+}
+
 /**
  * Opens a window on `link` (a launch link, checked by core.ts). `failed`
  * hears when the page can't be loaded or stops working.
@@ -132,9 +144,14 @@ export function openWindow(
   // A popup's opener isn't told, so one goes to the browser only while the
   // page has no frame. Rufi's pages refuse to be framed, and its CSP blocks
   // frames from elsewhere, but script can still make a blank or srcdoc
-  // frame, which takes the page's CSP.
+  // frame, which takes the page's CSP. A reply's visual doesn't count, nor
+  // anything inside it: its frame and its page's policy both forbid popups,
+  // so a web link in a reply with a visual still opens.
   contents.setWindowOpenHandler(({ url }) => {
-    if (contents.mainFrame.framesInSubtree.length === 1) toBrowser(url);
+    const others = contents.mainFrame.framesInSubtree.filter(
+      (frame) => frame === contents.mainFrame || !inVisual(frame),
+    );
+    if (others.length === 1) toBrowser(url);
     return { action: "deny" };
   });
   // Only Rufi's own pages, in any frame, and the built-in PDF viewer inside

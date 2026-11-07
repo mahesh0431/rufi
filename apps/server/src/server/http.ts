@@ -15,11 +15,13 @@ import { errorCode, type Log } from "../platform/logs.ts";
 export type App = Hono<{ Bindings: HttpBindings }>;
 
 /**
- * The screens' policy: only Rufi's own code and styles. Frames: only a
- * document's original (a blob the page made).
+ * The screens' policy: only Rufi's own code and styles. Frames: a
+ * document's original (a blob the page made) and Rufi's own pages, which
+ * only a reply's visual frames (visual-frame.ts); every other page refuses
+ * to be framed. A frame can't move itself to another origin either.
  */
 const APP_CSP =
-  "default-src 'self'; img-src 'self' data: blob:; frame-src blob:; connect-src 'self'; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
+  "default-src 'self'; img-src 'self' data: blob:; frame-src blob: 'self'; connect-src 'self'; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
 
 /** The most one add of documents may hold: many photos, or a long PDF. */
 const MAX_ADD_BYTES = 256 * 1024 * 1024;

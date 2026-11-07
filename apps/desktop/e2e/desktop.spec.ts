@@ -775,13 +775,28 @@ test.describe("the page", () => {
       for (const frame of document.querySelectorAll("iframe")) frame.remove();
     });
 
-    // Web links that the page follows or opens go to the browser, once each.
+    // Web links that the page follows or opens go to the browser, once each,
+    // also while a reply's visual shows: its frame can't open anything.
+    await page.evaluate(() => {
+      const visual = document.createElement("iframe");
+      visual.src = "/visual-frame.html";
+      visual.sandbox.add("allow-scripts");
+      document.body.append(visual);
+    });
+    await expect
+      .poll(() =>
+        page
+          .frames()
+          .some((frame) => frame.url().endsWith("/visual-frame.html")),
+      )
+      .toBe(true);
     await link("https://example.com/clicked");
     await link("https://example.com/new-tab", "_blank");
     // Another kind of link, a web link with a name and password in it, and a
     // link to Rufi that the network sends away, don't. (No link here ever
     // names a scheme the Mac itself would open.)
     await page.evaluate(() => {
+      for (const frame of document.querySelectorAll("iframe")) frame.remove();
       window.open("data:text/plain,not-for-the-browser");
     });
     await link("https://someone:secret@example.com/with-password");

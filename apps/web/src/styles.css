@@ -332,6 +332,10 @@ body {
   :is(.reply, .thought, .note, .agent-words) pre code {
     padding: 0;
   }
+  /* A reply's visual (src/visual.tsx) spaces like a paragraph. */
+  .reply .visual {
+    margin: 0 0 8px;
+  }
   :is(.reply, .thought, .note, .agent-words) table:not(.openui-table) {
     border-collapse: collapse;
     display: block;

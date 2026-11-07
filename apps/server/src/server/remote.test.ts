@@ -954,6 +954,23 @@ describe("the app's sessions", () => {
     );
   });
 
+  it("serves the page a reply's visual draws in under its own policy alone: sandboxed, only its own scripts, and nothing in or out", async () => {
+    const core = await start(standIn(), screens);
+    const { port } = await paired(await settings(core));
+    const visual = await door(port, "GET", "/visual-frame.html");
+    expect(visual.status).toBe(200);
+    const policy = visual.headers["content-security-policy"];
+    expect(policy).toMatch(/^sandbox allow-scripts; default-src 'none';/);
+    // Only its own scripts, by their hashes.
+    expect(policy).toMatch(/script-src 'sha256-[^']+' 'sha256-[^']+';/);
+    expect(policy).not.toContain("connect-src");
+    expect(policy).toContain("frame-ancestors 'self'");
+    expect(policy).not.toContain("default-src 'self'");
+    // A second policy: no script from a file, whatever its integrity.
+    expect(policy).toMatch(/, script-src 'unsafe-inline'$/);
+    expect(visual.headers["x-dns-prefetch-control"]).toBe("off");
+  });
+
   // Never delete: a launch and a session belong to one app.
   it("open cold from a launch link: the screens, a session, then the person's reads", async () => {
     const core = await start(standIn(), screens);

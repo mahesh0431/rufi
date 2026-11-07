@@ -3,7 +3,8 @@
 // turn/start starts a turn, or steers the running one, as Codex 0.159.3
 // does. What a turn does is chosen by its message's text, the
 // same words the fake model uses for the real Codex (tests/fake-model.ts):
-// "hang" never ends, "partial" writes "ok:part" and then never ends, "slow"
+// "hang" never ends, "partial" writes "ok:part" (or the scenario's answer)
+// and then never ends, "slow"
 // answers after 300 ms, "sign-in ended" fails as Codex does when its
 // sign-in has ended and can't be renewed, "fail" fails (the word: an
 // agent's "failed" doesn't), "quiet" makes no tool call and runs no
@@ -668,7 +669,10 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
     event("item/started", {
       item: { id: "item-1", type: "agentMessage", text: "", questions: null },
     });
-    event("item/agentMessage/delta", { itemId: "item-1", delta: "ok:part" });
+    event("item/agentMessage/delta", {
+      itemId: "item-1",
+      delta: scenario.answer ?? "ok:part",
+    });
     return;
   }
   if (text.includes("command")) {
