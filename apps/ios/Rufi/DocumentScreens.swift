@@ -495,8 +495,8 @@ struct ReadingSheet: View {
                     }
                 } header: {
                     HStack {
-                        Text("Page \(page.position) · \(Words.summary(page))")
-                        if page.checks?.incomplete != nil { Text("· may be incomplete") }
+                        Text("Page \(page.position) · \(Words.summary(page))"
+                             + (page.checks?.incomplete != nil ? " · may be incomplete" : ""))
                         if document.status != "reading", page.state == "unreadable" || page.state == "not_looked_at" {
                             Spacer()
                             Button("Retry", systemImage: "arrow.clockwise") { again(document) }.textCase(nil)

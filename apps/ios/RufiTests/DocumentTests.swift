@@ -41,7 +41,7 @@ struct DocumentTests {
         #expect(Words.summary(page) == "read so far · 1 item · Sunrise Labs · Collected 1 Sep 2026")
         #expect(Words.rows(page, drafts: []) == [Words.ReadRow(
             name: "TSH", value: "4.6 mIU/L", range: "0.4–4.0", marks: ["H", "unsure"],
-            why: "The value is faint.; Its unit is not on the page.")])
+            why: "The value is faint. Its unit is not on the page.")])
         #expect(page.checks?.incomplete?.rows_seen == 2)
         #expect(page.entry?.issues == ["The bottom of the photo is cut off."])
     }

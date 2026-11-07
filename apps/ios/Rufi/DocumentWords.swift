@@ -208,12 +208,12 @@ extension Words {
             return drafts.filter { $0.page == page.position }.map { item in
                 let fields = item.fields
                 return row(fields.test_name, fields.column, fields.value_text, fields.unit, fields.reference_range,
-                           fields.flag_text, drafted(item) != nil, item.unsure.joined(separator: "; "))
+                           fields.flag_text, drafted(item) != nil, item.unsure.joined(separator: " "))
             }
         }
         return (page.entry?.items ?? []).enumerated().map { index, item in
             let why = [item.unsure, page.checks?.items.first { $0.item == index + 1 }?.why].compactMap { $0 }
-                .joined(separator: "; ")
+                .joined(separator: " ")
             return row(item.test_name, item.column, item.value_text, item.unit, item.reference_range, item.flag_text,
                        false, why)
         }

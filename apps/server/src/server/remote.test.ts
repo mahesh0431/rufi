@@ -977,7 +977,9 @@ describe("the app's sessions", () => {
     const card = await door(port, "GET", "/visual-card.html");
     expect(card.status).toBe(200);
     const policy = card.headers["content-security-policy"];
-    expect(policy).toMatch(/^default-src 'none'; script-src 'sha256-[^']+'; style-src 'sha256-[^']+'; frame-src 'self';/);
+    expect(policy).toMatch(
+      /^default-src 'none'; script-src 'sha256-[^']+'; style-src 'sha256-[^']+'; frame-src 'self';/,
+    );
     expect(policy).toContain("frame-ancestors 'none'");
     expect(card.headers["x-dns-prefetch-control"]).toBe("off");
   });
