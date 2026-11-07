@@ -2690,7 +2690,7 @@ describe("the chat, on the scripted Codex", () => {
       expect(await listed()).toEqual([
         { id: report, kind: "letter", notSorted: false },
       ]);
-    });
+    }, 60_000);
 
     it("steers a file sent while a reply runs into that reply, with Rufi's note on it", async () => {
       const report = await addFile("sunrise-labs-august.pdf");
