@@ -398,7 +398,7 @@ test("in the iPhone app, View original asks the app to show the document's file"
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
-test("in the iPhone app, a visit brief has Export PDF in Print's place, which asks the app for its PDF", async ({
+test("in the iPhone app, a visit brief's View PDF asks the app to show the brief's PDF", async ({
   page,
   context,
   rufi,
@@ -438,14 +438,13 @@ test("in the iPhone app, a visit brief has Export PDF in Print's place, which as
   const phone = app(page);
   await page.goto(rufi.link());
   await phone.open(brief);
-  await page.getByRole("button", { name: "Export PDF" }).click();
+  await page.getByRole("button", { name: "View PDF" }).click();
   await expect.poll(phone.told).toContainEqual({
-    type: "pdf",
-    name: expect.stringMatching(
-      /^Visit brief – Asha Fictional – \d{1,2} \w{3} \d{4}\.pdf$/,
-    ),
+    type: "brief_pdf",
+    briefId: brief.split("/").at(-1),
   });
-  await expect(page.getByRole("button", { name: "Print" })).toHaveCount(0);
+  // The app shows it; the page opens no viewer of its own.
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
 test("in the iPhone app, what the app adds from its box comes back as a chip, even when it lands on Help", async ({

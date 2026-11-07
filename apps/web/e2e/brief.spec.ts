@@ -1,6 +1,6 @@
 // A visit brief on the real core: the AI's create_brief call (scripted),
 // Rufi's line in the chat, and the brief's page with its Sources (each opens
-// its record), Copy and Print, in both themes; a later save shows the record
+// its record), Copy and View PDF, in both themes; a later save shows the record
 // changed since. Each test checks that the strict CSP refused nothing the
 // screens need.
 import { AxeBuilder } from "@axe-core/playwright";
@@ -188,26 +188,44 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.getByRole("button", { name: "Copy" }).click();
   await expect(page.getByText("Copied")).toBeVisible();
-  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  // The caveat's spaces don't break.
+  const copied = (
+    await page.evaluate(() => navigator.clipboard.readText())
+  ).replaceAll("\u00a0", " ");
   expect(copied).toContain(`\n${origin}\n\n${MARKDOWN}\n\nSources\n`);
   expect(copied).toContain(
     "\n- Result: HbA1c 6.8 % · 12 Aug 2026 (Sunrise Labs report, collected 12 Aug 2026 · Sunrise Labs August.pdf, page 1)",
   );
 
-  // Print: the system's print, of the page alone, light on the dark theme.
-  await page.evaluate(() => {
-    const counted = globalThis as unknown as { printed: number };
-    counted.printed = 0;
-    window.print = () => {
-      counted.printed += 1;
-    };
+  // View PDF: the PDF Rufi makes of the brief, under its name, in a popup
+  // (Chromium's PDF viewer, or a copy to save where the window has none).
+  const answer = page.waitForResponse(/\/briefs\/[^/]+\/pdf$/);
+  await page.getByRole("button", { name: "View PDF" }).click();
+  const made = await answer;
+  expect(made.headers()["content-type"]).toBe("application/pdf");
+  expect(made.headers()["content-disposition"]).toMatch(
+    /^inline; filename="Visit brief - Asha Fictional - \d{1,2} \w{3} \d{4}\.pdf"; filename\*=UTF-8''Visit%20brief%20%E2%80%93%20Asha%20Fictional%20%E2%80%93%20/,
+  );
+  // Its pages, read with the tab's proof (the page's own read of it can't
+  // be read back here).
+  const proof = await page.evaluate(() => sessionStorage.getItem("rufi.proof"));
+  const pdf = await page.request.get(made.url(), {
+    headers: { "x-rufi-proof": proof ?? "" },
   });
-  await page.getByRole("button", { name: "Print" }).click();
-  expect(
-    await page.evaluate(
-      () => (globalThis as unknown as { printed: number }).printed,
-    ),
-  ).toBe(1);
+  const printed = await sheets(await pdf.body());
+  expect(printed[0]?.text).toContain(origin);
+  expect(printed.at(-1)?.text).toContain("no known allergies · 1 Sep 2026");
+  const popup = page.getByRole("dialog", { name: "Visit brief · PDF" });
+  await expect(
+    popup
+      .locator("iframe")
+      .or(popup.getByRole("link", { name: "Save a copy" })),
+  ).toBeVisible();
+  await accessible(page);
+  await popup.getByRole("button", { name: "Close" }).click();
+  await expect(popup).toBeHidden();
+
+  // Printed by the browser, the page alone, light on the dark theme.
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.emulateMedia({ media: "print" });
   for (const part of [
@@ -215,7 +233,7 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
     page.getByRole("banner"),
     page.getByRole("region", { name: "Chat" }),
     page.getByRole("button", { name: "Copy" }),
-    page.getByRole("button", { name: "Print" }),
+    page.getByRole("button", { name: "View PDF" }),
   ]) {
     await expect(part).toBeHidden();
   }
