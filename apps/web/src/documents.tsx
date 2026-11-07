@@ -9,13 +9,18 @@
 import { Dialog } from "@base-ui/react/dialog";
 import type { Person } from "@rufi/contracts";
 import {
-  type DocumentFile,
   type DocumentKind,
   type DocumentSummary,
 } from "@rufi/contracts/documents";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { FileText, Image, Plus, ScanText, X } from "lucide-react";
-import { type DragEvent, useEffect, useRef, useState } from "react";
+import {
+  type DragEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { fetchFile } from "./api.ts";
 import { ACCEPT } from "./attach-choice.tsx";
 import { chooseFiles, showChat } from "./attach.tsx";
@@ -397,6 +402,45 @@ export function Viewer({
         ? "Photo"
         : `${String(document.files.length)} photos`;
   return (
+    <FilePopup
+      title={
+        <>
+          <b className="text-[0.875rem]">{name}</b>{" "}
+          <span className="text-muted">
+            · {what} · added {printedDay(document.addedAt)}
+          </span>
+        </>
+      }
+      close={close}
+    >
+      {document.files.map((file, index) => (
+        <FileShown
+          key={file.id}
+          path={`/api/people/${encodeURIComponent(person)}/documents/${encodeURIComponent(document.id)}/files/${file.id}`}
+          mediaType={file.mediaType}
+          name={file.name}
+          caption={
+            document.files.length > 1
+              ? `Photo ${String(index + 1)} of ${String(document.files.length)}`
+              : undefined
+          }
+        />
+      ))}
+    </FilePopup>
+  );
+}
+
+/** A popup for a file: its title and Close, and its pages under them. */
+export function FilePopup({
+  title,
+  close,
+  children,
+}: {
+  title: ReactNode;
+  close: () => void;
+  children: ReactNode;
+}) {
+  return (
     <Dialog.Root
       open
       onOpenChange={(next) => {
@@ -410,10 +454,7 @@ export function Viewer({
         >
           <div className="flex items-center gap-2.5 border-b border-line px-3.5 py-2.5">
             <Dialog.Title className="min-w-0 flex-1 truncate">
-              <b className="text-[0.875rem]">{name}</b>{" "}
-              <span className="text-muted">
-                · {what} · added {printedDay(document.addedAt)}
-              </span>
+              {title}
             </Dialog.Title>
             <Dialog.Close render={<IconButton label="Close" icon={X} />} />
           </div>
@@ -424,18 +465,7 @@ export function Viewer({
             aria-label="Pages"
             className="flex flex-1 flex-col items-center gap-3.5 overflow-auto bg-side p-4"
           >
-            {document.files.map((file, index) => (
-              <Shown
-                key={file.id}
-                path={`/api/people/${encodeURIComponent(person)}/documents/${encodeURIComponent(document.id)}/files/${file.id}`}
-                file={file}
-                caption={
-                  document.files.length > 1
-                    ? `Photo ${String(index + 1)} of ${String(document.files.length)}`
-                    : undefined
-                }
-              />
-            ))}
+            {children}
           </div>
         </Dialog.Popup>
       </Dialog.Portal>
@@ -444,16 +474,18 @@ export function Viewer({
 }
 
 /** One file, fetched with the tab's proof and shown from a blob of this page. */
-function Shown({
+export function FileShown({
   path,
-  file,
+  mediaType,
+  name,
   caption,
 }: {
   path: string;
-  file: DocumentFile;
-  caption: string | undefined;
+  mediaType: string;
+  name: string;
+  caption?: string | undefined;
 }) {
-  const heic = isHeic(file.mediaType);
+  const heic = isHeic(mediaType);
   const [shown, setShown] = useState<{ url?: string; error?: Error }>({});
   useEffect(() => {
     let url: string | undefined;
@@ -462,7 +494,7 @@ function Shown({
       (blob) => {
         // The type as Rufi keeps it, so the viewer knows what it shows.
         url = URL.createObjectURL(
-          new Blob([blob], { type: heic ? "image/jpeg" : file.mediaType }),
+          new Blob([blob], { type: heic ? "image/jpeg" : mediaType }),
         );
         if (gone) URL.revokeObjectURL(url);
         else setShown({ url });
@@ -475,7 +507,7 @@ function Shown({
       gone = true;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [path, heic, file.mediaType]);
+  }, [path, heic, mediaType]);
 
   if (shown.error) return <Problem error={shown.error} />;
   if (!shown.url) {
@@ -485,14 +517,14 @@ function Shown({
       </p>
     );
   }
-  if (file.mediaType === "application/pdf") {
+  if (mediaType === "application/pdf") {
     if (!navigator.pdfViewerEnabled) {
       return (
         <p className="m-auto text-muted">
           This window can't show PDFs.{" "}
           <a
             href={shown.url}
-            download={file.name}
+            download={name}
             className="text-accent-ink underline"
           >
             Save a copy
@@ -504,7 +536,7 @@ function Shown({
     return (
       <iframe
         src={shown.url}
-        title={file.name}
+        title={name}
         className="size-full flex-1 rounded-md border-0"
       />
     );
@@ -513,7 +545,7 @@ function Shown({
     <>
       <img
         src={shown.url}
-        alt={caption ?? file.name}
+        alt={caption ?? name}
         className="max-w-[min(100%,900px)] rounded-md"
       />
       {caption && <p className="-mt-2 text-xs text-muted">{caption}</p>}

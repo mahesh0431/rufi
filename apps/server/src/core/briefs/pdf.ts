@@ -195,11 +195,16 @@ function inline(
         return inline(node.children, { ...marks, decoration: "lineThrough" });
       // The page shows a link's words without the link.
       case "link":
+      case "linkReference":
         return inline(node.children, marks);
       case "break":
         return [{ text: "\n" }];
-      default:
-        return "value" in node ? [{ text: node.value, ...marks }] : [];
+      // Not shown, as on the page: raw HTML, images and footnotes.
+      case "html":
+      case "image":
+      case "imageReference":
+      case "footnoteReference":
+        return [];
     }
   });
 }
@@ -279,7 +284,29 @@ function block(node: RootContent): Content {
         ],
         margin: [0, 4, 0, 8],
       };
-    default:
+    // Words outside a paragraph, which Markdown doesn't make.
+    case "break":
+    case "delete":
+    case "emphasis":
+    case "inlineCode":
+    case "link":
+    case "linkReference":
+    case "strong":
+    case "text":
+      return { text: inline([node]) };
+    // Not shown, as on the page: raw HTML, link definitions, footnotes,
+    // images and front matter; the parts of lists and tables, which their
+    // list or table draws.
+    case "html":
+    case "definition":
+    case "footnoteDefinition":
+    case "footnoteReference":
+    case "image":
+    case "imageReference":
+    case "yaml":
+    case "listItem":
+    case "tableCell":
+    case "tableRow":
       return "";
   }
 }

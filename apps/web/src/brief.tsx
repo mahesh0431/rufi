@@ -1,19 +1,18 @@
 // A visit brief's page: the AI's Markdown as it wrote it, dated, with the
 // Sources Rufi built from the records it cites, each opening its record,
-// Print and Copy. Under its title, where it came from: made by Rufi's AI, on
-// which day, from the record up to which save, and not medically validated,
-// so a doctor reading it printed or copied knows. Printed, it is the same
-// page without the buttons, under Rufi's dog (the frame stays on the screen:
-// styles.css). In the iPhone app, Export PDF takes Print's place: the app
-// prints the page to a PDF and shows it in Quick Look. A brief never changes;
-// when a later save changed the record, the page says so.
+// Copy and View PDF. Under its title, where it came from (Rufi builds the
+// line): made by Rufi's AI, on which day, from the record up to which save,
+// and not medically validated, so a doctor reading it copied or as a PDF
+// knows. View PDF shows the PDF Rufi makes of it (core/briefs/pdf.ts): on
+// the Mac in a popup, in the iPhone app in Quick Look. A brief never
+// changes; when a later save changed the record, the page says so.
 import type { Person } from "@rufi/contracts";
 import type { Brief, BriefSource } from "@rufi/contracts/briefs";
 import { Link } from "@tanstack/react-router";
-import { Copy, FileDown, Info, Printer } from "lucide-react";
+import { Copy, FileText, Info } from "lucide-react";
 import { useEffect, useState } from "react";
-import { printedDay } from "./dates.ts";
 import { Dog } from "./dog.tsx";
+import { FilePopup, FileShown } from "./documents.tsx";
 import { onPhone, tell } from "./phone.ts";
 import { useBrief } from "./reads.ts";
 import { isPageKind } from "./record.tsx";
@@ -43,12 +42,7 @@ export function BriefPage({
 }
 
 function Shown({ brief, person }: { brief: Brief; person: Person }) {
-  const upTo =
-    brief.recordUpTo === null ? "" : ` up to ${printedDay(brief.recordUpTo)}`;
-  const made = `Prepared by Rufi (AI) on ${printedDay(brief.createdAt)} from ${person.displayName}'s records${upTo}`;
-  // Kept whole: a line that wraps breaks before it, never inside it.
-  const caveat = "· not medically validated";
-  const origin = `${made} ${caveat}`;
+  const [pdf, setPdf] = useState(false);
   return (
     <>
       {/* On a phone, the buttons go under the title. */}
@@ -58,36 +52,36 @@ function Shown({ brief, person }: { brief: Brief; person: Person }) {
         </span>
         <div className="min-w-56 flex-1">
           <h2 className="text-[1.375rem] font-bold">Visit brief</h2>
-          <p className="text-muted">
-            {made} <span className="whitespace-nowrap">{caveat}</span>
-          </p>
+          <p className="text-muted">{brief.origin}</p>
         </div>
         <div className="flex items-start gap-3 print:hidden">
-          <CopyButton text={() => asText(brief, origin)} />
-          {onPhone ? (
-            <Button
-              icon={FileDown}
-              onClick={() => {
-                tell({
-                  type: "pdf",
-                  name: `Visit brief – ${person.displayName} – ${printedDay(brief.createdAt)}.pdf`,
-                });
-              }}
-            >
-              Export PDF
-            </Button>
-          ) : (
-            <Button
-              icon={Printer}
-              onClick={() => {
-                window.print();
-              }}
-            >
-              Print
-            </Button>
-          )}
+          <CopyButton text={() => asText(brief)} />
+          <Button
+            icon={FileText}
+            onClick={() => {
+              // On a phone, the app shows it in Quick Look.
+              if (onPhone) tell({ type: "brief_pdf", briefId: brief.id });
+              else setPdf(true);
+            }}
+          >
+            View PDF
+          </Button>
         </div>
       </div>
+      {pdf && (
+        <FilePopup
+          title={<b className="text-[0.875rem]">Visit brief · PDF</b>}
+          close={() => {
+            setPdf(false);
+          }}
+        >
+          <FileShown
+            path={`/api/people/${encodeURIComponent(person.id)}/briefs/${encodeURIComponent(brief.id)}/pdf`}
+            mediaType="application/pdf"
+            name="Visit brief.pdf"
+          />
+        </FilePopup>
+      )}
       {brief.changedSince && (
         <p
           role="status"
@@ -199,12 +193,12 @@ function Cited({
 }
 
 /** The brief as plain text, to paste anywhere: where it came from, the brief and its Sources. */
-function asText(brief: Brief, origin: string): string {
+function asText(brief: Brief): string {
   const sources = brief.sources.map(
     (source) => `- ${source.kind}: ${source.what} (${source.from})`,
   );
   return [
-    `Visit brief\n${origin}`,
+    `Visit brief\n${brief.origin}`,
     brief.markdown,
     ["Sources", ...sources].join("\n"),
   ].join("\n\n");
