@@ -117,7 +117,7 @@ final class Shell {
         box.asking = { [weak screens] command in screens?.box(command) }
         box.restored = { [weak pending] ids in pending?.remove(ids) }
         screens.onOriginal = { [weak self] document, files in Task { await self?.show(document, files) } }
-        screens.onPDF = { [weak self] name in Task { await self?.export(name) } }
+        screens.onBriefPDF = { [weak self] brief in Task { await self?.showBrief(brief) } }
         screens.view.backgroundColor = theme.pageColour
         screens.onTheme = { [weak self] colours, dark in
             guard let self else { return }
@@ -316,16 +316,33 @@ final class Shell {
     /// View original: fetches the document's files with the key and shows
     /// them in Quick Look.
     func show(_ document: String, _ files: [(id: String, name: String)]) async {
-        guard !fetching, originals.isEmpty else { return }
-        fetching = true
-        defer { fetching = false }
-        var copies: [URL] = []
-        do {
+        await present { copies in
             for file in files {
                 let fetched = try await door.file(person: pairing.person.id, document: document, file: file.id,
                                                   into: Originals.shown.staging)
                 copies.append(try Originals.shown.keep(fetched, named: file.name))
             }
+        }
+    }
+
+    /// View PDF: the visit brief's PDF, made by Rufi on the Mac, shown like
+    /// an original, with its share button; deleted on close.
+    func showBrief(_ brief: String) async {
+        await present { copies in
+            let fetched = try await door.briefPDF(person: pairing.person.id, brief: brief, into: Originals.shown.staging)
+            copies.append(try Originals.shown.keep(fetched.file, named: fetched.name))
+        }
+    }
+
+    /// Fetches copies to show in Quick Look, one fetch at a time; on a
+    /// problem, none is kept and the problem shows.
+    private func present(_ fetch: (inout [URL]) async throws -> Void) async {
+        guard !fetching, originals.isEmpty else { return }
+        fetching = true
+        defer { fetching = false }
+        var copies: [URL] = []
+        do {
+            try await fetch(&copies)
         } catch {
             Originals.shown.delete(copies)
             switch error as? Door.Problem {
@@ -339,26 +356,6 @@ final class Shell {
         }
         originals = copies
         if seen() { original = copies.first } else { waiting = true }
-    }
-
-    /// Export PDF: the page open now, printed to a PDF and shown in Quick
-    /// Look like an original, with its share button; deleted on close.
-    func export(_ name: String) async {
-        guard !fetching, originals.isEmpty else { return }
-        fetching = true
-        defer { fetching = false }
-        let pdf = await Printout.pdf(of: screens.view)
-        let made = Originals.shown.staging.appending(path: UUID().uuidString)
-        do {
-            try FileManager.default.createDirectory(at: Originals.shown.staging, withIntermediateDirectories: true)
-            try pdf.write(to: made, options: .completeFileProtection)
-            originals = [try Originals.shown.keep(made, named: name)]
-        } catch {
-            try? FileManager.default.removeItem(at: made)
-            originalProblem = "Rufi couldn't keep a copy to show. Try again."
-            return
-        }
-        if seen() { original = originals.first } else { waiting = true }
     }
 
     /// Rufi is on screen and unlocked again: an original fetched meanwhile shows.

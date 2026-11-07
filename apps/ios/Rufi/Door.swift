@@ -123,7 +123,18 @@ nonisolated struct Door: Sendable {
     /// Fetches one of `document`'s files, as it came, into `staging`; an
     /// original may be large, so it has 5 minutes.
     func file(person: String, document: String, file: String, into staging: URL) async throws(Problem) -> URL {
-        let path = ["api", "people", person, "documents", document, "files", file]
+        try await fetch(["api", "people", person, "documents", document, "files", file], into: staging).file
+    }
+
+    /// Fetches a visit brief's PDF, which Rufi makes fresh, into `staging`,
+    /// with its name as Rufi gives it.
+    func briefPDF(person: String, brief: String, into staging: URL) async throws(Problem) -> (file: URL, name: String) {
+        let (file, response) = try await fetch(["api", "people", person, "briefs", brief, "pdf"], into: staging)
+        return (file, response.suggestedFilename ?? "Visit brief.pdf")
+    }
+
+    private func fetch(_ parts: [String], into staging: URL) async throws(Problem) -> (file: URL, response: HTTPURLResponse) {
+        let path = parts
             .map { $0.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(.init(charactersIn: "-_."))) ?? "" }
             .joined(separator: "/")
         guard let url = URL(string: "/" + path, relativeTo: origin) else { throw .refused("That file isn't there.") }
@@ -155,7 +166,7 @@ nonisolated struct Door: Sendable {
             if http.statusCode == 401, refusal?.problem == "unpaired" { throw .unpaired }
             throw .refused(refusal?.error ?? "Rufi on your Mac refused (\(http.statusCode)).")
         }
-        return staged
+        return (staged, http)
     }
 
     /// What the Mac did with a dose log.
