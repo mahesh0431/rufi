@@ -731,8 +731,6 @@ export function transcripts(
       turnId: string | null;
       kind: Entry["kind"];
       text: string;
-      /** A message's words as Rufi AI got them, when not as shown. */
-      aiText?: string;
       activity?: ActivityKind;
       detail?: string;
       status?: NonNullable<Entry["status"]>;
@@ -756,7 +754,6 @@ export function transcripts(
         turn_id: entry.turnId,
         kind: entry.kind,
         text: entry.text,
-        ai_text: entry.aiText ?? null,
         activity: entry.activity ?? null,
         detail: entry.detail ?? null,
         details: entry.details ?? null,
@@ -779,7 +776,7 @@ export function transcripts(
   const handedOver = (trx: Db, chat: ChatRow, inputs: readonly string[]) =>
     trx
       .selectFrom("chat_queue")
-      .select(["id", "origin", "text", "ai_text", "refs", "turn_id"])
+      .select(["id", "origin", "text", "refs", "turn_id"])
       .where("person_id", "=", chat.personId)
       .where("chat_id", "=", chat.id)
       .where("id", "in", inputs.length === 0 ? [""] : inputs)
@@ -882,7 +879,6 @@ export function transcripts(
       id: string;
       origin: string;
       text: string;
-      ai_text: string | null;
       refs: string;
     }[],
     turnId: string | null,
@@ -917,7 +913,6 @@ export function transcripts(
           turnId,
           kind,
           text: row.text,
-          ...(row.ai_text !== null && { aiText: row.ai_text }),
           refs: JSON.parse(row.refs) as Chip[],
         }),
       );
@@ -2100,7 +2095,6 @@ export function transcripts(
         .select([
           "e.kind",
           "e.text",
-          "e.ai_text",
           "e.activity",
           "e.details",
           "e.questions",
@@ -2173,8 +2167,7 @@ export function transcripts(
               row.kind === "brief"
                 ? ("rufi" as const)
                 : ("user" as const),
-            // A click as Rufi AI got it.
-            text: row.ai_text ?? row.text,
+            text: row.text,
           };
         }
         return {

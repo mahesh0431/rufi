@@ -401,24 +401,6 @@ export function draftBox(api: DraftApi) {
         }
       });
     },
-
-    /**
-     * Sends a click on a reply as the person's message, after the box's
-     * saves: `text` shows in the chat and Rufi AI gets `aiText`. The box's
-     * own text stays; a refusal shows in its notice.
-     */
-    async click(text: string, aiText: string): Promise<void> {
-      const id = newId();
-      counted();
-      await inTurn(api.client, api.scope, async () => {
-        try {
-          await api.call("POST", "messages", { id, text, aiText });
-          store.setState({ accepted: id, notice: null });
-        } catch (error) {
-          store.setState({ notice: messageOf(error) });
-        }
-      });
-    },
   };
 }
 

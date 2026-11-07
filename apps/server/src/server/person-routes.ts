@@ -610,7 +610,7 @@ export function personRoutes(
   // finds the message it made.
   app.post(`${one}/messages`, async (c) => {
     const found = await chatOf(c);
-    const { id, text, refs, kind, aiText } = await body(
+    const { id, text, refs, kind, draft } = await body(
       c,
       SendMessage,
       SEND_REFUSAL,
@@ -618,7 +618,9 @@ export function personRoutes(
     if (text === "" && (refs?.length ?? 0) === 0) {
       throw new HttpError(400, SEND_REFUSAL);
     }
-    await acting(() => chat.send(found, id, text, refs, kind, aiText));
+    await acting(() =>
+      chat.send(found, id, text, refs, kind, draft === "keep"),
+    );
     return c.json({ id, draft: await drafts.read(found) }, 202);
   });
   app.post(`${one}/stop`, async (c) => {

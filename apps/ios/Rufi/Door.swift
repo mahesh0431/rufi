@@ -217,14 +217,14 @@ nonisolated struct Door: Sendable {
     }
 
     /// Sends a message kept while Rufi couldn't be reached into `person`'s
-    /// chat, under its own id. Rufi AI gets its words (`aiText`), so the
-    /// draft on the Mac, which isn't this message, stays. Rufi refused it:
+    /// chat, under its own id. The draft on the Mac, which isn't this
+    /// message, stays (`draft: keep`). Rufi refused it:
     /// its words. The Mac out of reach: `unreachable`, for the next time.
     func send(_ message: PendingMessage, for person: String) async throws(Problem) {
         struct Nothing: Decodable {}
         let _: Nothing = try await Self.call(origin: origin, key: key, method: "POST",
                                              path: "\(Self.people)/\(person)/chat/messages",
-                                             body: ["id": message.id, "text": message.text, "aiText": message.text])
+                                             body: ["id": message.id, "text": message.text, "draft": "keep"])
     }
 
     /// What the Mac said of a batch it took.
