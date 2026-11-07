@@ -198,15 +198,14 @@ nonisolated struct Door: Sendable {
     }
 
     /// Sends a message kept while Rufi couldn't be reached into `person`'s
-    /// chat, under its own id, with when it was written. Rufi refused it:
+    /// chat, under its own id, as the box sends one. Rufi refused it:
     /// its words. The Mac out of reach: `unreachable`, for the next time.
     func send(_ message: PendingMessage, for person: String) async throws(Problem) {
         var request = URLRequest(url: origin.appending(path: "\(Self.people)/\(person)/chat/messages"))
         request.httpMethod = "POST"
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONEncoder().encode(["id": message.id, "text": message.text,
-                                                      "writtenAt": message.writtenAt])
+        request.httpBody = try? JSONEncoder().encode(["id": message.id, "text": message.text])
         let data: Data
         let response: URLResponse
         do {

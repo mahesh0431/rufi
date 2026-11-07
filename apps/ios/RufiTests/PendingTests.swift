@@ -13,11 +13,9 @@ struct PendingTests {
     @Test func theyGoInOrderWhenRufiAnswersAndARefusedOneComesBack() async throws {
         let file = Self.file()
         let pending = Pending(file: file)
-        let at = ISO8601DateFormatter().date(from: "2026-11-07T09:10:00Z")!
-        try pending.add("I took my Metformin", at: at)
-        try pending.add("Too long", at: at)
-        try pending.add("And my blood pressure was 128/82", at: at)
-        #expect(pending.messages.first?.writtenAt.count == 16)
+        try pending.add("I took my Metformin")
+        try pending.add("Too long")
+        try pending.add("And my blood pressure was 128/82")
 
         var sent: [String] = []
         var away = true

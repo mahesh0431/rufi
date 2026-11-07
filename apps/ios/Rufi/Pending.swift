@@ -7,8 +7,6 @@ import Observation
 nonisolated struct PendingMessage: Codable, Equatable, Identifiable, Sendable {
     let id: String
     let text: String
-    /// When it was written, on the iPhone's clock: 'YYYY-MM-DDTHH:MM'.
-    let writtenAt: String
 }
 
 /// The messages waiting to go, and the one file they are kept in, beside the
@@ -32,11 +30,8 @@ final class Pending {
 
     /// Keeps `text` to send, in the file before this returns; on a failure,
     /// nothing is kept.
-    func add(_ text: String, at now: Date = .now) throws {
-        let written = DateFormatter()
-        written.locale = Locale(identifier: "en_US_POSIX")
-        written.dateFormat = "yyyy-MM-dd'T'HH:mm"
-        let message = PendingMessage(id: UUID().uuidString.lowercased(), text: text, writtenAt: written.string(from: now))
+    func add(_ text: String) throws {
+        let message = PendingMessage(id: UUID().uuidString.lowercased(), text: text)
         try write(messages + [message])
         messages.append(message)
     }

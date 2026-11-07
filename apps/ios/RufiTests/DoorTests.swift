@@ -40,7 +40,7 @@ struct DoorTests {
         await #expect(throws: Door.Problem.refused("The AI couldn't do that.")) {
             try await door("rufi.test").open("/people/asha/chat")
         }
-        let message = PendingMessage(id: "m-1", text: "I took my Metformin", writtenAt: "2026-11-07T09:10")
+        let message = PendingMessage(id: "m-1", text: "I took my Metformin")
         await #expect(throws: Door.Problem.unreachable) {
             try await door("stopped.test").send(message, for: "asha")
         }

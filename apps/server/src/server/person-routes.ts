@@ -594,7 +594,7 @@ export function personRoutes(
   // finds the message it made.
   app.post(`${one}/messages`, async (c) => {
     const found = await chatOf(c);
-    const { id, text, refs, kind, aiText, writtenAt } = await body(
+    const { id, text, refs, kind, aiText } = await body(
       c,
       SendMessage,
       SEND_REFUSAL,
@@ -602,14 +602,7 @@ export function personRoutes(
     if (text === "" && (refs?.length ?? 0) === 0) {
       throw new HttpError(400, SEND_REFUSAL);
     }
-    // Kept on the iPhone while it couldn't reach Rufi: Rufi AI gets when it
-    // was written, and the box's draft stays, as with a click.
-    const given =
-      aiText ??
-      (writtenAt === undefined
-        ? undefined
-        : `${text}\n\n(Written on the iPhone at ${writtenAt}, its local time, while it couldn't reach Rufi; it arrived later.)`);
-    await acting(() => chat.send(found, id, text, refs, kind, given));
+    await acting(() => chat.send(found, id, text, refs, kind, aiText));
     return c.json({ id, draft: await drafts.read(found) }, 202);
   });
   app.post(`${one}/stop`, async (c) => {

@@ -80,7 +80,7 @@ In **This iPhone** › **Apple Health**, connect Apple Health, see your latest r
 - Which Mac it paired with and whose record it opens, whether Lock Rufi is on, and its Appearance (System, Light or Dark).
 - Its medicine reminders for the next week, as iOS notices: the times and the medicines, whatever a notice shows.
 - Doses you logged that aren't on your Mac yet: each medicine's name and strength, the dose's time, taken or skipped, and which Mac and person it is for. They aren't in the iPhone's backups.
-- Messages you sent while Rufi couldn't be reached, until they reach your Mac: their words and when you wrote them. They aren't in the iPhone's backups, and unpairing removes them.
+- Messages you sent while Rufi couldn't be reached, until they reach your Mac: their words. They aren't in the iPhone's backups, and unpairing removes them.
 - For Apple Health: where each kind of heart data was sent up to (Apple's bookmark, not the values), and when the last sync was and how many readings it sent.
 - Rufi's own files (the scripts and styles its pages are drawn with, none of your record), so it opens without fetching them from your Mac again, and the colour theme's colours.
 
@@ -96,7 +96,7 @@ If your Mac is asleep or off, Rufi isn't running there, Tailscale is off on eith
 
 Meanwhile, everything that doesn't need your Mac works: the sidebar, **This iPhone**, and the reminders, which keep ringing. The page you were reading stays as it was. A page that hasn't loaded shows only the dog, resting.
 
-The chat box stays too, with your words and **Send**; the paperclip, the model and the context used come back with Rufi. A message you send meanwhile waits above the box, marked **Pending**, and goes by itself when Rufi answers, in the order you sent them; Rufi AI is told when you wrote it, so "I just took my Metformin" means then. If Rufi refuses one (for example, too long), it goes back into the box with Rufi's reason under it: change it and send it again, or clear it. Words you typed and didn't send stay in the box, and take the place of the draft on your Mac when it is back.
+The chat box stays too, with your words and **Send**; the paperclip, the model and the context used come back with Rufi. A message you send meanwhile waits above the box, marked **Pending**, and goes by itself when Rufi answers, in the order you sent them, as if you had sent them then. If Rufi refuses one (for example, too long), it goes back into the box with Rufi's reason under it: change it and send it again, or clear it. Words you typed and didn't send stay in the box, and take the place of the draft on your Mac when it is back.
 
 If the iPhone says to update Rufi on your iPhone or on your Mac so they match, they were built for different versions: update the older one.
 
