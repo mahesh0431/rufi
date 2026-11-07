@@ -859,7 +859,7 @@ const usageOf = (totalTokens: number) => ({
   reasoningOutputTokens: 0,
 });
 
-/** The answer to a message: "ok:" and it, or OpenUI Lang as it is. */
+/** The answer to a message: "ok:" and it. */
 const said = (text: string) => `ok:${text}`;
 
 function answer(
