@@ -344,8 +344,7 @@ test("a finished reply with a piece OpenUI leaves out draws the rest, says part 
   }
   await accessible(page);
   await page.reload();
-  const opener = chat(page).getByRole("button", { name: "Open the chat" });
-  if (await opener.isVisible()) await opener.click();
+  await chat(page).getByRole("button", { name: "Open the chat" }).click();
   await expect(
     log(page).getByText("Part of this reply couldn't be shown."),
   ).toHaveCount(LEFT_OUT.length);
