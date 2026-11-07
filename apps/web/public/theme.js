@@ -3,9 +3,7 @@
 // <html data-appearance>: light or dark stay so; system follows the system's
 // appearance, also when it changes. When it is chosen again, the screens
 // change data-appearance and the theme follows at once (src/appearance.tsx).
-// OpenUI's replies take the same theme, by their own attribute
-// (data-openui-theme). A plain script in <head>, so it runs before the first
-// paint.
+// A plain script in <head>, so it runs before the first paint.
 {
   const root = document.documentElement;
   const dark = matchMedia("(prefers-color-scheme: dark)");
@@ -20,7 +18,6 @@
           ? "dark"
           : "light";
     root.dataset["theme"] = theme;
-    root.dataset["openuiTheme"] = theme;
   };
   apply();
   dark.addEventListener("change", apply);

@@ -192,7 +192,7 @@ What the AI writes while it works, before its answer, such as "I'll check your r
 _Avoid_: commentary, progress message, interim reply
 
 **Reply (Rufi AI's)**:
-Rufi AI's answer in the chat, which it writes in OpenUI Lang and Rufi draws with OpenUI's chat parts, as it is written. Once it ended, a reply that isn't whole draws what works, says part of it isn't shown and keeps its text a click away; one with no OpenUI shows as Markdown. A follow-up or button in it sends its words as the person's message, and Rufi AI gets them as a click, with what it is about. Its links open by Rufi's rule, wherever they are in it. An agent's message, a note, a receipt and a visit brief are Markdown.
+Rufi AI's answer in the chat, in Markdown, shown as it is written, with a **visual** where a chart, comparison or process shows better than words. Its links open by Rufi's rule. An agent's message, a note, a receipt and a visit brief are Markdown, with no visuals.
 _Avoid_: answer card, widget, generated UI
 
 **Visual (in a reply)**:

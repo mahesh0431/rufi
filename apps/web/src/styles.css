@@ -1,154 +1,10 @@
-/* OpenUI's component styles, for replies (src/openui/reply.tsx), in their
-   own layer below Tailwind's components and utilities, as OpenUI says for
-   Tailwind v4. They hold OpenUI's light and dark colours, chosen by
-   <html data-openui-theme> (public/theme.js). */
-@layer theme, base, openui, components, utilities;
 @import "tailwindcss";
-@import "@openuidev/react-ui/layered/styles/index.css";
 @import "./themes.css";
 /* The dog's motion (src/dog.tsx); it stops under reduced motion. */
 @import "@rufi/brand/mark/motion.css";
 
 /* `phone:`, only in Rufi's iPhone app (src/phone.ts). */
 @custom-variant phone (&:where([data-place="phone"] *));
-
-/* OpenUI's text in Rufi's: its typography tokens, as OpenUI's theme sets
-   them (its ThemeProvider can't run under the screens' CSP), at the chat's
-   size and in its font, so a reply reads like the messages and Activity
-   around it. One scale for light and dark; headings and bold stay where
-   OpenUI puts them. Unlayered, so it wins over OpenUI's own layer. */
-:root {
-  --openui-font-body: var(--font-ui);
-  --openui-font-heading: var(--font-ui);
-  --openui-font-label: var(--font-ui);
-  --openui-font-numbers: var(--font-ui);
-  --openui-font-code: ui-monospace, SFMono-Regular, Menlo, monospace;
-  --openui-font-size-2xs: 0.625rem;
-  --openui-font-size-xs: 0.6875rem;
-  --openui-font-size-sm: 0.75rem;
-  --openui-font-size-md: 0.8125rem;
-  --openui-font-size-lg: 0.875rem;
-  --openui-font-size-xl: 1rem;
-  --openui-font-size-2xl: 1.125rem;
-  --openui-font-size-3xl: 1.25rem;
-  --openui-font-size-4xl: 1.5rem;
-  --openui-font-size-5xl: 1.75rem;
-  --openui-font-weight-regular: 400;
-  --openui-font-weight-medium: 500;
-  --openui-font-weight-bold: 600;
-  --openui-font-weight-heavy: 700;
-  --openui-font-variation-regular: normal;
-  --openui-font-variation-medium: normal;
-  --openui-letter-spacing-normal: normal;
-  --openui-letter-spacing-tight: normal;
-  --openui-letter-spacing-tighter: normal;
-  --openui-text-body-xs: 400 0.6875rem/1.5 var(--openui-font-body);
-  --openui-text-body-xs-letter-spacing: normal;
-  --openui-text-body-xs-heavy: 500 0.6875rem/1.5 var(--openui-font-body);
-  --openui-text-body-xs-heavy-letter-spacing: normal;
-  --openui-text-body-sm: 400 0.75rem/1.5 var(--openui-font-body);
-  --openui-text-body-sm-letter-spacing: normal;
-  --openui-text-body-sm-heavy: 500 0.75rem/1.5 var(--openui-font-body);
-  --openui-text-body-sm-heavy-letter-spacing: normal;
-  --openui-text-body-default: 400 0.8125rem/1.5 var(--openui-font-body);
-  --openui-text-body-default-letter-spacing: normal;
-  --openui-text-body-default-heavy: 500 0.8125rem/1.5 var(--openui-font-body);
-  --openui-text-body-default-heavy-letter-spacing: normal;
-  --openui-text-body-lg: 400 0.875rem/1.5 var(--openui-font-body);
-  --openui-text-body-lg-letter-spacing: normal;
-  --openui-text-body-lg-heavy: 500 0.875rem/1.5 var(--openui-font-body);
-  --openui-text-body-lg-heavy-letter-spacing: normal;
-  --openui-text-label-xs: 400 0.6875rem/1.25 var(--openui-font-label);
-  --openui-text-label-xs-letter-spacing: normal;
-  --openui-text-label-xs-heavy: 500 0.6875rem/1.25 var(--openui-font-label);
-  --openui-text-label-xs-heavy-letter-spacing: normal;
-  --openui-text-label-sm: 400 0.75rem/1.25 var(--openui-font-label);
-  --openui-text-label-sm-letter-spacing: normal;
-  --openui-text-label-sm-heavy: 500 0.75rem/1.25 var(--openui-font-label);
-  --openui-text-label-sm-heavy-letter-spacing: normal;
-  --openui-text-label-default: 400 0.8125rem/1.25 var(--openui-font-label);
-  --openui-text-label-default-letter-spacing: normal;
-  --openui-text-label-default-heavy: 500 0.8125rem/1.25 var(--openui-font-label);
-  --openui-text-label-default-heavy-letter-spacing: normal;
-  --openui-text-label-lg: 400 0.875rem/1.25 var(--openui-font-label);
-  --openui-text-label-lg-letter-spacing: normal;
-  --openui-text-label-lg-heavy: 500 0.875rem/1.25 var(--openui-font-label);
-  --openui-text-label-lg-heavy-letter-spacing: normal;
-  --openui-text-numbers-xs: 400 0.6875rem/1.5 var(--openui-font-numbers);
-  --openui-text-numbers-xs-letter-spacing: normal;
-  --openui-text-numbers-xs-heavy: 500 0.6875rem/1.5 var(--openui-font-numbers);
-  --openui-text-numbers-xs-heavy-letter-spacing: normal;
-  --openui-text-numbers-sm: 400 0.75rem/1.5 var(--openui-font-numbers);
-  --openui-text-numbers-sm-letter-spacing: normal;
-  --openui-text-numbers-sm-heavy: 500 0.75rem/1.5 var(--openui-font-numbers);
-  --openui-text-numbers-sm-heavy-letter-spacing: normal;
-  --openui-text-numbers-default: 400 0.8125rem/1.5 var(--openui-font-numbers);
-  --openui-text-numbers-default-letter-spacing: normal;
-  --openui-text-numbers-default-heavy: 500 0.8125rem/1.5
-    var(--openui-font-numbers);
-  --openui-text-numbers-default-heavy-letter-spacing: normal;
-  --openui-text-numbers-lg: 400 0.875rem/1.5 var(--openui-font-numbers);
-  --openui-text-numbers-lg-letter-spacing: normal;
-  --openui-text-numbers-lg-heavy: 500 0.875rem/1.5 var(--openui-font-numbers);
-  --openui-text-numbers-lg-heavy-letter-spacing: normal;
-  --openui-text-heading-xs: 600 0.8125rem/1.25 var(--openui-font-heading);
-  --openui-text-heading-xs-letter-spacing: normal;
-  --openui-text-heading-sm: 600 0.875rem/1.25 var(--openui-font-heading);
-  --openui-text-heading-sm-letter-spacing: normal;
-  --openui-text-heading-md: 600 1rem/1.25 var(--openui-font-heading);
-  --openui-text-heading-md-letter-spacing: normal;
-  --openui-text-heading-lg: 600 1.125rem/1.2 var(--openui-font-heading);
-  --openui-text-heading-lg-letter-spacing: normal;
-  --openui-text-heading-xl: 600 1.25rem/1.2 var(--openui-font-heading);
-  --openui-text-heading-xl-letter-spacing: normal;
-  --openui-text-numbers-heading-sm: 600 0.875rem/1.25 var(--openui-font-numbers);
-  --openui-text-numbers-heading-sm-letter-spacing: normal;
-  --openui-text-numbers-heading-md: 600 1rem/1.25 var(--openui-font-numbers);
-  --openui-text-numbers-heading-md-letter-spacing: normal;
-  --openui-text-numbers-heading-lg: 600 1.125rem/1.2 var(--openui-font-numbers);
-  --openui-text-numbers-heading-lg-letter-spacing: normal;
-  --openui-text-numbers-heading-xl: 600 1.25rem/1.2 var(--openui-font-numbers);
-  --openui-text-numbers-heading-xl-letter-spacing: normal;
-  --openui-text-code-sm: 400 0.6875rem/1.5 var(--openui-font-code);
-  --openui-text-code-sm-heavy: 600 0.6875rem/1.5 var(--openui-font-code);
-  --openui-text-code-default: 400 0.75rem/1.5 var(--openui-font-code);
-  --openui-text-code-default-heavy: 600 0.75rem/1.5 var(--openui-font-code);
-}
-
-/* OpenUI's colours on Rufi's theme, by the roles its theming guide maps:
-   the surfaces, primary and secondary text, the accent in its states, text
-   on the accent, borders and the user's bubble. Rufi's tokens change with
-   the theme, so replies follow it in light and dark. Everything else, the
-   colours that carry meaning (info, success, warning, danger) too, is
-   OpenUI's own: Rufi never restyles OpenUI's parts
-   (packages/brand/DESIGN.md). */
-:root {
-  --openui-background: var(--page);
-  --openui-foreground: var(--surface);
-  --openui-text-neutral-primary: var(--ink);
-  --openui-text-neutral-secondary: var(--muted);
-  --openui-interactive-accent-default: var(--accent);
-  --openui-interactive-accent-hover: var(--accent-hover);
-  --openui-interactive-accent-pressed: var(--accent-hover);
-  --openui-interactive-accent-disabled: color-mix(
-    in srgb,
-    var(--accent) 40%,
-    transparent
-  );
-  --openui-text-accent-primary: var(--on-accent);
-  --openui-border-default: var(--line);
-  --openui-chat-user-response-bg: var(--accent-soft);
-  --openui-chat-user-response-text: var(--ink);
-}
-
-/* A reply's Card sources open by Rufi's rule (src/openui/parts.tsx), so
-   OpenUI doesn't mark them as links itself. */
-@layer components {
-  .openui-listed-source-item,
-  .openui-citation-item {
-    cursor: pointer;
-  }
-}
 
 /* The UI font role, from the brand tokens (packages/brand/tokens.css). */
 @theme {
@@ -200,8 +56,7 @@ html {
 /* The chat page's sides: 2.5rem in a page 640 px wide or more (the Mac's
    look), narrowing to 1rem at 400 px (a phone). A percentage of the page's
    own width, not the window's, so a narrow pane beside the sidebar narrows
-   too; with no container, OpenUI's full-screen parts inside still cover the
-   window. */
+   too. */
 @utility px-gutter {
   padding-inline: clamp(1rem, calc(1rem + (100% - 400px) * 0.1), 2.5rem);
 }
@@ -281,9 +136,7 @@ body {
 }
 
 /* The AI's replies, its thinking's summaries and its agents' words:
-   Markdown at the chat's size. In the base layer, under OpenUI's: inside a
-   reply OpenUI draws, its parts draw by their own rules and the type
-   tokens above; a reply of plain Markdown keeps these. */
+   Markdown at the chat's size. */
 @layer base {
   :is(.reply, .thought, .note, .agent-words) > :last-child {
     margin-bottom: 0;
@@ -336,13 +189,13 @@ body {
   .reply .visual {
     margin: 0 0 8px;
   }
-  :is(.reply, .thought, .note, .agent-words) table:not(.openui-table) {
+  :is(.reply, .thought, .note, .agent-words) table {
     border-collapse: collapse;
     display: block;
     overflow-x: auto;
   }
-  :is(.reply, .thought, .note, .agent-words) th:not(.openui-table-head),
-  :is(.reply, .thought, .note, .agent-words) td:not(.openui-table-cell) {
+  :is(.reply, .thought, .note, .agent-words) th,
+  :is(.reply, .thought, .note, .agent-words) td {
     border-bottom: 1px solid var(--line);
     padding: 4px 8px;
     text-align: left;
@@ -457,8 +310,7 @@ body {
 /* How Rufi AI's reply sits in the chat, as Settings › Appearance chose
    (<html data-reply-shape>): flat on the chat's background; panel on its own
    soft surface, a faint shade of the text over whatever is behind it (on
-   White, a very light grey); card the same with a thin border. Only Rufi's
-   container around the reply: OpenUI's parts inside keep their own look. */
+   White, a very light grey); card the same with a thin border. */
 :root:is([data-reply-shape="panel"], [data-reply-shape="card"]) [data-reply] {
   border-radius: 12px;
   background: color-mix(in srgb, var(--ink) 4%, transparent);

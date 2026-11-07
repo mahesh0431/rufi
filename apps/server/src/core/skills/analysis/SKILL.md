@@ -17,4 +17,5 @@ Programs in your folder:
 
 A picture:
 
-- When the user asks for a picture, make it in your folder and show it with Image and its path, such as `Image("Where the patch goes", "pictures/patch-sites.png")`. Its alt text is the caption. Rufi shows PNG, JPEG, GIF and WebP. Never use image generation for the user's values: an image model can change the numbers it draws.
+- When the user asks for a picture, make it in your folder and show it as a Markdown image of its path, such as `![Where the patch goes](pictures/patch-sites.png)`. Its alt text is the caption. Rufi shows PNG, JPEG, GIF and WebP. Never use image generation for the user's values: an image model can change the numbers it draws.
+- A chart of the user's values is a visual, as your instructions say, not a picture.

@@ -14,7 +14,7 @@ Light or dark is one block of values: light in `:root`, dark when `<html data-th
 
 In the app, the person picks a colour theme in Settings › Appearance: White (the start), Blue, Periwinkle, Plum, Ocean, Graphite or Sand. A colour theme is a block in `tokens.css` on `[data-colour="…"]`, light and dark, which sets only the background greys (`--page`, `--side`, `--surface`, `--line`) and the accent family (`--accent`, `--accent-hover`, `--on-accent`, `--accent-soft`, `--accent-ink`). Text (`--ink`, `--muted`) and `--danger` are the same in every theme. One exception: in the Mac app, in the dark, the sidebar's `--muted` is lighter, because the window's sidebar material behind it is lighter than `--side`. The core serves each page with `<html data-colour>`, so it paints in its colour first time. The selector also works on any element: Settings draws each swatch in its own theme that way, with no colour written in the screen. Blue is the values in `:root`, the website's.
 
-To add a theme, add its light and dark blocks with the same tokens in both, so the dark one always wins over its light one, and check every text pair (ink and muted on the page, the sidebar, a surface and the accent's soft fill; the accent's ink on the same; text on the accent and on its hover; the accent as a focus ring, 3:1) for WCAG AA in light and dark, and against the Mac's sidebar material. Replies follow by themselves: OpenUI takes its roles from these tokens.
+To add a theme, add its light and dark blocks with the same tokens in both, so the dark one always wins over its light one, and check every text pair (ink and muted on the page, the sidebar, a surface and the accent's soft fill; the accent's ink on the same; text on the accent and on its hover; the accent as a focus ring, 3:1) for WCAG AA in light and dark, and against the Mac's sidebar material. Replies follow by themselves: a reply's visual takes these tokens by name (ADR 0034).
 
 | Token                               | Its job                                                              |
 | ----------------------------------- | -------------------------------------------------------------------- |
@@ -49,7 +49,7 @@ Rules:
 - **The accent is for doing; apricot is Rufi.** The theme's accent (blue on the website and in Blue, black in White, plum in Plum, …) is for the main action and for what is selected. Apricot is only for Rufi itself: the dog's folds, and on the website the accent words in large headings, the dots and the pale icon squares. Never an apricot button.
 - **No clinical colour.** No red, amber, orange, green or pink that could read as a health status (good, borderline, bad), in any theme: a theme's accent must never look like a result.
 - **One red, for one job:** the last step of a delete that can't be undone. Nowhere else on Rufi's own screens.
-- **Rufi AI's replies are drawn by OpenUI as it draws them.** Rufi gives OpenUI only its theme's roles (surfaces, primary and secondary text, the accent in its states, text on the accent, borders, the user's bubble) and its type (font and scale), and never restyles OpenUI's parts. So replies show OpenUI's own colours by meaning (info, success, warning, danger) on Rufi's theme. Rufi AI never colours a health value good or bad by its own judgement; for a result it shows the lab's own flag as printed. Rufi's own screens keep no clinical colour and the one red for deleting.
+- **A reply's visual uses Rufi's theme.** The AI draws it in HTML, and Rufi gives it the theme's tokens by their own names (`--page`, `--surface`, `--side`, `--line`, `--ink`, `--muted`, `--accent`, `--accent-soft`, `--accent-ink`, `--on-accent`, `--font-ui`), in light and dark; its instructions tell it to use only these. Rufi AI never colours a health value good or bad by its own judgement; for a result it shows the lab's own flag as printed. Rufi's own screens keep no clinical colour and the one red for deleting.
 - **Calm greys, less black.** Pure ink is for the dog's dark ground only.
 - **Contrast:** text keeps WCAG AA in every theme. Check a new pair before you use it.
 
@@ -58,7 +58,7 @@ Rules:
 Two font roles, as family stacks in the tokens; sizes and weights stay with each medium.
 
 - `--font-ui`: the Mac's system font, for the app. The app is a 13 px desktop UI.
-- Rufi AI's replies drawn by OpenUI use Rufi's 13 px scale and `--font-ui`, given to OpenUI as its typography tokens, so a reply reads like the messages around it.
+- Rufi AI's replies are Markdown at Rufi's 13 px scale in `--font-ui`; a visual in one gets the same font and size, so it reads like the messages around it.
 - `--font-brand`: Inter (variable), for the website. The website is a 16 px reading page; headings heavy (about 750–780) with tight letter spacing, body text regular.
 
 ## Icons

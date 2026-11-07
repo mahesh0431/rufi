@@ -1,6 +1,6 @@
 # 0030 · Rufi AI's reply is OpenUI Lang
 
-**Date:** 1 Nov 2026 · **Status:** accepted · Supersedes [ADR 0029](0029-a-replys-trend-is-drawn-by-rufi-from-the-ais-block.md)'s trend block in a Markdown reply, and [ADR 0017](0017-a-reply-shows-the-files-the-ai-made.md)'s pages and diagrams
+**Date:** 1 Nov 2026 · **Status:** superseded by [ADR 0034](0034-a-replys-visual-is-an-html-block-in-a-locked-frame.md): a reply is Markdown with HTML visuals; OpenUI, its prompt, its parts and a click's words for the AI are gone · Supersedes [ADR 0029](0029-a-replys-trend-is-drawn-by-rufi-from-the-ais-block.md)'s trend block in a Markdown reply, and [ADR 0017](0017-a-reply-shows-the-files-the-ai-made.md)'s pages and diagrams
 
 Every reply of Rufi AI is OpenUI Lang, drawn by OpenUI's renderer in place of the Markdown renderer, as it is written. As in OpenUI's own chat, the renderer gets the whole reply so far on each change and draws each part as it parses; both providers stream the reply's text (Codex's `item/agentMessage/delta`, Claude's `text_delta`), so it builds part by part. This follows OpenUI's recommended path for a chat UI of one's own: the agent writes OpenUI Lang, and "adding OpenUI changes a single component". Mahesh asked for OpenUI for the whole reply, so Rufi doesn't build its own kit. Rufi's chat stays: Activity, receipts, the waiting list, the box and the dog. Notes, an agent's messages, receipts and visit briefs stay Markdown.
 

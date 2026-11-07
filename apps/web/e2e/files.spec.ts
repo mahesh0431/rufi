@@ -1,8 +1,7 @@
 // What a reply shows, on the real core with its real headers: a picture the
 // AI made, one it generated (once, also when the reply links it, also after
-// a reload), a reply in OpenUI Lang (drawn by OpenUI, or shown as its text
-// when it isn't whole), and a picture that is gone. The screens' strict CSP
-// refuses nothing.
+// a reload), and a picture that is gone; and a send while scrolled up. The
+// screens' strict CSP refuses nothing.
 import { AxeBuilder } from "@axe-core/playwright";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -155,22 +154,22 @@ test("a picture the AI generated shows even without a link, and once when its re
 
   await send(page, "a fictional cat");
   await expect(log(page).getByText("ok:a fictional cat")).toBeVisible();
-  // OpenUI replies: the picture by Image, then in Markdown text by another path.
-  await send(page, `root = Card([Image("A cat", "${saved}")])`);
+  // The picture in a reply's Markdown, then by another path to it.
+  await send(page, `![A cat](${saved})`);
   await expect(log(page).getByRole("img", { name: "A cat" })).toBeVisible();
   await send(page, `I saved the picture at ${saved}`);
   await expect(log(page).getByRole("img")).toHaveCount(3);
   await send(
     page,
-    `root = Card([TextContent("![A cat via alias](${saved.replace("/call-1.png", "/./call-1.png")})")])`,
+    `![A cat via alias](${saved.replace("/call-1.png", "/./call-1.png")})`,
   );
   await expect(
     log(page).getByRole("img", { name: "A cat via alias" }),
   ).toBeVisible();
 
   const check = async () => {
-    // Plain words keep the native picture. A reply's Image or Markdown text,
-    // including by an equivalent path, shows it once. Intentional reuse in a later turn stays.
+    // Plain words keep the native picture. A reply's Markdown, including by
+    // an equivalent path, shows it once. Intentional reuse in a later turn stays.
     await expect(log(page).getByRole("img")).toHaveCount(4);
     await expect(log(page).getByText("Made by the AI")).toHaveCount(2);
     for (const img of await log(page).getByRole("img").all()) {
@@ -207,127 +206,24 @@ test("a picture that is gone keeps its card and says so", async ({
   expect(await refusedIn(page)).toEqual([]);
 });
 
-/**
- * A stored reply in OpenUI Lang (openui/library.ts): keep it as written when
- * OpenUI changes, so an old reply still draws. A header, text with a web
- * link, a link to a page of Rufi and a citation of the Card's source (a page
- * of Rufi, its keys quoted), OpenUI's line chart of one test and a table with every value
- * ("<5" too), a callout with a link, an editable table with an address of
- * Rufi's, a button whose action names the test, and follow-ups.
- */
-const STORED_REPLY = [
-  "root = Card([header, intro, chart, table, note, reports, explain, followUps], [src])",
-  'header = CardHeader("CRP", "Your last four results")',
-  'intro = TextContent("Your CRP was **high** in March and August. [What CRP measures](https://example.com/crp) · [Your follow-ups](rufi:/follow-ups) [1]")',
-  'src = {"title": "Your follow-ups list", "sourceName": "Your follow-ups", "url": "rufi:/follow-ups"}',
-  'chart = LineChart(["4 Mar 2026", "12 Aug 2026"], [Series("CRP (mg/L)", [8.2, 6.0])])',
-  'table = Table([Col("Date", ["1 Dec 2025", "4 Mar 2026", "12 Aug 2026"]), Col("CRP", ["<5 mg/L", "8.2 mg/L", "6.0 mg/L"]), Col("Lab range", ["<5", "<5", "<5"])])',
-  'note = Callout("info", "Lab ranges", "Your ranges depend on [what comes next](rufi:/follow-ups).")',
-  'reports = EditableTable("reports", [{type: "url", key: "source", header: "Report"}], [{id: "p1", values: ["rufi:/follow-ups"]}])',
-  'explain = Buttons([Button("Explain", @ToAssistant("Explain this result", {test: "CRP"}))])',
-  'followUps = FollowUpBlock([FollowUpItem("Show my ferritin too")])',
-].join("\n");
-
-test("a reply the AI wrote in OpenUI draws in the chat under Rufi's strict CSP: its chart and table, a follow-up or button shows its words while Rufi AI gets the click with its context, and every link of Rufi's opens in place", async ({
+test("a send while scrolled up brings the chat to its end: Steer on a waiting message", async ({
   page,
   rufi,
 }) => {
   await opened(page, rufi);
-  // The scripted Codex answers OpenUI Lang as it is.
-  await send(page, STORED_REPLY);
-  const reply = log(page).locator(".reply").first();
-  await expect(reply.getByText("Your last four results")).toBeVisible();
-  await expect(
-    reply.getByRole("link", { name: "What CRP measures" }),
-  ).toHaveAttribute("href", "https://example.com/crp");
-  // Every link opens by Rufi's rule, wherever OpenUI draws it.
-  for (const name of ["Your follow-ups", "what comes next"]) {
-    await expect(reply.getByRole("link", { name })).toHaveAttribute(
-      "href",
-      /^\/people\/[^/]+\/follow-ups$/,
-    );
-  }
-  await expect(reply.getByRole("button", { name: "Citations" })).toBeVisible();
-  await expect(reply.getByRole("img", { name: /^Line chart/ })).toBeVisible();
-  await expect(reply.getByText("<5 mg/L")).toBeVisible();
-  // Drawn whole: not shown as its text, and nothing said left out.
-  await expect(reply.locator("pre")).toHaveCount(0);
-  await expect(
-    reply.getByText("Part of this reply couldn't be shown."),
-  ).toHaveCount(0);
-  await accessible(page);
-  expect(await refusedIn(page)).toEqual([]);
-  // A click shows its words as the person's message, and Rufi AI gets it
-  // as a click; what they typed and haven't sent stays in the box.
-  const box = chat(page).getByRole("textbox", { name: "Message to Rufi" });
-  await box.fill("And my iron?");
-  await reply.getByText("Show my ferritin too").click();
-  await expect(log(page).locator(".reply").last()).toContainText(
-    "ok:User clicked: Show my ferritin too",
-  );
-  await expect(
-    log(page).locator("p", { hasText: /^Show my ferritin too$/ }),
-  ).toBeVisible();
-  await expect(box).toHaveValue("And my iron?");
-  // A button's action says which test it is about, as OpenUI gives it.
-  await reply.getByRole("button", { name: "Explain" }).click();
-  await expect(log(page).locator(".reply").last()).toContainText(
-    /ok:User clicked: Explain this result\s+Context: \{"test":"CRP"\}/,
-  );
-  await expect(
-    log(page).locator("p", { hasText: /^Explain this result$/ }),
-  ).toBeVisible();
-  // A source of Rufi's opens the person's page in this window.
-  await reply.getByRole("button", { name: /Your follow-ups list/ }).click();
-  await expect(page).toHaveURL(/\/people\/[^/]+\/follow-ups$/);
-  expect(page.context().pages()).toHaveLength(1);
-  // So does an address OpenUI draws itself, in an editable table.
-  await page.goBack();
-  await chat(page).getByRole("button", { name: "Open the chat" }).click();
-  await reply.locator('a[href="rufi:/follow-ups"]').click();
-  await expect(page).toHaveURL(/\/people\/[^/]+\/follow-ups$/);
-  expect(page.context().pages()).toHaveLength(1);
-});
-
-test("a send while scrolled up brings the chat to its end: a follow-up clicked in an earlier reply, and Steer on a waiting message", async ({
-  page,
-  rufi,
-}) => {
-  await opened(page, rufi);
-  await send(
-    page,
-    [
-      "root = Card([intro, followUps])",
-      'intro = TextContent("Your CRP was high in March.")',
-      'followUps = FollowUpBlock([FollowUpItem("Show my ferritin too")])',
-    ].join("\n"),
-  );
-  const followUp = log(page)
+  await send(page, "Your CRP was high in March.");
+  const earlier = log(page)
     .locator(".reply")
     .first()
-    .getByText("Show my ferritin too");
-  await expect(followUp).toBeVisible();
-  // A long reply after it, then a scroll up to the follow-up, as you read.
+    .getByText("Your CRP was high in March.");
+  await expect(earlier).toBeVisible();
+  // A long reply after it, then a scroll up to the earlier one, as you read.
   await send(
     page,
     Array.from({ length: 60 }, (_, i) => `Note ${String(i + 1)}`).join("\n\n"),
   );
   await expect(
     log(page).locator(".reply").last().getByText("Note 60"),
-  ).toBeInViewport();
-  await log(page).hover();
-  await page.mouse.wheel(0, -10_000);
-  await expect(followUp).toBeInViewport();
-
-  await followUp.click();
-  await expect(
-    log(page)
-      .locator(".reply")
-      .last()
-      .getByText("ok:User clicked: Show my ferritin too"),
-  ).toBeInViewport();
-  await expect(
-    log(page).locator("p", { hasText: /^Show my ferritin too$/ }),
   ).toBeInViewport();
 
   // A message waits behind a reply that runs on; scrolled up, Steer sends it.
@@ -339,71 +235,10 @@ test("a send while scrolled up brings the chat to its end: a follow-up clicked i
   await expect(waiting).toContainText("And my iron?");
   await log(page).hover();
   await page.mouse.wheel(0, -10_000);
-  await expect(followUp).toBeInViewport();
+  await expect(earlier).toBeInViewport();
   await waiting.getByRole("button", { name: "Steer" }).click();
   await expect(
     log(page).locator("p", { hasText: /^And my iron\?$/ }),
   ).toBeInViewport();
   await chat(page).getByRole("button", { name: "Stop" }).click();
-});
-
-/** Replies with a piece OpenUI leaves out: what shows, and what's left out. */
-const LEFT_OUT = [
-  // A name it uses but never gives.
-  {
-    reply: [
-      "root = Card([intro, t])",
-      'intro = TextContent("Your iron results")',
-      't = Table([Col("Test", ["Haemoglobin", "Ferritin"]), Col("Value", [v1, v2])])',
-      'v1 = "11.6 g/dL"',
-    ].join("\n"),
-    shown: "Your iron results",
-    left: 'v1 = "11.6 g/dL"',
-  },
-  // Another part where a step goes: OpenUI's parser lets it through.
-  {
-    reply:
-      'root = Card([Steps([StepsItem("Fast for 8 hours", "Water is fine."), TextContent("Ferritin: 18 ng/mL")])])',
-    shown: "Fast for 8 hours",
-    left: "Ferritin: 18 ng/mL",
-  },
-  // A table cell OpenUI can't draw, though it looks like an expression.
-  {
-    reply:
-      'root = Card([TextContent("Your iron results"), Table([Col("Ferritin", [{k: "value", value: "18 ng/mL"}])])])',
-    shown: "Your iron results",
-    left: "18 ng/mL",
-  },
-  // Words OpenUI passes over, outside a statement.
-  {
-    reply: [
-      'root = Card([TextContent("Haemoglobin: 11.6 g/dL")])',
-      "Ferritin: 18 ng/mL",
-    ].join("\n"),
-    shown: "Haemoglobin: 11.6 g/dL",
-    left: "Ferritin: 18 ng/mL",
-  },
-];
-
-test("a finished reply with a piece OpenUI leaves out draws the rest, says part isn't shown, and shows its whole text on a click, also once stored", async ({
-  page,
-  rufi,
-}) => {
-  await opened(page, rufi);
-  for (const { reply, shown, left } of LEFT_OUT) {
-    await send(page, reply);
-    const drawn = log(page).locator(".reply").last();
-    await expect(drawn.getByText(shown, { exact: true })).toBeVisible();
-    const line = drawn.getByText("Part of this reply couldn't be shown.");
-    await expect(line).toBeVisible();
-    await expect(drawn.locator("pre")).toBeHidden();
-    await line.click();
-    await expect(drawn.locator("pre")).toContainText(left);
-  }
-  await accessible(page);
-  await page.reload();
-  await chat(page).getByRole("button", { name: "Open the chat" }).click();
-  await expect(
-    log(page).getByText("Part of this reply couldn't be shown."),
-  ).toHaveCount(LEFT_OUT.length);
 });

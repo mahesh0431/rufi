@@ -391,16 +391,13 @@ test("Settings opens over the page at a group, from the sidebar, a reply's butto
   await page.goto(rufi.link());
   await sidebar(page).getByRole("link", { name: "Chat with Rufi" }).click();
   const box = page.getByRole("textbox", { name: "Message to Rufi" });
-  // A reply's button to a group of Settings opens it there, over the chat.
-  await box.fill(
-    [
-      "A stored reply:",
-      "root = Card([buttons])",
-      'buttons = Buttons([Button("Data settings", @OpenUrl("rufi:/settings/data"))])',
-    ].join("\n"),
-  );
+  // A reply's link to a group of Settings opens it there, over the chat.
+  await box.fill("A reply: [Data settings](rufi:/settings/data)");
   await box.press("Enter");
-  await page.getByRole("button", { name: "Data settings" }).click();
+  await page
+    .locator(".reply")
+    .getByRole("link", { name: "Data settings" })
+    .click();
   const settings = page.getByRole("dialog", { name: "Settings" });
   await expect(
     settings.getByRole("tab", { name: "Data", selected: true }),

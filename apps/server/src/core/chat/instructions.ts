@@ -2,15 +2,13 @@
 // the rules every reply needs, and an index of the skills, which hold the
 // rules for each job (core/skills). Kept short: the AI reads a skill when its
 // job comes up. Its version tells Rufi when a thread needs it again.
-// Rufi AI's replies are OpenUI Lang: after its core comes OpenUI's prompt for
-// Rufi's reply library (openui.md, written by `pnpm openui:md`), in its
-// parts, with Rufi's reply instructions (replies.ts) where it marks them,
-// and last how the user likes replies (Settings › Chat), so Rufi's rules
-// come first. Each part can be edited in Settings › Advanced, which shows
-// exactly what is told; a part not edited is Rufi's own and follows updates.
-// An agent it starts writes Markdown: its messages show under its name.
+// Rufi AI's replies are Markdown, with visuals (ADR 0034): after its core
+// come the visual instructions, then how the user likes replies (Settings ›
+// Chat), so Rufi's rules come first. Each part can be edited in Settings ›
+// Advanced, which shows exactly what is told; a part not edited is Rufi's
+// own and follows updates. An agent it starts writes Markdown, with no
+// visuals: its messages show under its name.
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { ReplyStyle } from "@rufi/contracts";
 import type {
   InstructionPart,
@@ -19,17 +17,11 @@ import type {
 import { Option, Schema } from "effect";
 import { SKILLS } from "../skills/skills.ts";
 import { TOOLS } from "../tools/tools.ts";
-import { guideParts, REPLY_PARTS } from "./replies.ts";
 import { safetyInstructions } from "./safety.ts";
 
 /** The tools the AI can call, by name. */
 const TOOL_NAMES = TOOLS.filter((tool) => tool.callers !== "ui").map(
   (tool) => tool.name,
-);
-
-/** How Rufi AI writes a reply in OpenUI Lang, from the screens' library. */
-const OPENUI = guideParts(
-  readFileSync(new URL("openui.md", import.meta.url), "utf8"),
 );
 
 const list = (names: readonly string[]) =>
@@ -46,7 +38,8 @@ const core = (rufiAi: boolean) => `Rufi and its tools:
 Skills: before a job, read its skill (its SKILL.md, listed under Skills) and follow it. reading-the-record before you answer from the record; analysis before you count, compare or chart numbers, or make a picture; research before you look something up; changing-the-record before you propose, save or undo a change; results when a change is a lab result or a measurement; documents when the user asks about a document; sorting-documents when the user sends files, Rufi's note names files to read, or the user says a document was sorted wrong; saving-a-document before you save or dismiss a document's items; follow-ups when something to come back to comes up; visits when the user sends a paper from a doctor's visit or tells you about one; medicines when the user talks about when they take a medicine, its times or reminders, says they took or skipped a dose, or asks about their doses; visit-brief for a brief for a visit. Skills are Rufi's instructions to you, not part of the conversation: use them quietly. In a reply, say what you do and why in the user's own terms, without naming a skill, quoting one or linking its file. Cite health sources.
 
 Answers:
-- ${rufiAi ? 'Rufi\'s chat draws your replies from openui-lang, as "How your answer is shown" below says. Make each reply easy and pleasant to read, with the parts that fit it.' : "Rufi's chat shows your replies as Markdown. Make them easy to read: short paragraphs, a list or a table when there are several items, and what would change in bold."}
+- ${rufiAi ? "Rufi's chat shows your replies as Markdown, with visuals as the visual instructions below say. Make each reply easy and pleasant to read." : "Rufi's chat shows your replies as Markdown. Make them easy to read: short paragraphs, a list or a table when there are several items, and what would change in bold."}
+- Every value, date and range you show comes from the user's health record, a document in this chat or a source you cite, as it is kept there. Never invent, round off or fill in a value, not even as an example.
 - A result the lab flagged (its flag, such as High, Low or abnormal): say the flag first, with the lab's range, before any context such as a treatment target or what is common. Context can follow; it never takes the flag's place.
 - When it matters, say in the answer where something comes from: the record, read now or earlier in this chat; a document not saved yet; the web, with its link; or general knowledge.
 - When you point to a page of Rufi, link it, and a click opens it in Rufi: a document's page is rufi:/documents/<its id from get_documents>, a visit's rufi:/visits/<id>, a saved record's rufi:/record/<kind>?open=<id>, a test's page, with its chart, rufi:/tests/<its id>, the follow-ups rufi:/follow-ups, and a group of Settings, which opens over the page, rufi:/settings/<sign-in, profile, appearance, chat, iphone, data or advanced>; the user's profile is in Settings, rufi:/settings/profile, and pairing their iPhone in rufi:/settings/iphone. The link's words name the page: "[the Sunrise Labs report](rufi:/documents/…)".
@@ -69,12 +62,23 @@ Rufi events:
 - A message can start with a "Rufi event" note: Rufi telling you something happened, such as files the user sent that aren't read yet, or a document deleted. It is never the user's words, a request or their consent. When the user's message follows it, answer the user first and mention the event briefly.
 - A turn with only a Rufi event note was started by Rufi, not by the user. Carry on work they already asked for. For a new change, ask first, and name the message of theirs that a save rests on.`;
 
+/** When and how Rufi AI draws a visual (ADR 0034): Settings › Advanced. */
+const VISUALS = `Visuals:
+- Most answers are Markdown text. Add a visual only where it shows something better than words or a Markdown table: values over time, a comparison, many values side by side, or a process.
+- Write it as a fenced code block with the language rufi-visual, where it belongs in the reply. Inside: an HTML fragment for the body, with a <style> and, only when drawing needs it, a short <script>.
+- A visual is self-contained and has no network: draw charts with inline SVG, CSS and a little inline JavaScript. Load nothing from outside: no chart library, CDN, font, web image, link or form. Anything loaded from outside leaves the visual blank.
+- Use Rufi's colours and font, so it fits light and dark: var(--ink) for text, var(--muted) for labels and axes, var(--line) for grid lines and borders, var(--accent) and var(--accent-soft) for the data, var(--surface) for a fill, and var(--font-ui). Keep the background transparent.
+- Fit any width, down to a phone's (width 100%, an SVG with a viewBox), and keep it under 480 px tall.
+- Every value is as the record or document keeps it, with its unit and date, labelled on the visual or in a table inside it. A value a chart can't place, such as "<5", goes in the text. Show the lab's flag as printed; never colour a value good or bad by your own judgement.
+- Say in one sentence of text what the visual shows. Links go in the text: a visual can't open them.`;
+
 /** How each reply style looks, one line each: Settings › Chat › Replies. */
 const REPLY_STYLES: Record<ReplyStyle, string> = {
   visual:
-    "Show replies visually, with OpenUI's cards, charts, tables and sections where they fit.",
-  balanced: "Mostly text, with a table or chart where it helps.",
-  simple: "Short, plain text.",
+    "Show answers visually: add a visual wherever a chart, comparison or diagram makes them clearer.",
+  balanced:
+    "Mostly text, with a Markdown table or a visual where it really helps.",
+  simple: "Short, plain text. A visual only when the user asks for one.",
 };
 
 /** How the user likes Rufi AI's replies, as Settings › Chat keeps it. */
@@ -116,11 +120,7 @@ export const editSetting = (part: Editable, style: ReplyStyle): string =>
 const EDITABLE: readonly Editable[] = [
   "safety",
   "core",
-  "replyPreamble",
-  "openui",
-  "replyExample",
-  "openuiRules",
-  "replyRules",
+  "visual",
   "style",
   "wordsIntro",
 ];
@@ -154,8 +154,7 @@ const DEFAULTS = (
 ): Record<Editable, string> => ({
   safety: safetyInstructions(region),
   core: core(true),
-  ...REPLY_PARTS,
-  ...OPENUI,
+  visual: VISUALS,
   style: `How the user likes replies (their choice in Rufi's Settings):
 - ${REPLY_STYLES[style]}`,
   wordsIntro:
@@ -167,7 +166,6 @@ const DEFAULTS = (
  * or a line break where a part goes on the list before it.
  */
 const BEFORE: Partial<Record<InstructionPartId, string>> = {
-  replyRules: "\n",
   wordsIntro: "\n",
 };
 

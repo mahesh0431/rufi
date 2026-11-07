@@ -32,7 +32,7 @@ A new chat, with nothing in it yet, shows Rufi saying hello over the box.
 
 The chat opens at its latest messages. Scroll up to see older ones: Rufi loads them as you go, and what you read stays where it is on the screen. If Rufi can't load them, the chat says so: click **Retry**.
 
-When you send, from the box, with a follow-up or button in a reply, or with **Send**, **Steer** or **New thread** on a waiting message, the chat goes to its end: your message and the reply as it comes show there.
+When you send, from the box, or with **Send**, **Steer** or **New thread** on a waiting message, the chat goes to its end: your message and the reply as it comes show there.
 
 A line between days says which day the messages under it are from: "Today", "Yesterday", then the day, such as "Thu 8 Oct", with the year when it isn't this year. The days are in your Mac's time zone.
 
@@ -112,23 +112,19 @@ A reply that has no steps, such as an answer to "thanks", has no Activity line o
 
 ## How a reply looks
 
-The AI's reply is drawn as it writes it: headings, text, lists and tables, charts, steps or a picture, whichever shows its answer best. Rufi draws replies with OpenUI, a set of parts for answers like these, in Rufi's light or dark.
+The AI's reply shows as it writes it: text with headings, lists, tables and links, and a visual where a chart, a comparison or a process shows the answer better than words. Each reply is in Rufi's light or dark.
 
-- **Text** can be **bold**, have lists and links. A link to a web page opens in your browser, outside Rufi; a link to a page of Rufi, such as a document, opens it in Rufi. Links work the same anywhere in a reply, also in a note box, a list of steps and the **Sources** under a reply, and a small globe after a sentence lists the sources it rests on.
-- **Charts** show values from your record, such as one test over time or several tests side by side. A chart's labels and the value you point at can be rounded, so the AI also gives the values it draws in a table or the text, as your record keeps them, with their units; a value a chart can't take as a number, such as "<5", is there too. A test's own chart, spaced by date with the lab's range, is on its page in your [health record](record.md#a-test), which the AI can link.
-- **Visuals** show a chart, a comparison or a process as a card in the reply, in Rufi's colours, light or dark. While the AI writes one, a quiet grey box holds its place until it's whole. A visual can't load anything from the internet, send anything out, or reach your record or Rufi itself: it shows only what the AI wrote in it. If it tried to load something, such as a chart library from the web, it says "Part of this visual didn't load" under it, and may be blank. Ask the AI to draw it again.
-- **Follow-ups and buttons** at the end of a reply suggest what to ask next. A click sends its words as your message, and the AI also gets what it is about, such as which result's card you clicked. What you've typed and haven't sent yet stays in the box. A form sends what you filled in. A button that opens a link opens it as a link in text does.
-- **When part of a reply can't be drawn**, Rufi draws the rest and says "Part of this reply couldn't be shown." This happens when the reply was cut off or has a mistake Rufi's drawing reports, when a piece of it is in a place it can't go, or when some of its text is outside the reply's parts. Click **Show text** to read the whole reply as the AI wrote it. A reply the AI wrote as plain words shows as words.
-- **Known limit:** the drawing passes over some unusual text without telling Rufi, such as text in another script outside the reply's parts, so part of a reply can be missing with no notice. If a reply looks short, ask the AI to say it again.
-- Nothing in a reply runs or loads from the internet, and nothing in it can reach your record: Rufi draws it from what the AI wrote. Check the values against your record, as with anything the AI says.
+- **Text** can be **bold**, have lists, tables and links. A link to a web page opens in your browser, outside Rufi; a link to a page of Rufi, such as a document, opens it in Rufi.
+- **Visuals** show a chart, a comparison or a process as a card in the reply, in Rufi's colours, light or dark, such as one test over time. The AI labels each value as your record keeps it, with its unit and date; a value a chart can't place, such as "<5", is in the text. While the AI writes one, a quiet grey box holds its place until it's whole. A visual can't load anything from the internet, send anything out, or reach your record or Rufi itself: it shows only what the AI wrote in it. If it tried to load something, such as a chart library from the web, it says "Part of this visual didn't load" under it, and may be blank. Ask the AI to draw it again. A test's own chart, spaced by date with the lab's range, is on its page in your [health record](record.md#a-test), which the AI can link.
+- Check the values against your record, as with anything the AI says.
 
 ### Choose how replies look
 
 In [Settings › Chat](rufi:/settings/chat) › **Replies**, choose how Rufi AI's replies look:
 
-- **Visual** (the start): replies built from OpenUI's parts, with cards, charts, tables and sections where they fit.
-- **Balanced:** text first, with a table or chart where it helps.
-- **Simple:** short text.
+- **Visual** (the start): a visual wherever a chart, comparison or diagram makes the answer clearer.
+- **Balanced:** mostly text, with a table or a visual where it really helps.
+- **Simple:** short, plain text, and a visual only when you ask for one.
 
 Under **Your own words**, you can tell Rufi AI in your own words how you like replies, for example "Explain medical words simply. Use kg and cm." It saves when you leave the box, and Rufi AI reads it with every reply, whichever of the three you chose. Your words change how a reply looks and reads; Rufi's own rules still come first: your values exactly as your record keeps them, where they come from, and asking before it saves.
 
@@ -140,11 +136,7 @@ A new choice or new words reach the AI with your next message, in the chat you h
 
 - **Safety and emergencies:** what it does when a message may describe an emergency, with your emergency region's number.
 - **Rufi's core instructions:** how it reads and changes your health record, asks before it saves, and uses its tools and skills.
-- **Reply instructions: preamble:** how a reply is shown.
-- **OpenUI's guide: the language and examples:** made by OpenUI, how to write the parts Rufi AI can build a reply from, with its examples.
-- **Reply instructions: example:** Rufi's own example reply.
-- **OpenUI's guide: its rules:** OpenUI's rules for a reply.
-- **Reply instructions: rules:** Rufi's own rules for a reply.
+- **Visual instructions:** when and how Rufi AI draws a visual in a reply.
 - **Reply style in use:** the line for the style you chose in [Settings › Chat](rufi:/settings/chat). Each style keeps its own edit.
 - **Before your own words:** how Rufi AI is told what your own words are. It is sent only when you have written some.
 - **Your own words:** the same as in Settings › Chat.

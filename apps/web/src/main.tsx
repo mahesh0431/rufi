@@ -1,6 +1,3 @@
-// First: zod's settings (no eval, which the screens' policy refuses), before
-// OpenUI's packages build their schemas as they load.
-import "@rufi/contracts/jitless";
 import { Tooltip } from "@base-ui/react/tooltip";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";

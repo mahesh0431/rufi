@@ -1,6 +1,6 @@
 # 0017 · A reply shows the files the AI made, in locked frames
 
-**Date:** 14 Oct 2026 · **Status:** partly superseded by [ADR 0030](0030-rufi-ais-reply-is-openui-lang.md): a reply shows only pictures from these files. Pages, Mermaid diagrams, their frames, routes and policies are gone; the short-lived address, the two places and the generated picture stay
+**Date:** 14 Oct 2026 · **Status:** partly superseded by [ADR 0030](0030-rufi-ais-reply-is-openui-lang.md): a reply shows only pictures from these files. Pages, Mermaid diagrams, their frames, routes and policies are gone; the short-lived address, the two places and the generated picture stay. A chart is now a visual in the reply ([ADR 0034](0034-a-replys-visual-is-an-html-block-in-a-locked-frame.md)), drawn in a locked frame as pages were, but from the reply's own text
 
 The AI works in its folder (ADR 0016): its programs draw charts, and it can make an HTML page of results to show a doctor. A reply must show these without letting what the AI made read Rufi's data, change the record or reach the network. Three trust levels stay apart: the reply's Markdown (sanitized, no HTML, no remote pictures), a page that runs script without access to Rufi's data, and nothing the AI made that can call Rufi's tools or API.
 

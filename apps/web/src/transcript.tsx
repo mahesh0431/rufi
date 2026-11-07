@@ -1,6 +1,6 @@
 // The chat's transcript as the core stored it: your messages, the AI's
-// replies in OpenUI Lang (openui/reply.tsx), with the pictures they show
-// (files.tsx), each picture the AI generated, and under each
+// replies in Markdown, with their visuals (visual.tsx) and the pictures they
+// show (files.tsx), each picture the AI generated, and under each
 // answer its Activity; Rufi's receipt for
 // each save to the record, Rufi's own event lines (never your words), the
 // line of each visit brief, which opens it, and how a reply ended when it
@@ -42,11 +42,7 @@ import {
   useRef,
   useState,
 } from "react";
-import Markdown, {
-  defaultUrlTransform,
-  type Components,
-  type Options,
-} from "react-markdown";
+import Markdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
@@ -68,7 +64,6 @@ import { MiddleCut, StepDetails, took } from "./activity.tsx";
 import { boxFor } from "./boxes.ts";
 import { ChipView } from "./chips.tsx";
 import { fileIn, NativePicture, Picture } from "./files.tsx";
-import { OpenUIReply, picturesShownBy } from "./openui/reply.tsx";
 import { replyParts } from "./visual-blocks.ts";
 import { KeepPlace, Visual, VisualWaiting } from "./visual.tsx";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
@@ -95,11 +90,7 @@ import { Dog, LiveDog } from "./dog.tsx";
 import { usePanel } from "./panel.ts";
 import { onPhone, tell } from "./phone.ts";
 import { effortName } from "./model-menu.tsx";
-import {
-  settingsGroupOf,
-  SettingsLink,
-  useOpenSettings,
-} from "./settings-link.tsx";
+import { settingsGroupOf, SettingsLink } from "./settings-link.tsx";
 import { Button, buttonLook, ICON, Problem } from "./ui.tsx";
 
 // The AI's text is shown as Markdown, never as HTML: no raw HTML, no remote
@@ -222,14 +213,6 @@ const REPLY: Components = {
 const keepFiles = (url: string) =>
   /^(file|rufi):/i.test(url) ? url : defaultUrlTransform(url);
 
-/** An OpenUI reply's Markdown text: its links and files, as above. */
-const REPLY_TEXT: Options = {
-  remarkPlugins: REMARK,
-  components: REPLY,
-  urlTransform: keepFiles,
-  skipHtml: true,
-};
-
 /** The same Markdown tree and file rules as the reply renderer above. */
 const parser = unified()
   .use(remarkParse)
@@ -333,42 +316,11 @@ function Reply({
   text: string;
   streaming: boolean;
 }) {
-  const personId = use(Whose);
-  const openPage = useOpenPage();
-  const openSettings = useOpenSettings();
-  // A button's link, as the reply's links: a group of Settings over the
-  // page, a page of Rufi in place, a web page outside Rufi; anything else
-  // does nothing.
-  const openLink = (url: string) => {
-    const group = settingsGroupOf(url);
-    if (group !== undefined) {
-      openSettings(group);
-      return;
-    }
-    const path = RUFI.exec(url)?.[1];
-    const href =
-      path === undefined || personId === ""
-        ? undefined
-        : ownPage(personId, path);
-    if (href !== undefined) openPage(href);
-    else if (WEB.test(url)) open(url, "_blank", "noopener,noreferrer");
-  };
   return (
     // data-reply: Rufi's own container around the reply, shaped as Settings
-    // chose (styles.css); OpenUI's parts inside are never restyled.
+    // chose (styles.css).
     <div className="reply" data-entry={id} data-reply="">
-      <OpenUIReply
-        text={text}
-        streaming={streaming}
-        personId={personId}
-        markdown={REPLY_TEXT}
-        openLink={openLink}
-      >
-        {/* A reply with no OpenUI in it. While it streams, half-written
-            Markdown is closed so it reads right; a half-written link shows
-            as its text. */}
-        <ReplyText text={text} streaming={streaming} />
-      </OpenUIReply>
+      <ReplyText text={text} streaming={streaming} />
     </div>
   );
 }
@@ -894,9 +846,7 @@ function GeneratedPicture({
             return [];
           }
           const running = state.turns[entry.turnId ?? ""]?.status === "running";
-          return picturesShownBy(reply.text, running, (markdown) =>
-            picturesIn(readableReply(markdown, running)),
-          );
+          return picturesIn(readableReply(reply.text, running));
         }),
       ),
     ]),
