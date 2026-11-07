@@ -32,6 +32,8 @@ A new chat, with nothing in it yet, shows Rufi saying hello over the box.
 
 The chat opens at its latest messages. Scroll up to see older ones: Rufi loads them as you go, and what you read stays where it is on the screen. If Rufi can't load them, the chat says so: click **Retry**.
 
+When you send, from the box, with a follow-up or button in a reply, or with **Send**, **Steer** or **New thread** on a waiting message, the chat goes to its end: your message and the reply as it comes show there.
+
 A line between days says which day the messages under it are from: "Today", "Yesterday", then the day, such as "Thu 8 Oct", with the year when it isn't this year. The days are in your Mac's time zone.
 
 ## Sending a message

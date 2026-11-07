@@ -41,6 +41,7 @@ import { useStore } from "zustand";
 import { useShallow } from "zustand/shallow";
 import type { StoreApi } from "zustand/vanilla";
 import { request } from "./api.ts";
+import { boxFor } from "./boxes.ts";
 import { ChipView } from "./chips.tsx";
 import { chatPath, type Live, messageOf } from "./live.ts";
 import { goingNow, isRunning } from "./transcript-state.ts";
@@ -130,6 +131,11 @@ function WaitingView({
   } | null>(null);
   if (items.length === 0 && error === null) return null;
   const path = chatPath(personId);
+  /** The person sends a waiting message: the chat follows it. */
+  const go = (action: () => Promise<unknown>) => {
+    boxFor(personId).sent();
+    void act(action);
+  };
   const act = async (action: () => Promise<unknown>) => {
     setProblem(null);
     try {
@@ -156,17 +162,20 @@ function WaitingView({
   const one = (item: QueueItem) =>
     `${path}/queue/${encodeURIComponent(item.id)}`;
   /** A waiting row into the running reply; a held one sent. */
-  const steer = (item: QueueItem) =>
-    void act(() => request("POST", `${one(item)}/steer`));
-  const send = (item: QueueItem) =>
-    void act(() => request("POST", `${one(item)}/send`));
+  const steer = (item: QueueItem) => {
+    go(() => request("POST", `${one(item)}/steer`));
+  };
+  const send = (item: QueueItem) => {
+    go(() => request("POST", `${one(item)}/send`));
+  };
   /** The person's choice for a message whose AI thread didn't open. */
   const recover = (
     item: QueueItem,
     hold: string,
     choice: "retry" | "new_thread",
-  ) =>
-    void act(() => request("POST", `${one(item)}/recover`, { hold, choice }));
+  ) => {
+    go(() => request("POST", `${one(item)}/recover`, { hold, choice }));
+  };
   // Held for the sign-in, a row goes by itself once you sign in; any
   // other hold waits for you.
   const heading = running
