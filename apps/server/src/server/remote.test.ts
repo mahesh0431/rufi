@@ -966,6 +966,8 @@ describe("the app's sessions", () => {
     expect(policy).not.toContain("connect-src");
     expect(policy).toContain("frame-ancestors 'self'");
     expect(policy).not.toContain("default-src 'self'");
+    // A second policy: no script from a file, whatever its integrity.
+    expect(policy).toMatch(/, script-src 'unsafe-inline'$/);
     expect(visual.headers["x-dns-prefetch-control"]).toBe("off");
   });
 

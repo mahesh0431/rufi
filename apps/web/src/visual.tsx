@@ -18,11 +18,6 @@ import {
 const FRAME = "/visual-frame.html";
 /** The tallest a visual is drawn; a taller one scrolls inside. */
 const TALLEST = 800;
-/**
- * The most loads a visual's frame gets it on: one that loads itself again
- * and again (a refresh in its HTML) stops there, and says it didn't load.
- */
-const MOST_LOADS = 20;
 /** The box that holds a visual's place until its height comes. */
 const WAITING = 160;
 /** Rufi's theme, by its own names (packages/brand/tokens.css). */
@@ -141,17 +136,14 @@ export function Visual({ html }: { html: string }) {
           // visual already written in takes no second one.
           if (!box.current) return;
           loads.current += 1;
-          if (loads.current > MOST_LOADS) {
-            setBroken(true);
-            return;
-          }
           frame.current?.contentWindow?.postMessage(
             { type: "rufi-visual", html, theme: themeAt(box.current) },
             "*",
           );
         }}
       />
-      {broken && (
+      {/* A drawn visual of no height is blank: it says so too. */}
+      {(broken || height === 0) && (
         <p className="mt-1 text-muted">Part of this visual didn't load</p>
       )}
     </div>

