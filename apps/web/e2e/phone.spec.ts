@@ -452,7 +452,10 @@ test("in the iPhone app, Rufi not running behind Tailscale tells the app it can'
   await expect
     .poll(phone.told)
     .toContainEqual({ type: "connection", reachable: false });
+  // The page shows only the dog resting: the app's line says the rest.
+  await expect(page.getByRole("img", { name: "Rufi, resting" })).toBeVisible();
   await expect(page.getByRole("status")).toHaveCount(0);
+  await expect(page.getByText("Rufi can't be reached.")).toHaveCount(0);
 
   // Back: the app tells the page, which reads again.
   await page.unroute("**/api/**");

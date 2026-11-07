@@ -9,7 +9,10 @@ import {
   useId,
 } from "react";
 import { twMerge } from "tailwind-merge";
+import { svg } from "@rufi/brand/mark";
+import { ApiError } from "./api.ts";
 import { LiveDog } from "./dog.tsx";
+import { onPhone } from "./phone.ts";
 
 /** A Lucide icon, or one drawn the same way. */
 export type Icon = ComponentType<LucideProps>;
@@ -215,7 +218,14 @@ export function Section({
   );
 }
 
-/** What went wrong with a read, in the core's words, and Retry. */
+/** The dog resting, as the iPhone app shows it while Rufi can't be reached. */
+const resting = svg({ expression: "resting", motion: false, size: 72 });
+
+/**
+ * What went wrong with a read, in the core's words, and Retry. On the
+ * iPhone, a read that can't reach Rufi shows only the dog resting: the
+ * app's own line says so, and the page reads again when Rufi is back.
+ */
 export function Problem({
   error,
   retry,
@@ -223,6 +233,16 @@ export function Problem({
   error: Error;
   retry?: () => void;
 }) {
+  if (onPhone && error instanceof ApiError && error.status === 0) {
+    return (
+      <div
+        role="img"
+        aria-label="Rufi, resting"
+        className="grid min-h-[50vh] place-items-center"
+        dangerouslySetInnerHTML={{ __html: resting }}
+      />
+    );
+  }
   return (
     <div role="alert" className="flex items-center gap-3 text-muted">
       <span>{error.message}</span>
