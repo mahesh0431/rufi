@@ -87,12 +87,20 @@ struct DoorTests {
 
 /// Answers each call as the door would refuse it; unpair succeeds with a body
 /// the app can't read.
-nonisolated private final class StandInDoor: URLProtocol, @unchecked Sendable {
+nonisolated final class StandInDoor: URLProtocol, @unchecked Sendable {
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
         if request.url?.host() == "pdf.test" { return brief() }
+        if let (status, body) = ChatDoor.answer(request) {
+            let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1",
+                                           headerFields: ["Content-Type": "application/json"])!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data(body.utf8))
+            client?.urlProtocolDidFinishLoading(self)
+            return
+        }
         let (status, body): (Int, String) = switch (request.url?.path(), request.url?.host()) {
         case ("/api/batches", "got.test"): (200, #"{"answer":"got_it"}"#)
         case ("/api/batches", "unpaired.test"): (401, #"{"error":"This app isn't paired.","problem":"unpaired"}"#)

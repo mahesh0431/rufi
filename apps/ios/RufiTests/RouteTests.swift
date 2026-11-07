@@ -70,7 +70,8 @@ struct RouteTests {
         #expect(NativePage.of("/people/asha/record/visit?open=vis-a1", person: "asha") == .visit("vis-a1"))
         #expect(NativePage.of("/people/asha/documents", person: "asha") == .documents)
         #expect(NativePage.of("/people/asha/documents/doc-1", person: "asha") == .document("doc-1"))
-        #expect(NativePage.of("/people/asha/chat", person: "asha") == nil)
+        #expect(NativePage.of("/people/asha/chat", person: "asha") == .chat)
+        #expect(NativePage.of("/people/asha/briefs/brf-1", person: "asha") == nil)
         // Someone else's page is never Asha's.
         #expect(NativePage.of("/people/ravi/record/condition", person: "asha") == nil)
     }

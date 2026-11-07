@@ -1,0 +1,70 @@
+{
+  "revision": 4,
+  "chat": { "model": null, "effort": "medium", "context": null },
+  "entries": [
+    {
+      "id": "ent-a1",
+      "seq": 1,
+      "turnId": null,
+      "kind": "message",
+      "text": "How is my HbA1c doing?",
+      "activity": null,
+      "detail": null,
+      "status": null,
+      "createdAt": "2026-10-05T08:00:00Z",
+      "updatedAt": "2026-10-05T08:00:00Z"
+    },
+    {
+      "id": "ent-a2",
+      "seq": 2,
+      "turnId": "turn-a1",
+      "kind": "reasoning",
+      "text": "**Reading the record**\n\nAsha's HbA1c results, newest first.",
+      "activity": null,
+      "detail": null,
+      "status": "stopped",
+      "createdAt": "2026-10-05T08:00:02Z",
+      "updatedAt": "2026-10-05T08:00:03Z"
+    },
+    {
+      "id": "ent-a3",
+      "seq": 3,
+      "turnId": "turn-a1",
+      "kind": "activity",
+      "text": "ls",
+      "activity": "command",
+      "detail": "exit 0",
+      "status": "done",
+      "createdAt": "2026-10-05T08:00:04Z",
+      "updatedAt": "2026-10-05T08:00:04Z"
+    },
+    {
+      "id": "ent-a4",
+      "seq": 4,
+      "turnId": "turn-a1",
+      "kind": "reply",
+      "text": "Your **HbA1c** was 6.8 % on 12 Aug 2026, above the 4.0–5.6 range.\n\n```rufi-visual\n<p>6.8 %</p>\n```\n\n[See your HbA1c results](rufi:/tests/tst-hba1c)",
+      "activity": null,
+      "detail": null,
+      "status": "done",
+      "createdAt": "2026-10-05T08:00:05Z",
+      "updatedAt": "2026-10-05T08:00:13Z"
+    }
+  ],
+  "turns": [
+    {
+      "id": "turn-a1",
+      "model": "gpt-6-astra",
+      "effort": "medium",
+      "before": null,
+      "status": "completed",
+      "endReason": null,
+      "endText": null,
+      "resetsAt": null,
+      "startedAt": "2026-10-05T08:00:01Z",
+      "endedAt": "2026-10-05T08:00:13Z",
+      "newThread": false
+    }
+  ],
+  "before": null
+}

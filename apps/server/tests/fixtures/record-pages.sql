@@ -110,3 +110,22 @@ INSERT INTO draft_items (id, person_id, document_id, page, seq, job_id, kind, ve
    '{"test_name":"HbA1c","value_text":"7.1","value_number":7.1,"unit":"%","column":"earlier"}',
    '{"test_name":"HbA1c","value_text":"7.1","value_number":7.1,"unit":"%","column":"earlier"}',
    '[]', 'HbA1c (previous) | 7.1 | %', '2026-10-01T09:03:00Z');
+
+-- A reply in Asha's chat, as the chat stores one: her question, the AI's
+-- thought and one step, and its answer with a visual (ADR 0034).
+INSERT INTO turns (id, person_id, chat_id, agent_turn_id, model, status, started_at, ended_at, effort) VALUES
+  ('turn-a1', 'asha', 'c-asha', 'agent-turn-a1', 'gpt-6-astra', 'completed', '2026-10-05T08:00:01Z', '2026-10-05T08:00:13Z', 'medium');
+INSERT INTO transcript_entries (id, person_id, chat_id, seq, turn_id, kind, text, activity, detail, details, status, revision, created_at, updated_at) VALUES
+  ('ent-a1', 'asha', 'c-asha', 1, NULL, 'message', 'How is my HbA1c doing?', NULL, NULL, NULL, NULL, 1, '2026-10-05T08:00:00Z', '2026-10-05T08:00:00Z'),
+  ('ent-a2', 'asha', 'c-asha', 2, 'turn-a1', 'reasoning', '**Reading the record**
+
+Asha''s HbA1c results, newest first.', NULL, NULL, NULL, NULL, 2, '2026-10-05T08:00:02Z', '2026-10-05T08:00:03Z'),
+  ('ent-a3', 'asha', 'c-asha', 3, 'turn-a1', 'activity', 'ls', 'command', 'exit 0', '{"type":"commandExecution","command":"ls","aggregatedOutput":"notes.txt\n","exitCode":0,"durationMs":40}', 'done', 3, '2026-10-05T08:00:04Z', '2026-10-05T08:00:04Z'),
+  ('ent-a4', 'asha', 'c-asha', 4, 'turn-a1', 'reply', 'Your **HbA1c** was 6.8 % on 12 Aug 2026, above the 4.0–5.6 range.
+
+```rufi-visual
+<p>6.8 %</p>
+```
+
+[See your HbA1c results](rufi:/tests/tst-hba1c)', NULL, NULL, NULL, 'done', 4, '2026-10-05T08:00:05Z', '2026-10-05T08:00:13Z');
+UPDATE chats SET revision = 4 WHERE id = 'c-asha';

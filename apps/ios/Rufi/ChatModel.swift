@@ -194,6 +194,8 @@ final class ChatModel {
             older = .idle
             Task { await readQueue() }
             changed(.saved)
+            // Rufi is there again: what it couldn't keep, it keeps now.
+            if failed { save() }
         case let .update(_, entries, turns, _):
             transcript.apply(line)
             if entries.contains(where: { $0.kind == "receipt" }) { changed(.saved) }
