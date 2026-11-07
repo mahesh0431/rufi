@@ -5,9 +5,9 @@ import Testing
 import WebKit
 @testable import Rufi
 
-/// A page's printout: its print styles, on numbered A4 sheets.
+/// A page's printout: its print styles, on numbered A4 sheets, to its end.
 struct PrintoutTests {
-    @Test func aLongPageIsPrintedOnNumberedA4SheetsWithItsPrintStyles() async throws {
+    @Test func aLongPageIsPrintedToItsEndOnNumberedA4SheetsWithItsPrintStyles() async throws {
         // As in the app, the web view is on screen, in a window.
         let scene = try #require(UIApplication.shared.connectedScenes.first as? UIWindowScene)
         let window = UIWindow(windowScene: scene)
@@ -40,5 +40,8 @@ struct PrintoutTests {
         #expect(text.contains("Page 1 of \(printed.pageCount)"))
         #expect(printed.page(at: printed.pageCount - 1)?.string?
             .contains("Page \(printed.pageCount) of \(printed.pageCount)") == true)
+        // The page's end is in the printout, not only its first sheet.
+        let body = (0..<printed.pageCount).compactMap { printed.page(at: $0)?.string }.joined(separator: "\n")
+        #expect(body.contains("Fictional line 120"))
     }
 }
