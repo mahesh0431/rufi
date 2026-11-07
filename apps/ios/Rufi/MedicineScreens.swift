@@ -72,6 +72,8 @@ private struct DoseLine: View {
         }
         .padding(.vertical, 2)
         .foregroundStyle(dose.past ? .secondary : .primary)
+        // The separator starts at the row's edge, not at a button's label.
+        .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
     }
 
     /// Waiting on the iPhone, logged, or not yet.
