@@ -74,6 +74,13 @@ const MARKDOWN = `## For the visit on Friday
 ### Questions to ask
 - Question: Is the HbA1c a reason to change the Metformin?`;
 
+/** A save of Asha's on 3 Oct 2026: the record a brief at version 1 saw. */
+const SAVED = `INSERT INTO operations (id, seq, person_id, origin, call_id, request, created_at)
+  VALUES ('op-1', 1, 'asha', 'settings', 'form-1', '[]', '2026-10-03T06:00:00.000Z');`;
+/** The brief's origin line: made today, from the record up to that save. */
+const ORIGIN =
+  /Prepared by Rufi \(AI\) on \d{1,2} \w{3} \d{4} from Asha Fictional's records up to 3 Oct 2026 · not medically validated/;
+
 test("a brief's line opens its page: dated, as written, with its Sources and Copy; a later save shows the record changed since, and a source opens its record", async ({
   page,
   rufi,
@@ -81,6 +88,7 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
 }) => {
   await rufi.family(
     "INSERT INTO none_known (id, person_id, category, asserted) VALUES ('nk-a1', 'asha', 'allergies', '2026-09-01');",
+    SAVED,
   );
   await rufi.start({
     scenario: {
@@ -90,7 +98,7 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
             tool: "create_brief",
             arguments: {
               markdown: MARKDOWN,
-              record_version: 0,
+              record_version: 1,
               cited: [
                 { kind: "medicine_use", id: "med-a1" },
                 { kind: "result", id: "res-a1" },
@@ -149,9 +157,7 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
 
   await expect(page).toHaveURL(/\/people\/asha\/briefs\/[^/]+$/);
   await expect(page.getByRole("banner")).toHaveText("Visit brief");
-  await expect(page.getByText(/^Made at \d\d:\d\d on /)).toContainText(
-    "from Asha Fictional's saved record",
-  );
+  await expect(page.getByText(/^Prepared by Rufi/)).toHaveText(ORIGIN);
   const brief = page.getByRole("article", { name: "The brief" });
   await expect(
     brief.getByRole("heading", { name: "Questions to ask" }),
@@ -173,13 +179,16 @@ test("a brief's line opens its page: dated, as written, with its Sources and Cop
   await page.emulateMedia({ colorScheme: "dark" });
   await accessible(page);
 
-  // Copy: the date, the brief as written and its Sources, as plain text.
+  // Copy: where it came from, the brief as written and its Sources, as plain
+  // text.
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.getByRole("button", { name: "Copy" }).click();
   await expect(page.getByText("Copied")).toBeVisible();
   const copied = await page.evaluate(() => navigator.clipboard.readText());
-  expect(copied).toMatch(/^Visit brief · Made at \d\d:\d\d on /);
-  expect(copied).toContain(`saved record\n\n${MARKDOWN}\n\nSources\n`);
+  expect(copied).toMatch(new RegExp(`^Visit brief\\n${ORIGIN.source}\\n\\n`));
+  expect(copied).toContain(
+    `not medically validated\n\n${MARKDOWN}\n\nSources\n`,
+  );
   expect(copied).toContain(
     "\n- Result: HbA1c 6.8 % · 12 Aug 2026 (Sunrise Labs report, collected 12 Aug 2026 · Sunrise Labs August.pdf, page 1)",
   );
@@ -277,11 +286,11 @@ test("a brief that isn't there says so", async ({ page, rufi }) => {
   );
 });
 
-test("a long brief prints as numbered A4 sheets, to its last Sources row", async ({
+test("a long brief prints as numbered A4 sheets, under where it came from, to its last Sources row", async ({
   page,
   rufi,
 }) => {
-  await rufi.family();
+  await rufi.family(SAVED);
   // Every result of Asha's cited, and notes: longer than one sheet.
   const markdown = [
     MARKDOWN,
@@ -305,7 +314,7 @@ test("a long brief prints as numbered A4 sheets, to its last Sources row", async
         [
           {
             tool: "create_brief",
-            arguments: { markdown, record_version: 0, cited },
+            arguments: { markdown, record_version: 1, cited },
           },
         ],
       ],
@@ -323,8 +332,8 @@ test("a long brief prints as numbered A4 sheets, to its last Sources row", async
     .getByRole("listitem");
   await expect(sources).toHaveCount(cited.length);
 
-  // Printed as the page asks: A4 sheets, each with its number, and the
-  // brief whole, to its last Sources row.
+  // Printed as the page asks: A4 sheets, each with its number, where the
+  // brief came from at its top, and the brief whole, to its last Sources row.
   const lastRow = (await sources.last().innerText()).replace(/\s+/g, " ");
   await page.emulateMedia({ media: "print" });
   const pdf = await page.pdf({ preferCSSPageSize: true });
@@ -337,5 +346,6 @@ test("a long brief prints as numbered A4 sheets, to its last Sources row", async
       `Page ${String(i + 1)} of ${String(printed.length)}`,
     );
   });
+  expect(printed[0]?.text).toMatch(ORIGIN);
   expect(printed.at(-1)?.text).toContain(lastRow);
 });
