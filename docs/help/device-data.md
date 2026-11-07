@@ -6,7 +6,7 @@ Rufi on your iPhone sends it (see [Apple Health from your iPhone](#apple-health-
 
 ## Apple Health from your iPhone
 
-Pair Rufi on your iPhone with your Mac first (see [iPhone](iphone.md)). Then, on the iPhone, open **This iPhone** (at the bottom of the sidebar: tap the sidebar button at the top left) › **Apple Health**.
+Pair Rufi on your iPhone with your Mac first (see [iPhone](iphone.md)). Then, on the iPhone, open **This iPhone** (your initials at the bottom of the sidebar: tap the sidebar button at the top left) › **Apple Health**.
 
 1. Tap **Connect Apple Health**. Apple's own sheet asks which heart data Rufi may read: heart rate and resting heart rate. Rufi only reads; it never writes to Apple Health. You can change what you allowed later in the Health app: tap your picture, then Apps › Rufi.
 2. The page shows your latest resting heart rate and heart rate, from Apple Health, with when each was measured: **today**, a time, or the date when it isn't from today. During a workout Apple Health may keep many readings as one value: the number shown is the last reading, with its own time.

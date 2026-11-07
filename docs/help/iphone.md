@@ -25,13 +25,13 @@ Pairing that person's first iPhone makes their medicine reminders ring on it, an
 
 ## Lock Rufi
 
-After pairing, the iPhone offers **Lock Rufi**: Rufi then asks for Face ID, or your iPhone's passcode, when you open it and after more than a minute away. While Rufi isn't on screen, the app switcher shows a blank page instead of your record. Turn it on or off in **This iPhone** (at the bottom of the sidebar). It needs a passcode on the iPhone: without one, the switch is off and says so.
+After pairing, the iPhone offers **Lock Rufi**: Rufi then asks for Face ID, or your iPhone's passcode, when you open it and after more than a minute away. While Rufi isn't on screen, the app switcher shows a blank page instead of your record. Turn it on or off in **This iPhone** (your initials, at the bottom of the sidebar). It needs a passcode on the iPhone: without one, the switch is off and says so.
 
 iOS can also lock any app (touch and hold its icon, then **Require Face ID**). If you use that for Rufi, turn **Lock Rufi** off, so you aren't asked twice.
 
 ## On the iPhone
 
-The sidebar button at the top left opens the **sidebar**, or swipe from the left edge of the screen. It has the Mac's places in the Mac's order: **Chat with Rufi**, **Overview**, your health record's pages with how many each has (empty ones grey), **Follow-ups**, **Documents** and **Help**. The place you are in is marked. Tap one to go there; tap beside the sidebar, or swipe it left, to close it. At its bottom, your name and **This iPhone**. Settings is on the Mac only.
+The sidebar button at the top left shows the **sidebar**, or swipe right on the page: the page slides aside, with the sidebar under it. On a page opened on top, the same swipe is Back. On a table or a chart that scrolls sideways, a swipe right scrolls it back first. The sidebar has the Mac's places in the Mac's order: **Overview**, your health record's pages with how many each has (empty ones grey), **Follow-ups**, **Documents** and **Help**. The place you are in is in bold. Tap one to go there; tap the edge of the page beside the sidebar, or swipe left, to go back to the page. At its bottom, **Chat** opens your chat with Rufi, and your initials open **This iPhone**. Settings is on the Mac only.
 
 The pages come from Rufi on your Mac, as they are there now: what you do on the phone is done on the Mac. A link to another page opens it on top, with its own name at the top (for example **HbA1c**) and **Back** (or a swipe from the left edge) to return; a link in a reply opens the result over the chat, with Back to the chat. In the chat over a page too, a link opens on top, even one to a row of that page; Back shows the page with the chat open again. A link to one of the sidebar's places goes to that place. Web links open in Safari.
 
