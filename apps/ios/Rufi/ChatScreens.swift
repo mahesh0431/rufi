@@ -15,7 +15,7 @@ struct ChatView: View {
     /// How far the end is below what shows.
     @State private var below: CGFloat = 0
     /// A step opened: its details.
-    @State private var opened: Entry?
+    @State private var opened: Step?
 
     var body: some View {
         let transcript = chat.transcript
@@ -28,7 +28,8 @@ struct ChatView: View {
                     LineView(line: line, shell: shell, chat: chat, open: { opened = $0 })
                 }
                 ForEach(outgoing) { message in
-                    MessageBubble(text: message.text, chips: message.chips, caption: caption(message.state))
+                    MessageBubble(text: message.text, chips: message.chips,
+                                  caption: message.state == .pending && shell.away ? .pending : nil)
                 }
                 if chat.clock?.key == "starting" { ThinkingLine(since: chat.clock?.since ?? .now) }
             }
@@ -61,7 +62,14 @@ struct ChatView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            ChatBoxView(shell: shell, chat: chat)
+            // Over the box: Rufi AI's agents at work, then what waits.
+            VStack(spacing: 6) {
+                AgentsAtWork(chat: chat)
+                WaitingList(chat: chat)
+                ChatBoxView(shell: shell, chat: chat)
+            }
+            .padding(.top, 4)
+            .background(shell.theme.page)
         }
         .onChange(of: chat.sends) {
             pinned = true
@@ -76,7 +84,11 @@ struct ChatView: View {
             case .nothing: return .discarded
             }
         })
-        .sheet(item: $opened) { StepDetails(entry: $0, shell: shell) }
+        .sheet(item: $opened) { StepDetails(step: $0, shell: shell) }
+        .sheet(item: Binding { chat.openAgent } set: { chat.openAgent = $0 }) {
+            AgentSheet(open: $0, chat: chat, shell: shell)
+        }
+        .environment(chat)
         .background(shell.theme.page)
     }
 
@@ -102,13 +114,6 @@ struct ChatView: View {
         .frame(maxWidth: .infinity)
     }
 
-    private func caption(_ state: ChatModel.Outgoing.State) -> MessageBubble.Caption? {
-        switch state {
-        case .pending: shell.away ? .pending : nil
-        case .sent: nil
-        case let .waiting(held): .waiting(held.map { $0.isEmpty ? "Not sent" : $0 } ?? "Waiting")
-        }
-    }
 }
 
 /// One line of the transcript.
@@ -116,7 +121,7 @@ private struct LineView: View {
     let line: Transcript.Line
     let shell: Shell
     let chat: ChatModel
-    let open: (Entry) -> Void
+    let open: (Step) -> Void
 
     var body: some View {
         let transcript = chat.transcript
@@ -149,7 +154,7 @@ private struct EntryView: View {
     let entry: Entry
     let shell: Shell
     let chat: ChatModel
-    let open: (Entry) -> Void
+    let open: (Step) -> Void
 
     var body: some View {
         switch entry.kind {
@@ -179,13 +184,13 @@ private struct EntryView: View {
                 .accessibilityLabel("Open \(entry.text)")
             }
         case "agent":
-            AgentBubble(entry: entry)
+            AgentBubble(entry: entry, chat: chat)
         case "reply":
             ReplyView(entry: entry, streaming: chat.transcript.streaming(entry), chat: chat, origin: shell.pairing.origin)
         default:
             // A picture the AI made: its file is on the Mac only.
             if !(entry.activity == "picture" && entry.status == "done" && entry.detail != nil) {
-                StepView(entry: entry, open: open)
+                StepView(step: Step(entry), open: open)
             }
         }
     }
@@ -195,7 +200,6 @@ private struct EntryView: View {
 struct MessageBubble: View {
     enum Caption: Equatable {
         case pending
-        case waiting(String)
     }
 
     let text: String
@@ -216,7 +220,6 @@ struct MessageBubble: View {
             .background(theme.accentSoft, in: .rect(cornerRadius: 16))
             switch caption {
             case .pending: Label("Pending", systemImage: "clock").font(.caption).foregroundStyle(.secondary)
-            case let .waiting(words): Text(words).font(.caption).foregroundStyle(.secondary)
             case nil: EmptyView()
             }
         }
@@ -325,20 +328,43 @@ private struct RufiLine<Action: View>: View {
     }
 }
 
-/// A message from an agent Rufi AI started: its name, and its words.
+/// A message to Rufi AI from an agent it started, where Rufi AI took it:
+/// under the agent's name, which opens its sheet. Its words as Markdown
+/// without links; a long one shows a few lines first.
 private struct AgentBubble: View {
     let entry: Entry
+    let chat: ChatModel
+    @State private var all = false
+    @State private var height: CGFloat = 0
+    @ScaledMetric(relativeTo: .body) private var few: CGFloat = 92
 
     var body: some View {
+        let title = entry.from?.title ?? ""
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 4) {
                 Image(systemName: "cpu")
-                Text(entry.from?.title ?? "Agent")
+                Button(title) {
+                    if let agent = entry.agent { chat.openAgent = .init(id: agent, title: title) }
+                }
+                .fontWeight(.medium)
+                .foregroundStyle(.primary)
                 if let about = entry.from?.about, about == "stopped" || about == "failed" { Text("· \(about)") }
             }
             .font(.caption)
             .foregroundStyle(.secondary)
-            if !entry.text.isEmpty { RufiMarkdown(text: entry.text).lineLimit(4) }
+            if !entry.text.isEmpty {
+                RufiMarkdown(text: entry.text)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
+                    .frame(maxHeight: all ? nil : few, alignment: .top)
+                    .clipped()
+                if height > few + 1 {
+                    Button(all ? "Show less" : "Show all", systemImage: "chevron.down") { all.toggle() }
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .buttonStyle(.plain)
+                }
+            }
         }
         .environment(\.openURL, OpenURLAction { _ in .discarded })
         .padding(12)
@@ -361,7 +387,7 @@ private struct DayLine: View {
     }
 }
 
-private struct QuietLine: View {
+struct QuietLine: View {
     let words: String
 
     var body: some View {
@@ -370,7 +396,7 @@ private struct QuietLine: View {
 }
 
 /// The dog thinking, and for how long: "Thinking · 0:12".
-private struct ThinkingLine: View {
+struct ThinkingLine: View {
     let since: Date
 
     var body: some View {
@@ -396,7 +422,7 @@ private struct ActivityView: View {
     let since: Date?
     /// The Mac's setting: working, shown or hidden.
     let shown: String
-    let open: (Entry) -> Void
+    let open: (Step) -> Void
     /// Tapped, while the reply ran as it does now.
     @State private var tapped: (running: Bool, open: Bool)?
 
@@ -437,7 +463,7 @@ private struct ActivityView: View {
                 .foregroundStyle(.secondary)
                 if unfolded {
                     VStack(alignment: .leading, spacing: 6) {
-                        ForEach(steps) { StepView(entry: $0, open: open) }
+                        ForEach(steps) { StepView(step: Step($0), open: open) }
                     }
                     .padding(.leading, 12)
                 }
@@ -453,56 +479,80 @@ private struct ActivityView: View {
     }
 }
 
+/// A step of an Activity, the chat's or an agent's, and where its details
+/// are read when it opens.
+struct Step: Identifiable, Equatable {
+    let id: String
+    /// activity or reasoning.
+    let kind: String
+    let text: String
+    let activity: String?
+    let detail: String?
+    let status: String?
+    let updatedAt: String
+    /// The sub-agent this step started.
+    let agent: String?
+    let path: String
+    let query: [String: String]
+}
+
+extension Step {
+    init(_ entry: Entry) {
+        self.init(id: entry.id, kind: entry.kind, text: entry.text, activity: entry.activity, detail: entry.detail,
+                  status: entry.status, updatedAt: entry.updatedAt, agent: entry.agent,
+                  path: "chat/entries/\(entry.id)", query: [:])
+    }
+
+    init(_ line: AgentLog.Line, of agent: String) {
+        self.init(id: line.id, kind: line.kind, text: line.text, activity: line.activity, detail: line.detail,
+                  status: line.status, updatedAt: line.updatedAt, agent: line.agent,
+                  path: "chat/agents/step", query: ["agent": agent, "step": line.id])
+    }
+}
+
 /// One step: the AI's thinking (its heading, opened: its summary), its
-/// note, or what it did, which opens its details.
-private struct StepView: View {
-    let entry: Entry
-    let open: (Entry) -> Void
+/// note, a helper it started, or what it did, which opens its details.
+struct StepView: View {
+    let step: Step
+    let open: (Step) -> Void
     @State private var unfolded = false
 
     var body: some View {
-        if entry.kind == "reasoning" {
+        if let agent = step.agent {
+            SubAgentLine(id: agent, reported: step.text, open: open).font(.subheadline)
+        } else if step.kind == "reasoning" {
             VStack(alignment: .leading, spacing: 4) {
                 Button { unfolded.toggle() } label: {
                     HStack(spacing: 6) {
-                        if entry.status == "running" { ProgressView().controlSize(.mini) } else { Image(systemName: "brain") }
-                        Text(Words.heading(entry.text)).lineLimit(1)
+                        if step.status == "running" { ProgressView().controlSize(.mini) } else { Image(systemName: "brain") }
+                        Text(Words.heading(step.text)).lineLimit(1)
                         Image(systemName: "chevron.right").font(.caption2).rotationEffect(.degrees(unfolded ? 90 : 0))
                     }
                 }
                 .buttonStyle(.plain)
-                if unfolded { RufiMarkdown(text: entry.text, muted: true) }
+                if unfolded { RufiMarkdown(text: step.text, muted: true) }
             }
             .font(.subheadline)
             .foregroundStyle(.secondary)
-        } else if entry.activity == "note" {
-            RufiMarkdown(text: entry.text, muted: true).padding(.leading, 19)
+        } else if step.activity == "note" {
+            RufiMarkdown(text: step.text, muted: true).padding(.leading, 19)
         } else {
-            Button { open(entry) } label: {
+            Button { open(step) } label: {
                 HStack(spacing: 6) {
-                    sign
-                    Text(Words.step(entry)).lineLimit(1).truncationMode(.middle).font(.footnote.monospaced())
+                    StatusSign(status: step.status)
+                    Text(Words.step(step.text, step.detail)).lineLimit(1).truncationMode(.middle).font(.footnote.monospaced())
                 }
                 .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("\(entry.status ?? "done"): \(entry.text)")
-        }
-    }
-
-    @ViewBuilder private var sign: some View {
-        switch entry.status {
-        case "running": ProgressView().controlSize(.mini)
-        case "failed": Image(systemName: "xmark").font(.caption)
-        case "stopped": Image(systemName: "square.fill").font(.system(size: 9))
-        default: Image(systemName: "checkmark").font(.caption)
+            .accessibilityLabel("\(step.status ?? "done"): \(step.text)")
         }
     }
 }
 
 /// A step's details, as the agent gave them; read when opened.
-private struct StepDetails: View {
-    let entry: Entry
+struct StepDetails: View {
+    let step: Step
     let shell: Shell
     @State private var details: Any??
     @State private var problem: String?
@@ -531,12 +581,12 @@ private struct StepDetails: View {
                 }
                 .padding()
             }
-            .navigationTitle(Words.step(entry))
+            .navigationTitle(Words.step(step.text, step.detail))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done", systemImage: "checkmark") { dismiss() } }
             }
-            .task(id: entry.updatedAt) { await read() }
+            .task(id: step.updatedAt) { await read() }
         }
         .presentationDetents([.medium, .large])
     }
@@ -545,7 +595,7 @@ private struct StepDetails: View {
         problem = nil
         struct Answer: Decodable { let details: JSON }
         do {
-            let answer: Answer = try await shell.read("chat/entries/\(entry.id)")
+            let answer: Answer = try await shell.read(step.path, query: step.query)
             details = .some(answer.details.any)
         } catch {
             problem = error.shown ?? "Can't reach Rufi"

@@ -404,11 +404,11 @@ final class Shell {
     }
 
     /// From a page drawn here: chips, and text after what is typed, go in
-    /// the chat's box, as Ask Rufi does on the Mac's pages, and the chat
-    /// opens over the page. When the box can't take them now, its line says why.
+    /// the chat's box, as Ask Rufi does on the Mac's pages, and the page
+    /// stays: its bar shows them, and lights. When the box can't take them
+    /// now, the bar's line says why.
     func ask(_ chips: [Chip], text: String = "") async {
         chat.append(text, chips)
-        if !onChat { chatShown = true }
     }
 
     /// A link in the chat to a page of the person's: it opens on top. From
@@ -554,7 +554,7 @@ struct ShellView: View {
                 // A page drawn here has its own bar (`page`); a web page
                 // with a chat box, this one.
                 if shell.native(shell.navigator.top) == nil, shell.webBox, shell.state == .open {
-                    AskBar(name: shell.pairing.person.name, theme: shell.theme) { shell.chatShown = true }
+                    AskBar(name: shell.pairing.person.name, theme: shell.theme, chat: shell.chat) { shell.chatShown = true }
                         .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: {
                             shell.screens.box(top: $0)
                         }
@@ -656,7 +656,7 @@ struct ShellView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 // The chat's own page has its box.
                 if let page = shell.native(screen), page != .chat {
-                    AskBar(name: shell.pairing.person.name, theme: shell.theme) { shell.chatShown = true }
+                    AskBar(name: shell.pairing.person.name, theme: shell.theme, chat: shell.chat) { shell.chatShown = true }
                 }
             }
             .navigationTitle(shell.title(screen))

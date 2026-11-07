@@ -127,33 +127,65 @@ struct Resting: View {
 struct AskBar: View {
     let name: String
     let theme: Theme
+    let chat: ChatModel
     let ask: () -> Void
+    @State private var lit = false
 
     var body: some View {
-        Button(action: ask) {
-            HStack(spacing: 8) {
-                Text("Ask or tell Rufi about \(name)…")
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Image(systemName: "arrow.up")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(theme.onAccent)
-                    .frame(width: 32, height: 32)
-                    .background(theme.accent, in: .circle)
+        VStack(spacing: 4) {
+            // Why Ask Rufi couldn't add to the box now.
+            if let notice = chat.notice {
+                Text(notice).font(.footnote).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12)
             }
-            .padding(.leading, 14)
-            .padding(.trailing, 5)
-            .padding(.vertical, 5)
-            .background(theme.surface, in: .rect(cornerRadius: 22))
-            .overlay { RoundedRectangle(cornerRadius: 22).strokeBorder(Color(.separator), lineWidth: 0.5) }
-            .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
-            .contentShape(.rect)
+            Button(action: ask) {
+                VStack(alignment: .leading, spacing: 4) {
+                    // What Ask Rufi put in the box, collected while reading.
+                    if !chat.chips.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(chat.chips, id: \.ref.key) { ChipLabel(chip: $0) }
+                            }
+                        }
+                        .scrollDisabled(true)
+                        .padding(.top, 4)
+                    }
+                    HStack(spacing: 8) {
+                        Text(chat.text.isEmpty ? "Ask or tell Rufi about \(name)…" : chat.text)
+                            .foregroundStyle(chat.text.isEmpty ? .secondary : .primary)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Image(systemName: "arrow.up")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(theme.onAccent)
+                            .frame(width: 32, height: 32)
+                            .background(theme.accent, in: .circle)
+                    }
+                }
+                .padding(.leading, 14)
+                .padding(.trailing, 5)
+                .padding(.vertical, 5)
+                .background(theme.surface, in: .rect(cornerRadius: 22))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 22)
+                        .strokeBorder(lit ? theme.accent : Color(.separator), lineWidth: lit ? 2 : 0.5)
+                }
+                .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Chat with Rufi")
         }
-        .buttonStyle(.plain)
         .padding(.horizontal, 10)
         .padding(.bottom, 2)
-        .accessibilityLabel("Chat with Rufi")
+        .animation(.snappy(duration: 0.2), value: chat.chips.count)
+        .onChange(of: chat.asked) {
+            lit = true
+            Task {
+                try? await Task.sleep(for: .milliseconds(900))
+                lit = false
+            }
+        }
     }
 }
 
@@ -195,6 +227,16 @@ struct RowCells: View {
             }
         }
         .padding(.vertical, 2)
+    }
+}
+
+extension View {
+    /// Ask Rufi on a row (touch and hold): its chip goes in the chat's box,
+    /// and the page stays.
+    func asks(_ shell: Shell, _ chip: Chip) -> some View {
+        contextMenu {
+            Button("Ask Rufi", systemImage: "message") { Task { await shell.ask([chip]) } }
+        }
     }
 }
 
@@ -255,11 +297,13 @@ private struct OverviewList: View {
                         Opens { go("/people/\(person)/documents/\(document.id)") } label: {
                             needs(document.name, Words.waiting(document))
                         }
+                        .asks(shell, Chip(type: "document", id: document.id, label: document.name))
                     }
                     ForEach(overview.needsYou.followUps, id: \.followUp.id) { need in
                         Opens { go("/people/\(person)/follow-ups?open=\(need.followUp.id)") } label: {
                             needs(need.followUp.title ?? "", Words.need(need, now: at))
                         }
+                        .asks(shell, Chip(record: "follow_up", id: need.followUp.id, label: need.followUp.title ?? ""))
                     }
                 }
                 .listRowBackground(surface)
@@ -463,8 +507,10 @@ struct RowLine: View {
             } label: {
                 RowCells(cells: cells)
             }
+            .asks(shell, Chip(record: row.kind, id: row.id, label: Words.cells(row).title))
         } else {
             RowCells(cells: cells)
+                .asks(shell, Chip(record: row.kind, id: row.id, label: Words.cells(row).title))
         }
     }
 
@@ -761,6 +807,7 @@ struct FollowUpLine: View {
                 }
                 .padding(.vertical, 2)
             }
+            .asks(shell, Chip(record: row.kind, id: row.id, label: row.title ?? ""))
         }
     }
 }
