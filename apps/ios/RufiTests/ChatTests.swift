@@ -52,6 +52,29 @@ struct ChatTests {
         #expect(transcript.entries["ent-a4"]?.text == reply.text)
     }
 
+    /// A held message goes only when the person says, and only as its hold
+    /// allows: a new thread only between replies; steer only into a running one.
+    @Test func aHeldMessageGoesOnlyWhenThePersonSays() throws {
+        let queue: Queue = try read("chat-queue")
+        let stopped = try #require(queue.items.first { $0.held == "stopped" })
+        let unopened = try #require(queue.items.first { $0.held == "open_failed" })
+        #expect(unopened.holdId == "hold-a2")
+        #expect(WaitingRow.actions(stopped, running: false) == [.send, .edit, .remove])
+        #expect(WaitingRow.actions(unopened, running: false) == [.send, .newThread, .edit, .remove])
+        #expect(WaitingRow.actions(unopened, running: true) == [.send, .edit, .remove])
+        let free = QueueItem(id: "q-3", origin: "person", text: "One more", state: "waiting", held: nil, heldText: nil,
+                             holdId: nil, refs: [])
+        #expect(WaitingRow.actions(free, running: true) == [.steer, .edit, .remove])
+        #expect(WaitingRow.actions(free, running: false) == [.edit, .remove])
+        // Rufi's note is never the person's to edit; one being given to the AI, nothing.
+        let note = QueueItem(id: "q-4", origin: "rufi", text: "A document was read.", state: "waiting", held: nil,
+                             heldText: nil, holdId: nil, refs: [])
+        #expect(WaitingRow.actions(note, running: false) == [.remove])
+        let going = QueueItem(id: "q-5", origin: "person", text: "Now", state: "handing_over", held: nil, heldText: nil,
+                              holdId: nil, refs: [])
+        #expect(WaitingRow.actions(going, running: true).isEmpty)
+    }
+
     @Test func aVisualWaitsUntilItsBlockIsWhole() {
         let streaming = "Drawn:\n\n```rufi-visual\n<p>One</p>\n```\n\n~~~~ rufi-visual wide\n<p>Two</p>\n~~~"
         #expect(Visuals.scan(streaming) == [

@@ -1,7 +1,10 @@
 // Rufi's door for the iPhone app in the Simulator, on this Mac only, with
 // fictional data. It is the screens' test setup (apps/web/e2e/rufi.ts): a
 // fresh folder with the fictional family, and a scripted Rufi AI whose
-// every reply thinks, then answers REPLY, with a visual. Tailscale is never run: a stand-in serves HTTPS at
+// every reply thinks, then answers REPLY, with a visual. A message with
+// "hang" in it keeps its reply running until Stop (what is sent meanwhile
+// waits); "Read my report" starts an agent, Reader, that works until
+// stopped; "Ask a checker" starts one, Checker, that answers. Tailscale is never run: a stand-in serves HTTPS at
 // this Mac's network address on the door's port, with a certificate from a
 // certificate authority made here, and passes it on to the door on
 // 127.0.0.1, as Tailscale Serve does. The Simulator trusts that authority
@@ -226,7 +229,24 @@ const said = Object.fromEntries(
   ]),
 ) as unknown as Tailscale;
 await rufi.start({
-  scenario: { answer: REPLY, reasoning: [THOUGHT] },
+  scenario: {
+    answer: REPLY,
+    reasoning: [THOUGHT],
+    callsByText: {
+      "Read my report": [
+        {
+          tool: "start_agent",
+          arguments: { title: "Reader", task: "reader: hang on page 1" },
+        },
+      ],
+      "Ask a checker": [
+        {
+          tool: "start_agent",
+          arguments: { title: "Checker", task: "checker: compare the reports" },
+        },
+      ],
+    },
+  },
   tailscale: said,
 });
 console.log(`The Simulator trusts ${ca} once added to it.`);
