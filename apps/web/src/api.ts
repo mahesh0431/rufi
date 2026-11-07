@@ -24,10 +24,13 @@ let retrying: ReturnType<typeof setTimeout> | undefined;
 /** Aborts every request when the session ends. */
 const ending = new AbortController();
 
+/** In the iPhone app, which retries itself and asks the page (`checkNow`). */
+const inApp = document.documentElement.dataset["place"] === "phone";
+
 function setConnection(next: Connection): void {
   if (connection === "ended") return;
-  // Each failure while offline schedules the next check.
-  if (next === "offline") retry();
+  // Each failure while offline schedules the next check, except in the app.
+  if (next === "offline" && !inApp) retry();
   else clearTimeout(retrying);
   if (connection === next) return;
   connection = next;
@@ -155,6 +158,20 @@ const refusal = (json: unknown) =>
     ? String(json.error)
     : "Rufi had a problem with that.";
 
+/**
+ * Tailscale's own answer when nothing answers behind it (Rufi isn't running
+ * on the Mac): a gateway error without Rufi's words. Rufi can't be reached.
+ */
+const notRufi = (status: number, json: unknown) =>
+  status >= 502 &&
+  status <= 504 &&
+  !(typeof json === "object" && json !== null && "error" in json);
+
+/** Asks the core now whether it can be reached: the iPhone app saw it come back. */
+export function checkNow(): void {
+  void request("GET", "/api/status").catch(() => undefined);
+}
+
 const headersFor = (body: unknown): Record<string, string> => ({
   [PROOF_HEADER]: sessionStorage.getItem(PROOF_KEY) ?? "",
   ...(body !== undefined && { "content-type": "application/json" }),
@@ -190,6 +207,10 @@ export async function request(
   if (answer.status === 401) {
     setConnection("ended");
     throw new ApiError(401, "Open Rufi again from the terminal.");
+  }
+  if (notRufi(answer.status, answer.json)) {
+    if (!ending.signal.aborted) setConnection("offline");
+    throw new ApiError(0, "Rufi can't be reached.");
   }
   setConnection("ok");
   const { json } = answer;
@@ -242,6 +263,12 @@ export async function stream(
     }
     if (!response.ok || response.body === null) {
       const json = parseJson(await response.text());
+      if (notRufi(response.status, json)) {
+        if (!ending.signal.aborted && !signal.aborted) {
+          setConnection("offline");
+        }
+        throw new ApiError(0, "Rufi can't be reached.");
+      }
       throw new ApiError(response.status, refusal(json), json);
     }
     setConnection("ok");

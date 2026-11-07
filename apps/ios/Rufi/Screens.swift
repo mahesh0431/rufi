@@ -36,6 +36,8 @@ final class Screens: NSObject {
     /// Doses, medicines or the reminder setting may have changed.
     var onRefresh: () -> Void = {}
     var onUnreachable: () -> Void = {}
+    /// The page can reach Rufi, or can't.
+    var onConnection: (Bool) -> Void = { _ in }
     /// View original: a document and its files, each an id and a name.
     var onOriginal: (String, [(id: String, name: String)]) -> Void = { _, _ in }
     /// The page drew in these colours, in dark or light.
@@ -116,6 +118,13 @@ final class Screens: NSObject {
         guard let json = try? JSONSerialization.data(withJSONObject: command),
               let text = String(data: json, encoding: .utf8) else { return }
         view.evaluateJavaScript("window.rufi.box(\(text))")
+    }
+
+    /// Rufi can be reached again: the page asks now, and reads again.
+    func reconnect() {
+        view.evaluateJavaScript("window.rufi.reconnect()") { [weak self] _, error in
+            if error != nil { self?.onEnded() }
+        }
     }
 
     /// A still of the page as it is now.
@@ -215,6 +224,8 @@ final class Screens: NSObject {
             onEnded()
         case "refresh":
             onRefresh()
+        case "connection":
+            if let reachable = body["reachable"] as? Bool { onConnection(reachable) }
         case "theme":
             if let dark = body["dark"] as? Bool, let colours = body["colours"] as? [String: String],
                let json = try? JSONSerialization.data(withJSONObject: colours),

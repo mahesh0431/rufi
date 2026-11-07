@@ -21,6 +21,8 @@ final class AppModel {
     let theme = Theme()
     /// Dose logs not on the Mac yet; kept through unpairing.
     let outbox: Outbox
+    /// Messages sent while Rufi couldn't be reached; gone on unpairing.
+    let pending = Pending()
     /// Apple Health sync for the pairing; none while unpaired.
     private(set) var health: HealthSync?
     /// The reminders of the pairing; none while unpaired.
@@ -154,7 +156,8 @@ final class AppModel {
     }
 
     private func shell(_ pairing: Pairing, _ key: String) -> Shell {
-        Shell(pairing: pairing, key: key, theme: theme, seen: { [weak self] in self?.seen ?? false }) { [weak self] in
+        Shell(pairing: pairing, key: key, theme: theme, pending: pending,
+              seen: { [weak self] in self?.seen ?? false }) { [weak self] in
             Task { await self?.refresh() }
         } unpaired: { [weak self] in
             self?.wasUnpaired()
@@ -201,6 +204,7 @@ final class AppModel {
         UserDefaults.standard.removeObject(forKey: "setup.done")
         // Logs still waiting are shown only behind the lock: it stays.
         if outbox.logs.isEmpty { lock.forget() }
+        pending.clear()
         reminders = nil
         health = nil
         Task { await Screens.forget() }

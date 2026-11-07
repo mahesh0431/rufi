@@ -28,6 +28,27 @@ struct DoorTests {
         }
     }
 
+    /// Tailscale answers a gateway error, without Rufi's words, when Rufi
+    /// isn't running on the Mac: Rufi can't be reached. Rufi's own 502 keeps
+    /// its words.
+    @Test func tailscalesGatewayErrorIsUnreachable() async {
+        func door(_ host: String) -> Door { Door(origin: URL(string: "https://\(host)")!, key: "a-key") }
+
+        await #expect(throws: Door.Problem.unreachable) {
+            try await door("stopped.test").me()
+        }
+        await #expect(throws: Door.Problem.refused("The AI couldn't do that.")) {
+            try await door("rufi.test").open("/people/asha/chat")
+        }
+        let message = PendingMessage(id: "m-1", text: "I took my Metformin")
+        await #expect(throws: Door.Problem.unreachable) {
+            try await door("stopped.test").send(message, for: "asha")
+        }
+        await #expect(throws: Door.Problem.refused("The AI couldn't do that.")) {
+            try await door("rufi.test").send(message, for: "asha")
+        }
+    }
+
     /// A batch's answer: had it, or why not, in the Mac's words; an iPhone
     /// unpaired on the Mac hears so, and a Rufi without batches says update.
     @Test func batchAnswersKeepTheirReason() async throws {
@@ -64,6 +85,8 @@ nonisolated private final class StandInDoor: URLProtocol, @unchecked Sendable {
         case ("/api/batches", "refused.test"):
             (422, #"{"answer":"refused","problems":["no_batch_id"],"error":"Rufi on your Mac refused a batch (no_batch_id)."}"#)
         case ("/api/batches", _): (404, #"{"error":"Not found."}"#)
+        case (_, "stopped.test"): (502, "")
+        case (_, "rufi.test"): (502, #"{"error":"The AI couldn't do that."}"#)
         case ("/api/pair", _): (410, #"{"error":"That code was used or is too old.","problem":"code_expired"}"#)
         case ("/api/me", _): (401, #"{"error":"This iPhone isn't paired.","problem":"unpaired"}"#)
         case ("/api/open", _): (403, #"{"error":"That page isn't Asha Fictional's."}"#)

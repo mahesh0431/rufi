@@ -11,8 +11,13 @@ final class Shell {
     enum State: Equatable {
         case opening
         case open
-        case unreachable
         case problem(String)
+    }
+
+    /// Whether Rufi can be reached: a line at the top says when it can't,
+    /// and "Connected" for a moment when it can again.
+    enum Reach: Equatable {
+        case reachable, away, back
     }
 
     let pairing: Pairing
@@ -24,6 +29,19 @@ final class Shell {
     private let unpaired: () -> Void
 
     var state = State.opening
+    private(set) var reach = Reach.reachable {
+        didSet { box.away = away }
+    }
+    var away: Bool { reach == .away }
+    /// Messages sent while Rufi couldn't be reached.
+    let pending: Pending
+    /// The web view holds a page that drew: when Rufi comes back, the page
+    /// reads again; without one, Rufi opens again.
+    private var live = false
+    /// Counts the runs of asking again, after a wait that grows, while Rufi
+    /// can't be reached: only the latest run goes on.
+    private var tries = 0
+    private var checking = false
     /// Where the person is: what the sidebar marks, the title and Back.
     private(set) var navigator: Navigator
     /// The sidebar is open over the page.
@@ -68,10 +86,11 @@ final class Shell {
     /// Why the original couldn't be shown, in one line.
     var originalProblem: String?
 
-    init(pairing: Pairing, key: String, theme: Theme, seen: @escaping () -> Bool, refresh: @escaping () -> Void,
-         unpaired: @escaping () -> Void) {
+    init(pairing: Pairing, key: String, theme: Theme, pending: Pending, seen: @escaping () -> Bool,
+         refresh: @escaping () -> Void, unpaired: @escaping () -> Void) {
         self.pairing = pairing
         self.theme = theme
+        self.pending = pending
         self.seen = seen
         self.door = Door(origin: pairing.origin, key: key)
         self.unpaired = unpaired
@@ -86,9 +105,17 @@ final class Shell {
         }
         screens.onBox = { [weak self] data in self?.box.took(data) }
         screens.onEnded = { [weak self] in Task { await self?.reopen() } }
-        screens.onUnreachable = { [weak self] in self?.state = .unreachable }
+        screens.onUnreachable = { [weak self] in
+            self?.live = false
+            self?.lost()
+        }
+        screens.onConnection = { [weak self] reachable in
+            guard let self else { return }
+            if !reachable { self.lost() } else if self.away { Task { await self.reached() } }
+        }
         screens.onRefresh = refresh
         box.asking = { [weak screens] command in screens?.box(command) }
+        box.restored = { [weak pending] ids in pending?.remove(ids) }
         screens.onOriginal = { [weak self] document, files in Task { await self?.show(document, files) } }
         screens.view.backgroundColor = theme.pageColour
         screens.onTheme = { [weak self] colours, dark in
@@ -112,20 +139,24 @@ final class Shell {
         navigator.stack.isEmpty && navigator.current == .medicines
     }
 
-    /// Opens Rufi's screens at the holder's page with a new launch link.
+    /// Opens Rufi's screens at the holder's page with a new launch link. Out
+    /// of reach, what shows stays, and Rufi asks again.
     func reopen() async {
         guard !reopening else { return }
         reopening = true
         defer { reopening = false }
-        state = .opening
-        covered = true
-        box.reset()
         do {
             let url = try await door.open(navigator.page(at: holder)?.path ?? Place.chat.path(pairing.person.id))
+            state = .opening
+            covered = true
+            live = false
+            box.reset()
             screens.load(url)
             state = .open
+            connected()
+            await sendPending()
         } catch .unreachable {
-            state = .unreachable
+            lost()
         } catch .unpaired {
             unpaired()
         } catch .mismatch {
@@ -133,7 +164,103 @@ final class Shell {
         } catch let .refused(words) {
             state = .problem(words)
         } catch {
-            state = .unreachable
+            lost()
+        }
+    }
+
+    /// Asks whether Rufi can be reached: when it can, the page reads again
+    /// (or Rufi opens again) and the waiting messages go.
+    func check() async {
+        guard !checking else { return }
+        checking = true
+        defer { checking = false }
+        do {
+            _ = try await door.me()
+        } catch .unreachable {
+            lost()
+            return
+        } catch .unpaired {
+            unpaired()
+            return
+        } catch {
+            // Rufi answered: opening it says what is wrong.
+        }
+        await reached()
+    }
+
+    /// Rufi can't be reached: the line shows, and Rufi asks again after 2,
+    /// 5, 10 and 20 seconds, then every 30, while it is on screen.
+    private func lost() {
+        guard reach != .away else { return }
+        reach = .away
+        tries += 1
+        let these = tries
+        // Never cancelled: a check it runs that reaches Rufi must finish.
+        // It stops when Rufi answers, or when another run starts.
+        Task { [weak self] in
+            var waits = [2, 5, 10, 20]
+            while true {
+                try? await Task.sleep(for: .seconds(waits.isEmpty ? 30 : waits.removeFirst()))
+                guard let self, tries == these, away else { return }
+                if seen() { await check() }
+            }
+        }
+    }
+
+    /// Rufi answered: the line says so a moment, then goes.
+    private func connected() {
+        tries += 1
+        guard reach == .away else { return }
+        reach = .back
+        Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            if reach == .back { reach = .reachable }
+        }
+    }
+
+    private func reached() async {
+        let page = live
+        connected()
+        if page {
+            screens.reconnect()
+            await sendPending()
+        } else {
+            await reopen()
+        }
+        await count()
+    }
+
+    /// Send, while Rufi can't be reached: the message waits on the iPhone,
+    /// and Rufi asks again at once. Kept only once it is in its file.
+    func pend(_ text: String) {
+        let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !words.isEmpty, (try? pending.add(words)) != nil else { return }
+        box.typed("")
+        Task { await check() }
+    }
+
+    /// Sends the waiting messages. One Rufi refused comes back into the box,
+    /// with Rufi's words, to change and send again, or clear.
+    private func sendPending() async {
+        do {
+            let person = pairing.person.id
+            let back = try await pending.send(skipping: box.restoring) { message throws(Door.Problem) in
+                try await door.send(message, for: person)
+            }
+            for (message, refused) in back { box.giveBack(message, refused: refused) }
+        } catch {
+            unpaired()
+        }
+    }
+
+    /// The box the place on top has: the page's, once one drew; until then,
+    /// the place's own (Help has none).
+    var boxKind: ChatBox.Kind? {
+        if live { return box.kind }
+        switch navigator.place {
+        case .help: return nil
+        case .chat: return .page
+        default: return .bar
         }
     }
 
@@ -264,6 +391,7 @@ final class Shell {
 
     private func drawn(_ path: String, _ title: String) {
         navigator.drawn(holder, path, title)
+        live = true
         covered = false
         state = .open
         if let place = wanted {
@@ -333,15 +461,21 @@ struct ShellView: View {
         .onChange(of: app.seen) { _, seen in
             if seen { shell.appeared() }
         }
+        .onChange(of: app.active) { _, active in
+            // Back on screen: is Rufi still there, or back?
+            if active { Task { await shell.check() } }
+        }
         .task {
             await shell.reopen()
             await shell.count()
         }
     }
 
-    /// The page on top has a chat box, and the page has told it.
+    /// The page on top has a chat box, and the page has told it; while Rufi
+    /// can't be reached, the box of the place shown.
     private var boxShown: Bool {
-        shell.state == .open && shell.box.kind != nil && shell.box.state != nil
+        guard shell.boxKind != nil else { return false }
+        return shell.away || (shell.state == .open && shell.box.kind != nil && shell.box.state != nil)
     }
 
     private var addProblemShown: Binding<Bool> {
@@ -373,7 +507,10 @@ struct ShellView: View {
 
     @ViewBuilder
     private func page(_ screen: Screen, root: Bool) -> some View {
-        ScreenView(shell: shell, screen: screen, until: app.reminders?.until, unsent: app.outbox.logs.count)
+        ScreenView(shell: shell, screen: screen)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                ReachLine(reach: shell.reach) { Task { await shell.check() } }
+            }
             .navigationTitle(shell.title(screen))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -391,21 +528,16 @@ struct ShellView: View {
     }
 }
 
-/// One screen: the web view when it is on top, else a still of itself.
+/// One screen: the web view when it is on top, else a still of itself; with
+/// neither while Rufi can't be reached, the dog, resting.
 struct ScreenView: View {
     let shell: Shell
     let screen: Screen
-    /// Until when reminders are set on this iPhone.
-    let until: Date?
-    /// Dose logs not on the Mac yet.
-    let unsent: Int
 
     var body: some View {
         ZStack {
             shell.theme.page.ignoresSafeArea(.container)
             switch shell.state {
-            case .unreachable:
-                CantReachView(until: until, unsent: unsent) { Task { await shell.reopen() } }
             case let .problem(words):
                 ContentUnavailableView("Rufi Can't Open", systemImage: "exclamationmark.triangle", description: Text(words))
             case .opening, .open:
@@ -417,7 +549,12 @@ struct ScreenView: View {
                         Image(uiImage: still).resizable().ignoresSafeArea(.container)
                     } else {
                         shell.theme.page.ignoresSafeArea(.container)
-                        if shell.state == .opening { ProgressView() }
+                        if shell.away {
+                            Image("Resting").resizable().scaledToFit().frame(width: 72)
+                                .accessibilityLabel("Rufi, resting")
+                        } else if shell.state == .opening {
+                            ProgressView()
+                        }
                     }
                 }
             }
@@ -425,25 +562,37 @@ struct ScreenView: View {
     }
 }
 
-/// Rufi can't reach the Mac: the chrome stays, with Try Again, and until
-/// when the reminders already here ring.
-struct CantReachView: View {
-    let until: Date?
-    let unsent: Int
+/// The line under the title while Rufi can't be reached: it asks again
+/// by itself, and a tap asks at once. When it can, "Connected" for a moment.
+struct ReachLine: View {
+    let reach: Shell.Reach
     let retry: () -> Void
 
     var body: some View {
-        ContentUnavailableView {
-            Label("Can't Reach Your Mac", systemImage: "desktopcomputer.trianglebadge.exclamationmark")
-        } description: {
-            Text("Check Rufi is open there and the Mac is awake, and Tailscale is on, on both.")
-            if let until {
-                Text("Reminders set on this iPhone until \(until.reminderWords).")
+        Group {
+            switch reach {
+            case .away:
+                Button(action: retry) {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.mini)
+                        Text("Can't reach Rufi")
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 28)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .accessibilityHint("Tries again now")
+            case .back:
+                Label("Connected", systemImage: "checkmark")
+                    .frame(maxWidth: .infinity, minHeight: 28)
+                    .foregroundStyle(.green)
+            case .reachable:
+                EmptyView()
             }
-            if unsent > 0 { Text(UnsentSection.count(unsent)) }
-        } actions: {
-            Button("Try Again", systemImage: "arrow.clockwise", action: retry)
-                .buttonStyle(.borderedProminent)
         }
+        .font(.footnote)
+        .background(reach == .reachable ? AnyShapeStyle(.clear) : AnyShapeStyle(.bar))
+        .animation(.snappy, value: reach)
     }
 }
