@@ -51,7 +51,7 @@ Click **Copy**. Rufi puts the brief on the clipboard as plain text: the line say
 
 Click **View PDF**. Rufi makes a PDF of the brief: Rufi's dog, the line saying where it came from, the brief and its Sources, on white A4 pages, also when Rufi is dark. A long brief goes on to more pages, and each page's foot says its number, for example "Page 1 of 2". Rufi makes it afresh each time and keeps no copy.
 
-- **On your Mac**, the PDF opens over the brief's page. The viewer's buttons download it, named for example "Visit brief – Asha – 10 Oct 2026.pdf", or print it.
+- **On your Mac**, the PDF opens over the brief's page. The viewer's buttons download it or print it.
 - **On your iPhone**, it opens in iOS's own viewer. Its share button sends it, for example to your doctor on WhatsApp, saves it to Files or prints it. Rufi deletes its copy when you close the viewer.
 
 ## When your record changes
