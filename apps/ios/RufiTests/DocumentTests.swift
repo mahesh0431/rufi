@@ -14,7 +14,7 @@ struct DocumentTests {
     @Test func documentsSayEachOnesStatusAndWhetherRetryWouldRead() throws {
         let documents = try read("documents", as: DocumentList.self).documents
         #expect(documents.map { Words.describe($0).name } == ["thyroid recheck.jpg", "Sunrise Labs August.pdf"])
-        #expect(documents.map { Words.status(of: $0) } == ["Not read yet", "Not saved · 2 results"])
+        #expect(documents.map { Words.status(of: $0) } == ["Failed · read 1 of 1", "Not saved · 2 results"])
         #expect(documents.map(Words.canRetry) == [true, false])
         #expect(Words.place(DocumentSummary.Place(pages: [1, 2, 4], of: 5)) == "pages 1–2, 4 of 5")
     }
@@ -31,6 +31,19 @@ struct DocumentTests {
         let reading = try read("document-reading", as: ReadingView.self)
         #expect(Words.status(of: reading, document: nil) == "read")
         #expect(reading.pages.first?.copy?.hasPrefix("Sunrise Labs") == true)
+    }
+
+    /// A reading by an older reader keeps its rows in the page's entry, not
+    /// a copy: View reading shows them, with why each may be wrong.
+    @Test func anOlderReadingShowsWhatItsReaderRead() throws {
+        let reading = try read("document-reading-older", as: ReadingView.self)
+        let page = try #require(reading.pages.first)
+        #expect(Words.summary(page) == "read so far · 1 item · Sunrise Labs · Collected 1 Sep 2026")
+        #expect(Words.rows(page, drafts: []) == [Words.ReadRow(
+            name: "TSH", value: "4.6 mIU/L", range: "0.4–4.0", marks: ["H", "unsure"],
+            why: "The value is faint.; Its unit is not on the page.")])
+        #expect(page.checks?.incomplete?.rows_seen == 2)
+        #expect(page.entry?.issues == ["The bottom of the photo is cut off."])
     }
 
     @Test func aDeleteWithSavedRecordsAsksWhetherTheyStayOrGo() throws {

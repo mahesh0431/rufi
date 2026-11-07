@@ -129,3 +129,13 @@ Asha''s HbA1c results, newest first.', NULL, NULL, NULL, NULL, 2, '2026-10-05T08
 
 [See your HbA1c results](rufi:/tests/tst-hba1c)', NULL, NULL, NULL, 'done', 4, '2026-10-05T08:00:05Z', '2026-10-05T08:00:13Z');
 UPDATE chats SET revision = 4 WHERE id = 'c-asha';
+
+-- An older Rufi's reading of the September photo that failed partway: its
+-- reader's entry for the page (no copy), with an issue it noted, and Rufi's
+-- check that it may be incomplete.
+INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, error, started_at, run_at, ended_at, created_at) VALUES
+  ('job-sep', 'asha', 'document_read', 'doc-asha-sep', 'failed', 1, '[1]', 'The reader stopped before it finished.', '2026-09-02T18:31:00Z', '2026-09-02T18:31:00Z', '2026-09-02T18:33:00Z', '2026-09-02T18:31:00Z');
+UPDATE document_pages SET entry_job_id = 'job-sep', entry_attempt = 1, entry_at = '2026-09-02T18:32:00Z',
+  entry = '{"outcome":"read","facts":{"issuer":"Sunrise Labs","dates":[{"label":"Collected","date":"1 Sep 2026"}]},"rows_seen":2,"items":[{"test_name":"TSH","value_text":"4.6","unit":"mIU/L","reference_range":"0.4–4.0","flag_text":"H","unsure":"The value is faint."}],"issues":["The bottom of the photo is cut off."]}',
+  entry_checks = '{"incomplete":{"rows_seen":2,"items":1},"items":[{"item":1,"why":"Its unit is not on the page."}]}'
+  WHERE person_id = 'asha' AND document_id = 'doc-asha-sep' AND position = 1;

@@ -17,6 +17,13 @@
       ],
       "documents": [
         {
+          "id": "doc-asha-sep",
+          "name": "thyroid recheck.jpg",
+          "state": "failed",
+          "results": 0,
+          "toCheck": 0
+        },
+        {
           "id": "doc-asha-aug",
           "name": "Sunrise Labs August.pdf",
           "state": "to_save",
