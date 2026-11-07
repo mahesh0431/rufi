@@ -143,10 +143,11 @@ struct SidebarSwipe: UIGestureRecognizerRepresentable {
 
         func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
             guard let pan = recognizer as? UIPanGestureRecognizer else { return false }
-            let velocity = pan.velocity(in: nil)
-            guard abs(velocity.x) > abs(velocity.y) else { return false }
-            if open { return velocity.x < 0 }
-            return enabled && velocity.x > 0 && !SidebarSwipe.scrollsBack(touched)
+            // By the way it moved so far: a slow drag has next to no speed.
+            let moved = pan.translation(in: nil)
+            guard abs(moved.x) > abs(moved.y) else { return false }
+            if open { return moved.x < 0 }
+            return enabled && moved.x > 0 && !SidebarSwipe.scrollsBack(touched)
         }
 
         // Scrollers wait until it is clear the swipe isn't the sidebar's.
@@ -240,8 +241,10 @@ struct SidebarView: View {
                     choose(.chat)
                 } label: {
                     Label("Chat", systemImage: Place.chat.symbol).font(.headline)
+                        .foregroundStyle(theme.onAccent)
                 }
                 .buttonStyle(.glassProminent)
+                .tint(theme.accent)
                 .controlSize(.large)
                 .accessibilityLabel(Place.chat.title)
                 Spacer()
