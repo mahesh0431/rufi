@@ -75,7 +75,7 @@ struct DocumentsView: View {
             Label("Add", systemImage: "plus")
         }
         .menuOrder(.fixed)
-        .disabled(shell.box.state?.closed != nil)
+        .disabled(!shell.chat.loaded)
     }
 }
 
@@ -112,7 +112,7 @@ private struct DocumentLine: View {
             if document.reading != nil { Button("View reading", systemImage: "text.viewfinder", action: viewReading) }
             if document.status != "reading" {
                 Button("Ask Rufi", systemImage: "message") {
-                    Task { await shell.ask([BoxChip(type: "document", id: document.id, label: name)]) }
+                    Task { await shell.ask([Chip(type: "document", id: document.id, label: name)]) }
                 }
             }
         }
@@ -122,7 +122,7 @@ private struct DocumentLine: View {
 /// Retry: the document's chip, to read again, in the chat's box; nothing is
 /// read until the person sends.
 private func retry(_ shell: Shell, _ document: DocumentSummary) async {
-    await shell.ask([BoxChip(type: "document", id: document.id, readAgain: true, label: "")])
+    await shell.ask([Chip(type: "document", id: document.id, readAgain: true, label: "")])
 }
 
 /// A document's page: what it is, its pages, and what the reader read from
@@ -287,7 +287,7 @@ private struct DocumentPage: View {
                         DraftLine(item: item) { show(item.page) } ask: {
                             let label = [item.fields.test_name, item.fields.value_text, item.fields.unit ?? ""]
                                 .filter { !$0.isEmpty }.joined(separator: " ")
-                            Task { await shell.ask([BoxChip(type: "draft_item", id: item.id, label: label)]) }
+                            Task { await shell.ask([Chip(type: "draft_item", id: item.id, label: label)]) }
                         }
                     }
                 } header: {
@@ -313,7 +313,7 @@ private struct DocumentPage: View {
                 let count = Words.toSave(items)
                 Button("Save in chat", systemImage: "message") {
                     let text = count == 1 ? "Save this result." : "Save these \(count) results."
-                    Task { await shell.ask([BoxChip(type: "document", id: document.id, label: name)], text: text) }
+                    Task { await shell.ask([Chip(type: "document", id: document.id, label: name)], text: text) }
                 }
                 .disabled(count == 0)
             } else {

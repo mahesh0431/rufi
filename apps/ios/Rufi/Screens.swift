@@ -28,9 +28,7 @@ final class Screens: NSObject {
     /// in the chat open over this one.
     var onGo: (String, Bool) -> Void = { _, _ in }
     /// A page has drawn, with its title and the chat box it has.
-    var onPage: (String, String, ChatBox.Kind?) -> Void = { _, _, _ in }
-    /// The chat box as the page has it now (ChatBox.State, as JSON).
-    var onBox: (Data) -> Void = { _ in }
+    var onPage: (String, String, String?) -> Void = { _, _, _ in }
     /// The session ended, or the page couldn't load.
     var onEnded: () -> Void = {}
     /// Doses, medicines or the reminder setting may have changed.
@@ -106,20 +104,6 @@ final class Screens: NSObject {
         view.evaluateJavaScript("window.rufi.open(\(text), \(chat))") { [weak self] _, error in
             if error != nil { self?.onEnded() }
         }
-    }
-
-    /// Gives the page the door's answer to what the box added: its chips go in the box.
-    func added(_ answer: Data) {
-        guard (try? JSONSerialization.jsonObject(with: answer)) != nil,
-              let json = String(data: answer, encoding: .utf8) else { return }
-        view.evaluateJavaScript("window.rufi.added(\(json))")
-    }
-
-    /// Asks the page's chat box to do what the person did in the app's.
-    func box(_ command: [String: Any]) {
-        guard let json = try? JSONSerialization.data(withJSONObject: command),
-              let text = String(data: json, encoding: .utf8) else { return }
-        view.evaluateJavaScript("window.rufi.box(\(text))")
     }
 
     /// Rufi can be reached again: the page asks now, and reads again.
@@ -233,10 +217,8 @@ final class Screens: NSObject {
         case "page":
             if let path = body["path"] as? String, let title = body["title"] as? String {
                 self.path = path
-                onPage(path, title, (body["box"] as? String).flatMap(ChatBox.Kind.init))
+                onPage(path, title, body["box"] as? String)
             }
-        case "box":
-            if let json = try? JSONSerialization.data(withJSONObject: body) { onBox(json) }
         case "ended":
             onEnded()
         case "refresh":

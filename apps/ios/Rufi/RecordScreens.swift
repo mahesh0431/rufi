@@ -14,6 +14,7 @@ struct NativePageView: View {
     var body: some View {
         Group {
             switch page {
+            case .chat: ChatView(shell: shell, chat: shell.chat)
             case .overview: OverviewView(shell: shell)
             case let .list(kind): RecordListView(shell: shell, kind: kind)
             case .labResults: LabResultsView(shell: shell)

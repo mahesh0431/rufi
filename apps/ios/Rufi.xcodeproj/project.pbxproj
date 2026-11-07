@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		5EED0A00000000000000B003 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = 5EED0A00000000000000B002 /* MarkdownUI */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		431387EB7262E1CFC79B125E /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -45,6 +49,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5EED0A00000000000000B003 /* MarkdownUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -105,6 +110,7 @@
 			);
 			name = Rufi;
 			packageProductDependencies = (
+				5EED0A00000000000000B002 /* MarkdownUI */,
 			);
 			productName = Rufi;
 			productReference = D116B4EECC28EA0ABC228880 /* Rufi.app */;
@@ -186,6 +192,9 @@
 			);
 			mainGroup = FAD58DE7366495DB4650CFEF;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				5EED0A00000000000000B001 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 86024CAD1E83101D97359D73 /* Products */;
 			projectDirPath = "";
@@ -617,6 +626,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		5EED0A00000000000000B001 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/gonzalezreal/swift-markdown-ui";
+			requirement = {
+				kind = exactVersion;
+				version = 2.4.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		5EED0A00000000000000B002 /* MarkdownUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5EED0A00000000000000B001 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
+			productName = MarkdownUI;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 46F86FAA6BBF9AC94A7E4595 /* Project object */;
 }

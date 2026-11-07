@@ -28,13 +28,17 @@ final class Shell {
     private let refresh: () -> Void
     let door: Door
     let theme: Theme
-    /// The chat's box, drawn here; the page keeps its rules.
-    let box = ChatBox()
+    /// The person's chat: its transcript, stream and box.
+    let chat: ChatModel
+    /// The chat is open over the page on top, as a sheet.
+    var chatShown = false
+    /// The web page on top has a chat box: the bar shows under it.
+    private(set) var webBox = false
     private let unpaired: () -> Void
 
     var state = State.opening
     private(set) var reach = Reach.reachable {
-        didSet { box.away = away }
+        didSet { chat.away = away }
     }
     var away: Bool { reach == .away }
     /// Messages sent while Rufi couldn't be reached.
@@ -108,16 +112,16 @@ final class Shell {
         self.seen = seen
         self.door = Door(origin: pairing.origin, key: key)
         self.unpaired = unpaired
+        chat = ChatModel(door: door, person: pairing.person.id, pending: pending)
         screens = Screens(origin: pairing.origin)
         let navigator = Navigator(person: pairing.person.id, at: .chat)
         self.navigator = navigator
         holder = navigator.root.id
         screens.onGo = { [weak self] path, chat in Task { await self?.go(path, chat: chat) } }
         screens.onPage = { [weak self] path, title, box in
-            self?.box.kind = box
+            self?.webBox = box != nil
             self?.drawn(path, title)
         }
-        screens.onBox = { [weak self] data in self?.box.took(data) }
         screens.onEnded = { [weak self] in Task { await self?.reopen() } }
         screens.onUnreachable = { [weak self] in
             self?.live = false
@@ -128,8 +132,19 @@ final class Shell {
             if !reachable { self.lost() } else if self.away { Task { await self.reached() } }
         }
         screens.onRefresh = refresh
-        box.asking = { [weak screens] command in screens?.box(command) }
-        box.restored = { [weak pending] ids in pending?.remove(ids) }
+        chat.lost = { [weak self] in self?.lost() }
+        chat.reached = { [weak self] in
+            guard let self, self.away else { return }
+            Task { await self.reached() }
+        }
+        chat.unpaired = unpaired
+        chat.changed = { [weak self] change in
+            guard let self else { return }
+            // The pages drawn here read again; the reminders follow the
+            // dose log and the record.
+            fresh += 1
+            if change != .documents { refresh() }
+        }
         screens.onOriginal = { [weak self] document, files in Task { await self?.show(document, files) } }
         screens.onBriefPDF = { [weak self] brief in Task { await self?.showBrief(brief) } }
         screens.view.backgroundColor = theme.pageColour
@@ -152,6 +167,14 @@ final class Shell {
     func native(_ screen: Screen) -> NativePage? {
         navigator.page(screen).flatMap { NativePage.of($0.path, person: pairing.person.id) }
     }
+
+    /// The person's page at `rest`: "documents/doc-1".
+    func path(_ rest: String) -> String {
+        "/people/\(pairing.person.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? pairing.person.id)/\(rest)"
+    }
+
+    /// The chat's own page is on top.
+    var onChat: Bool { native(navigator.top) == .chat }
 
     /// A page drawn here named itself: the title shows it.
     func titled(_ screen: Screen, _ title: String) {
@@ -212,15 +235,17 @@ final class Shell {
         reopening = true
         defer { reopening = false }
         do {
-            let url = try await door.open(navigator.page(at: holder)?.path ?? Place.chat.path(pairing.person.id))
+            // Behind a page drawn here, Help: it holds no chat, and keeps the theme.
+            let held = navigator.page(at: holder)?.path
+            let page = held.flatMap { NativePage.of($0, person: pairing.person.id) } == nil ? held : nil
+            let url = try await door.open(page ?? Place.help.path(pairing.person.id))
             state = .opening
             covered = true
             live = false
-            box.reset()
             screens.load(url)
             state = .open
             connected()
-            await sendPending()
+            await chat.deliver()
         } catch .unreachable {
             lost()
         } catch .unpaired {
@@ -290,36 +315,14 @@ final class Shell {
         fresh += 1
         // Dose logs made meanwhile go now.
         refresh()
+        chat.reconnect()
         if page {
             screens.reconnect()
-            await sendPending()
+            await chat.deliver()
         } else {
             await reopen()
         }
         await count()
-    }
-
-    /// Send, while Rufi can't be reached: the message waits on the iPhone,
-    /// and Rufi asks again at once. Kept only once it is in its file.
-    func pend(_ text: String) {
-        let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !words.isEmpty, (try? pending.add(words)) != nil else { return }
-        box.typed("")
-        Task { await check() }
-    }
-
-    /// Sends the waiting messages. One Rufi refused comes back into the box,
-    /// with Rufi's words, to change and send again, or clear.
-    private func sendPending() async {
-        do {
-            let person = pairing.person.id
-            let back = try await pending.send(skipping: box.restoring) { message throws(Door.Problem) in
-                try await door.send(message, for: person)
-            }
-            for (message, refused) in back { box.giveBack(message, refused: refused) }
-        } catch {
-            unpaired()
-        }
     }
 
     /// Taken, Skipped or Undo on Today: kept in the outbox first, as a
@@ -345,18 +348,6 @@ final class Shell {
         }
         refresh()
         return nil
-    }
-
-    /// The box the place on top has: the page's, once one drew; until then,
-    /// the place's own (Help has none).
-    var boxKind: ChatBox.Kind? {
-        if native(navigator.top) != nil { return nil }
-        if live { return box.kind }
-        switch navigator.place {
-        case .help: return nil
-        case .chat: return .page
-        default: return .bar
-        }
     }
 
     /// Reads the sidebar's counts; when they can't be read, the last stay.
@@ -394,10 +385,13 @@ final class Shell {
         guard !adding, !files.isEmpty else { return }
         adding = true
         defer { adding = false }
-        do {
-            screens.added(try await door.add(person: pairing.person.id, files: files, together: together))
-            // Added on a page drawn here (Documents): the chat opens, with their chips.
-            if native(navigator.top) != nil { await choose(.chat) }
+        do throws(Door.Problem) {
+            let answer = try await door.add(person: pairing.person.id, files: files, together: together)
+            guard let added = try? JSONDecoder().decode(Added.self, from: answer) else { throw Door.Problem.mismatch }
+            chat.added(added)
+            fresh += 1
+            // Added from a page (Documents): the chat opens over it, with their chips.
+            if !onChat { chatShown = true }
         } catch .unpaired {
             unpaired()
         } catch .unreachable {
@@ -411,10 +405,17 @@ final class Shell {
 
     /// From a page drawn here: chips, and text after what is typed, go in
     /// the chat's box, as Ask Rufi does on the Mac's pages, and the chat
-    /// opens on them. When the box can't take them now, its line says why.
-    func ask(_ chips: [BoxChip], text: String = "") async {
-        screens.box(["type": "ask", "chips": chips.map(\.json), "text": text])
-        await choose(.chat)
+    /// opens over the page. When the box can't take them now, its line says why.
+    func ask(_ chips: [Chip], text: String = "") async {
+        chat.append(text, chips)
+        if !onChat { chatShown = true }
+    }
+
+    /// A link in the chat to a page of the person's: it opens on top. From
+    /// the chat over a page, the chat closes first, and Back opens it again.
+    func follow(_ path: String, fromSheet: Bool) async {
+        if fromSheet { chatShown = false }
+        await go(path, chat: fromSheet)
     }
 
     /// View original: fetches the document's files with the key and shows
@@ -494,6 +495,8 @@ final class Shell {
     func popped(to stack: [Screen]) {
         navigator.popped(to: stack)
         let top = navigator.top
+        // Its chat was open over it when a link in the chat covered it.
+        if navigator.page(top)?.chat == true, !onChat { chatShown = true }
         if top.id != holder, native(top) == nil { Task { await hold(top) } }
     }
 
@@ -518,7 +521,10 @@ final class Shell {
     }
 
     private func drawn(_ path: String, _ title: String) {
-        navigator.drawn(holder, path, title)
+        // Help, kept behind a page drawn here, isn't that page.
+        if let page = navigator.page(at: holder), NativePage.of(page.path, person: pairing.person.id) == nil {
+            navigator.drawn(holder, path, title)
+        }
         live = true
         covered = false
         state = .open
@@ -545,9 +551,10 @@ struct ShellView: View {
             // Another place: a stack of its own.
             .id(shell.navigator.root.id)
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                // A page drawn here has its own bar (`page`).
-                if shell.native(shell.navigator.top) == nil, boxShown {
-                    ChatBoxView(box: shell.box, shell: shell)
+                // A page drawn here has its own bar (`page`); a web page
+                // with a chat box, this one.
+                if shell.native(shell.navigator.top) == nil, shell.webBox, shell.state == .open {
+                    AskBar(name: shell.pairing.person.name, theme: shell.theme) { shell.chatShown = true }
                         .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: {
                             shell.screens.box(top: $0)
                         }
@@ -562,6 +569,22 @@ struct ShellView: View {
                 shell.sidebar = false
                 settings = true
             }
+        }
+        .sheet(isPresented: $shell.chatShown) {
+            NavigationStack {
+                ChatView(shell: shell, chat: shell.chat, sheet: true)
+                    .navigationTitle(Place.chat.title)
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Open as Page", systemImage: "arrow.up.left.and.arrow.down.right") {
+                                shell.chatShown = false
+                                Task { await shell.choose(.chat) }
+                            }
+                        }
+                    }
+            }
+            .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $settings) {
             ThisIPhoneView(app: app, pairing: shell.pairing)
@@ -591,20 +614,20 @@ struct ShellView: View {
             if seen { shell.appeared() }
         }
         .onChange(of: app.active) { _, active in
-            // Back on screen: is Rufi still there, or back?
-            if active { Task { await shell.check() } }
+            // Back on screen: is Rufi still there, or back? The chat's
+            // stream runs while Rufi is on screen.
+            if active {
+                shell.chat.open()
+                Task { await shell.check() }
+            } else {
+                shell.chat.close()
+            }
         }
         .task {
+            shell.chat.open()
             await shell.reopen()
             await shell.count()
         }
-    }
-
-    /// The page on top has a chat box, and the page has told it; while Rufi
-    /// can't be reached, the box of the place shown.
-    private var boxShown: Bool {
-        guard shell.boxKind != nil else { return false }
-        return shell.away || (shell.state == .open && shell.box.kind != nil && shell.box.state != nil)
     }
 
     private var addProblemShown: Binding<Bool> {
@@ -631,10 +654,9 @@ struct ShellView: View {
             }
             // On the page itself, so its last row scrolls above the bar.
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if shell.native(screen) != nil {
-                    AskBar(name: shell.pairing.person.name, theme: shell.theme) {
-                        Task { await shell.choose(.chat) }
-                    }
+                // The chat's own page has its box.
+                if let page = shell.native(screen), page != .chat {
+                    AskBar(name: shell.pairing.person.name, theme: shell.theme) { shell.chatShown = true }
                 }
             }
             .navigationTitle(shell.title(screen))

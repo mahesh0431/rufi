@@ -4,6 +4,8 @@ import Foundation
 /// other address opens in Rufi's screens, until it is drawn here too. The
 /// addresses are the Mac's, so a link in a reply opens the same page.
 nonisolated enum NativePage: Equatable, Sendable {
+    /// The chat with Rufi.
+    case chat
     case overview
     /// A record page: its kind's rows.
     case list(String)
@@ -35,6 +37,8 @@ nonisolated enum NativePage: Equatable, Sendable {
         guard components.path.hasPrefix(at) else { return nil }
         let rest = components.path.dropFirst(at.count).split(separator: "/", omittingEmptySubsequences: false).map(String.init)
         switch (rest.first, rest.count) {
+        case ("chat", 1):
+            return .chat
         case ("follow-ups", 1):
             return opened.map { .row(kind: "follow_up", id: $0) } ?? .followUps
         case ("documents", 1):

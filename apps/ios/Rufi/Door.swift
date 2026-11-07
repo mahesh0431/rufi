@@ -239,15 +239,96 @@ nonisolated struct Door: Sendable {
         }
     }
 
-    /// Sends a message kept while Rufi couldn't be reached into `person`'s
-    /// chat, under its own id. The draft on the Mac, which isn't this
-    /// message, stays (`draft: keep`). Rufi refused it:
-    /// its words. The Mac out of reach: `unreachable`, for the next time.
+    /// Sends a message the box kept into `person`'s chat, under its own id,
+    /// with its chips, and how it goes while a reply runs when it says. The
+    /// box saves its own draft, so the Mac's stays (`draft: keep`). Rufi
+    /// refused it: its words. The Mac out of reach: `unreachable`, for the next time.
     func send(_ message: PendingMessage, for person: String) async throws(Problem) {
+        struct Message: Encodable {
+            let id: String
+            let text: String
+            let refs: [Pointer]
+            let kind: String?
+            let draft = "keep"
+        }
+        struct Nothing: Decodable {}
+        let _: Nothing = try await Self.call(
+            origin: origin, key: key, method: "POST", path: "\(Self.people)/\(person)/chat/messages",
+            body: Message(id: message.id, text: message.text, refs: (message.refs ?? []).map(\.ref), kind: message.kind))
+    }
+
+    /// Keeps the box's words and chips as `person`'s draft; the chips come back named.
+    func save(draft text: String, refs: [Pointer], for person: String) async throws(Problem) -> Draft {
+        struct Save: Encodable {
+            let text: String
+            let refs: [Pointer]
+        }
+        return try await Self.call(origin: origin, key: key, method: "PUT", path: "\(Self.people)/\(person)/chat/draft",
+                                   body: Save(text: text, refs: refs))
+    }
+
+    /// Changes `field` (model or effort) of `person`'s chat, from the next reply.
+    func choose(_ field: String, _ value: String, for person: String) async throws(Problem) {
+        struct Nothing: Decodable {}
+        let _: Nothing = try await Self.call(origin: origin, key: key, method: "PUT",
+                                             path: "\(Self.people)/\(person)/chat/\(field)", body: [field: value])
+    }
+
+    /// Stops the reply running in `person`'s chat.
+    func stop(for person: String) async throws(Problem) {
         struct Nothing: Decodable {}
         let _: Nothing = try await Self.call(origin: origin, key: key, method: "POST",
-                                             path: "\(Self.people)/\(person)/chat/messages",
-                                             body: ["id": message.id, "text": message.text, "draft": "keep"])
+                                             path: "\(Self.people)/\(person)/chat/stop", body: [String: String]())
+    }
+
+    /// A file added from the box, never sent, leaves Rufi; once sent, it
+    /// stays (the Mac says so, and that is fine).
+    func unsent(_ document: String, for person: String) async throws(Problem) {
+        let at = [person, document]
+            .map { $0.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(.init(charactersIn: "-_."))) ?? "" }
+        var request = URLRequest(url: origin.appending(path: "\(Self.people)/\(at[0])/documents/\(at[1])/unsent"))
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await Self.session.data(for: request)
+        } catch {
+            throw .unreachable
+        }
+        if (response as? HTTPURLResponse)?.statusCode == 409 { return }
+        _ = try Self.taken(data, response)
+    }
+
+    /// Reads `path` outside the person's routes: "/api/settings", "/api/status".
+    func read<Answer: Decodable>(api path: String) async throws(Problem) -> Answer {
+        try await Self.call(origin: origin, key: key, method: "GET", path: path, body: nil)
+    }
+
+    /// `person`'s chat as it goes: a page, then a line at each change. None
+    /// when the person has no chat. It ends when nothing comes for 45
+    /// seconds (the Mac says something every 15).
+    func chat(for person: String) async throws(Problem) -> URLSession.AsyncBytes? {
+        var request = URLRequest(url: origin.appending(path: "\(Self.people)/\(person)/chat/stream"), timeoutInterval: 45)
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        let bytes: URLSession.AsyncBytes
+        let response: URLResponse
+        do {
+            (bytes, response) = try await Self.streams.bytes(for: request)
+        } catch {
+            throw .unreachable
+        }
+        guard let http = response as? HTTPURLResponse else { throw .unreachable }
+        if (200..<300).contains(http.statusCode) { return bytes }
+        if http.statusCode == 404 { return nil }
+        var data = Data()
+        do {
+            for try await byte in bytes where data.count < 64 * 1024 { data.append(byte) }
+        } catch {
+            throw .unreachable
+        }
+        _ = try Self.taken(data, response)
+        throw .unreachable
     }
 
     /// What the Mac said of a batch it took.
@@ -286,7 +367,7 @@ nonisolated struct Door: Sendable {
     /// Unpairs this iPhone on the Mac.
     func unpair() async throws(Problem) {
         struct Nothing: Decodable {}
-        let _: Nothing = try await Self.call(origin: origin, key: key, method: "POST", path: "/api/unpair", body: [:])
+        let _: Nothing = try await Self.call(origin: origin, key: key, method: "POST", path: "/api/unpair", body: [String: String]())
     }
 
     private static let people = "/api/people"
@@ -297,6 +378,14 @@ nonisolated struct Door: Sendable {
         let configuration = Self.configuration()
         configuration.timeoutIntervalForRequest = fileSeconds
         configuration.timeoutIntervalForResource = fileSeconds
+        return URLSession(configuration: configuration, delegate: NoRedirects(), delegateQueue: nil)
+    }()
+
+    /// The chat's stream: open for as long as it is read.
+    private static let streams: URLSession = {
+        let configuration = Self.configuration()
+        configuration.timeoutIntervalForRequest = 45
+        configuration.timeoutIntervalForResource = 7 * 24 * 60 * 60
         return URLSession(configuration: configuration, delegate: NoRedirects(), delegateQueue: nil)
     }()
 
@@ -325,7 +414,7 @@ nonisolated struct Door: Sendable {
 
     private static func call<Answer: Decodable>(
         origin: URL, key: String?, method: String, path: String, query: [String: String] = [:],
-        body: [String: String]?, wait: TimeInterval? = nil
+        body: (any Encodable & Sendable)?, wait: TimeInterval? = nil
     ) async throws(Problem) -> Answer {
         var url = origin.appending(path: path)
         if !query.isEmpty {

@@ -1,153 +1,10 @@
-import PhotosUI
 import SwiftUI
-import UniformTypeIdentifiers
 
-/// The chat's box, drawn by the app. Its rules stay in the page (the draft
-/// and its saves, the send, the chips, Ask Rufi, Stop, the model): the page
-/// tells the box as it is (`took`), and the box asks the page for what the
-/// person does (`ask`). apps/web/src/phone-box.tsx is the other side.
-@Observable
-final class ChatBox {
-    /// Which box the page on top has: the chat page's, or a reading page's,
-    /// where a tap opens the chat over the page.
-    enum Kind: String {
-        case page, bar
-    }
-
-    /// The box as the page last told it.
-    struct State: Decodable, Equatable {
-        struct Chip: Decodable, Equatable, Identifiable {
-            let key: String
-            let label: String
-            let kind: String
-            var id: String { key }
-        }
-
-        struct Choice: Decodable, Equatable, Identifiable {
-            let id: String
-            let name: String
-        }
-
-        struct Model: Decodable, Equatable, Identifiable {
-            let id: String
-            let name: String
-            let available: Bool
-        }
-
-        struct Meter: Decodable, Equatable {
-            let used: Int
-            let words: String
-        }
-
-        let text: String?
-        let placeholder: String
-        let chips: [Chip]
-        let ready: Bool
-        let button: String
-        let canSend: Bool
-        let model: Choice
-        let effort: Choice
-        let models: [Model]
-        let signIn: [String]
-        let efforts: [Choice]
-        let effortWords: String
-        let meter: Meter?
-        let line: String?
-        let retry: Bool
-        let closed: String?
-        let asked: Int
-        let panel: Bool
-    }
-
-    /// The page on top's box; none when it has none.
-    var kind: Kind?
-    private(set) var state: State?
-    /// What is in the box now: typed here, or as the page last changed it.
-    private(set) var text = ""
-    /// Asks the page (`window.rufi.box`).
-    var asking: ([String: Any]) -> Void = { _ in }
-    /// Rufi can't be reached: Send keeps the message on the iPhone.
-    var away = false
-    /// Why Rufi refused a waiting message now back in the box: until the
-    /// box changes.
-    var said: String?
-    /// Typed while Rufi couldn't be reached: these words, not the draft the
-    /// page reads when it is back, stay in the box.
-    private var typedAway = false
-    /// Refused waiting messages whose words were put back in the box: they
-    /// stay waiting on the iPhone until the page's box holds the box's words.
-    private(set) var restoring: Set<String> = []
-    /// The page's box holds the words of these refused waiting messages.
-    var restored: (Set<String>) -> Void = { _ in }
-
-    /// The page told the box as it is. Its text only when the page changed
-    /// it, so it never undoes typing.
-    func took(_ data: Data) {
-        guard let state = try? JSONDecoder().decode(State.self, from: data) else { return }
-        if let text = state.text {
-            if !restoring.isEmpty {
-                // The page's draft, before it took the words put back: the
-                // box keeps both, and gives them to the page.
-                if !text.isEmpty, !self.text.contains(text) { self.text = text + "\n" + self.text }
-                ask(["type": "text", "text": self.text])
-            } else {
-                if text != self.text { said = nil }
-                if typedAway, !self.text.isEmpty {
-                    ask(["type": "text", "text": self.text])
-                } else {
-                    self.text = text
-                }
-            }
-            typedAway = false
-        } else if state.ready, !restoring.isEmpty {
-            // The page's box holds the box's words, with those put back.
-            restored(restoring)
-            restoring = []
-        }
-        self.state = state
-    }
-
-    /// Puts the words of a waiting message Rufi refused back in the box,
-    /// with Rufi's line. Once there, they aren't put back twice.
-    func giveBack(_ message: PendingMessage, refused: String) {
-        if restoring.insert(message.id).inserted {
-            typed(text.isEmpty ? message.text : text + "\n" + message.text)
-        } else {
-            ask(["type": "text", "text": text])
-        }
-        said = refused
-    }
-
-    /// The person typed.
-    func typed(_ text: String) {
-        guard text != self.text else { return }
-        self.text = text
-        said = nil
-        if away { typedAway = true }
-        ask(["type": "text", "text": text])
-    }
-
-    func ask(_ command: [String: Any]) {
-        asking(command)
-    }
-
-    /// One line, or open with its options: open while in use, or while
-    /// something is in it.
-    func open(focused: Bool) -> Bool {
-        focused || !text.isEmpty || !(state?.chips.isEmpty ?? true)
-    }
-
-    /// The page opened again: until it tells, the box waits.
-    func reset() {
-        state = nil
-    }
-}
-
-/// The box at the bottom of the screen: one line at rest, the text line and
-/// its options while in use, and under it on the chat, a reminder.
+/// The chat's box: one line at rest, the text line and its options while in
+/// use, and under it a reminder. Its rules are the chat's (`ChatModel`).
 struct ChatBoxView: View {
-    let box: ChatBox
     let shell: Shell
+    let chat: ChatModel
     @Environment(Theme.self) private var theme
     @FocusState private var focused: Bool
     @State private var lit = false
@@ -156,17 +13,14 @@ struct ChatBoxView: View {
     @State private var adding: AddFrom?
 
     var body: some View {
-        let state = box.state
-        let open = box.open(focused: focused)
-        let away = box.away
-        let kind = shell.boxKind
+        let open = focused || !chat.text.isEmpty || !chat.chips.isEmpty
+        let away = shell.away
         VStack(spacing: 4) {
-            ForEach(shell.pending.messages.filter { !box.restoring.contains($0.id) }) { PendingRow(message: $0) }
-            if !away, let line = box.said ?? state?.line {
+            if let line = chat.line {
                 HStack(spacing: 8) {
                     Text(line)
-                    if box.said == nil, state?.retry == true {
-                        Button("Retry", systemImage: "arrow.clockwise") { box.ask(["type": "retry"]) }
+                    if chat.retry {
+                        Button("Retry", systemImage: "arrow.clockwise") { chat.save() }
                     }
                 }
                 .font(.footnote)
@@ -175,36 +29,34 @@ struct ChatBoxView: View {
                 .padding(.horizontal, 12)
             }
             VStack(alignment: .leading, spacing: 2) {
-                if let chips = state?.chips, !chips.isEmpty {
+                if !chat.chips.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 6) {
-                            ForEach(chips) { chip in
-                                ChipView(chip: chip, removable: state?.ready == true) {
-                                    box.ask(["type": "remove", "key": chip.key])
-                                }
+                            ForEach(chat.chips, id: \.ref.key) { chip in
+                                ChipView(chip: chip, removable: chat.loaded) { Task { await chat.remove(chip) } }
                             }
                         }
                         .padding(.top, 6)
                     }
                 }
                 HStack(alignment: .bottom, spacing: 8) {
-                    TextField(state?.placeholder ?? "Ask or tell Rufi about \(shell.pairing.person.name)…",
-                              text: Binding { box.text } set: { box.typed($0) }, axis: .vertical)
+                    TextField("Ask or tell Rufi about \(shell.pairing.person.name)…",
+                              text: Binding { chat.text } set: { chat.typed($0) }, axis: .vertical)
                         .lineLimit(1...5)
                         .focused($focused)
-                        .disabled(!away && state?.ready != true)
+                        .disabled(!chat.loaded)
                         .padding(.vertical, 8)
                         .accessibilityLabel("Message to Rufi")
-                    if !open || away { send(state) }
+                    if !open || away { send() }
                 }
                 // What needs Rufi waits until it can be reached.
-                if open, !away, let state {
+                if open, !away {
                     HStack(spacing: 2) {
-                        attach(state)
-                        model(state)
+                        attach()
+                        model()
                         Spacer(minLength: 4)
-                        if let used = state.meter { meter(used) }
-                        send(state)
+                        if let used { meter(used) }
+                        send()
                     }
                     .padding(.bottom, 2)
                 }
@@ -218,49 +70,40 @@ struct ChatBoxView: View {
                     .strokeBorder(lit ? theme.accent : Color(.separator), lineWidth: lit ? 2 : 0.5)
             }
             .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
-            // Under the chat, not over a page, and not with the keyboard up.
-            if !focused, kind == .page || state?.panel == true {
-                // At the accessibility sizes, as at the largest other size:
-                // never more than two lines.
-                Disclaimer().dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-            }
+            // Not with the keyboard up. At the accessibility sizes, as at
+            // the largest other size: never more than two lines.
+            if !focused { Disclaimer().dynamicTypeSize(...DynamicTypeSize.xxxLarge) }
         }
         .padding(.horizontal, 10)
         .padding(.bottom, focused ? 6 : 2)
         .animation(.snappy(duration: 0.2), value: open)
-        .onChange(of: focused) { _, now in
-            // On a reading page, the box opens the chat over the page.
-            if now, kind == .bar, !away, state?.panel != true { box.ask(["type": "open"]) }
-        }
-        // Another page: the keyboard goes, and a reading page's box is one line.
-        .onChange(of: kind) { focused = false }
-        .onChange(of: state?.panel) { was, now in
-            if was == true, now == false { focused = false }
-        }
-        .onChange(of: state?.asked) { was, now in
-            guard let was, let now, now > was else { return }
+        .onChange(of: chat.asked) {
             lit = true
             Task {
                 try? await Task.sleep(for: .milliseconds(900))
                 lit = false
             }
         }
+        // Leaving the screen keeps what is typed now.
+        .onDisappear { if chat.loaded { chat.save() } }
         .addingDocuments(shell: shell, from: $adding)
     }
 
-    /// Send, or while a reply runs: Stop, or Steer or Queue once there are words.
+    /// How much of the AI's memory the chat uses, in percent.
+    private var used: Int? {
+        guard let context = chat.transcript.chat?.context, context.window > 0 else { return nil }
+        return min(100, max(0, Int((100 * Double(context.tokens) / Double(context.window)).rounded())))
+    }
+
+    /// Send, or while a reply runs: Stop, or Steer or Queue (as the Mac's
+    /// setting says) once there are words. While Rufi can't be reached,
+    /// Send keeps the message to send when it can.
     @ViewBuilder
-    private func send(_ state: ChatBox.State?) -> some View {
-        // Rufi can't be reached: Send keeps the message to send when it can.
-        let away = box.away
-        let button = away ? "send" : state?.button ?? "send"
-        let can = away ? !box.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty : state?.canSend ?? false
+    private func send() -> some View {
+        let button = chat.working && !shell.away ? (chat.hasText ? chat.whileReplying : "stop") : "send"
+        let can = button == "stop" || (chat.loaded && chat.hasText)
         Button {
-            if away {
-                shell.pend(box.text)
-            } else {
-                box.ask(["type": button == "stop" ? "stop" : "send"])
-            }
+            if button == "stop" { Task { await chat.stop() } } else { chat.send() }
         } label: {
             Image(systemName: Self.symbol(button))
                 .font(.system(size: 15, weight: .semibold))
@@ -283,7 +126,7 @@ struct ChatBoxView: View {
     }
 
     /// The paperclip: Photos, Files and Camera.
-    private func attach(_ state: ChatBox.State) -> some View {
+    private func attach() -> some View {
         Menu {
             AddFrom.choices { adding = $0 }
         } label: {
@@ -293,29 +136,36 @@ struct ChatBoxView: View {
                 .foregroundStyle(.secondary)
         }
         .menuOrder(.fixed)
-        .disabled(state.closed != nil)
+        .disabled(!chat.loaded)
         .accessibilityLabel("Add Documents")
     }
 
-    /// The model and the effort, from the next reply.
-    private func model(_ state: ChatBox.State) -> some View {
-        Menu {
-            Picker("Model", selection: Binding { state.model.id } set: { box.ask(["type": "model", "id": $0]) }) {
-                ForEach(state.models) { model in
-                    Text(model.name).tag(model.id).selectionDisabled(!model.available)
+    /// The model and the effort, from the next reply; a model whose
+    /// provider is signed out on the Mac can't be chosen.
+    private func model() -> some View {
+        let info = chat.transcript.chat
+        let available = Words.models.filter { chat.signedIn.contains($0.2) }
+        let model = info?.model ?? available.first?.0 ?? Words.models[0].0
+        let effort = info?.effort ?? "medium"
+        let signIn = [("codex", "Sign in with ChatGPT on your Mac"), ("claude", "Sign in to Claude on your Mac")]
+            .filter { !chat.signedIn.contains($0.0) }.map(\.1)
+        return Menu {
+            Picker("Model", selection: Binding { model } set: { id in Task { await chat.choose("model", id) } }) {
+                ForEach(Words.models, id: \.0) { item in
+                    Text(item.1).tag(item.0).selectionDisabled(!chat.signedIn.contains(item.2))
                 }
             }
             .pickerStyle(.inline)
-            ForEach(state.signIn, id: \.self) { Text($0) }
-            Picker("Effort", selection: Binding { state.effort.id } set: { box.ask(["type": "effort", "id": $0]) }) {
-                ForEach(state.efforts) { Text($0.name).tag($0.id) }
+            ForEach(signIn, id: \.self) { Text($0) }
+            Picker("Effort", selection: Binding { effort } set: { id in Task { await chat.choose("effort", id) } }) {
+                ForEach(Words.efforts, id: \.0) { Text($0.1).tag($0.0) }
             }
             .pickerStyle(.inline)
-            Text(state.effortWords)
+            Text(Words.effortWords)
         } label: {
             HStack(spacing: 4) {
-                Text(state.model.name).lineLimit(1)
-                Text(state.effort.name).foregroundStyle(.secondary).lineLimit(1)
+                Text(Words.model(model)).lineLimit(1)
+                Text(Words.effort(effort)).foregroundStyle(.secondary).lineLimit(1)
                 Image(systemName: "chevron.down").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
             }
             .font(.subheadline)
@@ -324,32 +174,32 @@ struct ChatBoxView: View {
             .frame(minHeight: 34)
         }
         .menuOrder(.fixed)
-        .accessibilityLabel("Model and effort: \(state.model.name), \(state.effort.name)")
+        .accessibilityLabel("Model and effort: \(Words.model(model)), \(Words.effort(effort))")
     }
 
     /// How much of the AI's memory the chat uses; a tap says what it means.
-    private func meter(_ meter: ChatBox.State.Meter) -> some View {
-        Button { self.meter = true } label: {
+    private func meter(_ used: Int) -> some View {
+        Button { meter = true } label: {
             HStack(spacing: 4) {
                 ZStack {
                     Circle().stroke(.secondary.opacity(0.3), lineWidth: 2.5)
-                    Circle().trim(from: 0, to: Double(meter.used) / 100)
+                    Circle().trim(from: 0, to: Double(used) / 100)
                         .stroke(.secondary, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
                         .rotationEffect(.degrees(-90))
                 }
                 .frame(width: 14, height: 14)
-                Text("\(meter.used)%")
+                Text("\(used)%")
             }
             .font(.footnote)
             .foregroundStyle(.secondary)
             .frame(minHeight: 34)
             .padding(.horizontal, 4)
         }
-        .accessibilityLabel("Context used: \(meter.used)%")
+        .accessibilityLabel("Context used: \(used)%")
         .popover(isPresented: $meter) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Context used: \(meter.used)%").bold()
-                Text(meter.words)
+                Text("Context used: \(used)%").bold()
+                Text("Of the AI's memory for this chat. Near full, Codex compacts the chat history.")
             }
             .font(.footnote)
             .padding()
@@ -357,47 +207,28 @@ struct ChatBoxView: View {
             .presentationCompactAdaptation(.popover)
         }
     }
-
-}
-
-/// A message waiting to send, above the box: its words, and Pending.
-private struct PendingRow: View {
-    let message: PendingMessage
-    @Environment(Theme.self) private var theme
-
-    var body: some View {
-        HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(message.text).font(.subheadline).lineLimit(1)
-                Label("Pending", systemImage: "clock").font(.caption).foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .background(theme.surface, in: .rect(cornerRadius: 16))
-        .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(Color(.separator), lineWidth: 0.5) }
-        .shadow(color: .black.opacity(0.06), radius: 6, y: 2)
-    }
 }
 
 /// A chip in the box: what it is, and ✕ to take it out.
 private struct ChipView: View {
-    let chip: ChatBox.State.Chip
+    let chip: Chip
     let removable: Bool
     let remove: () -> Void
 
     var body: some View {
         HStack(spacing: 5) {
-            Image(systemName: chip.kind == "document" ? "doc.text" : "list.bullet.rectangle")
+            Image(systemName: ChipLabel.symbol(chip.ref.type))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             Text(chip.label.isEmpty ? "Adding…" : chip.label)
                 .font(.footnote)
                 .lineLimit(1)
                 .frame(maxWidth: 220, alignment: .leading)
+            if chip.ref.readAgain == true {
+                Text("· read again").font(.footnote).foregroundStyle(.secondary)
+            }
             if removable {
-                Button("Remove \(chip.label)", systemImage: "xmark", action: remove)
+                Button("Take \(chip.label) out of the message", systemImage: "xmark", action: remove)
                     .labelStyle(.iconOnly)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)

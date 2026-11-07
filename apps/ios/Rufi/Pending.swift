@@ -1,12 +1,16 @@
 import Foundation
 import Observation
 
-/// A message sent from the box while Rufi couldn't be reached: it waits on
-/// the iPhone and goes when Rufi can be reached. Its id is the send's, made
-/// here and kept, so sending it again makes one message on the Mac.
+/// A message sent from the box: it waits on the iPhone until the Mac takes
+/// it, also while Rufi can't be reached. Its id is the send's, made here and
+/// kept, so sending it again makes one message on the Mac.
 nonisolated struct PendingMessage: Codable, Equatable, Identifiable, Sendable {
     let id: String
     let text: String
+    /// Its chips; none in a message kept before chips went with it.
+    var refs: [Chip]?
+    /// While a reply runs: steer (into it) or queue (after it); none: the Mac's choice.
+    var kind: String?
 }
 
 /// The messages waiting to go, and the one file they are kept in, beside the
@@ -28,12 +32,15 @@ final class Pending {
             ?? []
     }
 
-    /// Keeps `text` to send, in the file before this returns; on a failure,
-    /// nothing is kept.
-    func add(_ text: String) throws {
-        let message = PendingMessage(id: UUID().uuidString.lowercased(), text: text)
+    /// Keeps `text` and `refs` to send, in the file before this returns; on
+    /// a failure, nothing is kept.
+    @discardableResult
+    func add(_ text: String, refs: [Chip] = [], kind: String? = nil) throws -> PendingMessage {
+        let message = PendingMessage(id: UUID().uuidString.lowercased(), text: text, refs: refs.isEmpty ? nil : refs,
+                                     kind: kind)
         try write(messages + [message])
         messages.append(message)
+        return message
     }
 
     /// Unpaired: they all go, and a send under way stops at its next step.
