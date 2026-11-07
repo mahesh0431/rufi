@@ -6,10 +6,10 @@ import Testing
 /// and it opens while something is in it. What is chosen to add goes in
 /// whole, or not at all.
 struct ChatBoxTests {
-    private func state(text: String?, chips: String = "[]") -> Data {
+    private func state(text: String?, chips: String = "[]", ready: Bool = true) -> Data {
         let text = text.map { "\"\($0)\"" } ?? "null"
         return Data("""
-            {"type":"box","text":\(text),"placeholder":"Ask","chips":\(chips),"ready":true,"button":"send",
+            {"type":"box","text":\(text),"placeholder":"Ask","chips":\(chips),"ready":\(ready),"button":"send",
              "canSend":false,"model":{"id":"m","name":"M"},"effort":{"id":"e","name":"E"},"models":[],
              "signIn":[],"efforts":[],"effortWords":"","meter":null,"line":null,"retry":false,"closed":null,
              "asked":0,"panel":false}
@@ -31,6 +31,29 @@ struct ChatBoxTests {
         #expect(!box.open(focused: false))
         box.took(state(text: nil, chips: #"[{"key":"k","label":"HbA1c","kind":"test"}]"#))
         #expect(box.open(focused: false))
+    }
+
+    /// A waiting message Rufi refused, put back while the page is still
+    /// loading: the page's draft doesn't replace it, and it leaves the
+    /// waiting list only once the page's box holds it.
+    @Test func wordsPutBackStayUntilThePageHasThem() {
+        let box = ChatBox()
+        var asked: [String] = []
+        var restored: Set<String> = []
+        box.asking = { asked.append($0["text"] as? String ?? "") }
+        box.restored = { restored = $0 }
+        let refused = PendingMessage(id: "m-1", text: "Here is my whole week of readings")
+        box.giveBack(refused, refused: "That message is too long for Rufi.")
+        // The page, not ready yet, then its draft from the Mac.
+        box.took(state(text: nil, ready: false))
+        box.took(state(text: "Typed on the Mac"))
+        #expect(box.text == "Typed on the Mac\nHere is my whole week of readings")
+        #expect(asked.last == box.text)
+        #expect(box.said == "That message is too long for Rufi.")
+        #expect(restored.isEmpty)
+        // The page took them.
+        box.took(state(text: nil))
+        #expect(restored == ["m-1"])
     }
 
     @Test func chosenFilesGoInWholeOrNotAtAll() throws {

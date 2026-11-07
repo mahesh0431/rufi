@@ -74,21 +74,48 @@ final class ChatBox {
     /// Typed while Rufi couldn't be reached: these words, not the draft the
     /// page reads when it is back, stay in the box.
     private var typedAway = false
+    /// Refused waiting messages whose words were put back in the box: they
+    /// stay waiting on the iPhone until the page's box holds the box's words.
+    private(set) var restoring: Set<String> = []
+    /// The page's box holds the words of these refused waiting messages.
+    var restored: (Set<String>) -> Void = { _ in }
 
     /// The page told the box as it is. Its text only when the page changed
     /// it, so it never undoes typing.
     func took(_ data: Data) {
         guard let state = try? JSONDecoder().decode(State.self, from: data) else { return }
         if let text = state.text {
-            if text != self.text { said = nil }
-            if typedAway, !self.text.isEmpty {
+            if !restoring.isEmpty {
+                // The page's draft, before it took the words put back: the
+                // box keeps both, and gives them to the page.
+                if !text.isEmpty, !self.text.contains(text) { self.text = text + "\n" + self.text }
                 ask(["type": "text", "text": self.text])
             } else {
-                self.text = text
+                if text != self.text { said = nil }
+                if typedAway, !self.text.isEmpty {
+                    ask(["type": "text", "text": self.text])
+                } else {
+                    self.text = text
+                }
             }
             typedAway = false
+        } else if state.ready, !restoring.isEmpty {
+            // The page's box holds the box's words, with those put back.
+            restored(restoring)
+            restoring = []
         }
         self.state = state
+    }
+
+    /// Puts the words of a waiting message Rufi refused back in the box,
+    /// with Rufi's line. Once there, they aren't put back twice.
+    func giveBack(_ message: PendingMessage, refused: String) {
+        if restoring.insert(message.id).inserted {
+            typed(text.isEmpty ? message.text : text + "\n" + message.text)
+        } else {
+            ask(["type": "text", "text": text])
+        }
+        said = refused
     }
 
     /// The person typed.
@@ -137,7 +164,7 @@ struct ChatBoxView: View {
         let away = box.away
         let kind = shell.boxKind
         VStack(spacing: 4) {
-            ForEach(shell.pending.messages) { PendingRow(message: $0) }
+            ForEach(shell.pending.messages.filter { !box.restoring.contains($0.id) }) { PendingRow(message: $0) }
             if !away, let line = box.said ?? state?.line {
                 HStack(spacing: 8) {
                     Text(line)

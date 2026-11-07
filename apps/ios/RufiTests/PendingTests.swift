@@ -10,7 +10,7 @@ struct PendingTests {
         FileManager.default.temporaryDirectory.appending(path: "pending-\(UUID().uuidString)/pending.json")
     }
 
-    @Test func theyGoInOrderWhenRufiAnswersAndARefusedOneComesBack() async throws {
+    @Test func theyGoInOrderAndARefusedOneStaysUntilTheBoxHasIt() async throws {
         let file = Self.file()
         let pending = Pending(file: file)
         try pending.add("I took my Metformin")
@@ -31,10 +31,14 @@ struct PendingTests {
         away = false
         let back = try await pending.send(take)
         #expect(sent == ["I took my Metformin", "And my blood pressure was 128/82"])
-        // Refused: off the list, its words and Rufi's back for the box.
-        #expect(back.map(\.text) == ["Too long"])
+        // Refused: its words and Rufi's back for the box, and kept until the
+        // box has them.
+        #expect(back.map(\.message.text) == ["Too long"])
         #expect(back.map(\.refused) == ["That message is too long."])
-        #expect(pending.messages.isEmpty)
+        #expect(Pending(file: file).messages.map(\.text) == ["Too long"])
+        // Its words in the box: not sent again.
+        #expect(try await pending.send(skipping: [back[0].message.id], take).isEmpty)
+        pending.remove([back[0].message.id])
         #expect(Pending(file: file).messages.isEmpty)
     }
 

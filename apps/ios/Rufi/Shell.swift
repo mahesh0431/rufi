@@ -115,6 +115,7 @@ final class Shell {
         }
         screens.onRefresh = refresh
         box.asking = { [weak screens] command in screens?.box(command) }
+        box.restored = { [weak pending] ids in pending?.remove(ids) }
         screens.onOriginal = { [weak self] document, files in Task { await self?.show(document, files) } }
         screens.view.backgroundColor = theme.pageColour
         screens.onTheme = { [weak self] colours, dark in
@@ -243,13 +244,10 @@ final class Shell {
     private func sendPending() async {
         do {
             let person = pairing.person.id
-            let back = try await pending.send { message throws(Door.Problem) in
+            let back = try await pending.send(skipping: box.restoring) { message throws(Door.Problem) in
                 try await door.send(message, for: person)
             }
-            for (text, refused) in back {
-                box.typed(box.text.isEmpty ? text : box.text + "\n" + text)
-                box.said = refused
-            }
+            for (message, refused) in back { box.giveBack(message, refused: refused) }
         } catch {
             unpaired()
         }

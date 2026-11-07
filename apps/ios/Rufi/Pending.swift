@@ -44,20 +44,22 @@ final class Pending {
         if (try? FileManager.default.removeItem(at: file)) == nil { try? write([]) }
     }
 
-    /// Sends them in order, one at a time, each under its own id. Out of
-    /// reach: the rest waits for the next time. One Rufi refused leaves the
-    /// list: its words and Rufi's come back, for the box. Throws `unpaired`
-    /// as the Mac says it, unless this iPhone was unpaired meanwhile: then
-    /// the send just stops.
+    /// Sends them in order, one at a time, each under its own id, but those
+    /// in `back` (put back in the box). Out of reach: the rest waits for the
+    /// next time. One Rufi refused comes back with Rufi's words, for the box,
+    /// and stays here until the box has its words (`remove`), so it isn't
+    /// lost meanwhile. Throws `unpaired` as the Mac says it, unless this
+    /// iPhone was unpaired meanwhile: then the send just stops.
     @discardableResult
-    func send(_ deliver: (PendingMessage) async throws(Door.Problem) -> Void)
-        async throws(Door.Problem) -> [(text: String, refused: String)] {
+    func send(skipping back: Set<String> = [], _ deliver: (PendingMessage) async throws(Door.Problem) -> Void)
+        async throws(Door.Problem) -> [(message: PendingMessage, refused: String)] {
         guard !sending else { return [] }
         sending = true
         let run = generation
         defer { if generation == run { sending = false } }
-        var back: [(text: String, refused: String)] = []
-        while let message = messages.first {
+        var refusals: [(message: PendingMessage, refused: String)] = []
+        var skipped = back
+        while let message = messages.first(where: { !skipped.contains($0.id) }) {
             var refused: String?
             do {
                 try await deliver(message)
@@ -67,17 +69,29 @@ final class Pending {
             } catch let .refused(words) {
                 refused = words
             } catch {
-                return back
+                return refusals
             }
             // Unpaired meanwhile: the rest isn't this run's.
             guard generation == run else { return [] }
+            if let refused {
+                refusals.append((message, refused))
+                skipped.insert(message.id)
+                continue
+            }
             let now = messages.filter { $0.id != message.id }
             // A write that fails keeps it in both, and stops: sent again, it is one message.
-            guard (try? write(now)) != nil else { return back }
+            guard (try? write(now)) != nil else { return refusals }
             messages = now
-            if let refused { back.append((message.text, refused)) }
         }
-        return back
+        return refusals
+    }
+
+    /// Refused ones whose words the box now has: they leave the list. A
+    /// write that fails keeps them, to come back again.
+    func remove(_ ids: Set<String>) {
+        let now = messages.filter { !ids.contains($0.id) }
+        guard (try? write(now)) != nil else { return }
+        messages = now
     }
 
     private func write(_ messages: [PendingMessage]) throws {
