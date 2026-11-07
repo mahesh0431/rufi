@@ -17,7 +17,9 @@ import {
   type Store,
 } from "../store/database.ts";
 import { rufiCaller } from "../tools/tools.ts";
+import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { readBrief } from "./briefs.ts";
+import { briefPdf } from "./pdf.ts";
 import { turnScope } from "../../../tests/scope.ts";
 
 const TZ = process.env["TZ"];
@@ -111,6 +113,9 @@ const CITED = [
   { kind: "result", id: "res-a1" },
 ];
 
+/** The origin line's caveat, its spaces unbroken. */
+const CAVEAT = " ·\u00a0not\u00a0medically\u00a0validated";
+
 const rows = (sql: string) => store.db.prepare(sql).all();
 /** Everything making a brief writes, to check a refused one wrote nothing. */
 const written = () => ({
@@ -178,7 +183,7 @@ describe("create_brief", () => {
     expect(await readBrief(store.query, "asha", brief?.id ?? "")).toEqual({
       id: brief?.id,
       createdAt: "2026-10-04T04:30:00.000Z",
-      recordUpTo: "2026-10-04T04:30:00.000Z",
+      origin: `Prepared by Rufi (AI) on 4 Oct 2026 from Asha Fictional's records up to 4 Oct 2026${CAVEAT}`,
       markdown: MARKDOWN,
       changedSince: false,
       sources: [
@@ -241,7 +246,9 @@ describe("create_brief", () => {
     ]);
     expect(brief?.markdown).toBe(MARKDOWN);
     // Made before any save: there is no save to date the record by.
-    expect(brief?.recordUpTo).toBeNull();
+    expect(brief?.origin).toBe(
+      `Prepared by Rufi (AI) on 4 Oct 2026 from Asha Fictional's records${CAVEAT}`,
+    );
   });
 
   it("dates the record it was made from by the last save it saw, which a later save doesn't move", async () => {
@@ -274,8 +281,7 @@ describe("create_brief", () => {
     });
 
     expect(await readBrief(store.query, "asha", id)).toMatchObject({
-      createdAt: "2026-10-04T04:30:00.000Z",
-      recordUpTo: "2026-10-03T05:00:00.000Z",
+      origin: `Prepared by Rufi (AI) on 4 Oct 2026 from Asha Fictional's records up to 3 Oct 2026${CAVEAT}`,
       changedSince: true,
     });
   });
@@ -575,5 +581,69 @@ describe("a brief's page", () => {
     expect(
       await readBrief(store.query, "asha", "no-such-brief"),
     ).toBeUndefined();
+  });
+});
+
+describe("a brief's PDF", () => {
+  /** The PDF's pages, each as its words. */
+  async function pagesOf(bytes: Uint8Array) {
+    const task = getDocument({ data: bytes.slice(), verbosity: 0 });
+    const pdf = await task.promise;
+    const pages: string[] = [];
+    for (let n = 1; n <= pdf.numPages; n += 1) {
+      const { items } = await (await pdf.getPage(n)).getTextContent();
+      pages.push(
+        items.map((item) => ("str" in item ? item.str : "")).join(" "),
+      );
+    }
+    await task.destroy();
+    return pages;
+  }
+
+  it("is the whole brief on numbered pages, to its last source, named for its person and day", async () => {
+    const lines = Array.from(
+      { length: 120 },
+      (_, n) => `Fictional line ${String(n + 1)}`,
+    );
+    await use(
+      "create_brief",
+      {
+        markdown: [MARKDOWN, ...lines].join("\n\n"),
+        record_version: await version(),
+        cited: CITED,
+      },
+      "brief-1",
+    );
+    const id = (rows("SELECT id FROM briefs")[0] as { id: string }).id;
+
+    const made = await briefPdf(store.query, "asha", id);
+    expect(made?.name).toBe("Visit brief – Asha Fictional – 4 Oct 2026.pdf");
+    const pages = await pagesOf(made?.bytes ?? new Uint8Array());
+    expect(pages.length).toBeGreaterThan(1);
+    pages.forEach((page, n) => {
+      expect(page).toContain(
+        `Page ${String(n + 1)} of ${String(pages.length)}`,
+      );
+    });
+    const all = pages.join(" ").replace(/\s+/g, " ");
+    expect(all).toContain("Prepared by Rufi (AI) on 4 Oct 2026");
+    expect(all).toContain("Fictional line 120");
+    expect(all).toContain("HbA1c 6.8 % · 12 Aug 2026");
+    expect(all).toContain("Sunrise Labs August.pdf, page 1");
+    expect(all).not.toContain("The record changed since");
+
+    // A save after it: the PDF says so, as the page does.
+    await saveSaid("I stopped creatine", {
+      kind: "medicine_use",
+      action: "change",
+      id: "med-a2",
+      fields: { status: "stopped" },
+    });
+    const later = await briefPdf(store.query, "asha", id);
+    expect(
+      (await pagesOf(later?.bytes ?? new Uint8Array())).join(" "),
+    ).toContain("The record changed since this brief was made.");
+    // Another person's brief has no PDF.
+    expect(await briefPdf(store.query, "ravi", id)).toBeUndefined();
   });
 });

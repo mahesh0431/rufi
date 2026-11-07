@@ -13,6 +13,7 @@ import { openAgentStore, type AgentStore } from "@rufi/agents/store";
 import { Effect } from "effect";
 import type { AgentSandbox } from "../agent/runtime.ts";
 import { readBrief } from "../core/briefs/briefs.ts";
+import { briefPdf } from "../core/briefs/pdf.ts";
 import { continuesAfterRestart } from "../core/chat/continues.ts";
 import { DEFAULT_MODEL } from "../core/chat/models.ts";
 import { drafts as openDrafts } from "../core/chat/drafts.ts";
@@ -492,6 +493,8 @@ export const startCore = (options: CoreOptions) =>
       },
       brief: async (personId, briefId) =>
         reader && (await readBrief(reader.query, personId, briefId)),
+      briefPdf: async (personId, briefId) =>
+        reader && (await briefPdf(reader.query, personId, briefId)),
       documents: personDocuments,
       deletions: deletions({
         store: writer,

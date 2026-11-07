@@ -78,6 +78,11 @@ export interface PersonDeps {
   };
   /** A visit brief of the person's, with its Sources; undefined: none. */
   brief: (personId: string, briefId: string) => Promise<Brief | undefined>;
+  /** That brief as a PDF, with its file name; undefined: none. */
+  briefPdf: (
+    personId: string,
+    briefId: string,
+  ) => Promise<{ name: string; bytes: Uint8Array } | undefined>;
   /** Each person's documents. */
   documents: Documents;
   /** Deleting one: its preview, and the delete. */
@@ -344,6 +349,17 @@ export function personRoutes(
     );
     if (!brief) throw new HttpError(404, "There is no such brief.");
     return c.json({ brief });
+  });
+  // The brief as a PDF, made fresh, shown inline under its name.
+  app.get("/api/people/:personId/briefs/:briefId/pdf", async (c) => {
+    const made = await deps.briefPdf(
+      (await person(c)).id,
+      c.req.param("briefId"),
+    );
+    if (!made) throw new HttpError(404, "There is no such brief.");
+    c.header("Content-Type", "application/pdf");
+    c.header("Content-Disposition", inline(made.name));
+    return c.body(new Uint8Array(made.bytes));
   });
 
   // A person's documents: the list, adding files, and a file's bytes to show.
@@ -759,4 +775,19 @@ export function personRoutes(
       }
     });
   });
+}
+
+/**
+ * A Content-Disposition that shows a file under its name (RFC 6266): the
+ * name in UTF-8, and an ASCII copy for clients that read only that.
+ */
+function inline(name: string): string {
+  const ascii = name.replace(/[^\x20-\x7e]|["\\]/g, (c) =>
+    c === "–" ? "-" : "_",
+  );
+  const utf8 = encodeURIComponent(name).replace(
+    /['()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return `inline; filename="${ascii}"; filename*=UTF-8''${utf8}`;
 }
