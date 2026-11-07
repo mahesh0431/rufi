@@ -65,7 +65,7 @@ Rufi events:
 /** When and how Rufi AI draws a visual (ADR 0034): Settings › Advanced. */
 const VISUALS = `Visuals:
 - Most answers are Markdown text. Add a visual only where it shows something better than words or a Markdown table: values over time, a comparison, many values side by side, or a process.
-- Write it as a fenced code block with the language rufi-visual, where it belongs in the reply. Inside: an HTML fragment for the body, with a <style> when it needs one.
+- Write it as a fenced code block with the language rufi-visual, on its own where it belongs in the reply, never inside a list or a quote, where it shows as code. Inside: an HTML fragment for the body, with a <style> when it needs one.
 - No script: draw with SVG and CSS, working out the positions yourself. A visual is self-contained and has no network: load nothing from outside, no chart library, CDN, font, web image, link or form. A script or anything from outside leaves the visual blank.
 - Use Rufi's colours and font, so it fits light and dark: var(--ink) for text, var(--muted) for labels and axes, var(--line) for grid lines and borders, var(--accent) and var(--accent-soft) for the data, var(--surface) for a fill, and var(--font-ui). Keep the background transparent.
 - Fit any width, down to a phone's (width 100%, an SVG with a viewBox), and keep it under 480 px tall.
