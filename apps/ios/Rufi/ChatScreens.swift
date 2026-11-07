@@ -25,7 +25,7 @@ struct ChatView: View {
             LazyVStack(alignment: .leading, spacing: 12) {
                 if transcript.before != nil { earlier }
                 ForEach(lines, id: \.self) { line in
-                    LineView(line: line, shell: shell, chat: chat, open: { opened = $0 })
+                    LineView(line: line, shell: shell, chat: chat, sheet: sheet, open: { opened = $0 })
                 }
                 ForEach(outgoing) { message in
                     MessageBubble(text: message.text, chips: message.chips,
@@ -121,6 +121,7 @@ private struct LineView: View {
     let line: Transcript.Line
     let shell: Shell
     let chat: ChatModel
+    let sheet: Bool
     let open: (Step) -> Void
 
     var body: some View {
@@ -135,7 +136,9 @@ private struct LineView: View {
         case .compacted:
             QuietLine(words: "Chat history compacted")
         case let .entry(id):
-            if let entry = transcript.entries[id] { EntryView(entry: entry, shell: shell, chat: chat, open: open) }
+            if let entry = transcript.entries[id] {
+                EntryView(entry: entry, shell: shell, chat: chat, sheet: sheet, open: open)
+            }
         case let .activity(id):
             if let turn = transcript.turns[id] {
                 ActivityView(turn: turn, steps: transcript.steps(of: id), since: chat.clock?.key == id ? chat.clock?.since : nil,
@@ -154,6 +157,8 @@ private struct EntryView: View {
     let entry: Entry
     let shell: Shell
     let chat: ChatModel
+    /// Shown as a sheet over a page: Open goes as a reply's links do.
+    let sheet: Bool
     let open: (Step) -> Void
 
     var body: some View {
@@ -171,7 +176,7 @@ private struct EntryView: View {
                         }
                     } else {
                         Button("Open", systemImage: "arrow.up.right") {
-                            Task { await shell.follow(shell.path("documents/\(link.document)"), fromSheet: false) }
+                            Task { await shell.follow(shell.path("documents/\(link.document)"), fromSheet: sheet) }
                         }
                     }
                 }
@@ -179,7 +184,7 @@ private struct EntryView: View {
         case "brief":
             RufiLine(symbol: "doc.text", text: entry.text) {
                 Button("Open", systemImage: "arrow.up.right") {
-                    Task { await shell.follow(shell.path("briefs/\(entry.id)"), fromSheet: false) }
+                    Task { await shell.follow(shell.path("briefs/\(entry.id)"), fromSheet: sheet) }
                 }
                 .accessibilityLabel("Open \(entry.text)")
             }

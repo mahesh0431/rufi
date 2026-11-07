@@ -93,14 +93,35 @@ nonisolated final class StandInDoor: URLProtocol, @unchecked Sendable {
 
     override func startLoading() {
         if request.url?.host() == "pdf.test" { return brief() }
+        // A chat request the test holds: answered, as things are then, when it lets it go.
+        if let gate = ChatDoor.gate(request) {
+            let loop = CFRunLoopGetCurrent()
+            DispatchQueue.global().async {
+                gate.wait()
+                CFRunLoopPerformBlock(loop, CFRunLoopMode.defaultMode.rawValue) { self.answerChat() }
+                CFRunLoopWakeUp(loop)
+            }
+            return
+        }
+        if answerChat() { return }
+        answerDoor()
+    }
+
+    /// The chat's routes, as `ChatDoor` answers them; false: not one of them.
+    @discardableResult
+    private func answerChat() -> Bool {
         if let (status, body) = ChatDoor.answer(request) {
             let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1",
                                            headerFields: ["Content-Type": "application/json"])!
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: Data(body.utf8))
             client?.urlProtocolDidFinishLoading(self)
-            return
+            return true
         }
+        return false
+    }
+
+    private func answerDoor() {
         let (status, body): (Int, String) = switch (request.url?.path(), request.url?.host()) {
         case ("/api/batches", "got.test"): (200, #"{"answer":"got_it"}"#)
         case ("/api/batches", "unpaired.test"): (401, #"{"error":"This app isn't paired.","problem":"unpaired"}"#)

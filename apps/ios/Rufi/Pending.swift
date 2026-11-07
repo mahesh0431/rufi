@@ -23,8 +23,9 @@ final class Pending {
     private(set) var messages: [PendingMessage]
     private let file: URL
     private var sending = false
-    /// Goes up at each unpairing: a send started before it stops there.
-    private var generation = 0
+    /// Goes up at each unpairing: a send started before it stops there, and
+    /// one for a pairing before it never starts.
+    private(set) var generation = 0
 
     init(file: URL = Pending.file) {
         self.file = file
@@ -56,11 +57,13 @@ final class Pending {
     /// next time. One Rufi refused comes back with Rufi's words, for the box,
     /// and stays here until the box has its words (`remove`), so it isn't
     /// lost meanwhile. Throws `unpaired` as the Mac says it, unless this
-    /// iPhone was unpaired meanwhile: then the send just stops.
+    /// iPhone was unpaired meanwhile: then the send just stops. Only the
+    /// pairing they were kept under (`pairing`, its generation) sends them.
     @discardableResult
-    func send(skipping back: Set<String> = [], _ deliver: (PendingMessage) async throws(Door.Problem) -> Void)
+    func send(for pairing: Int, skipping back: Set<String> = [],
+              _ deliver: (PendingMessage) async throws(Door.Problem) -> Void)
         async throws(Door.Problem) -> [(message: PendingMessage, refused: String)] {
-        guard !sending else { return [] }
+        guard pairing == generation, !sending else { return [] }
         sending = true
         let run = generation
         defer { if generation == run { sending = false } }
