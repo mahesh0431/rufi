@@ -224,8 +224,22 @@ test("a visual runs no script of its own and reaches neither the network nor Ruf
       `<style>@import url("${out}/imported.css"); #drawn { background: url("${out}/background.png"); }</style>`,
       `<iframe src="${out}/framed"></iframe>`,
       `<form action="${out}/form" method="post"><button id="post">Post</button></form>`,
-      `<a id="away" href="${out}/followed" target="_top">Away</a>`,
+      // Links: a visual has none. Their words stay.
+      `<a href="${out}/followed" target="_top"><span id="away">Away</span></a>`,
+      `<a href="${out}/values?hba1c=6.4" target="_blank"><span id="blank">View values</span></a>`,
+      `<a href="/visual-frame.html?hba1c=6.4"><span id="own">Chart</span></a>`,
+      `<a href="/api/people?hba1c=6.4"><span id="api">Values</span></a>`,
+      `<svg width="40" height="20"><a href="${out}/drawn-link"><text id="svg-link" y="15">Dot</text></a></svg>`,
+      `<img id="mapped" usemap="#map" width="20" height="20" alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="><map name="map"><area shape="rect" coords="0,0,20,20" href="${out}/area?hba1c=6.4" target="_blank" alt="Area"></map>`,
     ].join("\n");
+    // Rufi's own address, reached from the visual with a value.
+    const toRufi: string[] = [];
+    page.on("request", (request) => {
+      const { origin, search } = new URL(request.url());
+      if (origin === new URL(page.url()).origin && search.includes("hba1c=")) {
+        toRufi.push(request.url());
+      }
+    });
     await send(page, withVisual(hostile));
     const inside = page.frameLocator(".reply iframe[title='Visual']");
     await expect(inside.getByText("Drawn")).toBeVisible();
@@ -260,12 +274,37 @@ test("a visual runs no script of its own and reaches neither the network nor Ruf
       cookie: "refused",
       storage: "refused",
     });
-    // A form or a link in it goes nowhere.
+    // A form or a link in it goes nowhere: its links are words only.
+    await expect(inside.locator("a, area")).toHaveCount(0);
     await inside.locator("#post").click();
-    await inside.locator("#away").click();
+    // Rufi's own addresses last: were they links, the frame would leave.
+    for (const words of [
+      "#away",
+      "#blank",
+      "#svg-link",
+      "#mapped",
+      "#own",
+      "#api",
+    ]) {
+      await inside.locator(words).click();
+    }
+
+    // The second policy on its own: a script file named by a hash the first
+    // allows, put in past the markup's guard, still never loads.
+    await frame.evaluate(
+      ({ out, own }) => {
+        const file = document.createElement("script");
+        file.src = `${out}/active.js?hba1c=6.4`;
+        file.integrity = own;
+        file.crossOrigin = "anonymous";
+        document.body.append(file);
+      },
+      { out, own: own ?? "" },
+    );
     await page.waitForTimeout(1000);
 
     expect(reached).toEqual([]);
+    expect(toRufi).toEqual([]);
     expect(page.context().pages()).toHaveLength(1);
     await expect(
       page.getByRole("heading", { name: "Health record" }),

@@ -35,7 +35,7 @@ The screens draw each visual in a frame of `/visual-frame.html`, a page the core
 
 - **The page holds nothing.** It loads with no visual in it and waits for one message from the screen that framed it: `{type: "rufi-visual", html, theme}`. Then its script:
   1. parses the HTML in a `<template>`, where nothing loads or runs;
-  2. takes out every `link`, `meta`, `base`, `script`, `iframe`, `frame`, `object` and `embed`: elements with no job in a drawing of HTML, CSS and SVG that can reach out;
+  2. takes out every `link`, `meta`, `base`, `script`, `iframe`, `frame`, `object`, `embed` and `area`: elements with no job in a drawing of HTML, CSS and SVG that can reach out. Every `a`, HTML and SVG, gives way to what it holds: a visual has no links, and its words stay;
   3. writes in a document whose head holds the theme as JSON (a `<script type="application/json" id="rufi-theme">`, data that never runs) and the card script, which keeps the page's own policy;
   4. puts the parsed visual in its body, never parsing it a second time.
 - **The screen sends it on every load of the frame.** A browser loads a frame again when it moves in the page, as a reply's line can when the reply ends, and that frame is empty until it gets the visual again; a visual already written in takes no second one.
@@ -53,12 +53,13 @@ The screens draw each visual in a frame of `/visual-frame.html`, a page the core
 
 ## The two rules
 
-**Nothing reaches the network.** Two layers, each tested in Chromium and WebKit (`apps/web/e2e/visual.spec.ts`), with a listener that counts every connection as well as every request.
+**Nothing reaches the network.** Two layers, each tested in Chromium and WebKit (`apps/web/e2e/visual.spec.ts`), with a listener that counts every connection as well as every request. The hostile visual tests the markup; a script file put in past the markup, by the test itself, tests the second policy on its own.
 
-- **The markup:** what can reach out is taken out before the visual is live. A link's hints are the reason it can't be the policy alone: WebKit opens a `preconnect` link's connection, and looks up a `dns-prefetch` link's name, whatever the policy says.
+- **The markup:** what can reach out is taken out before the visual is live. Some ways out are no request a policy sees: WebKit opens a `preconnect` link's connection, and looks up a `dns-prefetch` link's name, whatever the policy says, and connects to a `target="_blank"` link's or an image map's address when it is clicked, though the new window never opens.
+- **No links.** A clicked link moves the frame, and a policy can't stop a move to Rufi's own address, which would get whatever the link's address holds (WebKit sends Rufi's session cookie with it, though the API still refuses it). So a visual has no `a` and no `area`, and its links are words. Links go in the reply's text.
 - **No script of the visual's runs.** CSP doesn't cover every way out: WebRTC, for one, isn't covered, as no browser enforces CSP's `webrtc` directive. A visual that can't run script can't use them. A chart is inline SVG and CSS, with positions the AI works out itself.
 - The policies refuse every connection, outside script, style, picture, font, frame, worker and form.
-- The screens' own `frame-src` is `blob: 'self'`: a visual's frame can't move itself to another origin. Rufi's own pages, its only other address, refuse to be framed (`frame-ancestors 'none'`), and its API needs the tab proof that a frame doesn't have.
+- **Nothing moves the frame.** With no link, `meta`, form or script, a visual can't. Behind that, the screens' own `frame-src` is `blob: 'self'`: a frame can't move to another origin. Rufi's own pages refuse to be framed (`frame-ancestors 'none'`), and its API needs the tab proof that a frame doesn't have.
 - **The Mac app** stops any frame leaving Rufi (`will-frame-navigate`), and a visual's frame, or anything inside it, doesn't count among the frames that keep a link from opening in the browser: its sandbox and policy forbid popups.
 - **The iPhone app's web view** opens only the page's own web links in Safari; a frame's web navigation is cancelled (`Screens.route`).
 - **DNS prefetch**, which a link in HTML alone can start and CSP doesn't cover, is turned off by the header, and a page can't turn it on again.
