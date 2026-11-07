@@ -971,6 +971,17 @@ describe("the app's sessions", () => {
     expect(visual.headers["x-dns-prefetch-control"]).toBe("off");
   });
 
+  it("serves the native chat's card page: it frames only the door's own visual page, runs only its own script, and no page frames it", async () => {
+    const core = await start(standIn(), screens);
+    const { port } = await paired(await settings(core));
+    const card = await door(port, "GET", "/visual-card.html");
+    expect(card.status).toBe(200);
+    const policy = card.headers["content-security-policy"];
+    expect(policy).toMatch(/^default-src 'none'; script-src 'sha256-[^']+'; style-src 'sha256-[^']+'; frame-src 'self';/);
+    expect(policy).toContain("frame-ancestors 'none'");
+    expect(card.headers["x-dns-prefetch-control"]).toBe("off");
+  });
+
   // Never delete: a launch and a session belong to one app.
   it("open cold from a launch link: the screens, a session, then the person's reads", async () => {
     const core = await start(standIn(), screens);

@@ -148,3 +148,76 @@ export function visualFrameRoute(app: App): void {
     return c.body(PAGE);
   });
 }
+
+/** Where the iPhone's native chat loads a visual's card, on the door. */
+const VISUAL_CARD_PATH = "/visual-card.html";
+
+/**
+ * The card's own script, on the iPhone (ADR 0034, "For a screen of its
+ * own"): the app gives it a visual and the theme (`rufiCard.show`), and it
+ * sends them to the frame of the visual's page on every load of the frame,
+ * and a new theme as it comes (`rufiCard.theme`). It passes the frame's two
+ * messages, the height and that part didn't load, to the app, from that
+ * frame alone.
+ */
+const CARD_HOST = `(() => {
+  const frame = document.querySelector("iframe");
+  let visual = null;
+  const send = () => {
+    if (visual) frame.contentWindow.postMessage({ type: "rufi-visual", html: visual.html, theme: visual.theme }, "*");
+  };
+  frame.addEventListener("load", send);
+  window.rufiCard = {
+    show(html, theme) {
+      visual = { html, theme };
+      send();
+    },
+    theme(theme) {
+      if (!visual) return;
+      visual.theme = theme;
+      frame.contentWindow.postMessage({ type: "rufi-visual-theme", theme }, "*");
+    },
+  };
+  addEventListener("message", (event) => {
+    const data = event.data;
+    if (event.source !== frame.contentWindow || !data) return;
+    if (data.type === "rufi-visual-height" || data.type === "rufi-visual-broken") {
+      window.webkit?.messageHandlers?.card?.postMessage({ type: data.type, height: Number(data.height) || 0 });
+    }
+  });
+})();`;
+
+const CARD_STYLE =
+  "html,body{margin:0;background:transparent}iframe{display:block;border:0;width:100%;height:100vh}";
+
+const CARD_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Visual</title><style>${CARD_STYLE}</style></head><body><iframe src="${VISUAL_FRAME_PATH}" sandbox="allow-scripts" referrerpolicy="no-referrer" title="Visual"></iframe><script>${CARD_HOST}</script></body></html>`;
+
+/**
+ * Its policy: its own script and style by their hashes, a frame of the
+ * door's own pages only (the visual's), nothing else in or out, and no page
+ * may frame it.
+ */
+const CARD_CSP = [
+  "default-src 'none'",
+  `script-src ${hash(CARD_HOST)}`,
+  `style-src ${hash(CARD_STYLE)}`,
+  "frame-src 'self'",
+  "form-action 'none'",
+  "base-uri 'none'",
+  "frame-ancestors 'none'",
+].join("; ");
+
+/**
+ * Serves the page the iPhone's native chat loads a visual's card in: it
+ * frames the visual's page, from the door's own origin as that page asks,
+ * and holds nothing itself.
+ */
+export function visualCardRoute(app: App): void {
+  app.get(VISUAL_CARD_PATH, (c) => {
+    c.header("Content-Security-Policy", CARD_CSP);
+    c.header("X-DNS-Prefetch-Control", "off");
+    c.header("Cache-Control", "no-store");
+    c.header("Content-Type", "text/html; charset=utf-8");
+    return c.body(CARD_PAGE);
+  });
+}
