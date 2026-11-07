@@ -1485,7 +1485,7 @@ describe("the chat, on the scripted Codex", () => {
     },
   );
 
-  it("shows a click on a reply as its words while Rufi AI gets the click, keeps both, and leaves the box's draft", async () => {
+  it("sends a message that isn't the box's, such as one the iPhone kept, and leaves the box's draft", async () => {
     await startChat("fake");
     const c = await newChat();
     store.db.exec(`
@@ -1493,18 +1493,12 @@ describe("the chat, on the scripted Codex", () => {
         VALUES ('asha', '${c.id}', 'And my iron?', '[]', '2026-10-01T09:00:00Z');
     `);
     const id = uuid();
-    const click = 'User clicked: Explain this result\nContext: {"test":"CRP"}';
-    await chat?.send(c, id, "Explain this result", [], "steer", click);
+    await chat?.send(c, id, "I took my iron at 8", [], "steer", true);
     await ended(c.id);
-    expect((await inputs()).at(-1)).toEqual([click]);
+    expect((await inputs()).at(-1)).toEqual(["I took my iron at 8"]);
     expect((await transcript(c.id)).all.find((e) => e.id === id)).toMatchObject(
-      { text: "Explain this result" },
+      { text: "I took my iron at 8" },
     );
-    expect(
-      store.db
-        .prepare("SELECT ai_text FROM transcript_entries WHERE id = ?")
-        .get(id),
-    ).toEqual({ ai_text: click });
     expect(
       store.db.prepare("SELECT text FROM drafts WHERE chat_id = ?").get(c.id),
     ).toEqual({ text: "And my iron?" });

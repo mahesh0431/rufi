@@ -563,10 +563,10 @@ export function chat(deps: ChatDeps) {
     text: string,
     refs: readonly Pointer[],
     kind: "steer" | "queue",
-    aiText?: string,
+    keepDraft: boolean,
   ): Promise<void> {
     try {
-      await queue.accept(chat, id, text, refs, kind, aiText);
+      await queue.accept(chat, id, text, refs, kind, keepDraft);
     } catch (error) {
       if (error instanceof QueueRefusal) throw new ChatRefusal(error.message);
       throw error;
@@ -603,8 +603,8 @@ export function chat(deps: ChatDeps) {
      */
     /**
      * Takes the person's message: while a reply runs, it goes into it
-     * (steer) or after it (queue), as they chose. A click on a reply shows
-     * its words and Rufi AI gets `aiText`.
+     * (steer) or after it (queue), as they chose. A message that isn't the
+     * box's (`keepDraft`) leaves the box's draft.
      */
     send: async (
       chat: ChatRow,
@@ -612,10 +612,10 @@ export function chat(deps: ChatDeps) {
       text: string,
       refs: readonly Pointer[] = [],
       kind: "steer" | "queue" = "steer",
-      aiText?: string,
+      keepDraft = false,
     ) => {
       await mustBeSignedIn(chat);
-      await accept(chat, id, text, refs, kind, aiText);
+      await accept(chat, id, text, refs, kind, keepDraft);
       return { id };
     },
 

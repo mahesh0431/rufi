@@ -742,17 +742,10 @@ export const SendMessage = Schema.Struct({
   /** While a reply runs: into it (steer, the default), or after it (queue). */
   kind: Schema.optionalKey(WhileReplying),
   /**
-   * A click on a reply: what Rufi AI gets ("User clicked: …" with the
-   * form's values and the action's context), while `text` shows. The box's
-   * draft stays.
+   * "keep": a message that isn't the box's, such as one the iPhone kept
+   * while the Mac was out of reach. The box's draft stays.
    */
-  aiText: Schema.optionalKey(
-    Schema.String.check(
-      Schema.isTrimmed(),
-      Schema.isMinLength(1),
-      Schema.isMaxLength(MAX_MESSAGE_CHARS),
-    ),
-  ),
+  draft: Schema.optionalKey(Schema.Literal("keep")),
 });
 
 /** The box's text and chips, saved over the draft unless a send holds it. */

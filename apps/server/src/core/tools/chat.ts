@@ -52,7 +52,6 @@ export const readChat = defineTool({
         "seq",
         "kind",
         "text",
-        "ai_text",
         "activity",
         "detail",
         "status",
@@ -76,9 +75,8 @@ export const readChat = defineTool({
       entries: page.map((row) => ({
         position: row.seq,
         kind: row.kind,
-        // A reply with the questions it asked, as the chat shows it; a
-        // click as Rufi AI got it.
-        text: withQuestions(row.ai_text ?? row.text, row.questions),
+        // A reply with the questions it asked, as the chat shows it.
+        text: withQuestions(row.text, row.questions),
         ...(row.detail !== null && { detail: row.detail }),
         ...(row.status !== null &&
           row.status !== "done" && { status: row.status }),
