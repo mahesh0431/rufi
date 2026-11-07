@@ -222,6 +222,8 @@ interface Source {
 export interface Brief {
   id: string;
   createdAt: string;
+  /** When the last save the brief saw was made; null when it saw none. */
+  recordUpTo: string | null;
   markdown: string;
   /** A save after the brief raised the record version. */
   changedSince: boolean;
@@ -267,10 +269,32 @@ export async function readBrief(
   return {
     id: brief.id,
     createdAt: brief.created_at,
+    recordUpTo: await savedAt(query, personId, brief.record_version),
     markdown: brief.markdown,
     changedSince: (await recordVersion(query, personId)) > brief.record_version,
     sources,
   };
+}
+
+/**
+ * When the person's save at this record version was made: their nth save,
+ * in the order of saves; null for version 0, before any save.
+ */
+async function savedAt(
+  query: Kysely<Tables>,
+  personId: string,
+  version: number,
+): Promise<string | null> {
+  if (version === 0) return null;
+  const save = await query
+    .selectFrom("operations")
+    .select("created_at")
+    .where("person_id", "=", personId)
+    .orderBy("seq")
+    .limit(1)
+    .offset(version - 1)
+    .executeTakeFirst();
+  return save?.created_at ?? null;
 }
 
 async function recordOf(

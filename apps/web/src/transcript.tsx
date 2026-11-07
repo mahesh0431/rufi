@@ -1027,7 +1027,8 @@ type Shown = Pick<
 
 /**
  * One line of Activity, as the agent reported it: a progress note in full;
- * a thinking heading, which opens to the whole summary when it has more; a
+ * a thinking heading, which opens to the whole summary, also when the
+ * summary is only its heading, so a heading the view cuts can be read; a
  * step with its sign, its text cut in the middle and its detail, which
  * opens to everything the agent gave about it (from `details`); a step that
  * started a sub-agent, as that agent's line.
@@ -1057,18 +1058,6 @@ function StepView({ entry, details: path }: { entry: Shown; details: string }) {
       ) : (
         <Brain size={13} className="shrink-0" aria-hidden />
       );
-    // Only a heading: nothing more to open.
-    if (entry.text.replaceAll("*", "").trim() === heading) {
-      return (
-        <p
-          data-entry={id}
-          className="flex min-w-0 items-center gap-1.5 text-muted"
-        >
-          {sign}
-          <span className="truncate">{heading}</span>
-        </p>
-      );
-    }
     return (
       <details data-entry={id} className="group text-muted">
         <summary className="flex w-fit max-w-full min-w-0 cursor-pointer list-none items-center gap-1.5 hover:text-ink [&::-webkit-details-marker]:hidden">
