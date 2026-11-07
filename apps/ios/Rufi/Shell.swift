@@ -2,10 +2,10 @@ import QuickLook
 import SwiftUI
 
 /// The place shown and the pages on top of it, around Rufi's screens, with
-/// the sidebar to go to another place. The web view moves to the screen on
-/// top; a screen below shows a still of itself, taken as it was covered, so
-/// Back and the edge swipe show it at once; when it is on top again, the
-/// page is opened there.
+/// the sidebar under them to go to another place. The web view moves to the
+/// screen on top; a screen below shows a still of itself, taken as it was
+/// covered, so Back and the edge swipe show it at once; when it is on top
+/// again, the page is opened there.
 @Observable
 final class Shell {
     enum State: Equatable {
@@ -44,7 +44,7 @@ final class Shell {
     private var checking = false
     /// Where the person is: what the sidebar marks, the title and Back.
     private(set) var navigator: Navigator
-    /// The sidebar is open over the page.
+    /// The page is slid aside, showing the sidebar.
     var sidebar = false {
         didSet { if sidebar, !oldValue { Task { await count() } } }
     }
@@ -401,7 +401,7 @@ final class Shell {
     }
 }
 
-/// The stack of Rufi's pages with Apple's bars, and the sidebar over it.
+/// The stack of Rufi's pages with Apple's bars, and the sidebar under it.
 struct ShellView: View {
     @Bindable var shell: Shell
     @State private var settings = false
@@ -409,7 +409,7 @@ struct ShellView: View {
     let app: AppModel
 
     var body: some View {
-        Drawer(open: $shell.sidebar, enabled: shell.navigator.stack.isEmpty) {
+        Drawer(open: $shell.sidebar, enabled: shell.navigator.stack.isEmpty, side: shell.theme.side) {
             NavigationStack(path: stack) {
                 page(shell.navigator.root, root: true)
                     .navigationDestination(for: Screen.self) { page($0, root: false) }

@@ -1,77 +1,214 @@
 import SwiftUI
+import UIKit
 
-/// The sidebar sliding in from the left over the page, with the page dimmed
-/// beside it. Apple has no drawer on the iPhone, so this is Rufi's own; the
-/// list in it is Apple's. A swipe from the left edge opens it and it follows
-/// the finger, only on a place's own page (`enabled`): on a page opened on
-/// top, the same swipe is Back. A swipe left on it, or a tap on the page
-/// beside it, closes it.
+/// The page as one card over the sidebar: to show the sidebar, the card
+/// slides right, its corners rounded as the screen's, and the sidebar stays
+/// still underneath, as the chat apps on the iPhone do. Apple has no sidebar
+/// on the iPhone, so this is Rufi's own. A swipe right opens it, on a place's
+/// own page only (`enabled`): on a page opened on top, the same swipe is Back.
+/// A swipe left, or a tap on the page beside it, closes it. The card follows
+/// the finger and settles with the swipe's speed, never past either end.
+/// `side` is the sidebar's colour: behind the card, and, as the card goes,
+/// what it fades into, so the sidebar reads as the view.
 struct Drawer<Content: View, Sidebar: View>: View {
     @Binding var open: Bool
     let enabled: Bool
+    let side: Color
     @ViewBuilder let content: Content
     @ViewBuilder let sidebar: Sidebar
-    /// How far out it is while a finger moves it, from 0 to 1.
+    /// How far out the card is while a finger moves it, from 0 to 1.
     @State private var dragged: CGFloat?
+    /// The swipe's speed as it let go, in widths a second.
+    @State private var speed: Double = 0
+
+    /// How long the card takes to settle, with no bounce.
+    private static var settling: Double { 0.4 }
 
     var body: some View {
         GeometryReader { geometry in
-            let width = min(330, geometry.size.width * 0.84)
+            let width = Self.reveal(geometry.size.width)
             let out = dragged ?? (open ? 1 : 0)
             ZStack(alignment: .leading) {
+                sidebar
+                    .frame(width: width)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityAddTraits(open ? .isModal : [])
+                    .accessibilityAction(.escape) { open = false }
+                    .animation(dragged == nil ? settle : nil) {
+                        $0.modifier(Uncovered(out: out))
+                    }
                 content
-                if out > 0 {
-                    Color.black.opacity(0.25 * out)
-                        .ignoresSafeArea()
-                        .onTapGesture { close() }
-                        .gesture(closing(width))
-                        .accessibilityHidden(true)
-                    sidebar
-                        .frame(width: width)
-                        .offset(x: (out - 1) * width)
-                        .gesture(closing(width))
-                        .accessibilityElement(children: .contain)
-                        .accessibilityAddTraits(.isModal)
-                        .accessibilityAction(.escape) { close() }
-                }
-                if enabled, !open {
-                    Color.clear
-                        .frame(width: 16)
-                        .contentShape(.rect)
-                        .ignoresSafeArea()
-                        .gesture(opening(width))
-                }
+                    .overlay {
+                        if open {
+                            Color.clear
+                                .contentShape(.rect)
+                                .onTapGesture { open = false }
+                                .accessibilityHidden(true)
+                        }
+                    }
+                    .accessibilityHidden(open)
+                    .animation(dragged == nil ? settle : nil) {
+                        $0.modifier(Slide(out: out, width: width, wash: side))
+                    }
             }
+            .background(side.ignoresSafeArea())
+            .gesture(SidebarSwipe(open: open, enabled: enabled) { moved in
+                if dragged == nil, !open { Self.putKeyboardAway() }
+                dragged = min(max((open ? 1 : 0) + moved / width, 0), 1)
+            } ended: { moved, velocity in
+                let start: CGFloat = open ? 1 : 0
+                let shown = start + (moved + velocity * 0.2) / width > 0.5
+                let left = abs((shown ? 1 : 0) - (dragged ?? start))
+                // Toward where it settles, and no faster than a spring with no
+                // bounce takes without passing the end.
+                let toward = (shown ? 1 : -1) * velocity / width
+                speed = left > 0.01 ? min(max(toward / left, 0), 2 * .pi / Self.settling) : 0
+                dragged = nil
+                open = shown
+            })
+            .onChange(of: out) { if dragged == nil { speed = 0 } }
+            .onChange(of: open) { _, open in if open { Self.putKeyboardAway() } }
         }
     }
 
-    private func close() {
-        withAnimation(.snappy) { open = false }
+    private var settle: Animation {
+        .interpolatingSpring(duration: Self.settling, bounce: 0, initialVelocity: speed)
     }
 
-    private func opening(_ width: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 8, coordinateSpace: .global)
-            .onChanged { drag in dragged = min(max(drag.translation.width / width, 0), 1) }
-            .onEnded { drag in settle(drag.predictedEndTranslation.width / width > 0.5) }
+    /// How far the card slides: the page's right quarter or so stays in sight.
+    static func reveal(_ width: CGFloat) -> CGFloat {
+        (width * 0.78).rounded()
     }
 
-    private func closing(_ width: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 8, coordinateSpace: .global)
-            .onChanged { drag in dragged = min(max(1 + drag.translation.width / width, 0), 1) }
-            .onEnded { drag in settle(1 + drag.predictedEndTranslation.width / width > 0.5) }
+    private static func putKeyboardAway() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+}
+
+/// The sidebar is there only while the card is out, so nothing reaches it
+/// under the page: no tap, and no screen reader.
+private struct Uncovered: ViewModifier, Animatable {
+    var out: CGFloat
+
+    var animatableData: CGFloat {
+        get { out }
+        set { out = newValue }
     }
 
-    private func settle(_ shown: Bool) {
-        withAnimation(.snappy) {
-            open = shown
-            dragged = nil
+    func body(content: Content) -> some View {
+        if out > 0 { content }
+    }
+}
+
+/// The card at `out`, from 0 (closed) to 1: held between the two, so even a
+/// fast swipe never leaves a gap; once it moves, rounded as the screen is
+/// (at least as the smallest iPhone screen corners are), shadowed and
+/// faded, as far as it is out.
+private struct Slide: ViewModifier, Animatable {
+    var out: CGFloat
+    let width: CGFloat
+    let wash: Color
+
+    var animatableData: CGFloat {
+        get { out }
+        set { out = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        let out = min(max(out, 0), 1)
+        let shape = out > 0 ? AnyShape(ConcentricRectangle(corners: .concentric(minimum: .fixed(47)), isUniform: true)) : AnyShape(Rectangle())
+        // To the screen's edges, as the bars reach under the status bar.
+        content
+            .overlay {
+                wash.opacity(0.5 * out).ignoresSafeArea().allowsHitTesting(false)
+            }
+            .mask { shape.ignoresSafeArea() }
+            .background {
+                shape.fill(.background).shadow(color: .black.opacity(0.2 * out), radius: 24).ignoresSafeArea()
+            }
+            .offset(x: width * out)
+    }
+}
+
+/// The swipe that opens and closes the sidebar, in UIKit so the page's own
+/// scrollers come first: one that can still scroll back left keeps a swipe
+/// right; up and down are the page's.
+struct SidebarSwipe: UIGestureRecognizerRepresentable {
+    let open: Bool
+    let enabled: Bool
+    let moved: (CGFloat) -> Void
+    let ended: (_ moved: CGFloat, _ velocity: CGFloat) -> Void
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var open = false
+        var enabled = false
+        private var touched: UIView?
+
+        func gestureRecognizer(_: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            touched = touch.view
+            return true
         }
+
+        func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = recognizer as? UIPanGestureRecognizer else { return false }
+            // By the way it moved so far: a slow drag has next to no speed.
+            let moved = pan.translation(in: nil)
+            guard abs(moved.x) > abs(moved.y) else { return false }
+            if open { return moved.x < 0 }
+            return enabled && moved.x > 0 && !SidebarSwipe.scrollsBack(touched)
+        }
+
+        // Scrollers wait until it is clear the swipe isn't the sidebar's.
+        func gestureRecognizer(_: UIGestureRecognizer,
+                               shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool {
+            other is UIPanGestureRecognizer && other.view is UIScrollView
+        }
+    }
+
+    func makeCoordinator(converter _: CoordinateSpaceConverter) -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
+        let pan = UIPanGestureRecognizer()
+        pan.delegate = context.coordinator
+        return pan
+    }
+
+    func updateUIGestureRecognizer(_ pan: UIPanGestureRecognizer, context: Context) {
+        context.coordinator.open = open
+        context.coordinator.enabled = enabled
+        pan.isEnabled = open || enabled
+    }
+
+    func handleUIGestureRecognizerAction(_ pan: UIPanGestureRecognizer, context _: Context) {
+        let moved = pan.translation(in: nil).x
+        switch pan.state {
+        case .began, .changed: self.moved(moved)
+        case .ended: ended(moved, pan.velocity(in: nil).x)
+        case .cancelled, .failed: ended(0, 0)
+        default: break
+        }
+    }
+
+    /// `view` is in a scroller that is scrolled sideways and can go back left.
+    static func scrollsBack(_ view: UIView?) -> Bool {
+        var view = view
+        while let at = view {
+            if let scroller = at as? UIScrollView, scroller.contentSize.width > scroller.bounds.width + 1,
+               scroller.contentOffset.x > -scroller.adjustedContentInset.left + 1 {
+                return true
+            }
+            view = at.superview
+        }
+        return false
     }
 }
 
 /// The Mac's places in the Mac's order, with its counts (empty record pages
-/// grey); the dog and Rufi at the top; the person and This iPhone at the
-/// bottom.
+/// grey), under Rufi; at the bottom, Chat and the person's initials, which
+/// open This iPhone.
 struct SidebarView: View {
     let name: String
     /// The place the page on top is in, marked.
@@ -82,54 +219,54 @@ struct SidebarView: View {
     let thisIPhone: () -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                Image(decorative: "Dog").resizable().scaledToFit().frame(width: 40, height: 40)
-                    .clipShape(.rect(cornerRadius: 10))
-                    .accessibilityHidden(true)
-                Text("Rufi").font(.title2.bold())
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 10) {
+                    Image(decorative: "Dog").resizable().scaledToFit().frame(width: 34, height: 34)
+                        .clipShape(.rect(cornerRadius: 8))
+                    Text("Rufi").font(.title.bold())
+                }
+                .padding(.top, 8)
+                .padding(.bottom, 12)
+                row(.overview)
+                Text("Health record")
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 20)
+                    .padding(.bottom, 4)
+                    .accessibilityAddTraits(.isHeader)
+                ForEach(Place.record, id: \.self) { row($0) }
+                Spacer().frame(height: 20)
+                row(.followUps)
+                row(.documents)
+                Spacer().frame(height: 20)
+                row(.help)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 24)
+        }
+        .scrollIndicators(.hidden)
+        .safeAreaInset(edge: .bottom) {
+            HStack {
+                Button {
+                    choose(.chat)
+                } label: {
+                    Label("Chat", systemImage: Place.chat.symbol).font(.headline)
+                        .foregroundStyle(theme.onAccent)
+                }
+                .buttonStyle(.glassProminent)
+                .tint(theme.accent)
+                .controlSize(.large)
+                .accessibilityLabel(Place.chat.title)
+                .accessibilityAddTraits(current == .chat ? .isSelected : [])
+                Spacer()
+                Button(action: thisIPhone) {
+                    Initials(name: name, size: 44)
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .accessibilityLabel("\(name), This iPhone")
+            }
             .padding(.horizontal, 20)
-            .padding(.top, 12)
             .padding(.bottom, 4)
-            List {
-                Section {
-                    row(.chat)
-                    row(.overview)
-                }
-                Section("Health record") {
-                    ForEach(Place.record, id: \.self) { row($0) }
-                }
-                Section {
-                    row(.followUps)
-                    row(.documents)
-                }
-                Section {
-                    row(.help)
-                }
-            }
-            .listStyle(.sidebar)
-            .listSectionSpacing(.compact)
-            .environment(\.defaultMinListRowHeight, 36)
-            .scrollContentBackground(.hidden)
-            Button(action: thisIPhone) {
-                HStack(spacing: 12) {
-                    Initials(name: name, size: 40)
-                    VStack(alignment: .leading) {
-                        Text(name).font(.headline)
-                        Text("This iPhone").font(.subheadline).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right").foregroundStyle(.tertiary)
-                }
-                .padding(12)
-                .background(theme.surface, in: .rect(cornerRadius: 16))
-                .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 12)
-            .padding(.bottom, 8)
         }
         .background(theme.side, ignoresSafeAreaEdges: .all)
     }
@@ -137,28 +274,24 @@ struct SidebarView: View {
     private func row(_ place: Place) -> some View {
         let count = counts?.of(place)
         let empty = count == 0 && Place.record.contains(place)
+        let marked = current == place
         return Button {
             choose(place)
         } label: {
-            HStack {
-                Label(place.title, systemImage: place.symbol)
+            HStack(spacing: 16) {
+                Image(systemName: place.symbol).imageScale(.large).frame(width: 28)
+                Text(place.title).fontWeight(marked ? .semibold : .regular)
                 Spacer()
                 if let count, count > 0 {
                     Text("\(count)").foregroundStyle(.secondary).monospacedDigit()
                 }
             }
-            .foregroundStyle(current == place ? theme.accentInk : empty ? Color(.secondaryLabel) : Color(.label))
+            .padding(.vertical, 13)
+            .foregroundStyle(marked ? theme.accentInk : empty ? Color(.secondaryLabel) : Color(.label))
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        // Flat on the sidebar, as on the Mac; the current place in the
-        // theme's soft accent.
-        .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: 7, leading: 14, bottom: 7, trailing: 14))
-        .listRowBackground(current == place
-            ? RoundedRectangle(cornerRadius: 12).fill(theme.accentSoft)
-            : RoundedRectangle(cornerRadius: 12).fill(.clear))
-        .accessibilityAddTraits(current == place ? .isSelected : [])
+        .accessibilityAddTraits(marked ? .isSelected : [])
     }
 }
 
