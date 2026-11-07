@@ -664,6 +664,39 @@ describe("the local API", () => {
     ).toBe(404);
   });
 
+  // Never delete: a brief's PDF is health data.
+  it("serves a brief's PDF only on its own person's path", async () => {
+    const core = await start();
+    const page = await session(core);
+    const c = await chat(page);
+    const ravi = addRavi();
+    // Ravi's brief, as create_brief saves it.
+    const store = openWritable(databasePath(home));
+    try {
+      store.db.exec(`
+        INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, revision, created_at, updated_at)
+          VALUES ('brief-ravi', 'ravi', 'c-ravi', 1, 'brief', 'Visit brief', 1, '2026-10-04T09:00:00Z', '2026-10-04T09:00:00Z');
+        INSERT INTO briefs (id, person_id, chat_id, call_id, markdown, record_version, cited, created_at)
+          VALUES ('brief-ravi', 'ravi', 'c-ravi', 'call-1', '## For the visit', 0, '[]', '2026-10-04T09:00:00Z');
+      `);
+    } finally {
+      store.close();
+    }
+
+    const own = await page.api(
+      "GET",
+      `/api/people/${ravi.id}/briefs/brief-ravi/pdf`,
+    );
+    expect(own.status).toBe(200);
+    expect(own.headers["content-type"]).toBe("application/pdf");
+    expect(own.headers["cache-control"]).toBe("no-store");
+    // Ravi's brief on Asha's path.
+    expect(
+      (await page.api("GET", `/api/people/${c.person}/briefs/brief-ravi/pdf`))
+        .status,
+    ).toBe(404);
+  });
+
   it("gives a step's details when it opens, only from the person's own chat; a step kept without them has none", async () => {
     const core = await start();
     const page = await session(core);

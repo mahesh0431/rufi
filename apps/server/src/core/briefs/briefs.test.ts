@@ -605,10 +605,16 @@ describe("a brief's PDF", () => {
       { length: 120 },
       (_, n) => `Fictional line ${String(n + 1)}`,
     );
+    // A table row taller than a page goes on over the next.
+    const tall = Array.from(
+      { length: 400 },
+      (_, n) => `Fictional observation ${String(n + 1)}.`,
+    ).join(" ");
+    const table = `| Note | Detail |\n| --- | --- |\n| Sugar | ${tall} |`;
     await use(
       "create_brief",
       {
-        markdown: [MARKDOWN, ...lines].join("\n\n"),
+        markdown: [MARKDOWN, table, ...lines].join("\n\n"),
         record_version: await version(),
         cited: CITED,
       },
@@ -627,6 +633,8 @@ describe("a brief's PDF", () => {
     });
     const all = pages.join(" ").replace(/\s+/g, " ");
     expect(all).toContain("Prepared by Rufi (AI) on 4 Oct 2026");
+    expect(all).toContain("Fictional observation 1. Fictional observation 2.");
+    expect(all).toContain("Fictional observation 400.");
     expect(all).toContain("Fictional line 120");
     expect(all).toContain("HbA1c 6.8 % · 12 Aug 2026");
     expect(all).toContain("Sunrise Labs August.pdf, page 1");

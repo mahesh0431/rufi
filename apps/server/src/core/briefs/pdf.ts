@@ -145,7 +145,6 @@ function sources(brief: Brief): Content {
   return {
     table: {
       widths: [80, "*"],
-      dontBreakRows: true,
       body: brief.sources.map((source) => [
         { text: source.kind, color: MUTED },
         {
@@ -229,7 +228,6 @@ function table(node: Table): Content {
     table: {
       headerRows: 1,
       widths: (head?.children ?? []).map(() => "auto"),
-      dontBreakRows: true,
       body: [
         (head?.children ?? []).map(cell(true)),
         ...rows.map((row) => row.children.map(cell(false))),
