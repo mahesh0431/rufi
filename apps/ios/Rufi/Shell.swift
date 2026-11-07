@@ -1,4 +1,3 @@
-import Network
 import QuickLook
 import SwiftUI
 
@@ -43,8 +42,6 @@ final class Shell {
     /// can't be reached: only the latest run goes on.
     private var tries = 0
     private var checking = false
-    /// A change of network is a moment to ask again.
-    private let network = NWPathMonitor()
     /// Where the person is: what the sidebar marks, the title and Back.
     private(set) var navigator: Navigator
     /// The sidebar is open over the page.
@@ -125,17 +122,6 @@ final class Shell {
             self.theme.took(colours, dark: dark)
             screens.view.backgroundColor = self.theme.pageColour
         }
-        network.pathUpdateHandler = { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, self.away else { return }
-                Task { await self.check() }
-            }
-        }
-        network.start(queue: .main)
-    }
-
-    deinit {
-        network.cancel()
     }
 
     func title(_ screen: Screen) -> String {
@@ -475,10 +461,11 @@ struct ShellView: View {
             Text(shell.originalProblem ?? "")
         }
         .onChange(of: app.seen) { _, seen in
-            guard seen else { return }
-            shell.appeared()
+            if seen { shell.appeared() }
+        }
+        .onChange(of: app.active) { _, active in
             // Back on screen: is Rufi still there, or back?
-            Task { await shell.check() }
+            if active { Task { await shell.check() } }
         }
         .task {
             await shell.reopen()
