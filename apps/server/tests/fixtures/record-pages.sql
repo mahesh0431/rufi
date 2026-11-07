@@ -74,3 +74,49 @@ INSERT INTO visits (id, person_id, setting, date, doctor, place, reason, as_writ
 
 INSERT INTO record_sources (person_id, kind, record_id, type, visit_id) VALUES
   ('asha', 'care_event', 'care-a1', 'visit', 'vis-a1');
+
+-- A reading of Asha's August report, done and sorted: page 1 read, with
+-- its copy and three draft items not saved yet (one fixed by her, one
+-- worth a look, one an earlier value); page 2 has nothing to read.
+INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, started_at, run_at, ended_at, created_at) VALUES
+  ('job-aug', 'asha', 'document_read', 'doc-asha-aug', 'done', 1, '[1,2]', '2026-10-01T09:00:00Z', '2026-10-01T09:00:00Z', '2026-10-01T09:02:00Z', '2026-10-01T09:00:00Z');
+UPDATE document_pages SET state = 'read', entry_job_id = 'job-aug', entry_attempt = 1, entry_at = '2026-10-01T09:01:00Z'
+  WHERE person_id = 'asha' AND document_id = 'doc-asha-aug' AND position = 1;
+UPDATE document_pages SET state = 'nothing_here', entry_job_id = 'job-aug', entry_attempt = 1, entry_at = '2026-10-01T09:02:00Z'
+  WHERE person_id = 'asha' AND document_id = 'doc-asha-aug' AND position = 2;
+UPDATE documents SET version = 2, kind = 'lab_report', issuer = 'Sunrise Labs', date = '2026-08-12'
+  WHERE person_id = 'asha' AND id = 'doc-asha-aug';
+INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at, sorted_at) VALUES
+  ('asha', '7f4a70ccb858d23ee1cce44693bc2c009abb14604f0f3dbd48470639d6928b54', 1, 'job-aug', 1, 'read',
+   'Sunrise Labs · Collected 12 Aug 2026
+
+| Test | Result | Unit | Range |
+| --- | --- | --- | --- |
+| Haemoglobin | 13.2 | g/dL | 12.0–15.5 |
+| LDL cholesterol | 3.4 H | mmol/L | < 3.0 |
+| HbA1c (previous) | 7.1 | % | |', '2026-10-01T09:01:00Z', '2026-10-01T09:03:00Z'),
+  ('asha', '7f4a70ccb858d23ee1cce44693bc2c009abb14604f0f3dbd48470639d6928b54', 2, 'job-aug', 1, 'nothing_here',
+   '', '2026-10-01T09:02:00Z', '2026-10-01T09:03:00Z');
+INSERT INTO draft_items (id, person_id, document_id, page, seq, job_id, kind, version, fields, original, unsure, quote, created_at) VALUES
+  ('drf-a1', 'asha', 'doc-asha-aug', 1, 1, 'job-aug', 'lab_result', 2,
+   '{"test_name":"Haemoglobin","value_text":"13.4","value_number":13.4,"unit":"g/dL","reference_range":"12.0–15.5","column":"current"}',
+   '{"test_name":"Haemoglobin","value_text":"13.2","value_number":13.2,"unit":"g/dL","reference_range":"12.0–15.5","column":"current"}',
+   '[]', 'Haemoglobin | 13.2 | g/dL | 12.0–15.5', '2026-10-01T09:03:00Z'),
+  ('drf-a2', 'asha', 'doc-asha-aug', 1, 2, 'job-aug', 'lab_result', 1,
+   '{"test_name":"LDL cholesterol","value_text":"3.4","value_number":3.4,"unit":"mmol/L","reference_range":"< 3.0","flag_text":"H","column":"current"}',
+   '{"test_name":"LDL cholesterol","value_text":"3.4","value_number":3.4,"unit":"mmol/L","reference_range":"< 3.0","flag_text":"H","column":"current"}',
+   '["The flag is faint on the page."]', 'LDL cholesterol | 3.4 H | mmol/L | < 3.0', '2026-10-01T09:03:00Z'),
+  ('drf-a3', 'asha', 'doc-asha-aug', 1, 3, 'job-aug', 'lab_result', 1,
+   '{"test_name":"HbA1c","value_text":"7.1","value_number":7.1,"unit":"%","column":"earlier"}',
+   '{"test_name":"HbA1c","value_text":"7.1","value_number":7.1,"unit":"%","column":"earlier"}',
+   '[]', 'HbA1c (previous) | 7.1 | %', '2026-10-01T09:03:00Z');
+
+-- An older Rufi's reading of the September photo that failed partway: its
+-- reader's entry for the page (no copy), with an issue it noted, and Rufi's
+-- check that it may be incomplete.
+INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, error, started_at, run_at, ended_at, created_at) VALUES
+  ('job-sep', 'asha', 'document_read', 'doc-asha-sep', 'failed', 1, '[1]', 'The reader stopped before it finished.', '2026-09-02T18:31:00Z', '2026-09-02T18:31:00Z', '2026-09-02T18:33:00Z', '2026-09-02T18:31:00Z');
+UPDATE document_pages SET entry_job_id = 'job-sep', entry_attempt = 1, entry_at = '2026-09-02T18:32:00Z',
+  entry = '{"outcome":"read","facts":{"issuer":"Sunrise Labs","dates":[{"label":"Collected","date":"1 Sep 2026"}]},"rows_seen":2,"items":[{"test_name":"TSH","value_text":"4.6","unit":"mIU/L","reference_range":"0.4–4.0","flag_text":"H","unsure":"The value is faint."}],"issues":["The bottom of the photo is cut off."]}',
+  entry_checks = '{"incomplete":{"rows_seen":2,"items":1},"items":[{"item":1,"why":"Its unit is not on the page."}]}'
+  WHERE person_id = 'asha' AND document_id = 'doc-asha-sep' AND position = 1;

@@ -15,6 +15,7 @@ import {
 import { useEffect } from "react";
 import { create } from "zustand/react";
 import { checkNow } from "./api.ts";
+import type { BoxChip } from "./draft.ts";
 
 /** Whether the screens run in Rufi's iPhone app. */
 export const onPhone = document.documentElement.dataset["place"] === "phone";
@@ -184,7 +185,10 @@ export type BoxCommand =
   | { type: "model"; id: string }
   | { type: "effort"; id: string }
   | { type: "retry" }
-  | { type: "open" };
+  | { type: "open" }
+  // From a page the app draws itself: chips (and text after what is
+  // there) go in the box, as Ask Rufi on a page does, and the chat opens.
+  | { type: "ask"; chips: BoxChip[]; text?: string };
 
 /** Who acts on the app's box now; one at a time. */
 const boxed: { on: ((command: BoxCommand) => void) | null } = { on: null };

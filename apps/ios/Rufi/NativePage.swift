@@ -16,6 +16,9 @@ nonisolated enum NativePage: Equatable, Sendable {
     /// One row opened: what it is, its sources and its history.
     case row(kind: String, id: String)
     case followUps
+    case documents
+    /// A document's page: its pages, what was read from them.
+    case document(String)
 
     /// The record pages drawn here.
     static let kinds: Set<String> = [
@@ -34,6 +37,10 @@ nonisolated enum NativePage: Equatable, Sendable {
         switch (rest.first, rest.count) {
         case ("follow-ups", 1):
             return opened.map { .row(kind: "follow_up", id: $0) } ?? .followUps
+        case ("documents", 1):
+            return .documents
+        case ("documents", 2):
+            return .document(rest[1])
         case ("tests", 2):
             return opened.map { .row(kind: "result", id: $0) } ?? .test(rest[1])
         case ("visits", 2):

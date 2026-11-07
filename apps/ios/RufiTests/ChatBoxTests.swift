@@ -3,8 +3,8 @@ import Testing
 @testable import Rufi
 
 /// The box shows what the page says, but the page's text never undoes typing,
-/// and it opens while something is in it. What is chosen to add goes in
-/// whole, or not at all.
+/// and it opens while something is in it; what a page drawn here asks it
+/// waits for a box to take it. What is chosen to add goes in whole, or not at all.
 struct ChatBoxTests {
     private func state(text: String?, chips: String = "[]", ready: Bool = true) -> Data {
         let text = text.map { "\"\($0)\"" } ?? "null"
@@ -54,6 +54,24 @@ struct ChatBoxTests {
         // The page took them.
         box.took(state(text: nil))
         #expect(restored == ["m-1"])
+    }
+
+    /// From Help, which has no box, to Documents: Save in chat's chip and
+    /// words wait for the chat's box, and go to it once.
+    @Test func anAskWaitsForABoxToTakeIt() {
+        let box = ChatBox()
+        var asked: [String] = []
+        box.asking = { command in
+            if command["type"] as? String == "ask" { asked.append(command["text"] as? String ?? "") }
+        }
+        box.put(["type": "ask", "chips": [], "text": "Save these 2 results."])
+        #expect(asked.isEmpty)
+        box.kind = .page
+        box.took(state(text: nil, ready: false))
+        #expect(asked.isEmpty)
+        box.took(state(text: nil))
+        box.took(state(text: nil))
+        #expect(asked == ["Save these 2 results."])
     }
 
     @Test func chosenFilesGoInWholeOrNotAtAll() throws {

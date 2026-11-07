@@ -30,7 +30,7 @@ import {
   effortName,
   SIGN_IN,
 } from "./model-menu.tsx";
-import { openPanel, usePanel, whyClosed } from "./panel.ts";
+import { askRufi, openPanel, usePanel, whyClosed } from "./panel.ts";
 import { type BoxView, onBox, tell } from "./phone.ts";
 import { useStatus } from "./reads.ts";
 
@@ -48,6 +48,8 @@ export function PhoneBox({
   const attachNotice = useAttachNotice(person.id);
   const asked = usePanel((state) => state.asked);
   const panel = usePanel((state) => state.open);
+  // Why the last add from a page went in nothing.
+  const refused = usePanel((state) => state.refused);
   const status = useStatus().data;
   const chosen = useStore(live, (state) => state.chat);
   const context = useStore(live, (state) => state.chat?.context ?? null);
@@ -68,7 +70,7 @@ export function PhoneBox({
   const line =
     why === SIGNED_OUT || why === CLAUDE_SIGNED_OUT
       ? `${why} Sign in on your Mac.`
-      : (why ?? attachNotice ?? logic.saved);
+      : (why ?? attachNotice ?? refused ?? logic.saved);
 
   const view: BoxView = {
     placeholder: logic.placeholder,
@@ -151,6 +153,9 @@ export function PhoneBox({
             break;
           case "open":
             openPanel();
+            break;
+          case "ask":
+            askRufi(person.id, command.chips, command.text);
             break;
         }
       }),

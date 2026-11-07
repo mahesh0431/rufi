@@ -1,0 +1,43 @@
+{
+  "name": "thyroid recheck.jpg",
+  "status": "failed",
+  "saved": 1,
+  "of": 1,
+  "runAt": null,
+  "error": "The reader stopped before it finished.",
+  "note": null,
+  "pages": [
+    {
+      "position": 1,
+      "state": null,
+      "why": null,
+      "entry": {
+        "outcome": "read",
+        "facts": {
+          "issuer": "Sunrise Labs",
+          "dates": [{ "label": "Collected", "date": "1 Sep 2026" }]
+        },
+        "rows_seen": 2,
+        "items": [
+          {
+            "test_name": "TSH",
+            "value_text": "4.6",
+            "unit": "mIU/L",
+            "reference_range": "0.4–4.0",
+            "flag_text": "H",
+            "unsure": "The value is faint."
+          }
+        ],
+        "issues": ["The bottom of the photo is cut off."]
+      },
+      "copy": null,
+      "checks": {
+        "incomplete": { "rows_seen": 2, "items": 1 },
+        "items": [{ "item": 1, "why": "Its unit is not on the page." }]
+      }
+    }
+  ],
+  "usage": null,
+  "model": null,
+  "effort": null
+}

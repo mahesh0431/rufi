@@ -1,0 +1,84 @@
+{
+  "pages": [
+    { "position": 1, "state": "read", "why": null, "incomplete": null },
+    { "position": 2, "state": "nothing_here", "why": null, "incomplete": null }
+  ],
+  "items": [
+    {
+      "id": "drf-a1",
+      "version": 2,
+      "page": 1,
+      "status": "pending",
+      "fields": {
+        "test_name": "Haemoglobin",
+        "value_text": "13.4",
+        "value_number": 13.4,
+        "unit": "g/dL",
+        "reference_range": "12.0–15.5",
+        "column": "current"
+      },
+      "original": {
+        "test_name": "Haemoglobin",
+        "value_text": "13.2",
+        "value_number": 13.2,
+        "unit": "g/dL",
+        "reference_range": "12.0–15.5",
+        "column": "current"
+      },
+      "unsure": [],
+      "quote": "Haemoglobin | 13.2 | g/dL | 12.0–15.5",
+      "outOfDate": false
+    },
+    {
+      "id": "drf-a2",
+      "version": 1,
+      "page": 1,
+      "status": "pending",
+      "fields": {
+        "test_name": "LDL cholesterol",
+        "value_text": "3.4",
+        "value_number": 3.4,
+        "unit": "mmol/L",
+        "reference_range": "< 3.0",
+        "flag_text": "H",
+        "column": "current"
+      },
+      "original": {
+        "test_name": "LDL cholesterol",
+        "value_text": "3.4",
+        "value_number": 3.4,
+        "unit": "mmol/L",
+        "reference_range": "< 3.0",
+        "flag_text": "H",
+        "column": "current"
+      },
+      "unsure": ["The flag is faint on the page."],
+      "quote": "LDL cholesterol | 3.4 H | mmol/L | < 3.0",
+      "outOfDate": false
+    },
+    {
+      "id": "drf-a3",
+      "version": 1,
+      "page": 1,
+      "status": "pending",
+      "fields": {
+        "test_name": "HbA1c",
+        "value_text": "7.1",
+        "value_number": 7.1,
+        "unit": "%",
+        "column": "earlier"
+      },
+      "original": {
+        "test_name": "HbA1c",
+        "value_text": "7.1",
+        "value_number": 7.1,
+        "unit": "%",
+        "column": "earlier"
+      },
+      "unsure": [],
+      "quote": "HbA1c (previous) | 7.1 | %",
+      "outOfDate": false
+    }
+  ],
+  "savedAs": []
+}

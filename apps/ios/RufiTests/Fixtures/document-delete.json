@@ -1,0 +1,46 @@
+{
+  "name": "Sunrise Labs August.pdf",
+  "files": [{ "name": "Sunrise Labs August.pdf", "pages": 2 }],
+  "place": null,
+  "others": 0,
+  "readings": 0,
+  "unsaved": 3,
+  "saved": [
+    {
+      "kind": "condition",
+      "id": "cond-a1",
+      "label": "Type 2 diabetes",
+      "date": "Mar 2024",
+      "replaced": false
+    },
+    {
+      "kind": "result",
+      "id": "res-a1",
+      "label": "HbA1c 6.8 %",
+      "date": "12 Aug 2026",
+      "replaced": false
+    },
+    {
+      "kind": "result",
+      "id": "res-a2",
+      "label": "Glucose 118 mg/dL",
+      "date": "12 Aug 2026",
+      "replaced": false
+    },
+    {
+      "kind": "result",
+      "id": "res-a3",
+      "label": "CRP <5 mg/L",
+      "date": "12 Aug 2026",
+      "replaced": false
+    },
+    {
+      "kind": "result",
+      "id": "res-a4",
+      "label": "TSH 2.1 mIU/L",
+      "date": "12 Aug 2026",
+      "replaced": true
+    }
+  ],
+  "version": "de777c0faa6f2a90"
+}

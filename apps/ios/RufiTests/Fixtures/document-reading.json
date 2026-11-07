@@ -1,0 +1,30 @@
+{
+  "name": "Sunrise Labs August.pdf",
+  "status": "done",
+  "saved": 2,
+  "of": 2,
+  "runAt": null,
+  "error": null,
+  "note": null,
+  "pages": [
+    {
+      "position": 1,
+      "state": "read",
+      "why": null,
+      "entry": null,
+      "copy": "Sunrise Labs · Collected 12 Aug 2026\n\n| Test | Result | Unit | Range |\n| --- | --- | --- | --- |\n| Haemoglobin | 13.2 | g/dL | 12.0–15.5 |\n| LDL cholesterol | 3.4 H | mmol/L | < 3.0 |\n| HbA1c (previous) | 7.1 | % | |",
+      "checks": null
+    },
+    {
+      "position": 2,
+      "state": "nothing_here",
+      "why": null,
+      "entry": null,
+      "copy": "",
+      "checks": null
+    }
+  ],
+  "usage": null,
+  "model": null,
+  "effort": null
+}
