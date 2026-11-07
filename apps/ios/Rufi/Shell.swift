@@ -22,6 +22,10 @@ final class Shell {
 
     let pairing: Pairing
     let screens: Screens
+    /// Dose logs not on the Mac yet: Today's and the reminders'.
+    let outbox: Outbox
+    /// Sends the dose logs waiting, then brings the reminders in line.
+    private let refresh: () -> Void
     let door: Door
     let theme: Theme
     /// The chat's box, drawn here; the page keeps its rules.
@@ -92,9 +96,11 @@ final class Shell {
     /// Why the original couldn't be shown, in one line.
     var originalProblem: String?
 
-    init(pairing: Pairing, key: String, theme: Theme, pending: Pending, seen: @escaping () -> Bool,
+    init(pairing: Pairing, key: String, theme: Theme, pending: Pending, outbox: Outbox, seen: @escaping () -> Bool,
          refresh: @escaping () -> Void, unpaired: @escaping () -> Void) {
         self.pairing = pairing
+        self.outbox = outbox
+        self.refresh = refresh
         self.theme = theme
         self.pending = pending
         self.seen = seen
@@ -258,6 +264,8 @@ final class Shell {
         let page = live
         connected()
         fresh += 1
+        // Dose logs made meanwhile go now.
+        refresh()
         if page {
             screens.reconnect()
             await sendPending()
@@ -288,6 +296,31 @@ final class Shell {
         } catch {
             unpaired()
         }
+    }
+
+    /// Taken, Skipped or Undo on Today: kept in the outbox first, as a
+    /// reminder's are, then sent; the reminders follow. Out of reach, it
+    /// waits there, Pending. Why it couldn't be kept, in a few words.
+    func log(_ state: UnsentLog.State, medicine: RecordRow, doseAt: String) async -> String? {
+        // As the Mac takes an instant: "2026-11-02T15:32:00.000Z".
+        let instant = ISO8601DateFormatter()
+        instant.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let now = instant.string(from: .now)
+        let log = UnsentLog(id: UUID().uuidString.lowercased(), made: .init(pairing), medicine: medicine.id,
+                            label: [medicine.name, medicine.strength].compactMap { $0 }.joined(separator: " "),
+                            doseAt: doseAt, state: state, loggedAt: now, takenAt: state == .taken ? now : nil)
+        do {
+            try outbox.add([log])
+        } catch {
+            return "Rufi couldn't keep that. Try again."
+        }
+        do {
+            try await outbox.send(to: pairing, door.log)
+        } catch {
+            unpaired()
+        }
+        refresh()
+        return nil
     }
 
     /// The box the place on top has: the page's, once one drew; until then,

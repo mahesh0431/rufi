@@ -16,6 +16,9 @@ struct NativePageView: View {
             switch page {
             case .overview: OverviewView(shell: shell)
             case let .list(kind): RecordListView(shell: shell, kind: kind)
+            case .labResults: LabResultsView(shell: shell)
+            case let .test(id): TestView(shell: shell, screen: screen, id: id)
+            case let .visit(id): VisitView(shell: shell, screen: screen, id: id)
             case let .row(kind, id): RowView(shell: shell, screen: screen, kind: kind, id: id)
             case .followUps: FollowUpsView(shell: shell)
             }
@@ -325,15 +328,7 @@ private struct RecentLine: View {
         .accessibilityHint(open ? "Hides what was saved" : "Shows what was saved")
     }
 
-    /// The receipt as Rufi wrote it, its Markdown as a line each, a list's
-    /// lines with their bullet.
-    private var receipt: AttributedString {
-        let text = change.receipt.split(separator: "\n", omittingEmptySubsequences: false)
-            .map { $0.hasPrefix("- ") ? "• " + $0.dropFirst(2) : String($0) }
-            .joined(separator: "\n")
-        return (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-            ?? AttributedString(text)
-    }
+    private var receipt: AttributedString { Words.markdown(change.receipt) }
 }
 
 // MARK: Record pages
@@ -365,16 +360,29 @@ struct RecordListView: View {
                     }
                 } else {
                     List {
-                        Section {
-                            ForEach(groups.flatMap(\.rows.rows)) { row in
-                                RowLine(shell: shell, row: row)
+                        if kind == "medicine_use" { TodaySection(shell: shell) }
+                        if kind == "measurement" {
+                            // By the day they were taken, newest first.
+                            ForEach(groups) { group in
+                                let day = Words.day(group)
+                                Section {
+                                    ForEach(group.rows.rows) { RowLine(shell: shell, row: $0, day: group.date) }
+                                } header: {
+                                    Text("\(day.name) · \(day.detail)")
+                                }
+                                .listRowBackground(shell.theme.surface)
                             }
-                            if next != nil {
-                                ProgressView().frame(maxWidth: .infinity)
-                                    .task { await more() }
+                        } else {
+                            Section {
+                                ForEach(groups.flatMap(\.rows.rows)) { RowLine(shell: shell, row: $0) }
                             }
+                            .listRowBackground(shell.theme.surface)
                         }
-                        .listRowBackground(shell.theme.surface)
+                        if next != nil {
+                            ProgressView().frame(maxWidth: .infinity)
+                                .listRowBackground(Color.clear)
+                                .task { await more() }
+                        }
                     }
                 }
             } else {
@@ -416,6 +424,8 @@ struct RecordListView: View {
 struct RowLine: View {
     let shell: Shell
     let row: RecordRow
+    /// A measurement's day, which its row doesn't say again.
+    var day: String??
 
     var body: some View {
         if row.problem != nil {
@@ -424,11 +434,22 @@ struct RowLine: View {
             Opens {
                 Task { await shell.go(address) }
             } label: {
-                RowCells(cells: Words.cells(row))
+                RowCells(cells: cells)
             }
         } else {
-            RowCells(cells: Words.cells(row))
+            RowCells(cells: cells)
         }
+    }
+
+    private var cells: Words.Cells {
+        var cells = Words.cells(row)
+        if row.kind == "result" {
+            // A measurement: its name and value apart, its date only where its day's doesn't say it.
+            cells.title = [row.test, row.replaces == nil ? nil : "(amended)"].compactMap { $0 }.joined(separator: " ")
+            cells.status = [Words.value(of: row), cells.status].filter { !$0.isEmpty }.joined(separator: " · ")
+            if let day { cells.date = Words.measured(row, on: day) }
+        }
+        return cells
     }
 }
 
@@ -466,11 +487,48 @@ private struct RowDetailList: View {
                     RowCells(cells: Words.cells(row))
                     if let details = row.details { Text(details) }
                     if row.kind == "follow_up" { followUp(row) }
+                    if row.kind == "result" {
+                        let line = Words.entered(row, at: detail.entered)
+                        if !line.isEmpty { Text(line).font(.subheadline).foregroundStyle(.secondary) }
+                    }
                 }
             } footer: {
                 if detail.removed { Text("Removed from your health record.") }
             }
             .listRowBackground(surface)
+            if row.kind == "medicine_use", row.problem == nil {
+                MedicineTiming(row: row, now: now).listRowBackground(surface)
+                MedicineDoses(shell: shell, medicine: row).listRowBackground(surface)
+            }
+            if row.kind == "result", let test = row.in_test {
+                Section {
+                    Opens { Task { await shell.go("/people/\(person)/tests/\(test)") } } label: {
+                        Text("\(row.test ?? "This test") over time")
+                    }
+                }
+                .listRowBackground(surface)
+            }
+            DetailSections(shell: shell, detail: detail)
+        }
+    }
+
+    /// A follow-up's due, its outcome when closed, and what it is about.
+    @ViewBuilder
+    private func followUp(_ row: RecordRow) -> some View {
+        let closed = row.status == "done" || row.status == "dropped"
+        if closed, let outcome = row.outcome { Text("Outcome: \(outcome)") }
+        if let about = row.about { AboutLine(shell: shell, about: about) }
+    }
+}
+
+/// A record's sources, its history, and the versions an amendment links.
+struct DetailSections: View {
+    let shell: Shell
+    let detail: RecordDetail
+
+    private var surface: Color { shell.theme.surface }
+
+    var body: some View {
             Section("Sources") {
                 if detail.sources.isEmpty {
                     Text("None kept: saved before Rufi kept sources.").foregroundStyle(.secondary)
@@ -497,15 +555,20 @@ private struct RowDetailList: View {
                 }
             }
             .listRowBackground(surface)
-        }
+            if let earlier = detail.replaces {
+                Section("Replaces") {
+                    Text("\(version(earlier)) \(Text("(the earlier version, kept)").foregroundStyle(.secondary))")
+                }
+                .listRowBackground(surface)
+            }
+            if let newer = detail.replacedBy {
+                Section("Replaced by") { Text(version(newer)) }
+                    .listRowBackground(surface)
+            }
     }
 
-    /// A follow-up's due, its outcome when closed, and what it is about.
-    @ViewBuilder
-    private func followUp(_ row: RecordRow) -> some View {
-        let closed = row.status == "done" || row.status == "dropped"
-        if closed, let outcome = row.outcome { Text("Outcome: \(outcome)") }
-        if let about = row.about { AboutLine(shell: shell, about: about) }
+    private func version(_ row: RecordRow) -> String {
+        row.problem == nil ? Words.cells(row).title : "Can't show this row."
     }
 }
 

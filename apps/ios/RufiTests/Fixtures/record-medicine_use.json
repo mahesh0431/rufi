@@ -1,0 +1,43 @@
+{
+  "groups": [
+    {
+      "id": "medicine_use:med-a2",
+      "type": "row",
+      "date": "2026-06",
+      "rows": [
+        {
+          "kind": "medicine_use",
+          "id": "med-a2",
+          "name": "Creatine",
+          "strength": "5 g",
+          "directions": "every morning",
+          "status": "current",
+          "started": { "date": "2026-06" },
+          "remind": false
+        }
+      ]
+    },
+    {
+      "id": "medicine_use:med-a1",
+      "type": "row",
+      "date": "2024-03",
+      "rows": [
+        {
+          "kind": "medicine_use",
+          "id": "med-a1",
+          "name": "Metformin",
+          "strength": "500 mg",
+          "amount": "1 tablet",
+          "directions": "twice a day",
+          "times": ["08:00", "20:00"],
+          "route": "by mouth",
+          "purpose": "blood sugar",
+          "status": "current",
+          "started": { "date": "2024-03" },
+          "remind": true
+        }
+      ]
+    }
+  ],
+  "next": null
+}

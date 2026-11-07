@@ -12,7 +12,7 @@ struct UnsentSection: View {
             ForEach(outbox.logs) { log in
                 VStack(alignment: .leading, spacing: 2) {
                     Text(log.label)
-                    Text("\(Self.when(log.doseAt)) · \(log.state.rawValue)")
+                    Text("\(Self.when(log.doseAt)) · \(log.state == .cleared ? "undone" : log.state.rawValue)")
                         .font(.footnote).foregroundStyle(.secondary)
                     if let refused = log.refused {
                         Text("Your Mac refused this log: \(refused)").font(.footnote).foregroundStyle(.red)

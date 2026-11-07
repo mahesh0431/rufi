@@ -1,0 +1,52 @@
+{
+  "doses": [
+    {
+      "id": "dose-a1",
+      "medicine": { "id": "med-a1", "name": "Metformin", "strength": "500 mg" },
+      "doseAt": "2026-10-05T08:00",
+      "state": "taken",
+      "takenAt": "2026-10-05T02:42:00.000Z",
+      "loggedAt": "2026-10-05T02:42:00.000Z",
+      "receivedAt": "2026-10-05T02:42:01.000Z",
+      "by": "app:app-asha"
+    },
+    {
+      "id": "dose-a2",
+      "medicine": { "id": "med-a1", "name": "Metformin", "strength": "500 mg" },
+      "doseAt": "2026-10-05T20:00",
+      "state": "skipped",
+      "loggedAt": "2026-10-05T14:40:00.000Z",
+      "receivedAt": "2026-10-05T14:40:00.000Z",
+      "by": "mac"
+    },
+    {
+      "id": "dose-a3",
+      "medicine": { "id": "med-a1", "name": "Metformin", "strength": "500 mg" },
+      "doseAt": "2026-10-06T08:00",
+      "state": "taken",
+      "takenAt": "2026-10-06T02:35:00.000Z",
+      "loggedAt": "2026-10-06T02:36:00.000Z",
+      "receivedAt": "2026-10-06T13:32:00.000Z",
+      "by": "app:app-asha"
+    },
+    {
+      "id": "dose-a4",
+      "medicine": { "id": "med-a1", "name": "Metformin", "strength": "500 mg" },
+      "doseAt": "2026-10-06T20:00",
+      "state": "taken",
+      "takenAt": "2026-10-06T14:45:00.000Z",
+      "loggedAt": "2026-10-06T15:00:00.000Z",
+      "receivedAt": "2026-10-06T15:00:00.000Z",
+      "by": "rufi_ai"
+    },
+    {
+      "id": "dose-a5",
+      "medicine": { "id": "med-a1", "name": "Metformin", "strength": "500 mg" },
+      "doseAt": "2026-10-06T20:00",
+      "state": "cleared",
+      "loggedAt": "2026-10-06T15:05:00.000Z",
+      "receivedAt": "2026-10-06T15:05:00.000Z",
+      "by": "mac"
+    }
+  ]
+}

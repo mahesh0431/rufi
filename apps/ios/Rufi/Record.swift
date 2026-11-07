@@ -72,6 +72,18 @@ nonisolated struct RecordRow: Decodable, Equatable, Identifiable, Sendable {
     var category: String?
     var measured: Dated?
     var replaces: String?
+    var range: String?
+    var flag: String?
+    var context: String?
+    var comparator: String?
+    var number: Double?
+    var second_number: Double?
+    // Named as the route says: the result's test, and its numbers in the test's unit.
+    var in_test: String?
+    var test_number: Double?
+    var test_second_number: Double?
+    // A test.
+    var section: String?
     // A visit and a medicine, as a follow-up names what it is about.
     var doctor: String?
     var place: String?
@@ -83,6 +95,12 @@ nonisolated struct RecordRow: Decodable, Equatable, Identifiable, Sendable {
     var directions: String?
     var times: [String]?
     var started: Dated?
+    var days: String?
+    var days_words: String?
+    var until: Dated?
+    var remind: Bool?
+    /// A visit's doctor's words, as written (Markdown).
+    var as_written: String?
 
     /// A row that couldn't be read at all, as one that doesn't fit.
     static func unreadable(_ problem: String) -> RecordRow {
@@ -167,6 +185,79 @@ nonisolated struct RecordDetail: Decodable, Equatable, Sendable {
     let history: [RecordChange]
     /// The result amended since: the one that replaces it.
     var replacedBy: RecordRow?
+    /// The earlier result this amended one replaces.
+    var replaces: RecordRow?
+    /// For a result: when it entered Rufi.
+    var entered: String?
+    /// For a visit: the records saved from it.
+    var fromVisit: Rows?
+}
+
+/// Lab results: each test once, by section, with its latest value.
+nonisolated struct LabResults: Decodable, Equatable, Sendable {
+    struct Test: Decodable, Equatable, Sendable {
+        let test: RecordRow
+        let latest: RecordRow
+        let count: Int
+    }
+
+    struct Section: Decodable, Equatable, Sendable {
+        let section: String?
+        let tests: [Test]
+    }
+
+    let sections: [Section]
+}
+
+/// A test's page: the test, and its current values newest first.
+nonisolated struct TestPage: Decodable, Equatable, Sendable {
+    struct Value: Decodable, Equatable, Sendable {
+        struct Report: Decodable, Equatable, Sendable { let issuer: String? }
+        let row: RecordRow
+        /// Its report; none: typed in the chat.
+        let report: Report?
+    }
+
+    let test: RecordRow
+    let values: [Value]
+}
+
+/// Who logged a dose, and how it stands.
+nonisolated struct DoseLogged: Decodable, Equatable, Sendable {
+    let state: String
+    let takenAt: String?
+    let loggedAt: String
+    let by: String
+}
+
+/// The person's medicine doses today, on the Mac's day.
+nonisolated struct Today: Decodable, Equatable, Sendable {
+    struct Dose: Decodable, Equatable, Sendable {
+        let at: String
+        let past: Bool
+        let medicine: RecordRow
+        let logged: DoseLogged?
+    }
+
+    let day: String
+    let doses: [Dose]
+    /// A dose is still to come on another day: the section shows.
+    let upcoming: Bool
+}
+
+/// A medicine's dose log on some days, by dose, then in the order logged.
+nonisolated struct Doses: Decodable, Equatable, Sendable {
+    struct Log: Decodable, Equatable, Identifiable, Sendable {
+        let id: String
+        let doseAt: String
+        let state: String
+        let takenAt: String?
+        let loggedAt: String
+        let receivedAt: String
+        let by: String
+    }
+
+    let doses: [Log]
 }
 
 /// A page's tile on Overview.

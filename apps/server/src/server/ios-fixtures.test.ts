@@ -32,6 +32,18 @@ const ROUTES: readonly (readonly [string, string])[] = [
   ["detail-result-amended", "/api/people/asha/record/result/res-a4"],
   ["detail-result-current", "/api/people/asha/record/result/res-a5"],
   ["follow-ups", "/api/people/asha/follow-ups"],
+  ["lab-results", "/api/people/asha/lab-results"],
+  ["test-tsh", "/api/people/asha/tests/tst-tsh"],
+  ["detail-test-tsh", "/api/people/asha/record/test/tst-tsh"],
+  ["record-measurement", "/api/people/asha/record/measurement"],
+  ["record-medicine_use", "/api/people/asha/record/medicine_use"],
+  ["detail-medicine", "/api/people/asha/record/medicine_use/med-a1"],
+  [
+    "doses",
+    "/api/people/asha/doses?from=2026-10-01&to=2026-10-14&medicine=med-a1",
+  ],
+  ["record-visit", "/api/people/asha/record/visit"],
+  ["detail-visit", "/api/people/asha/record/visit/vis-a1"],
 ];
 
 let home: string;

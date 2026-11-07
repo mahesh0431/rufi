@@ -32,9 +32,9 @@ struct RecordTests {
             == ["Latest: Sunrise Labs · 1 Sep 2026 · 2 results", "1 with a lab note"])
         #expect(Words.tileLines(try #require(tiles["medicine_use"])) == ["2 taking now: Creatine 5 g, Metformin 500 mg"])
         #expect(Words.tileLines(try #require(tiles["condition"])) == ["2 ongoing: Thyroid trouble, Type 2 diabetes"])
-        // "None known" is something: Allergies has its tile; Visits has nothing.
+        // "None known" is something: Allergies has its tile.
         #expect(Words.tileLines(try #require(tiles["allergy"])) == ["None known (as of 10 Oct 2026)", "1 inactive"])
-        #expect(overview.tiles.filter { !Words.hasTile($0) }.map(\.kind) == ["visit"])
+        #expect(overview.tiles.allSatisfy(Words.hasTile))
 
         let latest = try #require(overview.recent.first)
         #expect(Words.summary(latest.receipt) == "Changed condition Type 2 diabetes: status ongoing")
@@ -65,7 +65,8 @@ struct RecordTests {
     @Test func everyRowTheRoutesAnswerIsReadableWithItsWords() throws {
         // A field renamed or retyped on the Mac turns a row unreadable or
         // blank here: only the one stored row that doesn't fit may be.
-        for page in ["record-condition", "record-allergy", "record-symptom", "record-care_event"] {
+        for page in ["record-condition", "record-allergy", "record-symptom", "record-care_event",
+                     "record-measurement", "record-medicine_use", "record-visit"] {
             for row in try read(page, as: RecordPage.self).groups.flatMap(\.rows.rows) where row.id != "cond-a3" {
                 #expect(row.problem == nil && !Words.cells(row).title.isEmpty, "\(page): \(row.id)")
             }
@@ -88,6 +89,65 @@ struct RecordTests {
         #expect(current.replacedBy == nil)
         #expect(Words.about(named.row, now: current.row) == "TSH 2.1 mIU/L · 12 Aug 2026 · amended to 4.6 mIU/L")
         #expect(Words.address(of: current.row, person: "asha") == "/people/asha/record/lab_result?open=res-a5&kind=result")
+    }
+
+    @Test func labResultsAndATestsPageSayEachValueAsPrinted() throws {
+        let sections = try read("lab-results", as: LabResults.self).sections
+        #expect(sections.map(\.section) == ["Inflammation", "Sugar", "Thyroid", "Vitamins", nil])
+        let tsh = try #require(sections.flatMap(\.tests).first { $0.test.id == "tst-tsh" })
+        // The amended value is the latest; its first, 2.1, is no longer current.
+        #expect(Words.value(of: tsh.latest) == "4.6 mIU/L" && tsh.latest.replaces == "res-a4" && tsh.count == 1)
+        #expect(Words.cells(tsh.latest).status == "High")
+
+        let page = try read("test-tsh", as: TestPage.self)
+        let value = try #require(page.values.first)
+        #expect(value.report?.issuer == "Sunrise Labs")
+        #expect(Words.converted(value.row, unit: page.test.unit) == nil)
+        #expect(Words.address(of: value.row, person: "asha") == "/people/asha/record/lab_result?open=res-a5&kind=result")
+        #expect(try read("detail-test-tsh", as: RecordDetail.self).row.name == "TSH")
+    }
+
+    @Test func measurementsComeByDayAndARowSaysItsDateOnlyWhereItsDayDoesnt() throws {
+        let day = try #require(read("record-measurement", as: RecordPage.self).groups.first)
+        #expect(Words.day(day) == ("20 Sep 2026", "2 measurements"))
+        let pressure = try #require(day.rows.rows.first)
+        #expect(Words.value(of: pressure) == "128/84 mmHg")
+        #expect(Words.measured(pressure, on: day.date) == "")
+        #expect(Words.measured(pressure, on: "2026-09") == "20 Sep 2026")
+    }
+
+    @Test func aMedicinesTimingAndItsDosesAsTheMacSaysThem() throws {
+        let metformin = try read("detail-medicine", as: RecordDetail.self).row
+        #expect(metformin.times == ["08:00", "20:00"] && metformin.remind == true && metformin.until == nil)
+        #expect(Words.cells(metformin) == Words.Cells(title: "Metformin 500 mg", detail: "1 tablet · twice a day · 08:00, 20:00",
+                                                      status: "Taking now", date: "since Mar 2024"))
+        // The doses' times are the phone's: these were logged in India.
+        var india = Calendar(identifier: .gregorian)
+        india.timeZone = TimeZone(identifier: "Asia/Kolkata")!
+        let doses = try read("doses", as: Doses.self).doses
+        #expect(doses.map { Words.dose($0, calendar: india) } == [
+            "08:00 taken 08:12 (iPhone)",
+            "20:00 skipped (Mac)",
+            "08:00 taken 08:05 (iPhone, arrived 19:02)",
+            "20:00 taken 20:15 (told Rufi AI)",
+            "20:00 undone (Mac)",
+        ])
+        #expect(Words.doseDay("2026-10-06", today: "2026-10-07") == "Yesterday")
+        #expect(Words.doseDay("2026-10-05", today: "2026-10-07") == "Mon 5 Oct")
+        #expect(Words.doseDay("2025-12-31", today: "2026-01-02") == "Wed 31 Dec 2025")
+        #expect(Words.days(before: "2026-10-14", 13) == "2026-10-01")
+        let logged = DoseLogged(state: "taken", takenAt: doses[0].takenAt, loggedAt: doses[0].loggedAt, by: doses[0].by)
+        #expect(Words.logged(logged, calendar: india) == "Taken 08:12 · iPhone")
+    }
+
+    @Test func aVisitsPageSaysWhenAndWhereAndWhatWasSavedFromIt() throws {
+        let detail = try read("detail-visit", as: RecordDetail.self)
+        #expect(Words.cells(detail.row).title == "Dr A. Fictional · Lakeview Family Clinic")
+        #expect(Words.visitWhen(detail.row) == "clinic · 5 Oct 2026")
+        #expect(detail.row.as_written?.hasPrefix("**Diabetes review**") == true)
+        let saved = try #require(detail.fromVisit?.rows.first)
+        #expect(Words.noun(saved) == "Care event" && Words.cells(saved).title == "Flu vaccine")
+        #expect(Words.address(of: detail.row, person: "asha") == "/people/asha/visits/vis-a1")
     }
 
     @Test func aRowOpenedSaysWhereItCameFromAndEverySave() throws {

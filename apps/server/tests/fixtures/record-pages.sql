@@ -50,3 +50,27 @@ INSERT INTO record_changes (operation_id, seq, person_id, kind, record_id, actio
 
 INSERT INTO record_sources (person_id, kind, record_id, type, document_id, page, operation_id) VALUES
   ('asha', 'condition', 'cond-a1', 'document_page', 'doc-asha-aug', 1, 'op-a1');
+
+-- Metformin's times and reminders, and some of its doses in early October:
+-- taken on the iPhone (one arriving late), skipped on the Mac, told to Rufi
+-- AI, and one taken then undone.
+UPDATE medicine_uses SET times = '["08:00","20:00"]', remind = 1 WHERE id = 'med-a1';
+
+INSERT INTO dose_log (id, person_id, medicine_use_id, dose_at, state, taken_at, logged_at, received_at, logged_by) VALUES
+  ('dose-a1', 'asha', 'med-a1', '2026-10-05T08:00', 'taken', '2026-10-05T02:42:00.000Z', '2026-10-05T02:42:00.000Z', '2026-10-05T02:42:01.000Z', 'app:app-asha'),
+  ('dose-a2', 'asha', 'med-a1', '2026-10-05T20:00', 'skipped', NULL, '2026-10-05T14:40:00.000Z', '2026-10-05T14:40:00.000Z', 'mac'),
+  ('dose-a3', 'asha', 'med-a1', '2026-10-06T08:00', 'taken', '2026-10-06T02:35:00.000Z', '2026-10-06T02:36:00.000Z', '2026-10-06T13:32:00.000Z', 'app:app-asha'),
+  ('dose-a4', 'asha', 'med-a1', '2026-10-06T20:00', 'taken', '2026-10-06T14:45:00.000Z', '2026-10-06T15:00:00.000Z', '2026-10-06T15:00:00.000Z', 'rufi_ai'),
+  ('dose-a5', 'asha', 'med-a1', '2026-10-06T20:00', 'cleared', NULL, '2026-10-06T15:05:00.000Z', '2026-10-06T15:05:00.000Z', 'mac');
+
+-- A visit, with the doctor's words, and the flu vaccine saved from it.
+INSERT INTO visits (id, person_id, setting, date, doctor, place, reason, as_written) VALUES
+  ('vis-a1', 'asha', 'clinic', '2026-10-05', 'Dr A. Fictional', 'Lakeview Family Clinic', 'Diabetes review',
+   '**Diabetes review**
+
+- HbA1c 6.8 %, above target
+- Flu vaccine given today
+- Continue Metformin 500 mg twice a day');
+
+INSERT INTO record_sources (person_id, kind, record_id, type, visit_id) VALUES
+  ('asha', 'care_event', 'care-a1', 'visit', 'vis-a1');

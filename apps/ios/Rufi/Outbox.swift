@@ -6,7 +6,8 @@ import Observation
 /// made under. Its id is made here and kept, so sending it again is stored
 /// once on the Mac.
 nonisolated struct UnsentLog: Codable, Equatable, Identifiable, Sendable {
-    enum State: String, Codable, Sendable { case taken, skipped }
+    /// Cleared: Undo on Today, a log of its own that clears the dose's.
+    enum State: String, Codable, Sendable { case taken, skipped, cleared }
 
     /// The pairing a log was made under: it goes only to this person on
     /// this Mac's folder, whichever app pairs for them next.

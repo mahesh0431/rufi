@@ -1,0 +1,19 @@
+{
+  "row": {
+    "kind": "medicine_use",
+    "id": "med-a1",
+    "name": "Metformin",
+    "strength": "500 mg",
+    "amount": "1 tablet",
+    "directions": "twice a day",
+    "times": ["08:00", "20:00"],
+    "route": "by mouth",
+    "purpose": "blood sugar",
+    "status": "current",
+    "started": { "date": "2024-03" },
+    "remind": true
+  },
+  "removed": false,
+  "sources": [],
+  "history": []
+}
