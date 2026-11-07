@@ -66,12 +66,24 @@ final class ChatBox {
     private(set) var text = ""
     /// Asks the page (`window.rufi.box`).
     var asking: ([String: Any]) -> Void = { _ in }
+    /// Rufi can't be reached: Send keeps the message on the iPhone.
+    var away = false
+    /// Typed while Rufi couldn't be reached: these words, not the draft the
+    /// page reads when it is back, stay in the box.
+    private var typedAway = false
 
     /// The page told the box as it is. Its text only when the page changed
     /// it, so it never undoes typing.
     func took(_ data: Data) {
         guard let state = try? JSONDecoder().decode(State.self, from: data) else { return }
-        if let text = state.text { self.text = text }
+        if let text = state.text {
+            if typedAway, !self.text.isEmpty {
+                ask(["type": "text", "text": self.text])
+            } else {
+                self.text = text
+            }
+            typedAway = false
+        }
         self.state = state
     }
 
@@ -79,6 +91,7 @@ final class ChatBox {
     func typed(_ text: String) {
         guard text != self.text else { return }
         self.text = text
+        if away { typedAway = true }
         ask(["type": "text", "text": text])
     }
 
@@ -116,8 +129,13 @@ struct ChatBoxView: View {
     var body: some View {
         let state = box.state
         let open = box.open(focused: focused)
+        let away = box.away
+        let kind = shell.boxKind
         VStack(spacing: 4) {
-            if let line = state?.line {
+            ForEach(shell.pending.messages.filter { $0.matches(shell.pairing) }) { message in
+                PendingRow(message: message) { shell.takeBack(message) }
+            }
+            if !away, let line = state?.line {
                 HStack(spacing: 8) {
                     Text(line)
                     if state?.retry == true {
@@ -143,16 +161,17 @@ struct ChatBoxView: View {
                     }
                 }
                 HStack(alignment: .bottom, spacing: 8) {
-                    TextField(state?.placeholder ?? "", text: Binding { box.text } set: { box.typed($0) },
-                              axis: .vertical)
+                    TextField(state?.placeholder ?? "Ask or tell Rufi about \(shell.pairing.person.name)…",
+                              text: Binding { box.text } set: { box.typed($0) }, axis: .vertical)
                         .lineLimit(1...5)
                         .focused($focused)
-                        .disabled(state?.ready != true)
+                        .disabled(!away && state?.ready != true)
                         .padding(.vertical, 8)
                         .accessibilityLabel("Message to Rufi")
-                    if !open { send(state) }
+                    if !open || away { send(state) }
                 }
-                if open, let state {
+                // What needs Rufi waits until it can be reached.
+                if open, !away, let state {
                     HStack(spacing: 2) {
                         attach(state)
                         model(state)
@@ -173,7 +192,7 @@ struct ChatBoxView: View {
             }
             .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
             // Under the chat, not over a page, and not with the keyboard up.
-            if !focused, box.kind == .page || state?.panel == true {
+            if !focused, kind == .page || state?.panel == true {
                 // At the accessibility sizes, as at the largest other size:
                 // never more than two lines.
                 Disclaimer().dynamicTypeSize(...DynamicTypeSize.xxxLarge)
@@ -184,10 +203,10 @@ struct ChatBoxView: View {
         .animation(.snappy(duration: 0.2), value: open)
         .onChange(of: focused) { _, now in
             // On a reading page, the box opens the chat over the page.
-            if now, box.kind == .bar, state?.panel != true { box.ask(["type": "open"]) }
+            if now, kind == .bar, !away, state?.panel != true { box.ask(["type": "open"]) }
         }
         // Another page: the keyboard goes, and a reading page's box is one line.
-        .onChange(of: box.kind) { focused = false }
+        .onChange(of: kind) { focused = false }
         .onChange(of: state?.panel) { was, now in
             if was == true, now == false { focused = false }
         }
@@ -227,10 +246,16 @@ struct ChatBoxView: View {
     /// Send, or while a reply runs: Stop, or Steer or Queue once there are words.
     @ViewBuilder
     private func send(_ state: ChatBox.State?) -> some View {
-        let button = state?.button ?? "send"
-        let can = state?.canSend ?? false
+        // Rufi can't be reached: Send keeps the message to send when it can.
+        let away = box.away
+        let button = away ? "send" : state?.button ?? "send"
+        let can = away ? !box.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty : state?.canSend ?? false
         Button {
-            box.ask(["type": button == "stop" ? "stop" : "send"])
+            if away {
+                shell.pend(box.text)
+            } else {
+                box.ask(["type": button == "stop" ? "stop" : "send"])
+            }
         } label: {
             Image(systemName: Self.symbol(button))
                 .font(.system(size: 15, weight: .semibold))
@@ -379,6 +404,36 @@ enum Chosen {
                                      type: type.preferredMIMEType ?? "application/octet-stream", data: data))
         }
         return files
+    }
+}
+
+/// A message waiting to send, above the box: its words, Pending (or why
+/// Rufi refused it), and ✕ to take it back into the box.
+private struct PendingRow: View {
+    let message: PendingMessage
+    let takeBack: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(message.text).font(.subheadline).lineLimit(1)
+                if let refused = message.refused {
+                    Text(refused).font(.caption).foregroundStyle(.red)
+                } else {
+                    Label("Pending", systemImage: "clock").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Button("Take Back", systemImage: "xmark", action: takeBack)
+                .labelStyle(.iconOnly)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 30, height: 30)
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 6)
+        .padding(.vertical, 6)
+        .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 16))
     }
 }
 

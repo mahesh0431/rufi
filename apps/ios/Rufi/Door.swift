@@ -53,7 +53,8 @@ nonisolated struct Door: Sendable {
 
     /// Who this key acts as; `mismatch` when the Mac speaks another `api`.
     func me() async throws(Problem) -> Me {
-        let me: Me = try await Self.call(origin: origin, key: key, method: "GET", path: "/api/me", body: nil)
+        let me: Me = try await Self.call(origin: origin, key: key, method: "GET", path: "/api/me", body: nil,
+                                         wait: Self.openSeconds)
         guard me.api == Self.api else { throw .mismatch }
         return me
     }
@@ -62,7 +63,7 @@ nonisolated struct Door: Sendable {
     func open(_ path: String) async throws(Problem) -> URL {
         struct Opened: Decodable { let url: URL }
         let opened: Opened = try await Self.call(origin: origin, key: key, method: "POST", path: "/api/open",
-                                                 body: ["path": path])
+                                                 body: ["path": path], wait: Self.openSeconds)
         // Only the door's own origin loads in the screens.
         guard opened.url.scheme == origin.scheme, opened.url.host() == origin.host(),
               opened.url.port == origin.port
@@ -196,6 +197,34 @@ nonisolated struct Door: Sendable {
         }
     }
 
+    /// Sends a message kept while Rufi couldn't be reached into its
+    /// person's chat, under its own id, with when it was written. Refused:
+    /// Rufi's words. The Mac out of reach, or failing: `unreachable`, for the
+    /// next time.
+    func send(_ message: PendingMessage) async throws(Problem) {
+        var request = URLRequest(url: origin.appending(path: "\(Self.people)/\(message.person)/chat/messages"))
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONEncoder().encode(["id": message.id, "text": message.text,
+                                                      "writtenAt": message.writtenAt])
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await Self.session.data(for: request)
+        } catch {
+            throw .unreachable
+        }
+        guard let http = response as? HTTPURLResponse else { throw .unreachable }
+        let refusal = try? JSONDecoder().decode(Refusal.self, from: data)
+        switch http.statusCode {
+        case 200..<300: return
+        case 401 where refusal?.problem == "unpaired": throw .unpaired
+        case 400, 404, 409, 413: throw .refused(refusal?.error ?? "Rufi refused this message.")
+        default: throw .unreachable
+        }
+    }
+
     /// What the Mac said of a batch it took.
     enum Received: Sendable {
         case gotIt
@@ -266,15 +295,19 @@ nonisolated struct Door: Sendable {
     nonisolated(unsafe) static var standIn: AnyClass?
     #endif
 
+    /// How long opening Rufi, or asking whether it can be reached, waits.
+    static let openSeconds: TimeInterval = 10
+
     private static func call<Answer: Decodable>(
         origin: URL, key: String?, method: String, path: String, query: [String: String] = [:],
-        body: [String: String]?
+        body: [String: String]?, wait: TimeInterval? = nil
     ) async throws(Problem) -> Answer {
         var url = origin.appending(path: path)
         if !query.isEmpty {
             url.append(queryItems: query.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) })
         }
         var request = URLRequest(url: url)
+        if let wait { request.timeoutInterval = wait }
         request.httpMethod = method
         if let key { request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization") }
         if let body {
@@ -328,6 +361,8 @@ nonisolated struct Door: Sendable {
         case 200..<300: return data
         case 401 where refusal?.problem == "unpaired": throw .unpaired
         case 410 where refusal?.problem == "code_expired": throw .codeExpired
+        // Tailscale's answer when Rufi isn't running behind it: no words of Rufi's.
+        case 502...504 where refusal?.error == nil: throw .unreachable
         default:
             throw .refused(refusal?.error ?? "Rufi on your Mac refused (\(http.statusCode)).")
         }
