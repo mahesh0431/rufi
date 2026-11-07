@@ -395,8 +395,10 @@ struct RecordListView: View {
         }
         .task(id: shell.fresh) { await first() }
         .refreshable { await first() }
-        // A dose log the outbox sent, or still holds: Today says so.
-        .onChange(of: shell.outbox.logs.count) { Task { await readToday() } }
+        // A dose log the outbox sent later (Rufi reached again): Today says so.
+        .onChange(of: shell.outbox.logs.count) { old, new in
+            if new < old { Task { await readToday() } }
+        }
     }
 
     private func readToday() async {
