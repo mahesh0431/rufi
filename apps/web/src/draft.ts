@@ -107,7 +107,7 @@ export interface BoxState {
   sending: boolean;
   /** A send the core took, by id, until the chat shows it. */
   accepted: string | null;
-  /** How many sends the box started, a click on a reply's too: the chat follows each to its end. */
+  /** How many sends the person started: the chat follows each to its end. */
   sends: number;
   /** A send has no answer yet: appending must wait for it to be resolved. */
   unresolved: boolean;
@@ -167,6 +167,11 @@ export function draftBox(api: DraftApi) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   /** A send whose answer was lost: the same text again keeps its id. */
   let unanswered: Kept | undefined;
+
+  /** The person sent something: the chat follows it. */
+  function counted(): void {
+    store.setState((state) => ({ sends: state.sends + 1 }));
+  }
 
   /** Keeps the send's identity before it goes; if storage fails, it doesn't go. */
   function remember(send: Kept): boolean {
@@ -295,6 +300,12 @@ export function draftBox(api: DraftApi) {
       later();
     },
 
+    /**
+     * A waiting message the person sent or steered, or one they chose how
+     * to send again: the chat follows it, as it follows the box's own.
+     */
+    sent: counted,
+
     /** Saves now what isn't saved yet: Retry, or the box leaves the screen. */
     saveNow: save,
 
@@ -359,7 +370,8 @@ export function draftBox(api: DraftApi) {
         return;
       }
       clearTimeout(timer);
-      store.setState({ sending: true, sends: state.sends + 1, notice: null });
+      store.setState({ sending: true, notice: null });
+      counted();
       const id = unanswered?.text === text ? unanswered.id : newId();
       await inTurn(api.client, api.scope, async () => {
         try {
@@ -397,7 +409,7 @@ export function draftBox(api: DraftApi) {
      */
     async click(text: string, aiText: string): Promise<void> {
       const id = newId();
-      store.setState((state) => ({ sends: state.sends + 1 }));
+      counted();
       await inTurn(api.client, api.scope, async () => {
         try {
           await api.call("POST", "messages", { id, text, aiText });

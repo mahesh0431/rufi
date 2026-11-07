@@ -289,7 +289,7 @@ test("a reply the AI wrote in OpenUI draws in the chat under Rufi's strict CSP: 
   expect(page.context().pages()).toHaveLength(1);
 });
 
-test("a follow-up clicked in an earlier reply, scrolled up to, brings the chat to its end: the message and its reply show", async ({
+test("a send while scrolled up brings the chat to its end: a follow-up clicked in an earlier reply, and Steer on a waiting message", async ({
   page,
   rufi,
 }) => {
@@ -329,6 +329,22 @@ test("a follow-up clicked in an earlier reply, scrolled up to, brings the chat t
   await expect(
     log(page).locator("p", { hasText: /^Show my ferritin too$/ }),
   ).toBeInViewport();
+
+  // A message waits behind a reply that runs on; scrolled up, Steer sends it.
+  const box = chat(page).getByRole("textbox", { name: "Message to Rufi" });
+  await send(page, "hang");
+  await box.fill("And my iron?");
+  await box.press("ControlOrMeta+Enter");
+  const waiting = chat(page).getByRole("region", { name: "Waiting messages" });
+  await expect(waiting).toContainText("And my iron?");
+  await log(page).hover();
+  await page.mouse.wheel(0, -10_000);
+  await expect(followUp).toBeInViewport();
+  await waiting.getByRole("button", { name: "Steer" }).click();
+  await expect(
+    log(page).locator("p", { hasText: /^And my iron\?$/ }),
+  ).toBeInViewport();
+  await chat(page).getByRole("button", { name: "Stop" }).click();
 });
 
 /** Replies with a piece OpenUI leaves out: what shows, and what's left out. */
