@@ -563,13 +563,15 @@ struct StepView: View {
 }
 
 /// The AI's thinking opened: all of its words, in the sheet an agent opens
-/// in, kept current while the AI still thinks.
+/// in, kept current while the AI still thinks: Rufi AI's from the chat, an
+/// agent's from its Activity as the agent's sheet reads it again.
 private struct ThinkingSheet: View {
     let step: Step
     @Environment(ChatModel.self) private var chat
 
     var body: some View {
-        let text = chat.transcript.entries[step.id]?.text ?? step.text
+        let text = step.query["agent"].flatMap { agent in chat.logs[agent]?.lines.first { $0.id == step.id }?.text }
+            ?? chat.transcript.entries[step.id]?.text ?? step.text
         ChatSheet(title: Words.heading(text)) {
             RufiMarkdown(text: text, muted: true)
         }

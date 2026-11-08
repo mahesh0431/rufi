@@ -71,6 +71,9 @@ final class ChatModel {
     private(set) var agents: [SubAgent] = []
     /// Goes up when the agents read again: an open agent's Activity follows.
     private(set) var agentReads = 0
+    /// Each agent's Activity as last read, by the agent: a line opened from
+    /// it follows it.
+    private(set) var logs: [String: AgentLog] = [:]
     /// The agent whose sheet is open, by the name it was opened by.
     var openAgent: OpenAgent?
     /// Taken by the Mac, not in the transcript or the queue yet.
@@ -339,9 +342,12 @@ final class ChatModel {
         try await door.stop(agent: agent, for: person)
     }
 
-    /// An agent's latest `last` lines.
+    /// An agent's latest `last` lines, kept as its Activity now.
     func log(of agent: String, last: Int) async throws(Door.Problem) -> AgentLog {
-        try await door.read("chat/agents/log", for: person, query: ["agent": agent, "last": String(last)])
+        let log: AgentLog = try await door.read("chat/agents/log", for: person,
+                                                query: ["agent": agent, "last": String(last)])
+        logs[agent] = log
+        return log
     }
 
     private func readSettings() async {
