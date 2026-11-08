@@ -345,18 +345,23 @@ private struct AgentBubble: View {
 
     var body: some View {
         let title = entry.from?.title ?? ""
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 4) {
-                Image(systemName: "cpu")
-                Button(title) {
-                    if let agent = entry.agent { chat.openAgent = .init(id: agent, title: title) }
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                if let agent = entry.agent { chat.openAgent = .init(id: agent, title: title) }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "cpu").accessibilityHidden(true)
+                    Text(title).fontWeight(.medium).foregroundStyle(.primary)
+                    if let about = entry.from?.about, about == "stopped" || about == "failed" { Text("· \(about)") }
                 }
-                .fontWeight(.medium)
-                .foregroundStyle(.primary)
-                if let about = entry.from?.about, about == "stopped" || about == "failed" { Text("· \(about)") }
+                .padding(.vertical, 4)
+                .contentShape(.rect)
             }
+            .buttonStyle(.plain)
             .font(.caption)
             .foregroundStyle(.secondary)
+            // Over the words: their text selection reaches up into this line.
+            .zIndex(1)
             if !entry.text.isEmpty {
                 RufiMarkdown(text: entry.text)
                     .fixedSize(horizontal: false, vertical: true)
