@@ -14,7 +14,7 @@ final class Shell {
         case problem(String)
     }
 
-    /// Whether Rufi can be reached: a line at the top says when it can't,
+    /// Whether Rufi can be reached: a pill over the box says when it can't,
     /// and "Connected" for a moment when it can again.
     enum Reach: Equatable {
         case reachable, away, back
@@ -550,15 +550,19 @@ struct ShellView: View {
             }
             // Another place: a stack of its own.
             .id(shell.navigator.root.id)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
+            // A bar, so the page scrolls under it in glass, as under the title.
+            .safeAreaBar(edge: .bottom, spacing: 0) {
                 // A page drawn here has its own bar (`page`); a web page
                 // with a chat box, this one.
                 if shell.native(shell.navigator.top) == nil, shell.webBox, shell.state == .open {
-                    AskBar(name: shell.pairing.person.name, theme: shell.theme) { shell.chatShown = true }
-                        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: {
-                            shell.screens.box(top: $0)
-                        }
-                        .onDisappear { shell.screens.box(top: nil) }
+                    VStack(spacing: 8) {
+                        ReachPill(shell: shell)
+                        AskBar(name: shell.pairing.person.name, theme: shell.theme) { shell.chatShown = true }
+                            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: {
+                                shell.screens.box(top: $0)
+                            }
+                            .onDisappear { shell.screens.box(top: nil) }
+                    }
                 }
             }
         } sidebar: {
@@ -649,14 +653,19 @@ struct ShellView: View {
     @ViewBuilder
     private func page(_ screen: Screen, root: Bool) -> some View {
         ScreenView(shell: shell, screen: screen)
-            .safeAreaInset(edge: .top, spacing: 0) {
-                ReachLine(reach: shell.reach) { Task { await shell.check() } }
-            }
             // On the page itself, so its last row scrolls above the bar.
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                // The chat's own page has its box.
-                if let page = shell.native(screen), page != .chat {
-                    AskBar(name: shell.pairing.person.name, theme: shell.theme) { shell.chatShown = true }
+            .safeAreaBar(edge: .bottom, spacing: 0) {
+                if let page = shell.native(screen) {
+                    // The chat's own page has its box, and the pill over it.
+                    if page != .chat {
+                        VStack(spacing: 8) {
+                            ReachPill(shell: shell)
+                            AskBar(name: shell.pairing.person.name, theme: shell.theme) { shell.chatShown = true }
+                        }
+                    }
+                } else if !shell.webBox || shell.state != .open {
+                    // A web page with no box: the pill alone.
+                    ReachPill(shell: shell)
                 }
             }
             .navigationTitle(shell.title(screen))
@@ -718,37 +727,41 @@ struct ScreenView: View {
     }
 }
 
-/// The line under the title while Rufi can't be reached: it asks again
-/// by itself, and a tap asks at once. When it can, "Connected" for a moment.
-struct ReachLine: View {
-    let reach: Shell.Reach
-    let retry: () -> Void
+/// A pill over the box while Rufi can't be reached: it asks again by
+/// itself, and a tap asks at once. When it can, "Connected" for a moment.
+struct ReachPill: View {
+    let shell: Shell
 
     var body: some View {
         Group {
-            switch reach {
+            switch shell.reach {
             case .away:
-                Button(action: retry) {
+                Button {
+                    Task { await shell.check() }
+                } label: {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.mini)
                         Text("Can't reach Rufi")
                     }
-                    .frame(maxWidth: .infinity, minHeight: 28)
-                    .contentShape(.rect)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .contentShape(.capsule)
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .glassEffect(.regular.interactive(), in: .capsule)
                 .accessibilityHint("Tries again now")
             case .back:
                 Label("Connected", systemImage: "checkmark")
-                    .frame(maxWidth: .infinity, minHeight: 28)
                     .foregroundStyle(.green)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .glassEffect(in: .capsule)
             case .reachable:
                 EmptyView()
             }
         }
         .font(.footnote)
-        .background(reach == .reachable ? AnyShapeStyle(.clear) : AnyShapeStyle(.bar))
-        .animation(.snappy, value: reach)
+        .animation(.snappy, value: shell.reach)
     }
 }

@@ -60,7 +60,7 @@ struct ChatView: View {
                 EmptyView()
             }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+        .safeAreaBar(edge: .bottom, spacing: 0) {
             ChatBoxView(shell: shell, chat: chat)
         }
         .onChange(of: chat.sends) {

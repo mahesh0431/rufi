@@ -145,14 +145,11 @@ struct AskBar: View {
             .padding(.leading, 14)
             .padding(.trailing, 5)
             .padding(.vertical, 5)
-            .background(theme.surface, in: .rect(cornerRadius: 22))
-            .overlay { RoundedRectangle(cornerRadius: 22).strokeBorder(Color(.separator), lineWidth: 0.5) }
-            .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, 10)
-        .padding(.bottom, 2)
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
+        .padding(.horizontal)
         .accessibilityLabel("Chat with Rufi")
     }
 }
