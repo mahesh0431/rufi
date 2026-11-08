@@ -66,13 +66,9 @@ struct Drawer<Content: View, Sidebar: View>: View {
                 // over its bars and web page, it blanked the card for some frames
                 // each time the card stopped. Darker in dark, where the page is
                 // dark already.
-                Slide.rounded
-                    .fill(.black.opacity(scheme == .dark ? 0.45 : 0.2))
-                    .ignoresSafeArea()
+                Dim(out: out, width: width, shade: scheme == .dark ? 0.6 : 0.2)
                     .allowsHitTesting(false)
-                    .animation(dragged == nil ? settle : nil) {
-                        $0.opacity(out).offset(x: width * out)
-                    }
+                    .animation(dragged == nil ? settle : nil, value: out)
             }
             .background(side.ignoresSafeArea())
             .gesture(SidebarSwipe(open: open, enabled: enabled) { moved in
@@ -120,6 +116,30 @@ private struct Uncovered: ViewModifier, Animatable {
 
     func body(content: Content) -> some View {
         if out > 0 { content }
+    }
+}
+
+/// The dim over the card at `out`: `shade` of black when the card is all the
+/// way out. Drawn and moved each frame, as the card's `Slide` is, so the two
+/// keep together; with SwiftUI's own offset and opacity, the dim ran a few
+/// frames off the card, and with an opacity worked out each frame, it showed
+/// wrong for a frame as the card stopped.
+private struct Dim: View, Animatable {
+    var out: CGFloat
+    let width: CGFloat
+    let shade: Double
+
+    var animatableData: CGFloat {
+        get { out }
+        set { out = newValue }
+    }
+
+    var body: some View {
+        let out = min(max(out, 0), 1)
+        Slide.rounded
+            .fill(.black.opacity(shade * out))
+            .ignoresSafeArea()
+            .offset(x: width * out)
     }
 }
 
