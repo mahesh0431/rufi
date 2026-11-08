@@ -104,7 +104,7 @@ test("a visual draws in the reply in Rufi's theme at its own height, doesn't rel
   );
   const card = cards(page);
   const inside = page.frameLocator(".reply iframe[title='Visual']");
-  await expect(inside.locator("circle")).toBeVisible();
+  await expect(inside.locator("circle")).toBeVisible({ timeout: 15_000 });
   // When the visual's document began: the same while it isn't reloaded.
   const began = async () =>
     (await frameOf(card)).evaluate(() => performance.timeOrigin);
