@@ -187,6 +187,8 @@ struct EditWaiting: View {
                 }
                 TextEditor(text: $text)
                     .focused($focused)
+                    // While Save runs, the words it saves are the ones here.
+                    .disabled(saving)
                     .padding(.horizontal, 12)
                     .accessibilityLabel("Waiting message")
             }
@@ -199,13 +201,14 @@ struct EditWaiting: View {
                 ToolbarItem(placement: .confirmationAction) {
                     let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
                     Button("Save", systemImage: "checkmark") {
+                        saving = true
                         Task {
-                            saving = true
                             if await chat.change("PUT", ChatModel.one(item), body: ["text": words]) {
                                 dismiss()
                             } else {
                                 problem = chat.queueProblem
                                 saving = false
+                                focused = true
                             }
                         }
                     }
