@@ -9,8 +9,8 @@ import UIKit
 /// the same swipe is Back.
 /// A swipe left, or a tap on the page beside it, closes it. The card follows
 /// the finger and settles with the swipe's speed, never past either end.
-/// `side` is the sidebar's colour: behind the card, and, as the card goes,
-/// what it fades into, so the sidebar reads as the view.
+/// `side` is the sidebar's colour, behind the card. As the card goes, it dims,
+/// so it reads as set aside and the sidebar as the view.
 struct Drawer<Content: View, Sidebar: View>: View {
     @Binding var open: Bool
     let enabled: Bool
@@ -22,6 +22,7 @@ struct Drawer<Content: View, Sidebar: View>: View {
     /// The swipe's speed as it let go, in widths a second.
     @State private var speed: Double = 0
     @Environment(\.accessibilityReduceMotion) private var still
+    @Environment(\.colorScheme) private var scheme
 
     /// How long the card takes to settle, with no bounce.
     private static var settling: Double { 0.4 }
@@ -61,15 +62,16 @@ struct Drawer<Content: View, Sidebar: View>: View {
                     .animation(dragged == nil ? settle : nil) {
                         $0.modifier(Slide(out: out, width: width))
                     }
-                // The fade, its own layer over the card: drawn inside the card,
+                // The dim, its own layer over the card: drawn inside the card,
                 // over its bars and web page, it blanked the card for some frames
-                // each time the card stopped.
+                // each time the card stopped. Darker in dark, where the page is
+                // dark already.
                 Slide.rounded
-                    .fill(side)
+                    .fill(.black.opacity(scheme == .dark ? 0.45 : 0.2))
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
                     .animation(dragged == nil ? settle : nil) {
-                        $0.opacity(0.5 * out).offset(x: width * out)
+                        $0.opacity(out).offset(x: width * out)
                     }
             }
             .background(side.ignoresSafeArea())
