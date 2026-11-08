@@ -57,6 +57,13 @@ jobs:
       # Chromium's sandbox (Ubuntu allows it only with user namespaces) and a
       # virtual display that never resets. By default it resets when its last
       # app closes, and an app that opens just then can't reach it.
+      # Electron's download is kept between runs, one per Electron version.
+      - id: electron
+        run: echo "version=$(pnpm --filter @rufi/desktop exec node -p "require('electron/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/electron
+          key: electron-${{ runner.os }}-${{ steps.electron.outputs.version }}
       - run: pnpm --filter @rufi/desktop exec install-electron
       - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: pnpm --filter @rufi/web build
