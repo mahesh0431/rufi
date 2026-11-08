@@ -10,18 +10,44 @@ struct ReplyView: View {
     let streaming: Bool
     let chat: ChatModel
     let origin: URL
+    /// Word by word: how far the pace has come, and the words shown, in
+    /// UTF-16. Until it starts, the words the reply holds show at once.
+    @State private var pace: Double?
+    @State private var shown: Int?
 
     var body: some View {
-        switch streaming ? chat.replyFlow : nil {
-        case .paragraphs?:
-            let finished = ReplyFlow.finishedBlocks(entry.text)
-            if !finished.isEmpty { ReplyText(text: finished, streaming: false, id: entry.id, chat: chat, origin: origin) }
-        case .words?:
-            WordByWord(text: entry.text) { ReplyText(text: $0, streaming: true, id: entry.id, chat: chat, origin: origin) }
-        case .whole?:
-            EmptyView()
-        case nil:
-            ReplyText(text: entry.text, streaming: false, id: entry.id, chat: chat, origin: origin)
+        let flow = streaming ? chat.replyFlow : nil
+        let text = switch flow {
+        case .paragraphs?: ReplyFlow.finishedBlocks(entry.text)
+        case .words?: ReplyFlow.prefix(entry.text, shown ?? ReplyFlow.wordsEnd(entry.text, upTo: entry.text.utf16.count))
+        case .whole?: ""
+        case nil: entry.text
+        }
+        // One view in every way, so a card drawn while the reply is written
+        // stays as it is when the reply ends.
+        if !text.isEmpty {
+            ReplyText(text: text, streaming: flow == .words, id: entry.id, chat: chat, origin: origin)
+                .task(id: flow == .words ? entry.text : nil) {
+                    if flow == .words { await flowWords() }
+                }
+        }
+    }
+
+    /// The words, at a pace that follows how much waits, so uneven parts
+    /// from the AI flow evenly.
+    private func flowWords() async {
+        let text = entry.text
+        let length = text.utf16.count
+        var then = ContinuousClock.now
+        var at = pace ?? Double(length)
+        while true {
+            let now = ContinuousClock.now
+            at = ReplyFlow.paced(at, length: length, ms: (now - then) / .milliseconds(1))
+            then = now
+            pace = at
+            let words = ReplyFlow.wordsEnd(text, upTo: Int(at))
+            if words != shown { shown = words }
+            guard at < Double(length), (try? await Task.sleep(for: .milliseconds(16))) != nil else { return }
         }
     }
 }
@@ -53,36 +79,6 @@ private struct ReplyText: View {
                 CodeBlock(configuration: configuration)
             }
         }
-    }
-}
-
-/// A reply's words as they come, at a pace that follows how much waits, so
-/// uneven parts from the AI flow evenly. It starts from what the reply
-/// already holds, so opening the chat shows that at once.
-private struct WordByWord<Content: View>: View {
-    let text: String
-    @ViewBuilder let content: (String) -> Content
-    /// How far the pace has come, and the words shown, in UTF-16.
-    @State private var pace: Double?
-    @State private var shown: Int?
-
-    var body: some View {
-        let end = shown ?? ReplyFlow.wordsEnd(text, upTo: text.utf16.count)
-        content(ReplyFlow.prefix(text, end))
-            .task(id: text) {
-                let length = text.utf16.count
-                var then = ContinuousClock.now
-                var at = pace ?? Double(length)
-                while true {
-                    let now = ContinuousClock.now
-                    at = ReplyFlow.paced(at, length: length, ms: (now - then) / .milliseconds(1))
-                    then = now
-                    pace = at
-                    let words = ReplyFlow.wordsEnd(text, upTo: Int(at))
-                    if words != shown { shown = words }
-                    guard at < Double(length), (try? await Task.sleep(for: .milliseconds(16))) != nil else { return }
-                }
-            }
     }
 }
 
