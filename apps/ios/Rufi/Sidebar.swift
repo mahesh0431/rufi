@@ -2,10 +2,11 @@ import SwiftUI
 import UIKit
 
 /// The page as one card over the sidebar: to show the sidebar, the card
-/// slides right, its corners rounded as the screen's, and the sidebar stays
-/// still underneath, as the chat apps on the iPhone do. Apple has no sidebar
-/// on the iPhone, so this is Rufi's own. A swipe right opens it, on a place's
-/// own page only (`enabled`): on a page opened on top, the same swipe is Back.
+/// slides right, its corners rounded as the screen's, and the sidebar comes
+/// in under it from a little to the left, as the chat apps on the iPhone do.
+/// Apple has no sidebar on the iPhone, so this is Rufi's own. A swipe right
+/// opens it, on a place's own page only (`enabled`): on a page opened on top,
+/// the same swipe is Back.
 /// A swipe left, or a tap on the page beside it, closes it. The card follows
 /// the finger and settles with the swipe's speed, never past either end.
 /// `side` is the sidebar's colour: behind the card, and, as the card goes,
@@ -36,7 +37,7 @@ struct Drawer<Content: View, Sidebar: View>: View {
                     .accessibilityAddTraits(open ? .isModal : [])
                     .accessibilityAction(.escape) { open = false }
                     .animation(dragged == nil ? settle : nil) {
-                        $0.modifier(Uncovered(out: out))
+                        $0.modifier(Uncovered(out: out, width: width))
                     }
                 content
                     .overlay {
@@ -97,9 +98,13 @@ struct Drawer<Content: View, Sidebar: View>: View {
 }
 
 /// The sidebar is there only while the card is out, so nothing reaches it
-/// under the page: no tap, and no screen reader.
+/// under the page: no tap, and no screen reader. It moves with the card, a
+/// third as far, so it starts a third of `width` to the left and reaches its
+/// place as the card is all the way out; with Reduce Motion, it stays still.
 private struct Uncovered: ViewModifier, Animatable {
     var out: CGFloat
+    let width: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var still
 
     var animatableData: CGFloat {
         get { out }
@@ -107,14 +112,14 @@ private struct Uncovered: ViewModifier, Animatable {
     }
 
     func body(content: Content) -> some View {
-        if out > 0 { content }
+        if out > 0 { content.offset(x: still ? 0 : -(1 - min(out, 1)) * width / 3) }
     }
 }
 
 /// The card at `out`, from 0 (closed) to 1: held between the two, so even a
 /// fast swipe never leaves a gap; once it moves, rounded as the screen is
-/// (at least as the smallest iPhone screen corners are) and shadowed, as
-/// far as it is out.
+/// (at least as the smallest iPhone screen corners are). No shadow: the fade
+/// over it marks it off the sidebar.
 private struct Slide: ViewModifier, Animatable {
     var out: CGFloat
     let width: CGFloat
@@ -133,7 +138,7 @@ private struct Slide: ViewModifier, Animatable {
         content
             .mask { shape.ignoresSafeArea() }
             .background {
-                shape.fill(.background).shadow(color: .black.opacity(0.2 * out), radius: 24).ignoresSafeArea()
+                shape.fill(.background).ignoresSafeArea()
             }
             .offset(x: width * out)
     }
