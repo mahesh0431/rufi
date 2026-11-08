@@ -98,7 +98,7 @@ Testing builds of the iPhone app are named **Rufi Dev**. Rufi and Rufi Dev are s
 
 ## When your Mac can't be reached
 
-If your Mac is asleep or off, Rufi isn't running there, Tailscale is off on either, or the iPhone has no network, a small line under the title says **Can't reach Rufi**, with a spinner: Rufi on the iPhone asks again by itself, at once when you open it or come back to it, then after a few seconds, then every 30 seconds while it is on screen. Tap the line to ask at once. When Rufi answers, the line says **Connected** for a moment and goes, and the page reads again.
+If your Mac is asleep or off, Rufi isn't running there, Tailscale is off on either, or the iPhone has no network, a small pill just above the chat box says **Can't reach Rufi**, with a spinner: Rufi on the iPhone asks again by itself, at once when you open it or come back to it, then after a few seconds, then every 30 seconds while it is on screen. Tap it to ask at once. When Rufi answers, it says **Connected** for a moment and goes, and the page reads again.
 
 Meanwhile, everything that doesn't need your Mac works: the sidebar, **This iPhone**, and the reminders, which keep ringing. The page you were reading stays as it was. A page the iPhone draws shows what it last read since Rufi opened, also when you go back to it. A page that hasn't loaded shows only the dog, resting.
 

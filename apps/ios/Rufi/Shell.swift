@@ -14,7 +14,7 @@ final class Shell {
         case problem(String)
     }
 
-    /// Whether Rufi can be reached: a line at the top says when it can't,
+    /// Whether Rufi can be reached: a pill over the box says when it can't,
     /// and "Connected" for a moment when it can again.
     enum Reach: Equatable {
         case reachable, away, back
@@ -37,6 +37,9 @@ final class Shell {
     private let unpaired: () -> Void
 
     var state = State.opening
+    /// The home indicator's area under the pages, which the bars at the
+    /// bottom float into (`floating`).
+    var indicator: CGFloat = 0
     private(set) var reach = Reach.reachable {
         didSet { chat.away = away }
     }
@@ -550,17 +553,22 @@ struct ShellView: View {
             }
             // Another place: a stack of its own.
             .id(shell.navigator.root.id)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
+            // A bar, so the page scrolls under it in glass, as under the title.
+            .safeAreaBar(edge: .bottom, spacing: 0) {
                 // A page drawn here has its own bar (`page`); a web page
                 // with a chat box, this one.
                 if shell.native(shell.navigator.top) == nil, shell.webBox, shell.state == .open {
-                    AskBar(name: shell.pairing.person.name, theme: shell.theme, chat: shell.chat, away: shell.away) {
-                        shell.chatShown = true
+                    VStack(spacing: 8) {
+                        ReachPill(shell: shell)
+                        AskBar(name: shell.pairing.person.name, theme: shell.theme, chat: shell.chat, away: shell.away) {
+                            shell.chatShown = true
+                        }
+                        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: {
+                            shell.screens.box(top: $0)
+                        }
+                        .onDisappear { shell.screens.box(top: nil) }
                     }
-                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: {
-                        shell.screens.box(top: $0)
-                    }
-                    .onDisappear { shell.screens.box(top: nil) }
+                    .floating(shell)
                 }
             }
         } sidebar: {
@@ -571,6 +579,10 @@ struct ShellView: View {
                 shell.sidebar = false
                 settings = true
             }
+        }
+        .background {
+            Color.clear.ignoresSafeArea(.keyboard)
+                .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.bottom } action: { shell.indicator = $0 }
         }
         .sheet(isPresented: $shell.chatShown) {
             NavigationStack {
@@ -651,16 +663,23 @@ struct ShellView: View {
     @ViewBuilder
     private func page(_ screen: Screen, root: Bool) -> some View {
         ScreenView(shell: shell, screen: screen)
-            .safeAreaInset(edge: .top, spacing: 0) {
-                ReachLine(reach: shell.reach) { Task { await shell.check() } }
-            }
             // On the page itself, so its last row scrolls above the bar.
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                // The chat's own page has its box.
-                if let page = shell.native(screen), page != .chat {
-                    AskBar(name: shell.pairing.person.name, theme: shell.theme, chat: shell.chat, away: shell.away) {
-                        shell.chatShown = true
+            .safeAreaBar(edge: .bottom, spacing: 0) {
+                if let page = shell.native(screen) {
+                    // The chat's own page has its box, and the pill over it.
+                    if page != .chat {
+                        VStack(spacing: 8) {
+                            ReachPill(shell: shell)
+                            AskBar(name: shell.pairing.person.name, theme: shell.theme, chat: shell.chat,
+                                   away: shell.away) {
+                                shell.chatShown = true
+                            }
+                        }
+                        .floating(shell)
                     }
+                } else if !shell.webBox || shell.state != .open {
+                    // A web page with no box: the pill alone.
+                    ReachPill(shell: shell).floating(shell)
                 }
             }
             .navigationTitle(shell.title(screen))
@@ -722,37 +741,57 @@ struct ScreenView: View {
     }
 }
 
-/// The line under the title while Rufi can't be reached: it asks again
-/// by itself, and a tap asks at once. When it can, "Connected" for a moment.
-struct ReachLine: View {
-    let reach: Shell.Reach
-    let retry: () -> Void
+/// A pill over the box while Rufi can't be reached: it asks again by
+/// itself, and a tap asks at once. When it can, "Connected" for a moment.
+struct ReachPill: View {
+    let shell: Shell
 
     var body: some View {
         Group {
-            switch reach {
+            switch shell.reach {
             case .away:
-                Button(action: retry) {
+                Button {
+                    Task { await shell.check() }
+                } label: {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.mini)
                         Text("Can't reach Rufi")
                     }
-                    .frame(maxWidth: .infinity, minHeight: 28)
-                    .contentShape(.rect)
+                    // The label colour: secondary is too faint on the glass.
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .contentShape(.capsule)
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .glassEffect(.regular.interactive(), in: .capsule)
                 .accessibilityHint("Tries again now")
             case .back:
                 Label("Connected", systemImage: "checkmark")
-                    .frame(maxWidth: .infinity, minHeight: 28)
                     .foregroundStyle(.green)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .glassEffect(in: .capsule)
             case .reachable:
                 EmptyView()
             }
         }
         .font(.footnote)
-        .background(reach == .reachable ? AnyShapeStyle(.clear) : AnyShapeStyle(.bar))
-        .animation(.snappy, value: reach)
+        .lineLimit(1)
+        // As the iPhone's own bars: no larger than the largest standard
+        // size; at the accessibility sizes, touch and hold shows it large.
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+        .accessibilityShowsLargeContentViewer()
+        .animation(.snappy, value: shell.reach)
+    }
+}
+
+extension View {
+    /// A bar at the bottom of the screen, floating as the iPhone's own tab
+    /// bar does: into the home indicator's area, 21 points over the screen's
+    /// edge (as Apple's Health app has it); with the keyboard up, just over
+    /// it. The page still ends at the bar's top, so its last row shows whole.
+    func floating(_ shell: Shell, keyboard: Bool = false) -> some View {
+        padding(.bottom, keyboard ? 6 : -max(0, shell.indicator - 21))
     }
 }
