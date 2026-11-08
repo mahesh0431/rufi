@@ -135,11 +135,13 @@ struct AskBar: View {
         Button(action: ask) {
             HStack(spacing: 8) {
                 Text("Ask or tell Rufi about \(name)…")
-                    .foregroundStyle(.secondary)
+                    // The label colour: secondary is too faint on the glass.
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                // Fixed, as the chat box's: it fits its circle at every text size.
                 Image(systemName: "arrow.up")
-                    .font(.body.weight(.semibold))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(theme.onAccent)
                     .frame(width: 32, height: 32)
                     .background(theme.accent, in: .circle)

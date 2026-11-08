@@ -752,7 +752,8 @@ struct ReachPill: View {
                         ProgressView().controlSize(.mini)
                         Text("Can't reach Rufi")
                     }
-                    .foregroundStyle(.secondary)
+                    // The label colour: secondary is too faint on the glass.
+                    .foregroundStyle(.primary)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .contentShape(.capsule)
