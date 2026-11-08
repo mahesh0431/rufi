@@ -118,7 +118,7 @@ private struct Uncovered: ViewModifier, Animatable {
     }
 }
 
-/// The fade over the card at `out`: the sidebar's colour, at 45% when the
+/// The fade over the card at `out`: the sidebar's colour, at 65% when the
 /// card is all the way out. Drawn and moved each frame, as the card's `Slide`
 /// is, so the two keep together; with SwiftUI's own offset and opacity, the
 /// fade ran a few frames off the card, and with an opacity worked out each
@@ -136,7 +136,7 @@ private struct Fade: View, Animatable {
     var body: some View {
         let out = min(max(out, 0), 1)
         Slide.rounded
-            .fill(side.opacity(0.45 * out))
+            .fill(side.opacity(0.65 * out))
             .ignoresSafeArea()
             .offset(x: width * out)
     }
