@@ -112,11 +112,21 @@ A reply that has no steps, such as an answer to "thanks", has no Activity line o
 
 ## How a reply looks
 
-The AI's reply shows as it writes it: text with headings, lists, tables and links, and a visual where a chart, a comparison or a process shows the answer better than words. Each reply is in Rufi's light or dark.
+The AI's reply shows while it writes it, as you chose (see [While Rufi writes](#while-rufi-writes)): text with headings, lists, tables and links, and a visual where a chart, a comparison or a process shows the answer better than words. Each reply is in Rufi's light or dark.
 
 - **Text** can be **bold**, have lists, tables and links. A link to a web page opens in your browser, outside Rufi; a link to a page of Rufi, such as a document, opens it in Rufi.
-- **Visuals** show a chart, a comparison or a process as a card in the reply, in Rufi's colours, light or dark, such as one test over time. The AI labels each value as your record keeps it, with its unit and date; a value a chart can't place, such as "<5", is in the text. While the AI writes one, a quiet grey box holds its place until it's whole. A visual can't load anything from the internet, send anything out, or reach your record or Rufi itself: it shows only what the AI wrote in it. A visual runs no program of its own and has no links: its sources are links in the reply's text. If it tried to, or to load something, such as a chart library from the web, it says "Part of this visual didn't load" under it, and may be blank. Ask the AI to draw it again. A test's own chart, spaced by date with the lab's range, is on its page in your [health record](record.md#a-test), which the AI can link.
+- **Visuals** show a chart, a comparison or a process as a card in the reply, in Rufi's colours, light or dark, such as one test over time. The AI labels each value as your record keeps it, with its unit and date; a value a chart can't place, such as "<5", is in the text. While the AI writes one, it shows once it's whole; word by word, a quiet grey box holds its place until then. A visual can't load anything from the internet, send anything out, or reach your record or Rufi itself: it shows only what the AI wrote in it. A visual runs no program of its own and has no links: its sources are links in the reply's text. If it tried to, or to load something, such as a chart library from the web, it says "Part of this visual didn't load" under it, and may be blank. Ask the AI to draw it again. A test's own chart, spaced by date with the lab's range, is on its page in your [health record](record.md#a-test), which the AI can link.
 - Check the values against your record, as with anything the AI says.
+
+### While Rufi writes
+
+Choose how a reply shows while the AI writes it in [Settings › Chat](rufi:/settings/chat) › **While Rufi writes**:
+
+- **Paragraph by paragraph** (the start): each paragraph, heading, list, table or visual shows once it's whole. The part the AI is still writing doesn't show; until the first part is whole, the working line shows that the AI is at it.
+- **Word by word:** the words flow in as the AI writes them, at an even pace.
+- **Whole reply:** only the working line shows until the reply is done; then all of it shows.
+
+The finished reply is the same in each, and so is what Rufi keeps. If you reload or open the chat while a reply is written, it shows what your choice allows so far. A reply you stop shows all the AI wrote, the part it was still writing too. The iPhone shows replies the same way, as chosen on the Mac.
 
 ### Choose how replies look
 

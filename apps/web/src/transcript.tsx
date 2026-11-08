@@ -69,6 +69,7 @@ import { boxFor } from "./boxes.ts";
 import { ChipView } from "./chips.tsx";
 import { fileIn, NativePicture, Picture } from "./files.tsx";
 import { rehypeVisuals, visualHtml } from "./visual-blocks.ts";
+import { finishedBlocks, useWordByWord } from "./reply-flow.ts";
 import { KeepPlace, Visual, VisualWaiting } from "./visual.tsx";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
 import {
@@ -302,13 +303,11 @@ export function Marked({
   );
 }
 
-/** A reply as one Markdown document, its visuals in place (visual-blocks.ts). */
-function ReplyText({ text, streaming }: { text: string; streaming: boolean }) {
-  return (
-    <Marked text={readableReply(text, streaming)} reply streaming={streaming} />
-  );
-}
-
+/**
+ * A reply as it shows while written, as Settings chose (reply-flow.ts):
+ * paragraph by paragraph its whole blocks, word by word its words, or
+ * nothing until it is done. Once done, all of it.
+ */
 function Reply({
   id,
   text,
@@ -318,11 +317,24 @@ function Reply({
   text: string;
   streaming: boolean;
 }) {
+  const flow = useSettings().data?.replyFlow ?? "paragraphs";
+  const words = useWordByWord(text, streaming && flow === "words");
+  // Only Word by word shows text still open, which remend closes; whole
+  // blocks show as written.
+  const shown = !streaming
+    ? text
+    : flow === "words"
+      ? readableReply(words, true)
+      : flow === "paragraphs"
+        ? finishedBlocks(text)
+        : "";
+  if (shown === "") return null;
   return (
     // data-reply: Rufi's own container around the reply, shaped as Settings
     // chose (styles.css).
     <div className="reply" data-entry={id} data-reply="">
-      <ReplyText text={text} streaming={streaming} />
+      {/* A reply as one Markdown document, its visuals in place (visual-blocks.ts). */}
+      <Marked text={shown} reply streaming={streaming && flow === "words"} />
     </div>
   );
 }

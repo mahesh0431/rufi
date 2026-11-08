@@ -29,6 +29,8 @@ struct NativePageView: View {
         // Inset grouped, as This iPhone's sheets: the sidebar's colour
         // behind, the rows on the surface's.
         .listStyle(.insetGrouped)
+        // Sections close together, as little space as iOS allows.
+        .listSectionSpacing(.compact)
         .themed(shell.theme)
     }
 }
@@ -151,11 +153,14 @@ struct AskBar: View {
                     }
                     HStack(spacing: 8) {
                         Text(chat.text.isEmpty ? "Ask or tell Rufi about \(name)…" : chat.text)
+                            // As Apple's own fields: the placeholder lighter,
+                            // what was typed in the label colour.
                             .foregroundStyle(chat.text.isEmpty ? .secondary : .primary)
                             .lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                        // Fixed, as the chat box's: it fits its circle at every text size.
                         Image(systemName: "arrow.up")
-                            .font(.body.weight(.semibold))
+                            .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(theme.onAccent)
                             .frame(width: 32, height: 32)
                             .background(theme.accent, in: .circle)
@@ -164,19 +169,16 @@ struct AskBar: View {
                 .padding(.leading, 14)
                 .padding(.trailing, 5)
                 .padding(.vertical, 5)
-                .background(theme.surface, in: .rect(cornerRadius: 22))
+                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 22)
-                        .strokeBorder(lit ? theme.accent : Color(.separator), lineWidth: lit ? 2 : 0.5)
+                    if lit { RoundedRectangle(cornerRadius: 22).strokeBorder(theme.accent, lineWidth: 2) }
                 }
-                .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Chat with Rufi")
         }
-        .padding(.horizontal, 10)
-        .padding(.bottom, 2)
+        .padding(.horizontal)
         .animation(.snappy(duration: 0.2), value: chat.chips.count)
         .onChange(of: chat.asked) {
             lit = true

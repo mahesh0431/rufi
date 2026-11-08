@@ -230,6 +230,7 @@ struct SidebarView: View {
     let theme: Theme
     let choose: (Place) -> Void
     let thisIPhone: () -> Void
+    @Environment(\.dynamicTypeSize) private var textSize
 
     var body: some View {
         ScrollView {
@@ -264,12 +265,14 @@ struct SidebarView: View {
                 } label: {
                     Label("Chat", systemImage: Place.chat.symbol).font(.headline)
                         .foregroundStyle(theme.onAccent)
+                        .lineLimit(1)
                 }
                 .buttonStyle(.glassProminent)
                 .tint(theme.accent)
                 .controlSize(.large)
                 .accessibilityLabel(Place.chat.title)
                 .accessibilityAddTraits(current == .chat ? .isSelected : [])
+                .accessibilityShowsLargeContentViewer()
                 Spacer()
                 Button(action: thisIPhone) {
                     Initials(name: name, size: 44)
@@ -277,7 +280,13 @@ struct SidebarView: View {
                 .buttonStyle(.glass)
                 .buttonBorderShape(.circle)
                 .accessibilityLabel("\(name), This iPhone")
+                .accessibilityShowsLargeContentViewer {
+                    Label("This iPhone", systemImage: "iphone")
+                }
             }
+            // As the iPhone's own bars: no larger than the largest standard
+            // size; at the accessibility sizes, touch and hold shows it large.
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
             .padding(.horizontal, 20)
             .padding(.bottom, 4)
         }
@@ -291,12 +300,19 @@ struct SidebarView: View {
         return Button {
             choose(place)
         } label: {
-            HStack(spacing: 16) {
-                Image(systemName: place.symbol).imageScale(.large).frame(width: 28)
-                Text(place.title).fontWeight(marked ? .semibold : .regular)
-                Spacer()
-                if let count, count > 0 {
-                    Text("\(count)").foregroundStyle(.secondary).monospacedDigit()
+            // At the accessibility sizes the icon goes above its words, as
+            // in Apple's own lists, so it never covers them.
+            let layout = textSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout(spacing: 16))
+            layout {
+                Image(systemName: place.symbol).imageScale(.large)
+                    .frame(width: textSize.isAccessibilitySize ? nil : 28)
+                HStack {
+                    Text(place.title).fontWeight(marked ? .semibold : .regular)
+                    Spacer()
+                    if let count, count > 0 {
+                        Text("\(count)").foregroundStyle(.secondary).monospacedDigit()
+                    }
                 }
             }
             .padding(.vertical, 13)

@@ -12,6 +12,7 @@ type Chosen =
   | "textSize"
   | "replyStyle"
   | "activity"
+  | "replyFlow"
   | "whileReplying";
 
 /**

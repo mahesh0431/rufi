@@ -8,7 +8,7 @@ import { AxeBuilder } from "@axe-core/playwright";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { Frame, Locator, Page } from "@playwright/test";
-import { expect, test, type Rufi } from "./rufi.ts";
+import { expect, openSettings, test, type Rufi } from "./rufi.ts";
 
 // The CSP's refusals in Rufi's own page.
 test.beforeEach(async ({ context }) => {
@@ -91,10 +91,10 @@ test("a visual draws in the reply in Rufi's theme at its own height, doesn't rel
     "</div>",
   ].join("\n");
   // The reply streams in small parts: the text after the visual goes on
-  // after the visual draws.
+  // after the visual draws, paragraph by paragraph, well before it ends.
   const more = "These are the values your record keeps. ".repeat(15);
   // A source cited before the visual, defined at the reply's end.
-  const after = `${more}halfway. ${more}trickle end.\n\n[lab]: rufi:/documents/fictional-doc`;
+  const after = `${more}halfway.\n\n${more}trickle end.\n\n[lab]: rufi:/documents/fictional-doc`;
   await send(
     page,
     withVisual(chart, after).replace(
@@ -159,7 +159,7 @@ test("a visual draws in the reply in Rufi's theme at its own height, doesn't rel
   expect(await refusedIn(page)).toEqual([]);
 });
 
-test("a visual still being written holds its place quietly, and its code never shows", async ({
+test("a visual still being written never shows its code: paragraph by paragraph it waits, word by word it holds its place quietly", async ({
   page,
   rufi,
 }) => {
@@ -169,6 +169,19 @@ test("a visual still being written holds its place quietly, and its code never s
     },
   });
   await send(page, "partial");
+  await expect(log(page).getByText("Here is your chart.")).toBeVisible();
+  await expect(log(page).locator(".reply .visual")).toHaveCount(0);
+  await expect(log(page).locator(".reply pre")).toHaveCount(0);
+  await expect(log(page).getByText("Half")).toHaveCount(0);
+
+  // Word by word, after a reload: the visual's place, quietly.
+  const settings = await openSettings(page, "Chat");
+  await settings.getByRole("radio", { name: "Word by word" }).check();
+  await page.keyboard.press("Escape");
+  await page.reload();
+  const opener = chat(page).getByRole("button", { name: "Open the chat" });
+  await expect(opener.or(log(page)).first()).toBeVisible();
+  if (await opener.isVisible()) await opener.click();
   await expect(log(page).getByText("Here is your chart.")).toBeVisible();
   await expect(log(page).locator(".reply .visual[aria-hidden]")).toBeVisible();
   await expect(cards(page)).toHaveCount(0);
