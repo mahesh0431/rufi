@@ -3,9 +3,10 @@ import UIKit
 
 /// The page as one card over the sidebar: to show the sidebar, the card
 /// slides right, its corners rounded as the screen's, and the sidebar comes
-/// in under it from a little to the left, as the chat apps on the iPhone do. Apple has no sidebar
-/// on the iPhone, so this is Rufi's own. A swipe right opens it, on a place's
-/// own page only (`enabled`): on a page opened on top, the same swipe is Back.
+/// in under it from a little to the left, as the chat apps on the iPhone do.
+/// Apple has no sidebar on the iPhone, so this is Rufi's own. A swipe right
+/// opens it, on a place's own page only (`enabled`): on a page opened on top,
+/// the same swipe is Back.
 /// A swipe left, or a tap on the page beside it, closes it. The card follows
 /// the finger and settles with the swipe's speed, never past either end.
 /// `side` is the sidebar's colour: behind the card, and, as the card goes,
