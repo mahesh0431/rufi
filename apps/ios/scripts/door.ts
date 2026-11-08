@@ -4,8 +4,10 @@
 // every reply thinks, then answers REPLY, with a visual. A message with
 // "hang" in it keeps its reply running until Stop (what is sent meanwhile
 // waits); "Read my report" starts an agent, Reader, that works until
-// stopped; "Ask a checker" starts one, Checker, that answers. Tailscale is never run: a stand-in serves HTTPS at
-// this Mac's network address on the door's port, with a certificate from a
+// stopped; "Ask a checker" starts one, Checker, that answers. Each has
+// its own call id, as Codex's are, since an agent's id is made from it.
+// Tailscale is never run: a stand-in serves HTTPS at this Mac's network
+// address on the door's port, with a certificate from a
 // certificate authority made here, and passes it on to the door on
 // 127.0.0.1, as Tailscale Serve does. The Simulator trusts that authority
 // once it is added to it (xcrun simctl keychain <device> add-root-cert).
@@ -235,12 +237,14 @@ await rufi.start({
     callsByText: {
       "Read my report": [
         {
+          id: "call-reader",
           tool: "start_agent",
           arguments: { title: "Reader", task: "reader: hang on page 1" },
         },
       ],
       "Ask a checker": [
         {
+          id: "call-checker",
           tool: "start_agent",
           arguments: { title: "Checker", task: "checker: compare the reports" },
         },
