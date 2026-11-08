@@ -145,10 +145,10 @@ struct AskBar: View {
             .padding(.leading, 14)
             .padding(.trailing, 5)
             .padding(.vertical, 5)
+            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
         .padding(.horizontal)
         .accessibilityLabel("Chat with Rufi")
     }

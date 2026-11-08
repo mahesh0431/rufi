@@ -61,7 +61,10 @@ struct ChatView: View {
             }
         }
         .safeAreaBar(edge: .bottom, spacing: 0) {
-            ChatBoxView(shell: shell, chat: chat)
+            VStack(spacing: 6) {
+                ReachPill(shell: shell)
+                ChatBoxView(shell: shell, chat: chat)
+            }
         }
         .onChange(of: chat.sends) {
             pinned = true

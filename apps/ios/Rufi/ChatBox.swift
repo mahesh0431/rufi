@@ -16,8 +16,7 @@ struct ChatBoxView: View {
         let open = focused || !chat.text.isEmpty || !chat.chips.isEmpty
         let away = shell.away
         VStack(spacing: 4) {
-            ReachPill(shell: shell)
-            // While Rufi can't be reached, the pill says so.
+            // While Rufi can't be reached, the pill over the box says so.
             if !away, let line = chat.line {
                 HStack(spacing: 8) {
                     Text(line)
