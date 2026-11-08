@@ -29,6 +29,8 @@ struct NativePageView: View {
         // Inset grouped, as This iPhone's sheets: the sidebar's colour
         // behind, the rows on the surface's.
         .listStyle(.insetGrouped)
+        // Sections close together, as little space as iOS allows.
+        .listSectionSpacing(.compact)
         .themed(shell.theme)
     }
 }

@@ -37,6 +37,9 @@ final class Shell {
     private let unpaired: () -> Void
 
     var state = State.opening
+    /// The home indicator's area under the pages, which the bars at the
+    /// bottom float into (`floating`).
+    var indicator: CGFloat = 0
     private(set) var reach = Reach.reachable {
         didSet { chat.away = away }
     }
@@ -563,6 +566,7 @@ struct ShellView: View {
                             }
                             .onDisappear { shell.screens.box(top: nil) }
                     }
+                    .floating(shell)
                 }
             }
         } sidebar: {
@@ -573,6 +577,10 @@ struct ShellView: View {
                 shell.sidebar = false
                 settings = true
             }
+        }
+        .background {
+            Color.clear.ignoresSafeArea(.keyboard)
+                .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.bottom } action: { shell.indicator = $0 }
         }
         .sheet(isPresented: $shell.chatShown) {
             NavigationStack {
@@ -662,10 +670,11 @@ struct ShellView: View {
                             ReachPill(shell: shell)
                             AskBar(name: shell.pairing.person.name, theme: shell.theme) { shell.chatShown = true }
                         }
+                        .floating(shell)
                     }
                 } else if !shell.webBox || shell.state != .open {
                     // A web page with no box: the pill alone.
-                    ReachPill(shell: shell)
+                    ReachPill(shell: shell).floating(shell)
                 }
             }
             .navigationTitle(shell.title(screen))
@@ -763,5 +772,15 @@ struct ReachPill: View {
         }
         .font(.footnote)
         .animation(.snappy, value: shell.reach)
+    }
+}
+
+extension View {
+    /// A bar at the bottom of the screen, floating as the iPhone's own tab
+    /// bar does: into the home indicator's area, 21 points over the screen's
+    /// edge (as Apple's Health app has it); with the keyboard up, just over
+    /// it. The page still ends at the bar's top, so its last row shows whole.
+    func floating(_ shell: Shell, keyboard: Bool = false) -> some View {
+        padding(.bottom, keyboard ? 6 : -max(0, shell.indicator - 21))
     }
 }

@@ -74,7 +74,7 @@ struct ChatBoxView: View {
             if !focused { Disclaimer().dynamicTypeSize(...DynamicTypeSize.xxxLarge) }
         }
         .padding(.horizontal)
-        .padding(.bottom, focused ? 6 : 0)
+        .floating(shell, keyboard: focused)
         .animation(.snappy(duration: 0.2), value: open)
         .onChange(of: chat.asked) {
             lit = true
