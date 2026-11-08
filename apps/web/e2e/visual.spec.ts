@@ -91,10 +91,10 @@ test("a visual draws in the reply in Rufi's theme at its own height, doesn't rel
     "</div>",
   ].join("\n");
   // The reply streams in small parts: the text after the visual goes on
-  // after the visual draws.
+  // after the visual draws, paragraph by paragraph, well before it ends.
   const more = "These are the values your record keeps. ".repeat(15);
   // A source cited before the visual, defined at the reply's end.
-  const after = `${more}halfway. ${more}trickle end.\n\n[lab]: rufi:/documents/fictional-doc`;
+  const after = `${more}halfway.\n\n${more}trickle end.\n\n[lab]: rufi:/documents/fictional-doc`;
   await send(
     page,
     withVisual(chart, after).replace(
