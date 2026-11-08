@@ -32,6 +32,7 @@ struct WaitingList: View {
                             .listRowBackground(Color.clear)
                             .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 6))
                             .moveDisabled(!movable || item.state != "waiting" || item.held != nil)
+                            .listRowSeparator(item.id == items.last?.id ? .hidden : .automatic, edges: .bottom)
                     }
                     .onMove { from, to in
                         var moved = items
@@ -129,7 +130,7 @@ struct WaitingRow: View {
                 }
             }
         case .newThread:
-            Button("New thread", systemImage: "plus.bubble") {
+            Button("New thread") {
                 Task {
                     await chat.change("POST", "\(one)/recover", body: ["hold": item.holdId ?? "", "choice": "new_thread"],
                                       sends: true)
@@ -138,6 +139,7 @@ struct WaitingRow: View {
             .font(.caption)
             .buttonStyle(.bordered)
             .controlSize(.small)
+            .fixedSize()
         case .steer:
             icon("Steer", "arrow.triangle.merge") { await chat.change("POST", "\(one)/steer", sends: true) }
         case .edit:
