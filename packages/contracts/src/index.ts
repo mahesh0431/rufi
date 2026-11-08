@@ -488,6 +488,14 @@ export const MAX_REPLY_WORDS = 1000;
 export const ActivityShown = Schema.Literals(["working", "shown", "hidden"]);
 export type ActivityShown = typeof ActivityShown.Type;
 
+/**
+ * How Rufi AI's reply shows while it is written: each Markdown block once it
+ * is whole (paragraphs), its words as they come (words), or all of it once
+ * it is done (whole). Paragraphs until chosen. The reply saved is the same.
+ */
+export const ReplyFlow = Schema.Literals(["paragraphs", "words", "whole"]);
+export type ReplyFlow = typeof ReplyFlow.Type;
+
 /** What a message sent while a reply runs does: goes into it, or after it. */
 export const WhileReplying = Schema.Literals(["steer", "queue"]);
 export type WhileReplying = typeof WhileReplying.Type;
@@ -501,6 +509,7 @@ export const Settings = Schema.Struct({
   /** The user's own words for replies, as they wrote them; "" for none. */
   replyWords: Schema.String,
   activity: ActivityShown,
+  replyFlow: ReplyFlow,
   /** What Enter does while a reply runs. */
   whileReplying: WhileReplying,
   /** The chosen region; null when none is chosen. */
@@ -702,6 +711,7 @@ export const SaveSettings = Schema.Struct({
     Schema.String.check(Schema.isMaxLength(MAX_REPLY_WORDS)),
   ),
   activity: Schema.optionalKey(ActivityShown),
+  replyFlow: Schema.optionalKey(ReplyFlow),
   whileReplying: Schema.optionalKey(WhileReplying),
   /** A region code Rufi knows, such as "IN"; null clears it. */
   emergencyRegion: Schema.optionalKey(Schema.NullOr(Line(10))),

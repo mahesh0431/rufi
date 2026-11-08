@@ -272,6 +272,24 @@ function GroupOptions({ group }: { group: Group }) {
             </p>
           </Section>
           <ReplyWordsSection />
+          <Section title="While Rufi writes" id="reply-flow">
+            <SettingChoice
+              setting="replyFlow"
+              label="While Rufi writes"
+              labelledBy="reply-flow"
+              choices={[
+                { value: "paragraphs", label: "Paragraph by paragraph" },
+                { value: "words", label: "Word by word" },
+                { value: "whole", label: "Whole reply" },
+              ]}
+            />
+            <p className="text-muted">
+              How Rufi AI's reply shows while it is written. Paragraph by
+              paragraph: each paragraph, list, table or card shows once it is
+              whole. Word by word: the words flow in as they come. Whole reply:
+              all of it shows once it is done. The finished reply is the same.
+            </p>
+          </Section>
           <Section title="Activity" id="activity">
             <SettingChoice
               setting="activity"

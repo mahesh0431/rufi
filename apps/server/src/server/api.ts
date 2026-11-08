@@ -13,6 +13,7 @@ import {
   MAX_REPLY_WORDS,
   SaveSettings,
   StartSignIn,
+  ReplyFlow,
   WhileReplying,
   type Backups,
   type DataFolder,
@@ -267,6 +268,9 @@ export function api(deps: ApiDeps): App {
     if (changed.activity !== undefined) {
       await transcripts.saveSetting("activity", changed.activity);
     }
+    if (changed.replyFlow !== undefined) {
+      await transcripts.saveSetting("reply_flow", changed.replyFlow);
+    }
     if (changed.whileReplying !== undefined) {
       await transcripts.saveSetting("while_replying", changed.whileReplying);
     }
@@ -519,6 +523,10 @@ export function settingsReads(
       activity: Schema.decodeUnknownOption(ActivityShown)(
         await transcripts.setting("activity"),
       ).pipe(Option.getOrElse(() => "working" as const)),
+      // Paragraph by paragraph, until another is chosen.
+      replyFlow: Schema.decodeUnknownOption(ReplyFlow)(
+        await transcripts.setting("reply_flow"),
+      ).pipe(Option.getOrElse(() => "paragraphs" as const)),
       // Into the running reply, until another is chosen.
       whileReplying: Schema.decodeUnknownOption(WhileReplying)(
         await transcripts.setting("while_replying"),
