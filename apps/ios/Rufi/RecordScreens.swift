@@ -153,8 +153,9 @@ struct AskBar: View {
                     }
                     HStack(spacing: 8) {
                         Text(chat.text.isEmpty ? "Ask or tell Rufi about \(name)…" : chat.text)
-                            // The label colour: secondary is too faint on the glass.
-                            .foregroundStyle(.primary)
+                            // As Apple's own fields: the placeholder lighter,
+                            // what was typed in the label colour.
+                            .foregroundStyle(chat.text.isEmpty ? .secondary : .primary)
                             .lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         // Fixed, as the chat box's: it fits its circle at every text size.
