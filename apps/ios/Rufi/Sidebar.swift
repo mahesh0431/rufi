@@ -118,11 +118,12 @@ private struct Uncovered: ViewModifier, Animatable {
     }
 }
 
-/// The fade over the card at `out`: the sidebar's colour, at 65% when the
-/// card is all the way out. Drawn and moved each frame, as the card's `Slide`
-/// is, so the two keep together; with SwiftUI's own offset and opacity, the
-/// fade ran a few frames off the card, and with an opacity worked out each
-/// frame, it showed wrong for a frame as the card stopped.
+/// The frost over the card at `out`: the thinnest system material, which
+/// blurs the page, and the sidebar's colour at 15%, both in full when the
+/// card is all the way out (a material's blur can't be made lighter, only
+/// shown less). Drawn and moved each frame, as the card's `Slide` is, so the
+/// two keep together; with SwiftUI's own offset and opacity, it ran a few
+/// frames off the card.
 private struct Fade: View, Animatable {
     var out: CGFloat
     let width: CGFloat
@@ -135,10 +136,12 @@ private struct Fade: View, Animatable {
 
     var body: some View {
         let out = min(max(out, 0), 1)
-        Slide.rounded
-            .fill(side.opacity(0.65 * out))
-            .ignoresSafeArea()
-            .offset(x: width * out)
+        ZStack {
+            Slide.rounded.fill(.ultraThinMaterial).opacity(out)
+            Slide.rounded.fill(side.opacity(0.15 * out))
+        }
+        .ignoresSafeArea()
+        .offset(x: width * out)
     }
 }
 
