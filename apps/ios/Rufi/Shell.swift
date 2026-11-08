@@ -772,6 +772,11 @@ struct ReachPill: View {
             }
         }
         .font(.footnote)
+        .lineLimit(1)
+        // As the iPhone's own bars: no larger than the largest standard
+        // size; at the accessibility sizes, touch and hold shows it large.
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+        .accessibilityShowsLargeContentViewer()
         .animation(.snappy, value: shell.reach)
     }
 }
