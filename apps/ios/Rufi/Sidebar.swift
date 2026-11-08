@@ -21,6 +21,7 @@ struct Drawer<Content: View, Sidebar: View>: View {
     @State private var dragged: CGFloat?
     /// The swipe's speed as it let go, in widths a second.
     @State private var speed: Double = 0
+    @Environment(\.accessibilityReduceMotion) private var still
 
     /// How long the card takes to settle, with no bounce.
     private static var settling: Double { 0.4 }
@@ -36,8 +37,16 @@ struct Drawer<Content: View, Sidebar: View>: View {
                     .accessibilityElement(children: .contain)
                     .accessibilityAddTraits(open ? .isModal : [])
                     .accessibilityAction(.escape) { open = false }
+                    // It zooms in with the card: a little smaller and faint as the
+                    // card starts out, full size as it is all the way out, growing
+                    // from low on its leading edge; with Reduce Motion it only
+                    // fades in. SwiftUI's own scale and opacity, out here: drawn
+                    // inside `Uncovered`, they blanked the sidebar for some
+                    // frames each time the card stopped.
                     .animation(dragged == nil ? settle : nil) {
                         $0.modifier(Uncovered(out: out))
+                            .scaleEffect(still ? 1 : 0.9 + 0.1 * out, anchor: UnitPoint(x: 0, y: 0.8))
+                            .opacity(0.3 + 0.7 * out)
                     }
                 content
                     .overlay {
@@ -98,13 +107,9 @@ struct Drawer<Content: View, Sidebar: View>: View {
 }
 
 /// The sidebar is there only while the card is out, so nothing reaches it
-/// under the page: no tap, and no screen reader. It zooms in with the card:
-/// a little smaller and faint as the card starts out, full size as the card
-/// is all the way out, growing from its lower leading corner. With Reduce
-/// Motion it keeps its size and only fades in.
+/// under the page: no tap, and no screen reader.
 private struct Uncovered: ViewModifier, Animatable {
     var out: CGFloat
-    @Environment(\.accessibilityReduceMotion) private var still
 
     var animatableData: CGFloat {
         get { out }
@@ -112,20 +117,15 @@ private struct Uncovered: ViewModifier, Animatable {
     }
 
     func body(content: Content) -> some View {
-        let out = min(out, 1)
-        if out > 0 {
-            content
-                .scaleEffect(still ? 1 : 0.9 + 0.1 * out, anchor: UnitPoint(x: 0, y: 0.8))
-                .opacity(0.3 + 0.7 * out)
-        }
+        if out > 0 { content }
     }
 }
 
 /// The card at `out`, from 0 (closed) to 1: held between the two, so even a
 /// fast swipe never leaves a gap; once it moves, rounded as the screen is
 /// (at least as the smallest iPhone screen corners are), with a light shadow
-/// on the sidebar. The shadow is on the card's backing, not its content, so
-/// the bars and pages inside are drawn as before.
+/// on the sidebar. The shadow is on the card's backing, so the bars and the
+/// page inside it are drawn as before.
 private struct Slide: ViewModifier, Animatable {
     var out: CGFloat
     let width: CGFloat
