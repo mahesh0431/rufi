@@ -100,10 +100,11 @@ struct Drawer<Content: View, Sidebar: View>: View {
 /// The sidebar is there only while the card is out, so nothing reaches it
 /// under the page: no tap, and no screen reader. It moves with the card, a
 /// third as far, so it starts a third of `width` to the left and reaches its
-/// place as the card is all the way out.
+/// place as the card is all the way out; with Reduce Motion, it stays still.
 private struct Uncovered: ViewModifier, Animatable {
     var out: CGFloat
     let width: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var still
 
     var animatableData: CGFloat {
         get { out }
@@ -111,7 +112,7 @@ private struct Uncovered: ViewModifier, Animatable {
     }
 
     func body(content: Content) -> some View {
-        if out > 0 { content.offset(x: -(1 - min(out, 1)) * width / 3) }
+        if out > 0 { content.offset(x: still ? 0 : -(1 - min(out, 1)) * width / 3) }
     }
 }
 
