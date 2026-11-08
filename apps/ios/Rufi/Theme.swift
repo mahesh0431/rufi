@@ -50,6 +50,23 @@ final class Theme {
 
     var page: Color { colour(\.page, or: .systemBackground) }
     var side: Color { colour(\.side, or: .systemGroupedBackground) }
+    /// The iPhone's sidebar: in light, halfway from the theme's sidebar grey
+    /// to its surface white, a very light off-white, so the page beside it
+    /// stands out less; in dark, the sidebar's colour.
+    var sidebar: Color {
+        let side = uiColour(\.side, or: .systemGroupedBackground)
+        let surface = uiColour(\.surface, or: .secondarySystemGroupedBackground)
+        return Color(uiColor: UIColor { @Sendable traits in
+            let grey = side.resolvedColor(with: traits)
+            guard traits.userInterfaceStyle != .dark else { return grey }
+            let white = surface.resolvedColor(with: traits)
+            var (r1, g1, b1, r2, g2, b2, a): (CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat) =
+                (0, 0, 0, 0, 0, 0, 0)
+            grey.getRed(&r1, green: &g1, blue: &b1, alpha: &a)
+            white.getRed(&r2, green: &g2, blue: &b2, alpha: &a)
+            return UIColor(red: (r1 + r2) / 2, green: (g1 + g2) / 2, blue: (b1 + b2) / 2, alpha: 1)
+        })
+    }
     var surface: Color { colour(\.surface, or: .secondarySystemGroupedBackground) }
     // Not iOS's tint: that is this colour, once the app takes it.
     var accent: Color { colour(\.accent, or: UIColor(named: "AccentColor") ?? .systemBlue) }

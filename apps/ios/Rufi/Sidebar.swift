@@ -10,8 +10,8 @@ import UIKit
 /// A swipe left, or a tap on the page beside it, closes it. The card follows
 /// the finger and settles with the swipe's speed, never past either end.
 /// `side` is the sidebar's colour: behind the card, and, as the card goes,
-/// what it washes toward, a little darkened, so the card reads as set aside
-/// and the sidebar as the view.
+/// what it fades into, so the card reads as set aside and the sidebar as the
+/// view.
 struct Drawer<Content: View, Sidebar: View>: View {
     @Binding var open: Bool
     let enabled: Bool
@@ -23,7 +23,6 @@ struct Drawer<Content: View, Sidebar: View>: View {
     /// The swipe's speed as it let go, in widths a second.
     @State private var speed: Double = 0
     @Environment(\.accessibilityReduceMotion) private var still
-    @Environment(\.colorScheme) private var scheme
 
     /// How long the card takes to settle, with no bounce.
     private static var settling: Double { 0.4 }
@@ -63,10 +62,10 @@ struct Drawer<Content: View, Sidebar: View>: View {
                     .animation(dragged == nil ? settle : nil) {
                         $0.modifier(Slide(out: out, width: width))
                     }
-                // The dim, its own layer over the card: drawn inside the card,
+                // The fade, its own layer over the card: drawn inside the card,
                 // over its bars and web page, it blanked the card for some frames
                 // each time the card stopped.
-                Dim(out: out, width: width, side: side, shade: scheme == .dark ? 0.1 : 0.08)
+                Fade(out: out, width: width, side: side)
                     .allowsHitTesting(false)
                     .animation(dragged == nil ? settle : nil, value: out)
             }
@@ -119,17 +118,15 @@ private struct Uncovered: ViewModifier, Animatable {
     }
 }
 
-/// The dim over the card at `out`: when the card is all the way out, the page
-/// is washed 45% toward the sidebar's colour, then darkened by `shade` of
-/// black, so it reads as set aside without turning grey. Drawn and moved each frame, as the card's `Slide` is, so the two
-/// keep together; with SwiftUI's own offset and opacity, the dim ran a few
-/// frames off the card, and with an opacity worked out each frame, it showed
-/// wrong for a frame as the card stopped.
-private struct Dim: View, Animatable {
+/// The fade over the card at `out`: the sidebar's colour, at 45% when the
+/// card is all the way out. Drawn and moved each frame, as the card's `Slide`
+/// is, so the two keep together; with SwiftUI's own offset and opacity, the
+/// fade ran a few frames off the card, and with an opacity worked out each
+/// frame, it showed wrong for a frame as the card stopped.
+private struct Fade: View, Animatable {
     var out: CGFloat
     let width: CGFloat
     let side: Color
-    let shade: Double
 
     var animatableData: CGFloat {
         get { out }
@@ -138,12 +135,10 @@ private struct Dim: View, Animatable {
 
     var body: some View {
         let out = min(max(out, 0), 1)
-        ZStack {
-            Slide.rounded.fill(side.opacity(0.45 * out))
-            Slide.rounded.fill(.black.opacity(shade * out))
-        }
-        .ignoresSafeArea()
-        .offset(x: width * out)
+        Slide.rounded
+            .fill(side.opacity(0.45 * out))
+            .ignoresSafeArea()
+            .offset(x: width * out)
     }
 }
 
@@ -322,7 +317,7 @@ struct SidebarView: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 4)
         }
-        .background(theme.side, ignoresSafeAreaEdges: .all)
+        .background(theme.sidebar, ignoresSafeAreaEdges: .all)
     }
 
     private func row(_ place: Place) -> some View {
