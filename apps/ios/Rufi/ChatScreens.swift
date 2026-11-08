@@ -64,15 +64,17 @@ struct ChatView: View {
                 EmptyView()
             }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            // Over the box: Rufi AI's agents at work, then what waits.
+        .safeAreaBar(edge: .bottom, spacing: 0) {
+            // Over the box: Rufi AI's agents at work, what waits, then the
+            // pill while Rufi can't be reached. No colour behind: the chat
+            // scrolls under the glass.
             VStack(spacing: 6) {
                 AgentsAtWork(chat: chat)
                 WaitingList(chat: chat) { editing = $0 }
+                ReachPill(shell: shell)
                 ChatBoxView(shell: shell, chat: chat)
             }
             .padding(.top, 4)
-            .background(shell.theme.page)
         }
         .onChange(of: chat.sends) {
             pinned = true

@@ -16,7 +16,7 @@ struct ChatBoxView: View {
         let open = focused || !chat.text.isEmpty || !chat.chips.isEmpty
         let away = shell.away
         VStack(spacing: 4) {
-            // While Rufi can't be reached, the line at the top says so.
+            // While Rufi can't be reached, the pill over the box says so.
             if !away { BoxLine(chat: chat) }
             VStack(alignment: .leading, spacing: 2) {
                 if !chat.chips.isEmpty {
@@ -54,20 +54,16 @@ struct ChatBoxView: View {
             .padding(.leading, 14)
             .padding(.trailing, 5)
             .padding(.vertical, 4)
-            .background(theme.surface, in: .rect(cornerRadius: 22))
+            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
             .overlay {
-                RoundedRectangle(cornerRadius: 22)
-                    .strokeBorder(lit ? theme.accent : Color(.separator), lineWidth: lit ? 2 : 0.5)
+                if lit { RoundedRectangle(cornerRadius: 22).strokeBorder(theme.accent, lineWidth: 2) }
             }
-            .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
             // Not with the keyboard up. At the accessibility sizes, as at
             // the largest other size: never more than two lines.
             if !focused { Disclaimer().dynamicTypeSize(...DynamicTypeSize.xxxLarge) }
         }
-        .padding(.horizontal, 10)
-        .padding(.bottom, focused ? 6 : 2)
-        // The chat ends above it: its words never show under the reminder.
-        .background(theme.page)
+        .padding(.horizontal)
+        .floating(shell, keyboard: focused)
         .animation(.snappy(duration: 0.2), value: open)
         .onChange(of: chat.asked) {
             lit = true
