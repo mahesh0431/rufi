@@ -576,14 +576,13 @@ private struct ThinkingSheet: View {
     }
 }
 
-/// A step's details, as the agent gave them; read when opened. The AI's
-/// thinking opens as all of its words.
+/// A step's details, as the agent gave them, read when opened, in the sheet
+/// an agent opens in; the AI's thinking opens as all of its words.
 struct StepDetails: View {
     let step: Step
     let shell: Shell
     @State private var details: Any??
     @State private var problem: String?
-    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         if step.kind == "reasoning" {
@@ -594,36 +593,27 @@ struct StepDetails: View {
     }
 
     private var detailSheet: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    if let details {
-                        if let item = details as? [String: Any] {
-                            ForEach(Self.blocks(item), id: \.label) { DetailBlock(label: $0.label, text: $0.text) }
-                            if let facts = Self.facts(item) { Text(facts).font(.footnote).foregroundStyle(.secondary) }
-                        } else {
-                            Text("Rufi kept no details for this step.").foregroundStyle(.secondary)
-                        }
-                    } else if let problem {
-                        HStack {
-                            Text(problem)
-                            Button("Retry", systemImage: "arrow.clockwise") { Task { await read() } }
-                        }
-                        .foregroundStyle(.secondary)
+        ChatSheet(title: Words.step(step.text, step.detail)) {
+            VStack(alignment: .leading, spacing: 14) {
+                if let details {
+                    if let item = details as? [String: Any] {
+                        ForEach(Self.blocks(item), id: \.label) { DetailBlock(label: $0.label, text: $0.text) }
+                        if let facts = Self.facts(item) { Text(facts).font(.footnote).foregroundStyle(.secondary) }
                     } else {
-                        ProgressView("Loading…").frame(maxWidth: .infinity)
+                        Text("Rufi kept no details for this step.").foregroundStyle(.secondary)
                     }
+                } else if let problem {
+                    HStack {
+                        Text(problem)
+                        Button("Retry", systemImage: "arrow.clockwise") { Task { await read() } }
+                    }
+                    .foregroundStyle(.secondary)
+                } else {
+                    ProgressView("Loading…").frame(maxWidth: .infinity)
                 }
-                .padding()
-            }
-            .navigationTitle(Words.step(step.text, step.detail))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done", systemImage: "checkmark") { dismiss() } }
             }
             .task(id: step.updatedAt) { await read() }
         }
-        .presentationDetents([.medium, .large])
     }
 
     private func read() async {
