@@ -4,7 +4,7 @@
 // the one being written waits. Word by word: the words as they come, at a
 // pace that follows how much waits, so uneven parts from the AI flow evenly.
 // Whole reply: nothing until it is done. The reply itself is the same.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
@@ -53,28 +53,60 @@ export function paced(shown: number, length: number, ms: number): number {
   return Math.min(length, shown + ms * perMs);
 }
 
+/** The most one step counts, so text after a pause flows too. */
+const LONGEST_STEP_MS = 100;
+
+/**
+ * Word by word's pace for one reply. It keeps its clock from step to step,
+ * new text or not, so the time between steps always counts: text that
+ * comes faster than a frame still flows.
+ */
+export class WordPace {
+  #at: number | undefined;
+  #last: number | undefined;
+
+  /**
+   * The whole words of `text` shown at `now` (ms): all it holds the first
+   * time (a reply opened while it is written), then as far as the pace came.
+   */
+  step(text: string, now: number): number {
+    const since =
+      this.#last === undefined
+        ? 0
+        : Math.min(LONGEST_STEP_MS, Math.max(0, now - this.#last));
+    this.#at =
+      this.#at === undefined
+        ? text.length
+        : paced(this.#at, text.length, since);
+    this.#last = now;
+    return wordsEnd(text, this.#at);
+  }
+
+  /** The pace has reached the end of `text`. */
+  caughtUp(text: string): boolean {
+    return (this.#at ?? 0) >= text.length;
+  }
+}
+
 /**
  * The reply's text, word by word, while `flowing`; all of it otherwise. It
  * starts from what the reply already holds, so a reload shows that at once.
+ * New text steps the pace at once, then each frame does until it caught up.
  */
 export function useWordByWord(text: string, flowing: boolean): string {
+  const [pace] = useState(() => new WordPace());
   const [shown, setShown] = useState(() => wordsEnd(text, text.length));
-  // How far the pace has come, between whole words.
-  const pace = useRef(text.length);
   useEffect(() => {
     if (!flowing) return;
-    let then = performance.now();
+    let frame = 0;
     const step = (now: number) => {
-      // A frame's time can be just before the effect ran.
-      pace.current = paced(pace.current, text.length, Math.max(0, now - then));
-      then = now;
-      setShown(wordsEnd(text, pace.current));
-      if (pace.current < text.length) frame = requestAnimationFrame(step);
+      setShown(pace.step(text, now));
+      if (!pace.caughtUp(text)) frame = requestAnimationFrame(step);
     };
-    let frame = requestAnimationFrame(step);
+    step(performance.now());
     return () => {
       cancelAnimationFrame(frame);
     };
-  }, [text, flowing]);
+  }, [pace, text, flowing]);
   return flowing ? text.slice(0, shown) : text;
 }

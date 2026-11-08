@@ -73,3 +73,30 @@ enum ReplyFlow: String {
         String(decoding: text.utf16.prefix(count), as: UTF16.self)
     }
 }
+
+/// Word by word's pace for one reply. It keeps its clock from step to step,
+/// new text or not, so the time between steps always counts: text that
+/// comes faster than the view's ticks still flows.
+struct WordPace {
+    private var at: Double?
+    private var last: ContinuousClock.Instant?
+    /// The most one step counts, so text after a pause (a tool running)
+    /// flows too, rather than showing at once.
+    static let longestStepMs = 100.0
+
+    /// The whole words of `text` shown `now`: all it holds the first time
+    /// (a reply opened while it is written), then as far as the pace came.
+    mutating func step(_ text: String, at now: ContinuousClock.Instant) -> Int {
+        let length = text.utf16.count
+        let since = last.map { min(Self.longestStepMs, max(0, (now - $0) / .milliseconds(1))) } ?? 0
+        let paced = at.map { ReplyFlow.paced($0, length: length, ms: since) } ?? Double(length)
+        at = paced
+        last = now
+        return ReplyFlow.wordsEnd(text, upTo: Int(paced))
+    }
+
+    /// The pace has reached the end of `text`.
+    func caughtUp(_ text: String) -> Bool {
+        (at ?? 0) >= Double(text.utf16.count)
+    }
+}

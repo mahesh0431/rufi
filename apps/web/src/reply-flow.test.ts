@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { finishedBlocks, paced, wordsEnd } from "./reply-flow.ts";
+import { finishedBlocks, paced, WordPace, wordsEnd } from "./reply-flow.ts";
 
 describe("finishedBlocks", () => {
   it("shows nothing until the first block is whole", () => {
@@ -69,5 +69,27 @@ describe("paced", () => {
     expect(paced(0, 1000, 16)).toBeCloseTo(64);
     expect(paced(5, 10, 1000)).toBe(10);
     expect(paced(10, 10, 16)).toBe(10);
+  });
+});
+
+describe("WordPace", () => {
+  it("keeps the words flowing when text comes faster than a frame, and catches up after", () => {
+    // As the hook runs it: each new text steps at once, and cancels the
+    // frame it asked for; here text comes every 8 ms.
+    const pace = new WordPace();
+    let text = "";
+    const shown: number[] = [];
+    for (let part = 0; part < 60; part++) {
+      text += "word ";
+      shown.push(pace.step(text, 8 * part));
+    }
+    expect(shown[0]).toBe(4);
+    expect(shown[30]).toBeGreaterThan(shown[10] ?? 0);
+    expect(shown[59]).toBeGreaterThan(shown[30] ?? 0);
+    // At least one character every 5 ms.
+    expect(shown[59]).toBeGreaterThanOrEqual((8 * 59) / 5 - 5);
+    let now = 8 * 59;
+    while (!pace.caughtUp(text)) pace.step(text, (now += 16));
+    expect(pace.step(text, now)).toBe(text.length - 1);
   });
 });

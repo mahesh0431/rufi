@@ -10,9 +10,9 @@ struct ReplyView: View {
     let streaming: Bool
     let chat: ChatModel
     let origin: URL
-    /// Word by word: how far the pace has come, and the words shown, in
-    /// UTF-16. Until it starts, the words the reply holds show at once.
-    @State private var pace: Double?
+    /// Word by word: its pace, and the words shown, in UTF-16. Until it
+    /// starts, the words the reply holds show at once.
+    @State private var pace = WordPace()
     @State private var shown: Int?
 
     var body: some View {
@@ -34,20 +34,14 @@ struct ReplyView: View {
     }
 
     /// The words, at a pace that follows how much waits, so uneven parts
-    /// from the AI flow evenly.
+    /// from the AI flow evenly. New text restarts this; the pace keeps its
+    /// clock, so text that comes faster than a tick still flows.
     private func flowWords() async {
         let text = entry.text
-        let length = text.utf16.count
-        var then = ContinuousClock.now
-        var at = pace ?? Double(length)
         while true {
-            let now = ContinuousClock.now
-            at = ReplyFlow.paced(at, length: length, ms: (now - then) / .milliseconds(1))
-            then = now
-            pace = at
-            let words = ReplyFlow.wordsEnd(text, upTo: Int(at))
+            let words = pace.step(text, at: .now)
             if words != shown { shown = words }
-            guard at < Double(length), (try? await Task.sleep(for: .milliseconds(16))) != nil else { return }
+            guard !pace.caughtUp(text), (try? await Task.sleep(for: .milliseconds(16))) != nil else { return }
         }
     }
 }
@@ -66,8 +60,8 @@ private struct ReplyText: View {
         let visuals = Visuals.scan(text)
         RufiMarkdown(text: text) { configuration in
             if Visuals.isVisual(configuration.language) {
-                let html = Visuals.trimmed(configuration.content)
-                let place = visuals.firstIndex { $0.html == html }
+                let html = configuration.content
+                let place = Visuals.place(of: html, in: visuals)
                 if streaming, place.map({ !visuals[$0].whole }) ?? true {
                     RoundedRectangle(cornerRadius: 8).fill(.quaternary)
                         .frame(height: VisualCard.waiting)
@@ -213,12 +207,15 @@ enum Visuals {
         let whole: Bool
     }
 
-    static func isVisual(_ info: String?) -> Bool {
-        info?.split(whereSeparator: \.isWhitespace).first == "rufi-visual"
+    /// Which block a code block MarkdownUI draws is: its content comes
+    /// without the fence's last line end, as `scan` keeps it; a blank last
+    /// line stays.
+    static func place(of content: String, in visuals: [Block]) -> Int? {
+        visuals.firstIndex { $0.html == content }
     }
 
-    static func trimmed(_ content: String) -> String {
-        content.hasSuffix("\n") ? String(content.dropLast()) : content
+    static func isVisual(_ info: String?) -> Bool {
+        info?.split(whereSeparator: \.isWhitespace).first == "rufi-visual"
     }
 
     /// Each fence at the top of the text: up to three spaces, then three or

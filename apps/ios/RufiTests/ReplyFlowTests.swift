@@ -44,4 +44,40 @@ struct ReplyFlowTests {
         #expect(ReplyFlow.paced(5, length: 10, ms: 1000) == 10)
         #expect(ReplyFlow.paced(10, length: 10, ms: 16) == 10)
     }
+
+    /// As the view runs it: each new text restarts its loop, which steps at
+    /// once; text that comes every 8 ms cancels its 16 ms tick each time.
+    @Test func wordsKeepFlowingWhenTextComesFasterThanATick() {
+        var pace = WordPace()
+        let start = ContinuousClock.now
+        var text = ""
+        var shown: [Int] = []
+        for part in 0..<60 {
+            text += "word "
+            shown.append(pace.step(text, at: start.advanced(by: .milliseconds(8 * part))))
+        }
+        // The first word shows at once; then whole words go on showing
+        // while the text still comes, at least one character every 5 ms.
+        #expect(shown.first == 4)
+        #expect(shown[30] > shown[10] && shown[59] > shown[30])
+        #expect(shown[59] >= 8 * 59 / 5 - 5)
+        // A pause lets it catch up with all the text.
+        var last = start.advanced(by: .milliseconds(8 * 59))
+        while !pace.caughtUp(text) {
+            last = last.advanced(by: .milliseconds(16))
+            _ = pace.step(text, at: last)
+        }
+        #expect(pace.step(text, at: last) == text.utf16.count - 1)
+    }
+
+    /// The fence's last line end is MarkdownUI's to drop: a visual whose
+    /// last line is blank is still found whole, and draws before the end.
+    @Test func aVisualEndingInABlankLineIsWhole() {
+        let text = "```rufi-visual\n<p>Fictional HbA1c: 6.1%</p>\n\n```\n\nHere is what it means."
+        let visuals = Visuals.scan(text)
+        // MarkdownUI's content for this block: cmark's, less one line end.
+        let content = "<p>Fictional HbA1c: 6.1%</p>\n"
+        let place = Visuals.place(of: content, in: visuals)
+        #expect(place.map { visuals[$0].whole } == true)
+    }
 }
