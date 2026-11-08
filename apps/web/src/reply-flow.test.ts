@@ -44,6 +44,8 @@ describe("wordsEnd", () => {
     expect(wordsEnd(text, 3)).toBe(0);
     expect(wordsEnd(text, 4)).toBe(4);
     expect(wordsEnd(text, 10)).toBe(4);
+    // The pace is between characters.
+    expect(wordsEnd(text, 14.7)).toBe(14);
     expect(wordsEnd(text, 14)).toBe(14);
     // The last word may still be growing: it waits for what follows it.
     expect(wordsEnd(text, text.length)).toBe(18);

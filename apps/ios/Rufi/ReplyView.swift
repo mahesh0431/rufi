@@ -2,9 +2,9 @@ import MarkdownUI
 import SwiftUI
 
 /// A reply: one Markdown document, as the Mac draws it, with each visual
-/// block drawn as a card in its place (ADR 0034). While the reply streams,
-/// a visual waits as an empty card until its block is whole; its code never
-/// shows.
+/// block drawn as a card in its place (ADR 0034). While it is written, it
+/// shows as the Mac's Settings › Chat chose (ReplyFlow): its whole blocks,
+/// its words, or nothing until it is done.
 struct ReplyView: View {
     let entry: Entry
     let streaming: Bool
@@ -12,8 +12,33 @@ struct ReplyView: View {
     let origin: URL
 
     var body: some View {
-        let visuals = Visuals.scan(entry.text)
-        RufiMarkdown(text: entry.text) { configuration in
+        switch streaming ? chat.replyFlow : nil {
+        case .paragraphs?:
+            let finished = ReplyFlow.finishedBlocks(entry.text)
+            if !finished.isEmpty { ReplyText(text: finished, streaming: false, id: entry.id, chat: chat, origin: origin) }
+        case .words?:
+            WordByWord(text: entry.text) { ReplyText(text: $0, streaming: true, id: entry.id, chat: chat, origin: origin) }
+        case .whole?:
+            EmptyView()
+        case nil:
+            ReplyText(text: entry.text, streaming: false, id: entry.id, chat: chat, origin: origin)
+        }
+    }
+}
+
+/// A reply's text, as shown. While it is still open (word by word), a
+/// visual waits as an empty card until its block is whole; its code never
+/// shows.
+private struct ReplyText: View {
+    let text: String
+    let streaming: Bool
+    let id: String
+    let chat: ChatModel
+    let origin: URL
+
+    var body: some View {
+        let visuals = Visuals.scan(text)
+        RufiMarkdown(text: text) { configuration in
             if Visuals.isVisual(configuration.language) {
                 let html = Visuals.trimmed(configuration.content)
                 let place = visuals.firstIndex { $0.html == html }
@@ -22,12 +47,42 @@ struct ReplyView: View {
                         .frame(height: VisualCard.waiting)
                         .padding(.bottom, 8)
                 } else {
-                    VisualCard(html: html, key: "\(entry.id):\(place ?? 0)", chat: chat, origin: origin)
+                    VisualCard(html: html, key: "\(id):\(place ?? 0)", chat: chat, origin: origin)
                 }
             } else {
                 CodeBlock(configuration: configuration)
             }
         }
+    }
+}
+
+/// A reply's words as they come, at a pace that follows how much waits, so
+/// uneven parts from the AI flow evenly. It starts from what the reply
+/// already holds, so opening the chat shows that at once.
+private struct WordByWord<Content: View>: View {
+    let text: String
+    @ViewBuilder let content: (String) -> Content
+    /// How far the pace has come, and the words shown, in UTF-16.
+    @State private var pace: Double?
+    @State private var shown: Int?
+
+    var body: some View {
+        let end = shown ?? ReplyFlow.wordsEnd(text, upTo: text.utf16.count)
+        content(ReplyFlow.prefix(text, end))
+            .task(id: text) {
+                let length = text.utf16.count
+                var then = ContinuousClock.now
+                var at = pace ?? Double(length)
+                while true {
+                    let now = ContinuousClock.now
+                    at = ReplyFlow.paced(at, length: length, ms: (now - then) / .milliseconds(1))
+                    then = now
+                    pace = at
+                    let words = ReplyFlow.wordsEnd(text, upTo: Int(at))
+                    if words != shown { shown = words }
+                    guard at < Double(length), (try? await Task.sleep(for: .milliseconds(16))) != nil else { return }
+                }
+            }
     }
 }
 

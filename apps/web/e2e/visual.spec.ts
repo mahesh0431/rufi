@@ -177,8 +177,11 @@ test("a visual still being written never shows its code: paragraph by paragraph 
   // Word by word, after a reload: the visual's place, quietly.
   const settings = await openSettings(page, "Chat");
   await settings.getByRole("radio", { name: "Word by word" }).check();
+  await page.keyboard.press("Escape");
   await page.reload();
-  await chat(page).getByRole("button", { name: "Open the chat" }).click();
+  const opener = chat(page).getByRole("button", { name: "Open the chat" });
+  await expect(opener.or(log(page)).first()).toBeVisible();
+  if (await opener.isVisible()) await opener.click();
   await expect(log(page).getByText("Here is your chart.")).toBeVisible();
   await expect(log(page).locator(".reply .visual[aria-hidden]")).toBeVisible();
   await expect(cards(page)).toHaveCount(0);

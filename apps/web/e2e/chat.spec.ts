@@ -301,19 +301,21 @@ test("while a reply is written it shows as Settings › Chat says: paragraph by 
     });
     await group.getByRole("radio", { name: choice }).check();
     await page.keyboard.press("Escape");
-    await page.evaluate(() => {
-      const before = document.querySelectorAll(".reply").length;
+    const before = (await chatPage(page)).entries.map((entry) => entry.id);
+    await page.evaluate((before) => {
       const shown: string[] = [];
       Object.assign(globalThis, { shown });
       new MutationObserver(() => {
-        const text = document.querySelectorAll(".reply")[before]?.textContent;
+        const text = [...document.querySelectorAll(".reply")].find(
+          (reply) => !before.includes(reply.getAttribute("data-entry") ?? ""),
+        )?.textContent;
         if (text && shown.at(-1) !== text) shown.push(text);
       }).observe(document.body, {
         subtree: true,
         childList: true,
         characterData: true,
       });
-    });
+    }, before);
     await send(page, "trickle");
     await expect(log(chat(page)).locator(".reply").last()).toHaveText(
       /Nothing else changed\.$/,

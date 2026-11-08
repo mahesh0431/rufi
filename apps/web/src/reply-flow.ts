@@ -30,7 +30,7 @@ const SPACE = /\s/;
  * it, so a word, a bold mark or a fence's opening line shows only whole.
  */
 export function wordsEnd(text: string, upTo: number): number {
-  for (let at = Math.min(upTo, text.length - 1); at > 0; at--) {
+  for (let at = Math.floor(Math.min(upTo, text.length - 1)); at > 0; at--) {
     if (SPACE.test(text[at] ?? "") && !SPACE.test(text[at - 1] ?? "")) {
       return at;
     }
@@ -65,7 +65,8 @@ export function useWordByWord(text: string, flowing: boolean): string {
     if (!flowing) return;
     let then = performance.now();
     const step = (now: number) => {
-      pace.current = paced(pace.current, text.length, now - then);
+      // A frame's time can be just before the effect ran.
+      pace.current = paced(pace.current, text.length, Math.max(0, now - then));
       then = now;
       setShown(wordsEnd(text, pace.current));
       if (pace.current < text.length) frame = requestAnimationFrame(step);
