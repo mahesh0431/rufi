@@ -281,6 +281,22 @@ nonisolated struct Door: Sendable {
                                              path: "\(Self.people)/\(person)/chat/stop", body: [String: String]())
     }
 
+    /// Changes what waits to go to the AI in `person`'s chat (`chat/queue`
+    /// and below it): the queue as it is then.
+    func queue(_ method: String, _ path: String = "", body: (any Encodable & Sendable)? = nil, for person: String)
+        async throws(Problem) -> Queue {
+        try await Self.call(origin: origin, key: key, method: method,
+                            path: "\(Self.people)/\(person)/chat/queue\(path)", body: body)
+    }
+
+    /// Stops a sub-agent of `person`'s chat, and the agents it started.
+    func stop(agent: String, for person: String) async throws(Problem) {
+        struct Nothing: Decodable {}
+        let _: Nothing = try await Self.call(origin: origin, key: key, method: "POST",
+                                             path: "\(Self.people)/\(person)/chat/agents/stop",
+                                             query: ["agent": agent], body: [String: String]())
+    }
+
     /// A file added from the box, never sent, leaves Rufi; once sent, it
     /// stays (the Mac says so, and that is fine).
     func unsent(_ document: String, for person: String) async throws(Problem) {

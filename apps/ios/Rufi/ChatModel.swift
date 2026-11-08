@@ -30,6 +30,12 @@ final class ChatModel {
         case doses
     }
 
+    /// An agent's sheet: which agent, and the name it was opened by.
+    struct OpenAgent: Identifiable, Equatable {
+        let id: String
+        let title: String
+    }
+
     /// A message of the person's not in the transcript yet: kept on the
     /// iPhone, taken by the Mac, or waiting in the Mac's queue.
     struct Outgoing: Identifiable, Equatable {
@@ -38,8 +44,6 @@ final class ChatModel {
             case pending
             /// The Mac took it, or gives it to the AI now.
             case sent
-            /// In the Mac's queue, after the reply; held, with why.
-            case waiting(String?)
         }
 
         let id: String
@@ -61,6 +65,14 @@ final class ChatModel {
     private(set) var status = Status.loading
     private(set) var older = Older.idle
     private(set) var queue: [QueueItem] = []
+    /// Why the queue couldn't be read, or a change to it didn't go.
+    private(set) var queueProblem: String?
+    /// The chat's sub-agents, oldest first.
+    private(set) var agents: [SubAgent] = []
+    /// Goes up when the agents read again: an open agent's Activity follows.
+    private(set) var agentReads = 0
+    /// The agent whose sheet is open, by the name it was opened by.
+    var openAgent: OpenAgent?
     /// Taken by the Mac, not in the transcript or the queue yet.
     private(set) var accepted: [PendingMessage] = []
     /// Goes up at each send: the transcript goes to its end.
@@ -223,6 +235,7 @@ final class ChatModel {
             status = .open
             older = .idle
             Task { await readQueue() }
+            Task { await readAgents() }
             changed(.saved)
             // Rufi is there again: what it couldn't keep, it keeps now.
             if failed { save() }
@@ -232,6 +245,8 @@ final class ChatModel {
             if turns.contains(where: { $0.endReason == "sign_in" }) { Task { await readStatus() } }
         case .queue:
             Task { await readQueue() }
+        case .agents:
+            Task { await readAgents() }
         case .documents:
             changed(.documents)
         case .doses:
@@ -246,9 +261,87 @@ final class ChatModel {
     private func readQueue() async {
         queueReads += 1
         let read = queueReads
-        guard let answer: Queue = try? await door.read("chat/queue", for: person), read == queueReads else { return }
-        queue = answer.items
-        settle()
+        do throws(Door.Problem) {
+            let answer: Queue = try await door.read("chat/queue", for: person)
+            guard read == queueReads else { return }
+            queue = answer.items
+            queueProblem = nil
+            settle()
+        } catch {
+            if read == queueReads, error != .unreachable { queueProblem = error.shown }
+        }
+    }
+
+    private func readAgents() async {
+        guard let answer: SubAgents = try? await door.read("chat/agents", for: person) else { return }
+        agents = answer.agents
+        agentReads += 1
+    }
+
+    // MARK: - What waits
+
+    /// What waits to go to the AI, in order: the person's messages and
+    /// Rufi's notes, not those being given to the AI now or in the chat.
+    var waiting: [QueueItem] {
+        let going = Set(goingNow.map(\.id))
+        return queue.filter { !going.contains($0.id) && transcript.entries[$0.id] == nil }
+    }
+
+    /// The person's messages being given to the AI now: shown in the chat as sent.
+    private var goingNow: [QueueItem] {
+        let idle = transcript.running == nil
+        let first = queue.first { $0.state == "waiting" && $0.held == nil }
+        return queue.filter { item in
+            item.origin == "person" && item.held == nil && transcript.entries[item.id] == nil
+                && (item.state == "handing_over" || (idle && item.id == first?.id))
+        }
+    }
+
+    /// Changes what waits: a waiting message into the running reply
+    /// (steer), sent now (send), edited, removed, or put in another order;
+    /// the queue comes back as it is then. A message the person sends
+    /// takes the chat to its end. True once Rufi took the change.
+    @discardableResult
+    func change(_ method: String, _ path: String = "", body: (any Encodable & Sendable)? = nil, sends: Bool = false) async
+        -> Bool {
+        queueProblem = nil
+        if sends { self.sends += 1 }
+        do throws(Door.Problem) {
+            let answer = try await door.queue(method, path, body: body, for: person)
+            queueReads += 1
+            queue = answer.items
+            settle()
+            return true
+        } catch .unpaired {
+            unpaired()
+        } catch {
+            queueProblem = error.shown ?? "Can't reach Rufi"
+        }
+        return false
+    }
+
+    /// Puts the waiting rows in the order `ids` gives; it shows at once, and
+    /// goes back if Rufi refuses it.
+    func reorder(_ ids: [String]) async {
+        let before = queue
+        var moved = ids.compactMap { id in queue.first { $0.id == id } }.makeIterator()
+        queue = queue.map { $0.state == "waiting" ? (moved.next() ?? $0) : $0 }
+        if await !change("PUT", body: ["ids": ids]) { queue = before }
+    }
+
+    /// The path of one waiting row, under the queue.
+    static func one(_ item: QueueItem) -> String {
+        "/\(item.id.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(.init(charactersIn: "-_."))) ?? "")"
+    }
+
+    /// Stops an agent and the agents it started.
+    func stop(agent: String) async throws(Door.Problem) {
+        try await door.stop(agent: agent, for: person)
+    }
+
+    /// An agent's latest `last` lines.
+    func log(of agent: String, last: Int) async throws(Door.Problem) -> AgentLog {
+        try await door.read("chat/agents/log", for: person, query: ["agent": agent, "last": String(last)])
     }
 
     private func readSettings() async {
@@ -305,17 +398,12 @@ final class ChatModel {
         clock = key.map { ($0, since) }
     }
 
-    /// Messages not in the transcript yet, in order: kept on the iPhone,
-    /// taken, then the Mac's queue (one being given to the AI shows as sent).
+    /// Messages not in the transcript yet, in order: being given to the
+    /// AI, taken, then kept on the iPhone. What waits in the Mac's queue
+    /// shows in its list over the box.
     var outgoing: [Outgoing] {
-        let idle = transcript.running == nil
-        let first = queue.first { $0.state == "waiting" && $0.held == nil }
         let entries = transcript.entries
-        let queued = queue.filter { $0.origin == "person" && entries[$0.id] == nil }.map { item in
-            let going = item.held == nil && (item.state == "handing_over" || (idle && item.id == first?.id))
-            return Outgoing(id: item.id, text: item.text, chips: item.refs,
-                            state: going ? .sent : .waiting(item.held == nil ? nil : item.heldText ?? ""))
-        }
+        let queued = goingNow.map { Outgoing(id: $0.id, text: $0.text, chips: $0.refs, state: .sent) }
         let queuedIds = Set(queue.map(\.id))
         let taken = accepted.filter { entries[$0.id] == nil && !queuedIds.contains($0.id) }.map {
             Outgoing(id: $0.id, text: $0.text, chips: $0.refs ?? [], state: .sent)

@@ -32,6 +32,11 @@ extension Chip {
     init(type: String, id: String, readAgain: Bool = false, label: String) {
         self.init(ref: Pointer(type: type, id: id, readAgain: readAgain ? true : nil), label: label, detail: "")
     }
+
+    /// A saved record's chip: its kind is part of what it points at.
+    init(record kind: String, id: String, label: String) {
+        self.init(ref: Pointer(type: "record", id: id, kind: kind), label: label, detail: "")
+    }
 }
 
 /// The box's text and chips as the Mac keeps them; the last save wins.
@@ -173,13 +178,69 @@ nonisolated struct QueueItem: Decodable, Equatable, Identifiable, Sendable {
     let text: String
     /// waiting or handing_over.
     let state: String
+    /// Why it doesn't go by itself: signed_out, restored, failed, stopped
+    /// or open_failed; none: it goes in turn.
     let held: String?
     let heldText: String?
+    /// Which open_failed hold it is: the person's choice names it.
+    let holdId: String?
     let refs: [Chip]
 }
 
 nonisolated struct Queue: Decodable, Equatable, Sendable {
     let items: [QueueItem]
+}
+
+/// A sub-agent of the chat, as its line shows it.
+nonisolated struct SubAgent: Decodable, Equatable, Identifiable, Sendable {
+    let id: String
+    /// The name the agent that started it gave it.
+    let title: String
+    /// idle, running, continuing, done, stopped or failed.
+    let status: String
+    /// Its latest result's start: its last answer, or why it stopped or failed.
+    let result: String?
+    /// The agent that started it; none: Rufi AI's own.
+    let parent: String?
+    /// When its turn now began, while it works.
+    let since: String?
+    let model: String
+    let effort: String
+
+    /// At work: before its first turn, running, or going on after a restart.
+    var working: Bool { status == "idle" || status == "running" || status == "continuing" }
+}
+
+nonisolated struct SubAgents: Decodable, Equatable, Sendable {
+    let agents: [SubAgent]
+}
+
+/// A sub-agent's latest lines, and whether it has earlier ones.
+nonisolated struct AgentLog: Decodable, Equatable, Sendable {
+    /// One line of its Activity: a message it took (`from` whom), its
+    /// answer (reply), a note or step (activity), its thinking, a question
+    /// it asked, how a turn ended (end), or another model (model).
+    struct Line: Decodable, Equatable, Identifiable, Sendable {
+        struct Changed: Decodable, Equatable, Sendable {
+            let from: Turn.RanOn
+            let to: Turn.RanOn
+        }
+
+        let id: String
+        let kind: String
+        let changed: Changed?
+        let text: String
+        let from: String?
+        let activity: String?
+        let detail: String?
+        let status: String?
+        let updatedAt: String
+        /// The sub-agent this step started.
+        let agent: String?
+    }
+
+    let lines: [Line]
+    let earlier: Bool
 }
 
 /// The transcript: the latest page and the older pages read since. Each

@@ -139,3 +139,10 @@ UPDATE document_pages SET entry_job_id = 'job-sep', entry_attempt = 1, entry_at 
   entry = '{"outcome":"read","facts":{"issuer":"Sunrise Labs","dates":[{"label":"Collected","date":"1 Sep 2026"}]},"rows_seen":2,"items":[{"test_name":"TSH","value_text":"4.6","unit":"mIU/L","reference_range":"0.4–4.0","flag_text":"H","unsure":"The value is faint."}],"issues":["The bottom of the photo is cut off."]}',
   entry_checks = '{"incomplete":{"rows_seen":2,"items":1},"items":[{"item":1,"why":"Its unit is not on the page."}]}'
   WHERE person_id = 'asha' AND document_id = 'doc-asha-sep' AND position = 1;
+
+-- Two of Asha's messages that wait in her chat, held: they go only when
+-- she says. A Stop came before the first went; the AI's thread didn't open
+-- for the second, so she chooses Send or New thread.
+INSERT INTO chat_queue (id, person_id, chat_id, origin, kind, text, refs, position, state, held, held_text, hold_id, created_at, updated_at) VALUES
+  ('q-a1', 'asha', 'c-asha', 'person', 'queue', 'Also compare my TSH with last year.', '[]', 1, 'waiting', 'stopped', 'You stopped the reply before it went.', NULL, '2026-10-05T08:01:00Z', '2026-10-05T08:01:00Z'),
+  ('q-a2', 'asha', 'c-asha', 'person', 'queue', 'And is my vitamin D still low?', '[]', 2, 'waiting', 'open_failed', 'The AI''s chat didn''t open.', 'hold-a2', '2026-10-05T08:02:00Z', '2026-10-05T08:02:00Z');

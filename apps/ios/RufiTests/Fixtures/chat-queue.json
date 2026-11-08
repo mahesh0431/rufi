@@ -1,1 +1,24 @@
-{ "items": [] }
+{
+  "items": [
+    {
+      "id": "q-a1",
+      "origin": "person",
+      "text": "Also compare my TSH with last year.",
+      "state": "waiting",
+      "held": "stopped",
+      "heldText": "You stopped the reply before it went.",
+      "holdId": null,
+      "refs": []
+    },
+    {
+      "id": "q-a2",
+      "origin": "person",
+      "text": "And is my vitamin D still low?",
+      "state": "waiting",
+      "held": "open_failed",
+      "heldText": "The AI's chat didn't open.",
+      "holdId": "hold-a2",
+      "refs": []
+    }
+  ]
+}
