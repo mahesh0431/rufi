@@ -56,6 +56,7 @@ private struct TestLine: View {
                 }
                 .padding(.vertical, 2)
             }
+            .asks(shell, Chip(record: test.test.kind, id: test.test.id, label: test.test.name ?? ""))
         }
     }
 }
@@ -125,6 +126,7 @@ private struct ValueLine: View {
                 }
                 .padding(.vertical, 2)
             }
+            .asks(shell, Chip(record: row.kind, id: row.id, label: Words.cells(row).title))
         }
     }
 }

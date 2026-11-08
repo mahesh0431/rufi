@@ -64,9 +64,41 @@ extension Words {
 
     /// "Model changed: GPT-6-Astra XHigh → Claude Opus 5.5 High".
     static func modelChanged(_ turn: Turn) -> String {
+        modelChanged(from: turn.before, to: Turn.RanOn(model: turn.model, effort: turn.effort))
+    }
+
+    static func modelChanged(from: Turn.RanOn?, to: Turn.RanOn) -> String {
         let ran = { (model: String, effort: String?) in ([model.isEmpty ? nil : self.model(model), effort.map(self.effort)])
             .compactMap { $0 }.joined(separator: " ") }
-        return "Model changed: \(ran(turn.before?.model ?? "", turn.before?.effort)) → \(ran(turn.model, turn.effort))"
+        return "Model changed: \(ran(from?.model ?? "", from?.effort)) → \(ran(to.model, to.effort))"
+    }
+
+    /// The waiting list's heading: what happens to its rows now.
+    static func waitingHeading(_ items: [QueueItem], running: Bool) -> String {
+        if running { return "Waiting · these go in order after the reply" }
+        // Held for the sign-in, a row goes by itself once signed in; any other hold waits for the person.
+        if items.contains(where: { $0.held != nil && $0.held != "signed_out" }) {
+            return "Not sent · Rufi sends these only when you say"
+        }
+        if items.contains(where: { $0.held == "signed_out" }) { return "Waiting until you sign in" }
+        return "Waiting"
+    }
+
+    /// Why a waiting row doesn't go by itself: Failed, or Not sent, and why as it came.
+    static func held(_ item: QueueItem) -> String? {
+        switch item.held {
+        case "restored": "Not sent · From a backup: it waited when the backup was made."
+        case "stopped": "Not sent · \(item.heldText ?? "")"
+        case "failed", "open_failed": "Failed · \(item.heldText ?? "")"
+        case "signed_out": item.heldText
+        default: nil
+        }
+    }
+
+    /// An agent's line in its sheet: "running · 1:05 · GPT-6-Astra · Medium".
+    static func agent(_ agent: SubAgent, now: Date) -> String {
+        let elapsed = agent.working ? agent.since.flatMap(instant).map { clock(now.timeIntervalSince($0)) } : nil
+        return [agent.status, elapsed, model(agent.model), effort(agent.effort)].compactMap { $0 }.joined(separator: " · ")
     }
 
     /// How a reply that didn't complete ended, as Rufi says it.
@@ -97,7 +129,11 @@ extension Words {
 
     /// A step's one line: its text, and its detail when it has one.
     static func step(_ entry: Entry) -> String {
-        let line = entry.detail.map { "\(entry.text) · \($0)" } ?? entry.text
+        step(entry.text, entry.detail)
+    }
+
+    static func step(_ text: String, _ detail: String?) -> String {
+        let line = detail.map { "\(text) · \($0)" } ?? text
         return line.split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 }

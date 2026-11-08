@@ -5,7 +5,8 @@ import Testing
 /// The chat drawn here: what the Mac's chat routes answer (the fixtures),
 /// in the Mac's order; a late read never undoes a newer one; a visual's
 /// card loads only the door's two pages; a reply's links open only the
-/// person's pages; and a send goes through Pending, once.
+/// person's pages; a send goes through Pending, once; and an edit of a
+/// waiting message says whether Rufi kept it.
 @MainActor
 @Suite(.serialized)
 struct ChatTests {
@@ -52,6 +53,42 @@ struct ChatTests {
         transcript.apply(.snapshot(page))
         transcript.addOlder(ChatPage(revision: 9, chat: page.chat, entries: [newer], turns: [], before: nil), window: window)
         #expect(transcript.entries["ent-a4"]?.text == reply.text)
+    }
+
+    /// A held message goes only when the person says, and only as its hold
+    /// allows: a new thread only between replies; steer only into a running one.
+    @Test func aHeldMessageGoesOnlyWhenThePersonSays() throws {
+        let queue: Queue = try read("chat-queue")
+        let stopped = try #require(queue.items.first { $0.held == "stopped" })
+        let unopened = try #require(queue.items.first { $0.held == "open_failed" })
+        #expect(unopened.holdId == "hold-a2")
+        #expect(WaitingRow.actions(stopped, running: false) == [.send, .edit, .remove])
+        #expect(WaitingRow.actions(unopened, running: false) == [.send, .newThread, .edit, .remove])
+        #expect(WaitingRow.actions(unopened, running: true) == [.send, .edit, .remove])
+        let free = QueueItem(id: "q-3", origin: "person", text: "One more", state: "waiting", held: nil, heldText: nil,
+                             holdId: nil, refs: [])
+        #expect(WaitingRow.actions(free, running: true) == [.steer, .edit, .remove])
+        #expect(WaitingRow.actions(free, running: false) == [.edit, .remove])
+        // Rufi's note is never the person's to edit; one being given to the AI, nothing.
+        let note = QueueItem(id: "q-4", origin: "rufi", text: "A document was read.", state: "waiting", held: nil,
+                             heldText: nil, holdId: nil, refs: [])
+        #expect(WaitingRow.actions(note, running: false) == [.remove])
+        let going = QueueItem(id: "q-5", origin: "person", text: "Now", state: "handing_over", held: nil, heldText: nil,
+                              holdId: nil, refs: [])
+        #expect(WaitingRow.actions(going, running: true).isEmpty)
+    }
+
+    /// An edit says whether Rufi kept it, which the editor waits for: it
+    /// closes once the words are kept, and stays open with them and why
+    /// when they aren't, as for a message that went meanwhile.
+    @Test func anEditSaysWhetherRufiKeptItsWords() async {
+        let chat = ChatModel(door: Door(origin: URL(string: "https://chat.test")!, key: "a-key"), person: "asha",
+                             pending: Pending(file: PendingTests.file()))
+        #expect(await chat.change("PUT", "/q-1", body: ["text": "Fictional corrected question"]))
+        #expect(chat.queue.map(\.text) == ["Fictional corrected question"])
+        #expect(await !chat.change("PUT", "/q-gone", body: ["text": "Fictional rewritten question"]))
+        #expect(chat.queueProblem == "Not found.")
+        #expect(chat.queue.map(\.text) == ["Fictional corrected question"])
     }
 
     @Test func aVisualWaitsUntilItsBlockIsWhole() {
@@ -214,7 +251,8 @@ struct ChatTests {
 }
 
 /// The chat's routes on the Mac, for `aSendGoesThroughPendingOnce`: a draft,
-/// no stream, and messages taken once each by id, or Rufi out of reach.
+/// no stream, messages taken once each by id, or Rufi out of reach, and one
+/// waiting message to edit.
 enum ChatDoor {
     struct Sent {
         let id: String
@@ -263,6 +301,14 @@ enum ChatDoor {
             if savesAway || awayFor.map(text.contains) == true { return (502, "") }
             saves.append(text)
             let answer = try? JSONSerialization.data(withJSONObject: ["text": text, "refs": []])
+            return (200, answer.map { String(decoding: $0, as: UTF8.self) } ?? "")
+        case ("PUT", "/api/people/asha/chat/queue/q-1"):
+            // The waiting message with its new words.
+            struct Edit: Decodable { let text: String }
+            let text = (try? JSONDecoder().decode(Edit.self, from: body(request)))?.text ?? ""
+            let item: [String: Any?] = ["id": "q-1", "origin": "person", "text": text, "state": "waiting", "held": nil,
+                                        "heldText": nil, "holdId": nil, "refs": []]
+            let answer = try? JSONSerialization.data(withJSONObject: ["items": [item.mapValues { $0 ?? NSNull() }]])
             return (200, answer.map { String(decoding: $0, as: UTF8.self) } ?? "")
         case ("POST", "/api/people/asha/chat/messages"):
             if away { return (502, "") }
