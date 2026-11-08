@@ -671,7 +671,6 @@ private struct DetailBlock: View {
     let label: String
     let text: String
     @State private var all = false
-    @Environment(Theme.self) private var theme
 
     var body: some View {
         let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
@@ -683,7 +682,9 @@ private struct DetailBlock: View {
                     .textSelection(.enabled)
                     .padding(8)
             }
-            .background(theme.side, in: .rect(cornerRadius: 8))
+            // Apart from the sheet's own background, light and dark, as a
+            // system sheet's code is.
+            .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 8))
             if lines.count > 12 {
                 Button(all ? "Show less" : "Show all \(lines.count) lines") { all.toggle() }.font(.caption)
             }
