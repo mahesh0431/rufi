@@ -10,7 +10,8 @@ import UIKit
 /// A swipe left, or a tap on the page beside it, closes it. The card follows
 /// the finger and settles with the swipe's speed, never past either end.
 /// `side` is the sidebar's colour: behind the card, and, as the card goes,
-/// what it fades into, so the sidebar reads as the view.
+/// what it fades into, so the card reads as set aside and the sidebar as the
+/// view.
 struct Drawer<Content: View, Sidebar: View>: View {
     @Binding var open: Bool
     let enabled: Bool
@@ -64,13 +65,9 @@ struct Drawer<Content: View, Sidebar: View>: View {
                 // The fade, its own layer over the card: drawn inside the card,
                 // over its bars and web page, it blanked the card for some frames
                 // each time the card stopped.
-                Slide.rounded
-                    .fill(side)
-                    .ignoresSafeArea()
+                Fade(out: out, width: width, side: side)
                     .allowsHitTesting(false)
-                    .animation(dragged == nil ? settle : nil) {
-                        $0.opacity(0.5 * out).offset(x: width * out)
-                    }
+                    .animation(dragged == nil ? settle : nil, value: out)
             }
             .background(side.ignoresSafeArea())
             .gesture(SidebarSwipe(open: open, enabled: enabled) { moved in
@@ -118,6 +115,30 @@ private struct Uncovered: ViewModifier, Animatable {
 
     func body(content: Content) -> some View {
         if out > 0 { content }
+    }
+}
+
+/// The fade over the card at `out`: the sidebar's colour, at 65% when the
+/// card is all the way out. Drawn and moved each frame, as the card's `Slide`
+/// is, so the two keep together; with SwiftUI's own offset and opacity, the
+/// fade ran a few frames off the card, and with an opacity worked out each
+/// frame, it showed wrong for a frame as the card stopped.
+private struct Fade: View, Animatable {
+    var out: CGFloat
+    let width: CGFloat
+    let side: Color
+
+    var animatableData: CGFloat {
+        get { out }
+        set { out = newValue }
+    }
+
+    var body: some View {
+        let out = min(max(out, 0), 1)
+        Slide.rounded
+            .fill(side.opacity(0.65 * out))
+            .ignoresSafeArea()
+            .offset(x: width * out)
     }
 }
 
@@ -296,7 +317,7 @@ struct SidebarView: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 4)
         }
-        .background(theme.side, ignoresSafeAreaEdges: .all)
+        .background(theme.sidebar, ignoresSafeAreaEdges: .all)
     }
 
     private func row(_ place: Place) -> some View {
