@@ -526,28 +526,26 @@ extension Step {
     }
 }
 
-/// One step: the AI's thinking (its heading, opened: its summary), its
+/// One step: the AI's thinking (its heading, which opens all of it), its
 /// note, a helper it started, or what it did, which opens its details.
 struct StepView: View {
     let step: Step
     let open: (Step) -> Void
-    @State private var unfolded = false
 
     var body: some View {
         if let agent = step.agent {
             SubAgentLine(id: agent, reported: step.text, open: open).font(.subheadline)
         } else if step.kind == "reasoning" {
-            VStack(alignment: .leading, spacing: 4) {
-                Button { unfolded.toggle() } label: {
-                    HStack(spacing: 6) {
-                        if step.status == "running" { ProgressView().controlSize(.mini) } else { Image(systemName: "brain") }
-                        Text(Words.heading(step.text)).lineLimit(1)
-                        Image(systemName: "chevron.right").font(.caption2).rotationEffect(.degrees(unfolded ? 90 : 0))
-                    }
+            // On a phone, all of it opens in a sheet, as an agent does,
+            // rather than below its line.
+            Button { open(step) } label: {
+                HStack(spacing: 6) {
+                    if step.status == "running" { ProgressView().controlSize(.mini) } else { Image(systemName: "brain") }
+                    Text(Words.heading(step.text)).lineLimit(1)
+                    Image(systemName: "chevron.right").font(.caption2)
                 }
-                .buttonStyle(.plain)
-                if unfolded { RufiMarkdown(text: step.text, muted: true) }
             }
+            .buttonStyle(.plain)
             .font(.subheadline)
             .foregroundStyle(.secondary)
         } else if step.activity == "note" {
@@ -566,45 +564,60 @@ struct StepView: View {
     }
 }
 
-/// A step's details, as the agent gave them; read when opened.
+/// The AI's thinking opened: all of its words, in the sheet an agent opens
+/// in, kept current while the AI still thinks: Rufi AI's from the chat, an
+/// agent's from its Activity as the agent's sheet reads it again.
+private struct ThinkingSheet: View {
+    let step: Step
+    @Environment(ChatModel.self) private var chat
+
+    var body: some View {
+        let text = step.query["agent"].flatMap { agent in chat.logs[agent]?.lines.first { $0.id == step.id }?.text }
+            ?? chat.transcript.entries[step.id]?.text ?? step.text
+        ChatSheet(title: Words.heading(text)) {
+            RufiMarkdown(text: text, muted: true)
+        }
+    }
+}
+
+/// A step's details, as the agent gave them, read when opened, in the sheet
+/// an agent opens in; the AI's thinking opens as all of its words.
 struct StepDetails: View {
     let step: Step
     let shell: Shell
     @State private var details: Any??
     @State private var problem: String?
-    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    if let details {
-                        if let item = details as? [String: Any] {
-                            ForEach(Self.blocks(item), id: \.label) { DetailBlock(label: $0.label, text: $0.text) }
-                            if let facts = Self.facts(item) { Text(facts).font(.footnote).foregroundStyle(.secondary) }
-                        } else {
-                            Text("Rufi kept no details for this step.").foregroundStyle(.secondary)
-                        }
-                    } else if let problem {
-                        HStack {
-                            Text(problem)
-                            Button("Retry", systemImage: "arrow.clockwise") { Task { await read() } }
-                        }
-                        .foregroundStyle(.secondary)
+        if step.kind == "reasoning" {
+            ThinkingSheet(step: step)
+        } else {
+            detailSheet
+        }
+    }
+
+    private var detailSheet: some View {
+        ChatSheet(title: Words.step(step.text, step.detail)) {
+            VStack(alignment: .leading, spacing: 14) {
+                if let details {
+                    if let item = details as? [String: Any] {
+                        ForEach(Self.blocks(item), id: \.label) { DetailBlock(label: $0.label, text: $0.text) }
+                        if let facts = Self.facts(item) { Text(facts).font(.footnote).foregroundStyle(.secondary) }
                     } else {
-                        ProgressView("Loading…").frame(maxWidth: .infinity)
+                        Text("Rufi kept no details for this step.").foregroundStyle(.secondary)
                     }
+                } else if let problem {
+                    HStack {
+                        Text(problem)
+                        Button("Retry", systemImage: "arrow.clockwise") { Task { await read() } }
+                    }
+                    .foregroundStyle(.secondary)
+                } else {
+                    ProgressView("Loading…").frame(maxWidth: .infinity)
                 }
-                .padding()
-            }
-            .navigationTitle(Words.step(step.text, step.detail))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done", systemImage: "checkmark") { dismiss() } }
             }
             .task(id: step.updatedAt) { await read() }
         }
-        .presentationDetents([.medium, .large])
     }
 
     private func read() async {
@@ -662,7 +675,6 @@ private struct DetailBlock: View {
     let label: String
     let text: String
     @State private var all = false
-    @Environment(Theme.self) private var theme
 
     var body: some View {
         let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
@@ -674,7 +686,9 @@ private struct DetailBlock: View {
                     .textSelection(.enabled)
                     .padding(8)
             }
-            .background(theme.side, in: .rect(cornerRadius: 8))
+            // Apart from the sheet's own background, light and dark, as a
+            // system sheet's code is.
+            .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 8))
             if lines.count > 12 {
                 Button(all ? "Show less" : "Show all \(lines.count) lines") { all.toggle() }.font(.caption)
             }

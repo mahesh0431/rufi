@@ -59,38 +59,26 @@ struct AgentSheet: View {
     @State private var stopping = false
     @State private var problem: String?
     @State private var step: Step?
-    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         let agent = chat.agents.first { $0.id == open.id }
         let title = agent?.title ?? open.title
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    if let agent {
-                        TimelineView(.periodic(from: .now, by: 1)) { context in
-                            Text(Words.agent(agent, now: context.date)).font(.footnote).foregroundStyle(.secondary)
+        ChatSheet(title: title) {
+            if let agent {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Text(Words.agent(agent, now: context.date)).font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+            if let problem { Text(problem).font(.footnote).foregroundStyle(.secondary) }
+            AgentLogView(id: open.id, title: title) { step = $0 }
+                .toolbar {
+                    if agent?.working == true {
+                        ToolbarItem(placement: .primaryAction) {
+                            Button("Stop", systemImage: "stop.fill") { Task { await stop() } }
+                                .disabled(stopping)
                         }
                     }
-                    if let problem { Text(problem).font(.footnote).foregroundStyle(.secondary) }
-                    AgentLogView(id: open.id, title: title) { step = $0 }
                 }
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .navigationTitle(title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close", systemImage: "xmark") { dismiss() }
-                }
-                if agent?.working == true {
-                    ToolbarItem(placement: .primaryAction) {
-                        Button("Stop", systemImage: "stop.fill") { Task { await stop() } }
-                            .disabled(stopping)
-                    }
-                }
-            }
         }
         .environment(chat)
         .environment(\.inAgentSheet, true)
@@ -107,6 +95,36 @@ struct AgentSheet: View {
             problem = error.shown ?? "Can't reach Rufi"
         }
         stopping = false
+    }
+}
+
+/// A sheet over the chat for one line of its Activity, as an agent opens
+/// in: its name at the top, Close, and all it holds, scrolling.
+struct ChatSheet<Content: View>: View {
+    let title: String
+    let content: Content
+    @Environment(\.dismiss) private var dismiss
+
+    init(title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) { content }
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close", systemImage: "xmark") { dismiss() }
+                }
+            }
+        }
     }
 }
 
