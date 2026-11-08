@@ -300,8 +300,10 @@ final class ChatModel {
     /// Changes what waits: a waiting message into the running reply
     /// (steer), sent now (send), edited, removed, or put in another order;
     /// the queue comes back as it is then. A message the person sends
-    /// takes the chat to its end.
-    func change(_ method: String, _ path: String = "", body: (any Encodable & Sendable)? = nil, sends: Bool = false) async {
+    /// takes the chat to its end. True once Rufi took the change.
+    @discardableResult
+    func change(_ method: String, _ path: String = "", body: (any Encodable & Sendable)? = nil, sends: Bool = false) async
+        -> Bool {
         queueProblem = nil
         if sends { self.sends += 1 }
         do throws(Door.Problem) {
@@ -309,11 +311,13 @@ final class ChatModel {
             queueReads += 1
             queue = answer.items
             settle()
+            return true
         } catch .unpaired {
             unpaired()
         } catch {
             queueProblem = error.shown ?? "Can't reach Rufi"
         }
+        return false
     }
 
     /// Puts the waiting rows in the order `ids` gives; it shows at once, and
@@ -322,8 +326,7 @@ final class ChatModel {
         let before = queue
         var moved = ids.compactMap { id in queue.first { $0.id == id } }.makeIterator()
         queue = queue.map { $0.state == "waiting" ? (moved.next() ?? $0) : $0 }
-        await change("PUT", body: ["ids": ids])
-        if queueProblem != nil { queue = before }
+        if await !change("PUT", body: ["ids": ids]) { queue = before }
     }
 
     /// The path of one waiting row, under the queue.

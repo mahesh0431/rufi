@@ -554,11 +554,13 @@ struct ShellView: View {
                 // A page drawn here has its own bar (`page`); a web page
                 // with a chat box, this one.
                 if shell.native(shell.navigator.top) == nil, shell.webBox, shell.state == .open {
-                    AskBar(name: shell.pairing.person.name, theme: shell.theme, chat: shell.chat) { shell.chatShown = true }
-                        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: {
-                            shell.screens.box(top: $0)
-                        }
-                        .onDisappear { shell.screens.box(top: nil) }
+                    AskBar(name: shell.pairing.person.name, theme: shell.theme, chat: shell.chat, away: shell.away) {
+                        shell.chatShown = true
+                    }
+                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: {
+                        shell.screens.box(top: $0)
+                    }
+                    .onDisappear { shell.screens.box(top: nil) }
                 }
             }
         } sidebar: {
@@ -656,7 +658,9 @@ struct ShellView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 // The chat's own page has its box.
                 if let page = shell.native(screen), page != .chat {
-                    AskBar(name: shell.pairing.person.name, theme: shell.theme, chat: shell.chat) { shell.chatShown = true }
+                    AskBar(name: shell.pairing.person.name, theme: shell.theme, chat: shell.chat, away: shell.away) {
+                        shell.chatShown = true
+                    }
                 }
             }
             .navigationTitle(shell.title(screen))

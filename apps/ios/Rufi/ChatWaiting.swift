@@ -8,8 +8,9 @@ import SwiftUI
 /// why as it came, and goes only when the person sends it.
 struct WaitingList: View {
     let chat: ChatModel
+    /// Opens a waiting message's words to edit.
+    let edit: (QueueItem) -> Void
     @Environment(Theme.self) private var theme
-    @State private var editing: QueueItem?
     @State private var height: CGFloat = 0
 
     var body: some View {
@@ -28,7 +29,7 @@ struct WaitingList: View {
                 }
                 List {
                     ForEach(items) { item in
-                        WaitingRow(item: item, running: running, chat: chat) { editing = item }
+                        WaitingRow(item: item, running: running, chat: chat) { edit(item) }
                             .listRowBackground(Color.clear)
                             .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 6))
                             .moveDisabled(!movable || item.state != "waiting" || item.held != nil)
@@ -52,7 +53,6 @@ struct WaitingList: View {
             .padding(.horizontal, 10)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Waiting messages")
-            .sheet(item: $editing) { EditWaiting(item: $0, chat: chat) }
         }
     }
 }
@@ -162,11 +162,14 @@ struct WaitingRow: View {
     }
 }
 
-/// Edit: a waiting message's words, saved over it.
-private struct EditWaiting: View {
+/// Edit: a waiting message's words, saved over it. It closes once Rufi
+/// keeps them; until then they stay here, with why they weren't saved.
+struct EditWaiting: View {
     let item: QueueItem
     let chat: ChatModel
     @State private var text: String
+    @State private var saving = false
+    @State private var problem: String?
     @Environment(\.dismiss) private var dismiss
     @FocusState private var focused: Bool
 
@@ -178,26 +181,38 @@ private struct EditWaiting: View {
 
     var body: some View {
         NavigationStack {
-            TextEditor(text: $text)
-                .focused($focused)
-                .padding(.horizontal, 12)
-                .accessibilityLabel("Waiting message")
-                .navigationTitle("Waiting message")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel", systemImage: "xmark") { dismiss() }
-                    }
-                    ToolbarItem(placement: .confirmationAction) {
-                        let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                        Button("Save", systemImage: "checkmark") {
-                            dismiss()
-                            Task { await chat.change("PUT", ChatModel.one(item), body: ["text": words]) }
-                        }
-                        .disabled(words.isEmpty)
-                    }
+            VStack(alignment: .leading, spacing: 8) {
+                if let problem {
+                    Text(problem).font(.footnote).foregroundStyle(.secondary).padding(.horizontal, 16)
                 }
-                .onAppear { focused = true }
+                TextEditor(text: $text)
+                    .focused($focused)
+                    .padding(.horizontal, 12)
+                    .accessibilityLabel("Waiting message")
+            }
+            .navigationTitle("Waiting message")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", systemImage: "xmark") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    Button("Save", systemImage: "checkmark") {
+                        Task {
+                            saving = true
+                            if await chat.change("PUT", ChatModel.one(item), body: ["text": words]) {
+                                dismiss()
+                            } else {
+                                problem = chat.queueProblem
+                                saving = false
+                            }
+                        }
+                    }
+                    .disabled(words.isEmpty || saving)
+                }
+            }
+            .onAppear { focused = true }
         }
         .presentationDetents([.medium, .large])
     }

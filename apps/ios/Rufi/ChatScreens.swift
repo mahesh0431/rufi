@@ -16,6 +16,9 @@ struct ChatView: View {
     @State private var below: CGFloat = 0
     /// A step opened: its details.
     @State private var opened: Step?
+    /// A waiting message opened to edit: here, so it stays open if the
+    /// list goes while its words aren't saved yet.
+    @State private var editing: QueueItem?
 
     var body: some View {
         let transcript = chat.transcript
@@ -65,7 +68,7 @@ struct ChatView: View {
             // Over the box: Rufi AI's agents at work, then what waits.
             VStack(spacing: 6) {
                 AgentsAtWork(chat: chat)
-                WaitingList(chat: chat)
+                WaitingList(chat: chat) { editing = $0 }
                 ChatBoxView(shell: shell, chat: chat)
             }
             .padding(.top, 4)
@@ -85,6 +88,7 @@ struct ChatView: View {
             }
         })
         .sheet(item: $opened) { StepDetails(step: $0, shell: shell) }
+        .sheet(item: $editing) { EditWaiting(item: $0, chat: chat) }
         .sheet(item: Binding { chat.openAgent } set: { chat.openAgent = $0 }) {
             AgentSheet(open: $0, chat: chat, shell: shell)
         }

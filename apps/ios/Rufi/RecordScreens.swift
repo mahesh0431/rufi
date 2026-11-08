@@ -128,16 +128,15 @@ struct AskBar: View {
     let name: String
     let theme: Theme
     let chat: ChatModel
+    /// Rufi can't be reached: the page says so, as the box does.
+    let away: Bool
     let ask: () -> Void
     @State private var lit = false
 
     var body: some View {
         VStack(spacing: 4) {
-            // Why Ask Rufi couldn't add to the box now.
-            if let notice = chat.notice {
-                Text(notice).font(.footnote).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12)
-            }
+            // The box's line, as the box shows it.
+            if !away { BoxLine(chat: chat) }
             Button(action: ask) {
                 VStack(alignment: .leading, spacing: 4) {
                     // What Ask Rufi put in the box, collected while reading.

@@ -17,18 +17,7 @@ struct ChatBoxView: View {
         let away = shell.away
         VStack(spacing: 4) {
             // While Rufi can't be reached, the line at the top says so.
-            if !away, let line = chat.line {
-                HStack(spacing: 8) {
-                    Text(line)
-                    if chat.retry {
-                        Button("Retry", systemImage: "arrow.clockwise") { chat.save() }
-                    }
-                }
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12)
-            }
+            if !away { BoxLine(chat: chat) }
             VStack(alignment: .leading, spacing: 2) {
                 if !chat.chips.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -257,5 +246,27 @@ private struct Disclaimer: View {
         }
         .foregroundStyle(.secondary)
         .padding(.top, 2)
+    }
+}
+
+/// The box's line over it, here and on a page's bar: why the box can't
+/// keep or send what it has, why a message came back to it, or Not saved,
+/// with Retry.
+struct BoxLine: View {
+    let chat: ChatModel
+
+    var body: some View {
+        if let line = chat.line {
+            HStack(spacing: 8) {
+                Text(line)
+                if chat.retry {
+                    Button("Retry", systemImage: "arrow.clockwise") { chat.save() }
+                }
+            }
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+        }
     }
 }
