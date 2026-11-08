@@ -192,7 +192,7 @@ What the AI writes while it works, before its answer, such as "I'll check your r
 _Avoid_: commentary, progress message, interim reply
 
 **Reply (Rufi AI's)**:
-Rufi AI's answer in the chat, in Markdown, shown as it is written, with a **visual** where a chart, comparison or process shows better than words. Its links open by Rufi's rule. An agent's message, a note, a receipt and a visit brief are Markdown, with no visuals.
+Rufi AI's answer in the chat, in Markdown, shown while it is written as Settings › Chat › **While Rufi writes** says (paragraph by paragraph, word by word, or whole once done), with a **visual** where a chart, comparison or process shows better than words. Its links open by Rufi's rule. An agent's message, a note, a receipt and a visit brief are Markdown, with no visuals.
 _Avoid_: answer card, widget, generated UI
 
 **Visual (in a reply)**:

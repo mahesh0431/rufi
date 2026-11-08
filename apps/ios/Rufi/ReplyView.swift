@@ -2,27 +2,72 @@ import MarkdownUI
 import SwiftUI
 
 /// A reply: one Markdown document, as the Mac draws it, with each visual
-/// block drawn as a card in its place (ADR 0034). While the reply streams,
-/// a visual waits as an empty card until its block is whole; its code never
-/// shows.
+/// block drawn as a card in its place (ADR 0034). While it is written, it
+/// shows as the Mac's Settings › Chat chose (ReplyFlow): its whole blocks,
+/// its words, or nothing until it is done.
 struct ReplyView: View {
     let entry: Entry
     let streaming: Bool
     let chat: ChatModel
     let origin: URL
+    /// Word by word: its pace, and the words shown, in UTF-16. Until it
+    /// starts, the words the reply holds show at once.
+    @State private var pace = WordPace()
+    @State private var shown: Int?
 
     var body: some View {
-        let visuals = Visuals.scan(entry.text)
-        RufiMarkdown(text: entry.text) { configuration in
+        let flow = streaming ? chat.replyFlow : nil
+        let text = switch flow {
+        case .paragraphs?: ReplyFlow.finishedBlocks(entry.text)
+        case .words?: ReplyFlow.prefix(entry.text, shown ?? ReplyFlow.wordsEnd(entry.text, upTo: entry.text.utf16.count))
+        case .whole?: ""
+        case nil: entry.text
+        }
+        // One view in every way, so a card drawn while the reply is written
+        // stays as it is when the reply ends.
+        if !text.isEmpty {
+            ReplyText(text: text, streaming: flow == .words, id: entry.id, chat: chat, origin: origin)
+                .task(id: flow == .words ? entry.text : nil) {
+                    if flow == .words { await flowWords() }
+                }
+        }
+    }
+
+    /// The words, at a pace that follows how much waits, so uneven parts
+    /// from the AI flow evenly. New text restarts this; the pace keeps its
+    /// clock, so text that comes faster than a tick still flows.
+    private func flowWords() async {
+        let text = entry.text
+        while true {
+            let words = pace.step(text, at: .now)
+            if words != shown { shown = words }
+            guard !pace.caughtUp(text), (try? await Task.sleep(for: .milliseconds(16))) != nil else { return }
+        }
+    }
+}
+
+/// A reply's text, as shown. While it is still open (word by word), a
+/// visual waits as an empty card until its block is whole; its code never
+/// shows.
+private struct ReplyText: View {
+    let text: String
+    let streaming: Bool
+    let id: String
+    let chat: ChatModel
+    let origin: URL
+
+    var body: some View {
+        let visuals = Visuals.scan(text)
+        RufiMarkdown(text: text) { configuration in
             if Visuals.isVisual(configuration.language) {
-                let html = Visuals.trimmed(configuration.content)
-                let place = visuals.firstIndex { $0.html == html }
+                let html = configuration.content
+                let place = Visuals.place(of: html, in: visuals)
                 if streaming, place.map({ !visuals[$0].whole }) ?? true {
                     RoundedRectangle(cornerRadius: 8).fill(.quaternary)
                         .frame(height: VisualCard.waiting)
                         .padding(.bottom, 8)
                 } else {
-                    VisualCard(html: html, key: "\(entry.id):\(place ?? 0)", chat: chat, origin: origin)
+                    VisualCard(html: html, key: "\(id):\(place ?? 0)", chat: chat, origin: origin)
                 }
             } else {
                 CodeBlock(configuration: configuration)
@@ -162,12 +207,15 @@ enum Visuals {
         let whole: Bool
     }
 
-    static func isVisual(_ info: String?) -> Bool {
-        info?.split(whereSeparator: \.isWhitespace).first == "rufi-visual"
+    /// Which block a code block MarkdownUI draws is: its content comes
+    /// without the fence's last line end, as `scan` keeps it; a blank last
+    /// line stays.
+    static func place(of content: String, in visuals: [Block]) -> Int? {
+        visuals.firstIndex { $0.html == content }
     }
 
-    static func trimmed(_ content: String) -> String {
-        content.hasSuffix("\n") ? String(content.dropLast()) : content
+    static func isVisual(_ info: String?) -> Bool {
+        info?.split(whereSeparator: \.isWhitespace).first == "rufi-visual"
     }
 
     /// Each fence at the top of the text: up to three spaces, then three or

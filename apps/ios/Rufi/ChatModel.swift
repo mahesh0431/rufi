@@ -87,6 +87,8 @@ final class ChatModel {
     /// The Mac's settings the chat follows.
     private(set) var activity = "working"
     private(set) var whileReplying = "steer"
+    /// How a reply shows while it is written.
+    private(set) var replyFlow = ReplyFlow.paragraphs
     /// Which providers are signed in on the Mac: codex, claude.
     private(set) var signedIn: Set<String> = ["codex", "claude"]
 
@@ -348,10 +350,12 @@ final class ChatModel {
         struct Settings: Decodable {
             let activity: String
             let whileReplying: String
+            let replyFlow: String
         }
         if let settings: Settings = try? await door.read(api: "/api/settings") {
             activity = settings.activity
             whileReplying = settings.whileReplying
+            replyFlow = ReplyFlow(rawValue: settings.replyFlow) ?? .paragraphs
         }
         await readStatus()
     }

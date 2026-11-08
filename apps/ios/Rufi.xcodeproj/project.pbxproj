@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		5EED0A00000000000000B003 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = 5EED0A00000000000000B002 /* MarkdownUI */; };
+		5EED0A00000000000000B006 /* cmark-gfm in Frameworks */ = {isa = PBXBuildFile; productRef = 5EED0A00000000000000B005 /* cmark-gfm */; };
+		5EED0A00000000000000B008 /* cmark-gfm-extensions in Frameworks */ = {isa = PBXBuildFile; productRef = 5EED0A00000000000000B007 /* cmark-gfm-extensions */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -50,6 +52,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				5EED0A00000000000000B003 /* MarkdownUI in Frameworks */,
+				5EED0A00000000000000B006 /* cmark-gfm in Frameworks */,
+				5EED0A00000000000000B008 /* cmark-gfm-extensions in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -111,6 +115,8 @@
 			name = Rufi;
 			packageProductDependencies = (
 				5EED0A00000000000000B002 /* MarkdownUI */,
+				5EED0A00000000000000B005 /* cmark-gfm */,
+				5EED0A00000000000000B007 /* cmark-gfm-extensions */,
 			);
 			productName = Rufi;
 			productReference = D116B4EECC28EA0ABC228880 /* Rufi.app */;
@@ -194,6 +200,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				5EED0A00000000000000B001 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
+				5EED0A00000000000000B004 /* XCRemoteSwiftPackageReference "swift-cmark" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 86024CAD1E83101D97359D73 /* Products */;
@@ -636,6 +643,14 @@
 				version = 2.4.1;
 			};
 		};
+		5EED0A00000000000000B004 /* XCRemoteSwiftPackageReference "swift-cmark" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/swiftlang/swift-cmark";
+			requirement = {
+				kind = exactVersion;
+				version = 0.9.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -643,6 +658,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 5EED0A00000000000000B001 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
 			productName = MarkdownUI;
+		};
+		5EED0A00000000000000B005 /* cmark-gfm */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5EED0A00000000000000B004 /* XCRemoteSwiftPackageReference "swift-cmark" */;
+			productName = "cmark-gfm";
+		};
+		5EED0A00000000000000B007 /* cmark-gfm-extensions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5EED0A00000000000000B004 /* XCRemoteSwiftPackageReference "swift-cmark" */;
+			productName = "cmark-gfm-extensions";
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

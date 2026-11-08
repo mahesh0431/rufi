@@ -8,8 +8,6 @@ import { AxeBuilder } from "@axe-core/playwright";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Locator, Page } from "@playwright/test";
-import { Page as ChatPage } from "@rufi/contracts";
-import { Schema } from "effect";
 import { transcripts } from "../../server/src/core/chat/transcript.ts";
 import {
   databasePath,
@@ -17,8 +15,10 @@ import {
 } from "../../server/src/core/store/database.ts";
 import { runningLink } from "../../server/src/server/core.ts";
 import {
+  chatPage,
   expect,
   FIRST_TURN_MS,
+  lastReply,
   openSettings,
   SIGNED_OUT,
   signedIn,
@@ -200,33 +200,11 @@ test("the bar, the panel and Chat with Rufi are one chat: the reply streams in, 
     "AI can make mistakes. Check important health decisions with your doctor.",
   );
 
-  // Every text the reply shows, as it shows it: a read after "ok:" shows can
-  // come after the last part on a busy machine.
-  await page.evaluate(() => {
-    const shown: string[] = [];
-    Object.assign(globalThis, { shown });
-    new MutationObserver(() => {
-      const text =
-        document.querySelector('[aria-label="Messages"] .reply')?.textContent ??
-        "";
-      if (text !== "" && shown.at(-1) !== text) shown.push(text);
-    }).observe(document.body, {
-      subtree: true,
-      childList: true,
-      characterData: true,
-    });
-  });
   await box(chat(page)).fill("drip: my thyroid results");
   await box(chat(page)).press("Enter");
   const reply = log(chat(page)).locator(".reply");
   // The core's first turn: Codex starts first.
   await expect(reply).toHaveText("ok:drip", { timeout: FIRST_TURN_MS });
-  // It streams: the first part showed before the rest had come.
-  const shown = await page.evaluate(
-    () => (globalThis as unknown as { shown: string[] }).shown,
-  );
-  expect(shown[0]).not.toBe("ok:drip");
-  expect(shown.at(-1)).toBe("ok:drip");
   await expect(log(chat(page))).toContainText("drip: my thyroid results");
   // What the AI did is folded under the answer.
   await expect(activity(chat(page))).toHaveText(/^Activity · 2 steps · /);
@@ -283,16 +261,101 @@ test("the bar, the panel and Chat with Rufi are one chat: the reply streams in, 
   await expect(opener(chat(page))).toBeVisible();
 });
 
-test("Stop keeps what the reply wrote so far", async ({ page, rufi }) => {
-  await opened(page, rufi);
-  // The reply writes a part, then runs until it is stopped.
+test("Stop keeps what the reply wrote so far, the paragraph it was writing too", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi, {
+    scenario: { answer: "Your HbA1c was 6.1%.\n\nIt is a lit" },
+  });
+  // The reply writes a part, then runs until it is stopped: paragraph by
+  // paragraph, the one still being written doesn't show.
   await send(page, "partial");
   const reply = log(chat(page)).locator(".reply");
-  await expect(reply).toHaveText("ok:part");
+  await expect(reply).toHaveText("Your HbA1c was 6.1%.");
   await chat(page).getByRole("button", { name: "Stop" }).click();
   await expect(log(chat(page))).toContainText("Stopped.");
-  await expect(reply).toHaveText("ok:part");
+  await expect(reply).toHaveText("Your HbA1c was 6.1%.\nIt is a lit");
   await expect(chat(page).getByRole("button", { name: "Stop" })).toHaveCount(0);
+});
+
+test("while a reply is written it shows as Settings › Chat says: paragraph by paragraph, word by word, or whole once done; the finished reply is the same", async ({
+  page,
+  rufi,
+}) => {
+  const answer = [
+    "Your HbA1c was 6.1% in August.",
+    "That is a little above the usual range, and lower than in May.",
+    "- Fasting glucose: 5.4 mmol/L\n- LDL: 2.9 mmol/L",
+    "Nothing else changed.",
+  ];
+  // "trickle" writes it in parts of 24 characters, 60 ms apart.
+  await opened(page, rufi, { scenario: { answer: answer.join("\n\n") } });
+  const flat = (text: string) => text.replace(/\s+/g, " ").trim();
+  const whole = flat(answer.join(" ").replaceAll("- ", ""));
+  /** Every text the next reply shows, as it shows it, in one word. */
+  const shownWhile = async (choice: string) => {
+    const settings = await openSettings(page, "Chat");
+    const group = settings.getByRole("radiogroup", {
+      name: "While Rufi writes",
+    });
+    await group.getByRole("radio", { name: choice }).check();
+    await page.keyboard.press("Escape");
+    const before = (await chatPage(page)).entries.map((entry) => entry.id);
+    await page.evaluate((before) => {
+      const shown: string[] = [];
+      Object.assign(globalThis, { shown });
+      new MutationObserver(() => {
+        const text = [...document.querySelectorAll(".reply")].find(
+          (reply) => !before.includes(reply.getAttribute("data-entry") ?? ""),
+        )?.textContent;
+        if (text && shown.at(-1) !== text) shown.push(text);
+      }).observe(document.body, {
+        subtree: true,
+        childList: true,
+        characterData: true,
+      });
+    }, before);
+    await send(page, "trickle");
+    await expect(log(chat(page)).locator(".reply").last()).toHaveText(
+      /Nothing else changed\.$/,
+      { timeout: FIRST_TURN_MS },
+    );
+    await expect(log(chat(page))).toHaveAttribute("aria-busy", "false");
+    const shown = await page.evaluate(
+      () => (globalThis as unknown as { shown: string[] }).shown,
+    );
+    return shown.map(flat);
+  };
+
+  // Paragraph by paragraph, the default: only whole blocks, a list too.
+  const blocks = answer.map((_, at) =>
+    flat(
+      answer
+        .slice(0, at + 1)
+        .join(" ")
+        .replaceAll("- ", ""),
+    ),
+  );
+  const paragraphs = await shownWhile("Paragraph by paragraph");
+  expect(paragraphs.length).toBeGreaterThan(1);
+  expect(paragraphs.every((text) => blocks.includes(text))).toBe(true);
+  expect(paragraphs).toEqual(
+    paragraphs.toSorted((a, b) => blocks.indexOf(a) - blocks.indexOf(b)),
+  );
+  expect(paragraphs.at(-1)).toBe(whole);
+
+  // Word by word: more often than its parts came, whole words only.
+  const words = await shownWhile("Word by word");
+  expect(words.length).toBeGreaterThan(answer.join("").length / 24);
+  for (const text of words) {
+    expect(whole.startsWith(text)).toBe(true);
+    expect(whole.slice(text.length)).toMatch(/^( |$)/);
+  }
+  expect(words.at(-1)).toBe(whole);
+
+  // Whole reply: nothing until it is done.
+  expect(await shownWhile("Whole reply")).toEqual([whole]);
 });
 
 /** Two of the person's messages wait behind a reply that runs on. */
@@ -1158,7 +1221,7 @@ test("a click outside the panel steps back to the bar and keeps what you typed; 
   );
   // A reply that runs until it is stopped.
   await send(page, "partial");
-  await expect(log(chat(page)).locator(".reply").last()).toHaveText("ok:part");
+  await expect.poll(() => lastReply(page)).toBe("ok:part");
   await chat(page).getByRole("button", { name: "Stop" }).click();
   await expect(log(chat(page))).toContainText("Stopped.");
   await expect(minimise).toBeVisible();
@@ -1440,20 +1503,6 @@ test("folded by hand while the AI works, Activity stays folded and shows the new
   await steps(chat(page)).first().locator("summary").click();
   await expect(steps(chat(page)).first()).toContainText("The summary so far.");
 });
-
-/** The real API, with this fictional tab's session proof. */
-async function chatPage(page: Page) {
-  const body = await page.evaluate(async () => {
-    const response = await fetch("/api/people/asha/chat", {
-      headers: { "x-rufi-proof": sessionStorage.getItem("rufi.proof") ?? "" },
-    });
-    if (!response.ok)
-      throw new Error(`Chat read failed: ${String(response.status)}`);
-    const body: unknown = await response.json();
-    return body;
-  });
-  return Schema.decodeUnknownSync(ChatPage)(body);
-}
 
 test("thinking with no summary shows no step: Thinking shows while it runs, and no line after", async ({
   page,
@@ -2150,7 +2199,7 @@ test.describe("on the real Codex binary, with a local fake model", () => {
     ).toContainText("rufi.get_overview");
 
     await send(page, "partial");
-    await expect(log(chat(page))).toContainText("ok:part");
+    await expect.poll(() => lastReply(page)).toBe("ok:part");
     // What the reply wrote stays, then your message, and the reply goes on
     // with it, told it is steered.
     await send(page, "Steered in");

@@ -2203,6 +2203,22 @@ describe("what the screens read", () => {
     );
   });
 
+  it("keeps how a reply shows while it is written: paragraph by paragraph until one is chosen", async () => {
+    const page = await session(await start());
+    expect((await page.api("GET", "/api/settings")).body["replyFlow"]).toBe(
+      "paragraphs",
+    );
+    expect(
+      (await page.api("PUT", "/api/settings", { replyFlow: "words" })).body,
+    ).toMatchObject({ replyFlow: "words", activity: "working" });
+    expect(
+      (await page.api("PUT", "/api/settings", { replyFlow: "lines" })).status,
+    ).toBe(400);
+    expect((await page.api("GET", "/api/settings")).body["replyFlow"]).toBe(
+      "words",
+    );
+  });
+
   it("converts the device batches stored while it was closed, shows them in Settings, and a shorter keep deletes at once", async () => {
     await start();
     await stop();
