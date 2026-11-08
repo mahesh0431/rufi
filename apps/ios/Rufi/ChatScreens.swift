@@ -524,28 +524,26 @@ extension Step {
     }
 }
 
-/// One step: the AI's thinking (its heading, opened: its summary), its
+/// One step: the AI's thinking (its heading, which opens all of it), its
 /// note, a helper it started, or what it did, which opens its details.
 struct StepView: View {
     let step: Step
     let open: (Step) -> Void
-    @State private var unfolded = false
 
     var body: some View {
         if let agent = step.agent {
             SubAgentLine(id: agent, reported: step.text, open: open).font(.subheadline)
         } else if step.kind == "reasoning" {
-            VStack(alignment: .leading, spacing: 4) {
-                Button { unfolded.toggle() } label: {
-                    HStack(spacing: 6) {
-                        if step.status == "running" { ProgressView().controlSize(.mini) } else { Image(systemName: "brain") }
-                        Text(Words.heading(step.text)).lineLimit(1)
-                        Image(systemName: "chevron.right").font(.caption2).rotationEffect(.degrees(unfolded ? 90 : 0))
-                    }
+            // On a phone, all of it opens in a sheet, as an agent does,
+            // rather than below its line.
+            Button { open(step) } label: {
+                HStack(spacing: 6) {
+                    if step.status == "running" { ProgressView().controlSize(.mini) } else { Image(systemName: "brain") }
+                    Text(Words.heading(step.text)).lineLimit(1)
+                    Image(systemName: "chevron.right").font(.caption2)
                 }
-                .buttonStyle(.plain)
-                if unfolded { RufiMarkdown(text: step.text, muted: true) }
             }
+            .buttonStyle(.plain)
             .font(.subheadline)
             .foregroundStyle(.secondary)
         } else if step.activity == "note" {
@@ -564,7 +562,22 @@ struct StepView: View {
     }
 }
 
-/// A step's details, as the agent gave them; read when opened.
+/// The AI's thinking opened: all of its words, in the sheet an agent opens
+/// in, kept current while the AI still thinks.
+private struct ThinkingSheet: View {
+    let step: Step
+    @Environment(ChatModel.self) private var chat
+
+    var body: some View {
+        let text = chat.transcript.entries[step.id]?.text ?? step.text
+        ChatSheet(title: Words.heading(text)) {
+            RufiMarkdown(text: text, muted: true)
+        }
+    }
+}
+
+/// A step's details, as the agent gave them; read when opened. The AI's
+/// thinking opens as all of its words.
 struct StepDetails: View {
     let step: Step
     let shell: Shell
@@ -573,6 +586,14 @@ struct StepDetails: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
+        if step.kind == "reasoning" {
+            ThinkingSheet(step: step)
+        } else {
+            detailSheet
+        }
+    }
+
+    private var detailSheet: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
