@@ -4,7 +4,7 @@
 // the app keeps what the page tells it. The app itself is tested in
 // apps/ios.
 import type { Page } from "@playwright/test";
-import { expect, FIRST_TURN_MS, SIGNED_OUT, test } from "./rufi.ts";
+import { expect, FIRST_TURN_MS, lastReply, SIGNED_OUT, test } from "./rufi.ts";
 
 declare global {
   interface Window {
@@ -240,7 +240,7 @@ test("in the iPhone app, the app's box stops a reply", async ({
   // The reply writes a part, then runs until it is stopped.
   await phone.ask({ type: "text", text: "partial" });
   await phone.ask({ type: "send" });
-  await expect(page.getByText("ok:part")).toBeVisible();
+  await expect.poll(() => lastReply(page)).toBe("ok:part");
   await expect.poll(phone.box).toMatchObject({ button: "stop", canSend: true });
   await phone.ask({ type: "stop" });
   await expect(page.getByText("Stopped.")).toBeVisible();

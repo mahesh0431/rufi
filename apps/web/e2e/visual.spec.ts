@@ -8,7 +8,7 @@ import { AxeBuilder } from "@axe-core/playwright";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { Frame, Locator, Page } from "@playwright/test";
-import { expect, test, type Rufi } from "./rufi.ts";
+import { expect, openSettings, test, type Rufi } from "./rufi.ts";
 
 // The CSP's refusals in Rufi's own page.
 test.beforeEach(async ({ context }) => {
@@ -159,7 +159,7 @@ test("a visual draws in the reply in Rufi's theme at its own height, doesn't rel
   expect(await refusedIn(page)).toEqual([]);
 });
 
-test("a visual still being written holds its place quietly, and its code never shows", async ({
+test("a visual still being written never shows its code: paragraph by paragraph it waits, word by word it holds its place quietly", async ({
   page,
   rufi,
 }) => {
@@ -169,6 +169,16 @@ test("a visual still being written holds its place quietly, and its code never s
     },
   });
   await send(page, "partial");
+  await expect(log(page).getByText("Here is your chart.")).toBeVisible();
+  await expect(log(page).locator(".reply .visual")).toHaveCount(0);
+  await expect(log(page).locator(".reply pre")).toHaveCount(0);
+  await expect(log(page).getByText("Half")).toHaveCount(0);
+
+  // Word by word, after a reload: the visual's place, quietly.
+  const settings = await openSettings(page, "Chat");
+  await settings.getByRole("radio", { name: "Word by word" }).check();
+  await page.reload();
+  await chat(page).getByRole("button", { name: "Open the chat" }).click();
   await expect(log(page).getByText("Here is your chart.")).toBeVisible();
   await expect(log(page).locator(".reply .visual[aria-hidden]")).toBeVisible();
   await expect(cards(page)).toHaveCount(0);

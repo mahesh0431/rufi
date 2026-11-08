@@ -6,7 +6,14 @@ import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import { type ExpressionKey, svg } from "@rufi/brand/mark";
 import { runningLink } from "../../server/src/server/core.ts";
-import { expect, openSettings, SIGNED_OUT, signedIn, test } from "./rufi.ts";
+import {
+  expect,
+  lastReply,
+  openSettings,
+  SIGNED_OUT,
+  signedIn,
+  test,
+} from "./rufi.ts";
 
 /** No accessibility rule broken on what the page shows now. */
 async function accessible(page: Page) {
@@ -269,7 +276,7 @@ test("the sidebar dog shows the face Rufi's AI chose until the next reply, also 
   // The scripted reply writes a part, then runs until it is stopped.
   await box.fill("partial");
   await box.press("Enter");
-  await expect(chat.locator(".reply").last()).toHaveText("ok:part");
+  await expect.poll(() => lastReply(page)).toBe("ok:part");
   await chat.getByRole("button", { name: "Stop" }).click();
   await expect(chat.getByRole("button", { name: "Stop" })).toHaveCount(0);
   await page.keyboard.press("Escape");

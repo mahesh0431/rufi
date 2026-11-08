@@ -6,14 +6,18 @@ import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Provider, ProviderStatus } from "@rufi/contracts";
+import {
+  Page as ChatPage,
+  type Provider,
+  type ProviderStatus,
+} from "@rufi/contracts";
 import {
   expect,
   test as base,
   type Locator,
   type Page,
 } from "@playwright/test";
-import { Effect, Exit, Scope } from "effect";
+import { Effect, Exit, Schema, Scope } from "effect";
 import type { Scenario } from "../../server/tests/fake-codex.ts";
 import {
   codexArgs,
@@ -363,5 +367,27 @@ export async function openSettings(page: Page, group: string) {
   await dialog.getByRole("tab", { name: group }).click();
   return dialog;
 }
+
+/** The real API, with this fictional tab's session proof. */
+export async function chatPage(page: Page) {
+  const body = await page.evaluate(async () => {
+    const response = await fetch("/api/people/asha/chat", {
+      headers: { "x-rufi-proof": sessionStorage.getItem("rufi.proof") ?? "" },
+    });
+    if (!response.ok)
+      throw new Error(`Chat read failed: ${String(response.status)}`);
+    const body: unknown = await response.json();
+    return body;
+  });
+  return Schema.decodeUnknownSync(ChatPage)(body);
+}
+
+/**
+ * What the chat's last reply has written so far, as Rufi keeps it: a reply
+ * still being written may not show it yet (Settings › Chat).
+ */
+export const lastReply = async (page: Page) =>
+  (await chatPage(page)).entries.findLast((entry) => entry.kind === "reply")
+    ?.text;
 
 export { expect };
