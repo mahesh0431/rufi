@@ -441,6 +441,8 @@ describe("saving draft items", () => {
           test_number: 2.1,
         },
       ],
+      // The record has this report's TSH 2.1 on 12 Aug already.
+      save_anyway: true,
     });
     expect(saved.ok).toBe(true);
     expect(lines(saved.result.receipt)).toEqual([

@@ -152,6 +152,7 @@ What Rufi does when it saves a document's results:
 - **Its sources.** Each result keeps where it came from: the document and its page, your message, or both. The receipt, the AI's reads and a visit brief show them.
 - **All or nothing.** Rufi saves all the results in one step, however many there are. If one can't be saved, nothing is saved, and the AI tells you why.
 - **Each result once.** A result you already saved isn't saved again: the AI gets the earlier save back. After an undo, you can ask the AI to save it again.
+- **A value already in your health record.** When a page is read again, for example after **Retry**, its results come back as new drafts. If one has the same test, day and value as a result you saved, Rufi doesn't save it a second time: the AI adds the page as another source of the saved result, or leaves it out. When it is a real second reading, the AI saves it, and it asks you when it can't tell.
 - **Nothing changed since.** If a result changed after the AI read it (it was sorted again, or you changed it), Rufi refuses the save. The AI reads the document again and asks you again. Each draft remembers which reading of its page it was drafted from. If the page was read again after that reading, the draft is **out of date**: Rufi refuses to save it, and the AI saves the page's new drafts instead.
 
 ### Results you don't want
