@@ -939,9 +939,9 @@ interface Repeat {
 
 /**
  * The results this save adds whose test, day and value (with its unit, as
- * stored) are already in the record, removed ones aside. The time is
- * ignored; a result with no date, or in a test this save adds, has no
- * match. The AI decides whether it is the same result read again or
+ * stored) are already in the record, removed ones aside. Times are
+ * compared only when both have one; a result with no date, or in a test
+ * this save adds, has no match. The AI decides whether it is the same result read again or
  * another reading: code only warns.
  */
 async function repeatsOf(
@@ -978,6 +978,15 @@ async function repeatsOf(
       )
       .where("value_text", "=", value)
       .where("unit", "is", typeof unit === "string" ? unit : null)
+      // When both have a time, the times must match too.
+      .$if(measured.length > 10, (query) =>
+        query.where((eb) =>
+          eb.or([
+            eb(sql<number>`length(measured_at)`, "<=", 10),
+            eb("measured_at", "=", measured),
+          ]),
+        ),
+      )
       .$if(typeof replaces === "string", (query) =>
         query.where("id", "!=", String(replaces)),
       )

@@ -2145,7 +2145,7 @@ describe("a result already saved", () => {
     },
   });
 
-  it("is warned of and not saved when its day, test and value match, whatever the time, until the save says to save it anyway", async () => {
+  it("is warned of and not saved when its day, test and value match, and its time when both have one, until the save says to save it anyway", async () => {
     // The record has Glucose 118 mg/dL on 12 Aug from page 1 of the August
     // report, with no time (res-a2).
     await say("My fasting glucose was 118 at 7:30 on 12 Aug");
@@ -2184,6 +2184,22 @@ describe("a result already saved", () => {
     expect(fix).toContain("res-a2");
     expect(fix).toContain(second);
     expect(fix).toContain("12 Aug 2026 07:30");
+
+    // Two times on a day with no untimed result: another time is another
+    // reading, the same time is warned of.
+    await say("118 at 8:00 and 118 at 20:00 on 20 Aug");
+    const twice = await save(
+      [glucose("118", "2026-08-20T08:00"), glucose("118", "2026-08-20T20:00")],
+      "call-4",
+    );
+    expect(twice.ok, JSON.stringify(twice.body)).toBe(true);
+    await say("118 at 8:00 on 20 Aug");
+    const same = await save([glucose("118", "2026-08-20T08:00")], "call-5");
+    expect(same.ok).toBe(false);
+    expect(same.body.issues.map((issue) => issue.fix)).toEqual([
+      expect.stringContaining("20 Aug 2026 08:00") as unknown,
+    ]);
+    expect(same.body.issues[0]?.fix).not.toContain("20:00");
   });
 
   it("is saved with no warning when its value or its day differs", async () => {
