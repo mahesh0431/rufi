@@ -1014,7 +1014,10 @@ describe.each(["fake", "real"] as const)("the chat on the %s Codex", (name) => {
       expect(
         (await transcript(c.id)).entries.filter(([kind]) => kind === "reply"),
       ).toEqual([
-        ["reply", "ok:Rufi stopped suddenly (restart). Please continue."],
+        [
+          "reply",
+          "ok:Rufi stopped suddenly and has restarted. A step you took just before the stop may already have finished, so check whether it happened before you do it again.",
+        ],
         ["reply", "ok:B"],
       ]);
       await say(await chatRow(c.id), "C");
@@ -3502,7 +3505,8 @@ describe("the chat, on the scripted Codex", () => {
   });
 
   describe("after a restart", () => {
-    const CONTINUE = "Rufi stopped suddenly (restart). Please continue.";
+    const CONTINUE =
+      "Rufi stopped suddenly and has restarted. A step you took just before the stop may already have finished, so check whether it happened before you do it again.";
     const root = () =>
       String(
         agentRows("SELECT id FROM agents WHERE parent_id IS NULL")[0]?.["id"],
