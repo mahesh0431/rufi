@@ -670,7 +670,6 @@ export async function saveChanges(
           input.items,
         );
   planned.push(...items.planned);
-  const checked = problems.length;
   if (input.save_anyway !== true) {
     for (const repeat of await repeatsOf(trx, where.personId, planned)) {
       const index =
@@ -681,9 +680,7 @@ export async function saveChanges(
   }
   if (problems.length > 0) {
     throw new SaveRefused(
-      checked === 0
-        ? "Nothing was saved: some results are already in the record. Check each one, then save again."
-        : "Nothing was saved. Fix these and save again.",
+      "Nothing was saved. Fix these and save again.",
       problems,
     );
   }

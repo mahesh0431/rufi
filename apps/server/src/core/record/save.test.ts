@@ -2146,7 +2146,8 @@ describe("a result already saved", () => {
   });
 
   it("is warned of and not saved when its day, test and value match, whatever the time, until the save says to save it anyway", async () => {
-    // Saved from page 1 of the August report: Glucose 118 mg/dL on 12 Aug, no time.
+    // The record has Glucose 118 mg/dL on 12 Aug from page 1 of the August
+    // report, with no time (res-a2).
     await say("My fasting glucose was 118 at 7:30 on 12 Aug");
     const before = written();
     const warned = await save([glucose("118", "2026-08-12T07:30")]);
@@ -2193,6 +2194,25 @@ describe("a result already saved", () => {
     ]);
     expect(saved.ok, JSON.stringify(saved.body)).toBe(true);
     expect(saved.body.result.changes).toHaveLength(2);
+  });
+
+  it("is no match for the result an amendment replaces", async () => {
+    await say("The lab amended my 12 Aug glucose: still 118, range 70 - 100");
+    const amended = await save([
+      {
+        kind: "result",
+        action: "add",
+        fields: {
+          test: "Glucose",
+          value: "118",
+          unit: "mg/dL",
+          range: "70 - 100",
+          measured: { date: "2026-08-12", words: "12 Aug" },
+          replaces: "res-a2",
+        },
+      },
+    ]);
+    expect(amended.ok, JSON.stringify(amended.body)).toBe(true);
   });
 
   it("holds a whole save with one, naming only that one; sent again without it, the others are saved in one receipt", async () => {
