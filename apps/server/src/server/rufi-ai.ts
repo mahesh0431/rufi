@@ -503,6 +503,11 @@ export async function startRufiAi(
     if (!forgotten && (event.agent === null || !SETTLING.has(event.type))) {
       return false;
     }
+    // A chat's own agent is handed no job: its events are the chat's to
+    // apply, with the cursor, below.
+    if (event.agent !== null && agents.get(event.agent)?.parent === null) {
+      return false;
+    }
     // Read in the transaction that ends them: a save meanwhile may have
     // finished one.
     const people = await options.record.query

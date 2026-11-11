@@ -330,3 +330,45 @@ it("ends a reader's job no_save once it and its helper have stopped with a page 
     await rufi.close();
   }
 });
+
+it("keeps the report read when a later hand-off of it ends without saving: its pages stay as the first reading saved them", async () => {
+  const fake = fakeProvider({ id: "codex", script: { turn: "runs" } });
+  const rufi = await start(fake);
+  try {
+    const reader = await rufi.reader("r-1");
+    await rufi.saves(reader, [1, 2]);
+    await rufi.ends(reader);
+    await rufi
+      .as(rufi.root)
+      .send(
+        { to: reader, text: "Read it again.", documents: [{ id: REPORT }] },
+        "again",
+      );
+    expect((await shown()).status).toBe("reading");
+    await rufi.ends(reader);
+    await vi.waitFor(() => {
+      expect(jobs().map(({ state, ended_why }) => [state, ended_why])).toEqual([
+        ["done", null],
+        ["ended", "no_save"],
+      ]);
+    });
+    expect(await shown()).toEqual({
+      status: "done",
+      ended: null,
+      canRetry: false,
+    });
+    expect(
+      record.db
+        .prepare(
+          "SELECT position, state FROM document_pages WHERE document_id = ? ORDER BY position",
+        )
+        .all(REPORT)
+        .map((row) => ({ ...row })),
+    ).toEqual([
+      { position: 1, state: "read" },
+      { position: 2, state: "read" },
+    ]);
+  } finally {
+    await rufi.close();
+  }
+});

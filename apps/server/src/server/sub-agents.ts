@@ -193,7 +193,19 @@ export function subAgents(deps: {
           );
         }
         const given = await handOffs(documents);
-        if (given.length > 0) {
+        // The same call again sends nothing, and hands nothing over again.
+        const again = agents.input(callId) !== undefined;
+        // The message waits first, so its agent isn't at rest when the job
+        // opens (rufi-ai.ts ends a job whose agents all are).
+        agents.send(target, {
+          id: callId,
+          sender: scope.agent,
+          kind,
+          parts: [`${self.title} (${self.id}) writes:\n\n${text}`],
+          about: "wrote",
+          said: text,
+        });
+        if (given.length > 0 && !again) {
           await deps.record.query.transaction().execute((trx) =>
             openJobs(
               trx,
@@ -208,14 +220,6 @@ export function subAgents(deps: {
           );
           deps.documents?.(personId);
         }
-        agents.send(target, {
-          id: callId,
-          sender: scope.agent,
-          kind,
-          parts: [`${self.title} (${self.id}) writes:\n\n${text}`],
-          about: "wrote",
-          said: text,
-        });
         return {
           agent: target,
           sent:

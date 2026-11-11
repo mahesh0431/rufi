@@ -134,8 +134,34 @@ export async function finishIn(
       .where("job_id", "=", run.jobId)
       .execute();
   }
+  // A page another finished reading copied keeps its state when this one
+  // has no copy of it.
+  const elsewhere = new Set(
+    (
+      await trx
+        .selectFrom("page_copies as c")
+        .innerJoin("jobs as j", (join) =>
+          join
+            .onRef("j.person_id", "=", "c.person_id")
+            .onRef("j.id", "=", "c.job_id"),
+        )
+        .innerJoin("document_pages as p", (join) =>
+          join
+            .onRef("p.person_id", "=", "c.person_id")
+            .onRef("p.file_id", "=", "c.file_id")
+            .onRef("p.page_in_file", "=", "c.page_in_file"),
+        )
+        .select("p.position")
+        .where("c.person_id", "=", run.personId)
+        .where("p.document_id", "=", run.documentId)
+        .where("c.job_id", "!=", run.jobId)
+        .where("j.state", "!=", "working")
+        .execute()
+    ).map((p) => p.position),
+  );
   for (const target of run.targets) {
     const copy = copied.get(target);
+    if (!copy && elsewhere.has(target)) continue;
     await trx
       .updateTable("document_pages")
       .set({
@@ -224,14 +250,29 @@ export function readings(store: Store) {
       .filter((job) => job.targets.some((t) => mine.has(t)));
   };
 
-  /** The reading a document shows: one working, else the latest. */
+  /**
+   * The reading a document shows: one working, else the latest that is
+   * done or saved some of its pages, else the latest (one that ended
+   * without saving any).
+   */
   const readingOf = async (
     trx: Trx | Store["query"],
     personId: string,
     documentId: string,
   ): Promise<Job | undefined> => {
     const all = await readingsOf(trx, personId, documentId);
-    return all.find((job) => job.state === "working") ?? all[0];
+    const working = all.find((job) => job.state === "working");
+    if (working) return working;
+    for (const job of all) {
+      if (job.state === "done") return job;
+      const copied = await copiedBy(trx, {
+        jobId: job.id,
+        personId,
+        documentId,
+      });
+      if (copied.size > 0) return job;
+    }
+    return all[0];
   };
 
   /** What the document's reading needs when a message sends it. */
@@ -386,8 +427,16 @@ export function readings(store: Store) {
             addOf.get(job.documentId) === add &&
             job.targets.some((t) => here.has(t)),
         );
+        // An ended reading that saved none of its pages gives way to an
+        // earlier one that did: the document was read.
+        const savedSome = ({ job }: (typeof jobs)[number]) =>
+          copies.some(
+            (c) => c.job_id === job.id && c.document_id === document.id,
+          ) || mine.some((p) => p.entry_job_id === job.id);
         const found =
-          covering.find(({ job }) => job.state === "working") ?? covering[0];
+          covering.find(({ job }) => job.state === "working") ??
+          covering.find((one) => one.job.state === "done" || savedSome(one)) ??
+          covering[0];
         if (!found) continue;
         const { job, error } = found;
         const targets = job.targets.filter((t) => here.has(t));
