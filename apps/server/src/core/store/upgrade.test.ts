@@ -464,7 +464,7 @@ it("keeps the backup made before the category upgrade at version 3, and a restor
 
 /**
  * Rows as a Rufi before sorting (version 11) had them: the columns
- * migrations 12, 15 and 20 add are left out, to compare an older test's rows.
+ * migrations 12 and 15 add are left out, to compare an older test's rows.
  */
 const beforeSorting = (rows: readonly object[]) =>
   rows.map((row) =>
@@ -478,26 +478,42 @@ const beforeSorting = (rows: readonly object[]) =>
             "sorted_at",
             "quote",
             "sent_at",
-            "reader_agent",
           ].includes(key),
       ),
     ),
   );
 
+/** An older reading that hadn't finished. */
+const unfinished = (job: Record<string, unknown>) =>
+  job["state"] === "queued" || job["state"] === "running";
+
 /**
- * An older reading as migration 20 leaves it: one that hadn't finished
- * failed, as Rufi's start failed them, since the older reader is gone.
+ * An older reading as the migrations leave it: one that hadn't finished
+ * failed, as Rufi's start failed them, since the older reader is gone
+ * (migration 20); one that failed ended, and the older reader's run
+ * columns went (migration 35).
  */
-const closed = (job: Record<string, unknown>) =>
-  job["state"] === "queued" || job["state"] === "running"
-    ? {
+const asNow = ({
+  attempt: _attempt,
+  retries: _retries,
+  retry_at: _retryAt,
+  run_at: _runAt,
+  ...job
+}: Record<string, unknown>) =>
+  job["state"] === "done"
+    ? { ...job, agent_id: null, ended_why: null }
+    : {
         ...job,
-        state: "failed",
-        error: "Rufi closed while reading",
-        ended_at: expect.any(String) as unknown,
-        retry_at: null,
-      }
-    : job;
+        agent_id: null,
+        state: "ended",
+        ended_why: "failed",
+        ...(unfinished(job)
+          ? {
+              error: "Rufi closed while reading",
+              ended_at: expect.any(String) as unknown,
+            }
+          : {}),
+      };
 
 /** The documents and their pages as stored. */
 function documentsIn(path: string) {
@@ -657,20 +673,16 @@ it("upgrades a record of version 8 so a reading no longer waits for the account:
     const after = stored();
     expect(beforeSorting(after.jobs)).toEqual(
       before.jobs.map(
-        ({ waiting: _waiting, wait_until: _until, retried, ...job }) =>
-          closed({
-            ...job,
-            retries: retried,
-            retry_at: null,
-          }),
+        ({
+          waiting: _waiting,
+          wait_until: _until,
+          retried: _retried,
+          ...job
+        }) => asNow(job),
       ),
     );
     expect(after.pages).toEqual(before.pages);
     expect(beforeSorting(after.drafts)).toEqual(before.drafts);
-    // Neither former wait waits any more: no job has a time to wake for.
-    expect(
-      store.db.prepare("SELECT id FROM jobs WHERE retry_at IS NOT NULL").all(),
-    ).toEqual([]);
   } finally {
     store.close();
   }
@@ -781,7 +793,7 @@ it("upgrades a record of version 10 so the reader can keep page copies: every pa
   const store = await openRecord(home);
   try {
     const after = stored();
-    expect(beforeSorting(after.jobs)).toEqual(before.jobs);
+    expect(beforeSorting(after.jobs)).toEqual(before.jobs.map(asNow));
     expect(after.pages).toEqual(before.pages);
     expect(beforeSorting(after.drafts)).toEqual(before.drafts);
     const page = store.db
@@ -872,14 +884,12 @@ it("upgrades a record of version 11 so Rufi AI sorts: every document, reading an
 
   const after = stored();
   expect(beforeSorting(after.documents)).toEqual(before.documents);
-  expect(beforeSorting(after.jobs)).toEqual(before.jobs.map(closed));
+  expect(beforeSorting(after.jobs)).toEqual(before.jobs.map(asNow));
   // A page an unfinished reading was copying is free for the next one.
-  const unfinished = before.jobs
-    .filter((job) => closed(job) !== job)
-    .map((job) => job["id"]);
+  const stopped = before.jobs.filter(unfinished).map((job) => job["id"]);
   expect(after.pages).toEqual(
     before.pages.map((page) =>
-      unfinished.includes(page["entry_job_id"])
+      stopped.includes(page["entry_job_id"])
         ? { ...page, entry_attempt: 0 }
         : page,
     ),
@@ -1167,7 +1177,6 @@ it("upgrades a record of version 15 so files start on Send: every document sent 
     before.documents.map((row) => ({
       ...row,
       sent_at: row["added_at"],
-      reader_agent: null,
     })),
   );
   // A reply from before keeps no effort (0026).

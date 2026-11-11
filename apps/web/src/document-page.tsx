@@ -198,12 +198,6 @@ function Checking({
             <b className="text-[0.875rem]">{name}</b>{" "}
             <span className="text-muted">· {about}</span>
           </h2>
-          {document.status === "failed" && (
-            // Wrapped, its last word doesn't end on a line of its own.
-            <p className="text-xs text-pretty">
-              Failed · {document.reading?.error ?? "it stopped"}
-            </p>
-          )}
           {document.notSorted && (
             <p className="text-xs text-pretty">Not sorted yet</p>
           )}

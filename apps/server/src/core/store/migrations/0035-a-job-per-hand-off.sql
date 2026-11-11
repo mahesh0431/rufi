@@ -31,7 +31,7 @@ INSERT INTO jobs_new (id, person_id, kind, agent_id, state, ended_why,
   SELECT id, person_id, kind, NULL,
     CASE state WHEN 'done' THEN 'done' ELSE 'ended' END,
     CASE state WHEN 'done' THEN NULL ELSE 'failed' END,
-    document_id, targets, started_at, COALESCE(ended_at, created_at), error,
+    document_id, targets, started_at, ended_at, error,
     usage, reader, created_at
   FROM jobs ORDER BY rowid;
 

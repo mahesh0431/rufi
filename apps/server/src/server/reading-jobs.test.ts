@@ -152,7 +152,8 @@ async function start(fake: FakeProvider) {
       .get(agent) as { ref: string };
     fake.end(ref);
     await vi.waitFor(() => {
-      if (system.agents.current(agent)?.ref === turn) {
+      const now = system.agents.current(agent);
+      if (now?.status === "running" && now.ref === turn) {
         throw new Error("Still running.");
       }
     });

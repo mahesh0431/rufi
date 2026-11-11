@@ -2328,8 +2328,8 @@ describe("the chat, on the scripted Codex", () => {
     store.db.exec(`
       INSERT INTO files (id, size, media_type, created_at) VALUES ('f-letter', 1, 'application/pdf', '2026-10-01T09:00:00Z');
       INSERT INTO documents (id, person_id, added_at, added_from, version, sent_at) VALUES ('letter', 'asha', '2026-10-01T09:00:00Z', 'chat', 1, '2026-10-01T09:00:00Z');
-      INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, ended_at, created_at)
-        VALUES ('job-letter', 'asha', 'document_read', 'letter', 'done', 1, '[1]', '2026-10-01T09:00:00Z', '2026-10-01T09:00:00Z');
+      INSERT INTO jobs (id, person_id, kind, document_id, state, targets, ended_at, created_at)
+        VALUES ('job-letter', 'asha', 'document_read', 'letter', 'done', '[1]', '2026-10-01T09:00:00Z', '2026-10-01T09:00:00Z');
       INSERT INTO document_pages (person_id, document_id, position, file_id, page_in_file, file_name, state, entry_job_id, entry_attempt)
         VALUES ('asha', 'letter', 1, 'f-letter', 1, 'letter.pdf', 'read', 'job-letter', 1);
       INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at)
@@ -2772,9 +2772,9 @@ describe("the chat, on the scripted Codex", () => {
         INSERT INTO documents (id, person_id, added_at, added_from, version, sent_at) VALUES
           ('doc-read', 'asha', '2026-10-01T09:00:00Z', 'chat', 2, '2026-10-01T09:00:00Z'),
           ('doc-stopped', 'asha', '2026-10-01T09:00:00Z', 'chat', 1, '2026-10-01T09:00:00Z');
-        INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, error, ended_at, created_at) VALUES
-          ('job-read', 'asha', 'document_read', 'doc-read', 'done', 1, '[1]', NULL, '2026-10-01T09:05:00Z', '2026-10-01T09:00:00Z'),
-          ('job-stopped', 'asha', 'document_read', 'doc-stopped', 'failed', 1, '[1,2]', 'Rufi closed while reading', '2026-10-01T09:05:00Z', '2026-10-01T09:00:00Z');
+        INSERT INTO jobs (id, person_id, kind, document_id, state, ended_why, targets, error, ended_at, created_at) VALUES
+          ('job-read', 'asha', 'document_read', 'doc-read', 'done', NULL, '[1]', NULL, '2026-10-01T09:05:00Z', '2026-10-01T09:00:00Z'),
+          ('job-stopped', 'asha', 'document_read', 'doc-stopped', 'ended', 'failed', '[1,2]', 'Rufi closed while reading', '2026-10-01T09:05:00Z', '2026-10-01T09:00:00Z');
         INSERT INTO document_pages (person_id, document_id, position, file_id, page_in_file, file_name, state, entry_job_id, entry_attempt) VALUES
           ('asha', 'doc-read', 1, 'f-read', 1, 'read.pdf', 'read', 'job-read', 1),
           ('asha', 'doc-stopped', 1, 'f-stopped', 1, 'stopped.pdf', NULL, 'job-stopped', 0),
@@ -2817,7 +2817,7 @@ describe("the chat, on the scripted Codex", () => {
       // Only the one that stopped is named, with all its pages.
       const [given] = await inputs();
       expect(given?.[0]).toContain(
-        "- stopped.pdf (document doc-stopped): pages 1–2 of 2, whose reading stopped before it finished",
+        "- stopped.pdf (document doc-stopped): all 2 pages",
       );
       expect(given?.[0]).not.toContain("doc-read");
       expect(await listed()).toEqual(

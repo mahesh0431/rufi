@@ -171,7 +171,7 @@ function copied(pages: Record<number, Entry>, documentId: string) {
   const targets = Object.keys(pages).map(Number);
   store.db
     .prepare(
-      "INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, ended_at, created_at) VALUES (?, 'asha', 'document_read', ?, 'done', 1, ?, '2026-10-11T04:01:00Z', '2026-10-11T04:00:00Z')",
+      "INSERT INTO jobs (id, person_id, kind, document_id, state, targets, ended_at, created_at) VALUES (?, 'asha', 'document_read', ?, 'done', ?, '2026-10-11T04:01:00Z', '2026-10-11T04:00:00Z')",
     )
     .run(jobId, documentId, JSON.stringify(targets));
   for (const [position, entry] of Object.entries(pages)) {
@@ -393,8 +393,8 @@ describe("saving draft items", () => {
     const { HbA1c = "" } = drafts();
     // Page 1 is read again: a newer reading's copy of it.
     store.db.exec(`
-      INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, ended_at, created_at)
-        VALUES ('job-again', 'asha', 'document_read', 'doc-asha-aug', 'done', 1, '[1]', '2026-10-11T05:01:00Z', '2026-10-11T05:00:00Z');
+      INSERT INTO jobs (id, person_id, kind, document_id, state, targets, ended_at, created_at)
+        VALUES ('job-again', 'asha', 'document_read', 'doc-asha-aug', 'done', '[1]', '2026-10-11T05:01:00Z', '2026-10-11T05:00:00Z');
       INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at)
         SELECT person_id, file_id, page_in_file, 'job-again', 1, 'read', '| HbA1c | 7.1 | % |', '2026-10-11T05:00:30Z'
         FROM document_pages WHERE document_id = 'doc-asha-aug' AND position = 1;

@@ -55,17 +55,15 @@ export function OverviewPage({ person }: { person: Person }) {
                       <span className="font-semibold">{document.name}</span>{" "}
                       <span className="text-muted">
                         ·{" "}
-                        {document.state === "failed"
-                          ? "couldn't finish reading"
-                          : document.state === "unread_pages"
-                            ? "couldn't be read · try a clearer scan"
-                            : [
-                                `${String(document.results)} ${document.results === 1 ? "result" : "results"} read, not saved`,
-                                document.toCheck > 0 &&
-                                  `${String(document.toCheck)} to check`,
-                              ]
-                                .filter(Boolean)
-                                .join(" · ")}
+                        {document.state === "unread_pages"
+                          ? "couldn't be read · try a clearer scan"
+                          : [
+                              `${String(document.results)} ${document.results === 1 ? "result" : "results"} read, not saved`,
+                              document.toCheck > 0 &&
+                                `${String(document.toCheck)} to check`,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
                       </span>
                     </span>
                     <AskRufi
