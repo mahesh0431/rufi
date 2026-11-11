@@ -116,6 +116,7 @@ async function start(fake: FakeProvider) {
     );
     return id;
   };
+  let saved = 0;
   /** `agent` saves these pages of the report. */
   const saves = (agent: string, pages: number[]) =>
     record.query.transaction().execute((trx) =>
@@ -123,8 +124,9 @@ async function start(fake: FakeProvider) {
         {
           personId: "asha",
           chatId: row.id,
-          callId: `save-${agent}-${pages.join("-")}`,
+          callId: `save-${String((saved += 1))}`,
           line: lineOf(system.agents, agent),
+          taken: as(agent).taken,
         },
         {
           document: REPORT,
@@ -254,6 +256,36 @@ it("shows the report as Reading each time one reader is given it, and done after
   }
 });
 
+it("keeps a second hand-off queued to a working reader open after the first one saves, until the reader saves again", async () => {
+  const fake = fakeProvider({ id: "codex", script: { turn: "runs" } });
+  const rufi = await start(fake);
+  try {
+    const reader = await rufi.reader("r-1");
+    await rufi.as(rufi.root).send(
+      {
+        to: reader,
+        text: "Then read it again at full size.",
+        kind: "queue",
+        documents: [{ id: REPORT }],
+      },
+      "again",
+    );
+    await rufi.saves(reader, [1, 2]);
+    expect(jobs().map((job) => job["state"])).toEqual(["done", "working"]);
+    expect((await shown()).status).toBe("reading");
+    // Its turn ends, and it takes the queued hand-off.
+    await rufi.ends(reader);
+    await vi.waitFor(() => {
+      expect(rufi.as(reader).taken("again")).toBe(true);
+    });
+    await rufi.saves(reader, [1, 2]);
+    expect(jobs().map((job) => job["state"])).toEqual(["done", "done"]);
+    expect((await shown()).status).toBe("done");
+  } finally {
+    await rufi.close();
+  }
+});
+
 it("keeps two hand-offs of one report apart: each save counts for its own reader's job, Reading until both are saved", async () => {
   const fake = fakeProvider({ id: "codex", script: { turn: "runs" } });
   const rufi = await start(fake);
@@ -352,9 +384,10 @@ it("keeps the report read when a later hand-off of it ends without saving: its p
         ["ended", "no_save"],
       ]);
     });
+    // The earlier reading shows; Rufi AI still hears why the latest ended.
     expect(await shown()).toEqual({
       status: "done",
-      ended: null,
+      ended: "no_save",
       canRetry: false,
     });
     expect(

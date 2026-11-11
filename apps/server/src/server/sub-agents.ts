@@ -146,6 +146,7 @@ export function subAgents(deps: {
                 {
                   agent: callId,
                   caller: lineOf(agents, scope.agent),
+                  call: callId,
                   handOffs: given,
                 },
                 now(),
@@ -213,6 +214,7 @@ export function subAgents(deps: {
               {
                 agent: target,
                 caller: lineOf(agents, scope.agent),
+                call: callId,
                 handOffs: given,
               },
               now(),
@@ -304,6 +306,11 @@ export function subAgents(deps: {
       },
 
       line: () => lineOf(agents, scope.agent),
+
+      taken: (input) => {
+        const state = agents.input(input)?.state;
+        return state === "handing_over" || state === "delivered";
+      },
 
       usage: async () => ({
         yours: agents.get(scope.agent)?.provider ?? null,

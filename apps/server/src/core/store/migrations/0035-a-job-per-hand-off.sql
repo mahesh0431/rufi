@@ -9,6 +9,7 @@ CREATE TABLE jobs_new (
   person_id TEXT NOT NULL,
   kind TEXT NOT NULL CHECK (kind IN ('document_read')),
   agent_id TEXT,
+  call_id TEXT,
   state TEXT NOT NULL CHECK (state IN ('working', 'done', 'ended')),
   ended_why TEXT CHECK (ended_why IN ('not_started', 'no_save', 'stopped', 'failed', 'agent_lost', 'deleted')),
   document_id TEXT,

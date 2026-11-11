@@ -84,6 +84,8 @@ export interface AgentTools {
   stop: (input: StopAgentInput) => unknown;
   /** The caller, then the agent that started it, up to Rufi AI. */
   line: () => readonly string[];
+  /** Whether a message, by its id, has gone to its agent. */
+  taken: (input: string) => boolean;
   /** What waits for the caller and the agents below it: listed or changed. */
   waiting: (input: WaitingMessagesInput) => Promise<unknown>;
   /** An idle agent below the caller, on another model from its next turn. */

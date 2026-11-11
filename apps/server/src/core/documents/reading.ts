@@ -32,7 +32,7 @@ export interface Job {
 /** A document's reading, as the Documents page and get_documents show it. */
 export interface ReadingStatus {
   status: "reading" | "done" | "not_read";
-  /** Why its latest reading ended, when it did. */
+  /** Why its latest reading ended, when it did and none is working: also when an earlier reading is the one shown. */
   ended: EndedWhy | null;
   /** The agent reading it, while one is. */
   agent: string | null;
@@ -470,7 +470,11 @@ export function readings(store: Store) {
               : job.state === "ended" && saved === 0
                 ? "not_read"
                 : "done",
-          ended: job.endedWhy,
+          // The latest hand-off's end, also when an earlier reading shows.
+          ended:
+            job.state === "working"
+              ? null
+              : (covering[0]?.job.endedWhy ?? null),
           agent: job.state === "working" ? job.agent : null,
           saved,
           of: targets.length,

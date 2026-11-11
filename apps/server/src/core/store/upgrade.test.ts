@@ -501,10 +501,11 @@ const asNow = ({
   ...job
 }: Record<string, unknown>) =>
   job["state"] === "done"
-    ? { ...job, agent_id: null, ended_why: null }
+    ? { ...job, agent_id: null, call_id: null, ended_why: null }
     : {
         ...job,
         agent_id: null,
+        call_id: null,
         state: "ended",
         ended_why: "failed",
         ...(unfinished(job)

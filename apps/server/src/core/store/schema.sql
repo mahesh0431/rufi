@@ -132,8 +132,9 @@ CREATE TABLE document_pages (
 -- A task Rufi AI handed to an agent, one row per hand-off (jobs.ts). kind
 -- says what the task is; only document_read now: reading pages of a
 -- document. start_agent or send_agent with documents opens one, working;
--- a save_reading from the agent or one below it saves its pages, and it is
--- done once every page it asked for is saved; it ends, with why, when the
+-- a save_reading from the agent or one below it saves its pages (the
+-- oldest hand-off whose message the agent has taken), and it is done once
+-- every page it asked for is saved; it ends, with why, when the
 -- agent and everything below it have stopped with pages unsaved. A
 -- save_reading with none open makes one, done. An older reader's job keeps
 -- its error, usage and reader.
@@ -142,6 +143,7 @@ CREATE TABLE jobs (
   person_id TEXT NOT NULL,
   kind TEXT NOT NULL CHECK (kind IN ('document_read')),
   agent_id TEXT,                       -- the agent it was handed to, in agents.sqlite; null for an older reader's
+  call_id TEXT,                        -- the start_agent or send_agent call that handed it over, its message's id there; null when a save made it
   state TEXT NOT NULL CHECK (state IN ('working', 'done', 'ended')),
   ended_why TEXT CHECK (ended_why IN ('not_started', 'no_save', 'stopped', 'failed', 'agent_lost', 'deleted')),
   document_id TEXT,                    -- document_read: the document

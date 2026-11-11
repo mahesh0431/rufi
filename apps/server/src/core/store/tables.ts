@@ -246,6 +246,7 @@ export interface Tables {
     person_id: string;
     kind: string;
     agent_id: string | null;
+    call_id: string | null;
     state: string;
     ended_why: string | null;
     document_id: string | null;

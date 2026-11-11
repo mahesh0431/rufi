@@ -35,6 +35,8 @@ export interface Working {
   id: string;
   personId: string;
   agent: string;
+  /** The call that handed it over; null when a save made it. */
+  call: string | null;
   documentId: string;
   targets: number[];
 }
@@ -144,12 +146,14 @@ const workingOf = (row: {
   id: string;
   person_id: string;
   agent_id: string | null;
+  call_id: string | null;
   document_id: string | null;
   targets: string | null;
 }): Working => ({
   id: row.id,
   personId: row.person_id,
   agent: row.agent_id ?? "",
+  call: row.call_id,
   documentId: row.document_id ?? "",
   targets: JSON.parse(row.targets ?? "[]") as number[],
 });
@@ -163,7 +167,14 @@ export async function working(
   if (agents.length === 0) return [];
   let query = db
     .selectFrom("jobs")
-    .select(["id", "person_id", "agent_id", "document_id", "targets"])
+    .select([
+      "id",
+      "person_id",
+      "agent_id",
+      "call_id",
+      "document_id",
+      "targets",
+    ])
     .where("kind", "=", "document_read")
     .where("state", "=", "working")
     .where("agent_id", "in", [...agents]);
@@ -176,34 +187,26 @@ export async function working(
 }
 
 /**
- * In `trx`: `agent` is given these documents' pages by the agent whose
- * line is `caller` (the caller, then its parent, up to Rufi AI). A caller
- * inside a working job on a document hands on part of that job: nothing is
- * opened. An agent already working on a document has the pages added to
- * its job; otherwise a job opens.
+ * In `trx`: `agent` is given these documents' pages by the call `call` of
+ * the agent whose line is `caller` (the caller, then its parent, up to
+ * Rufi AI): a job opens for each, one per hand-off, also a second one to
+ * an agent still working on the document. A caller inside a working job on
+ * a document hands on part of that job: nothing is opened.
  */
 export async function openJobs(
   trx: Transaction<Tables>,
   personId: string,
-  hand: { agent: string; caller: readonly string[]; handOffs: HandOff[] },
+  hand: {
+    agent: string;
+    caller: readonly string[];
+    call: string;
+    handOffs: HandOff[];
+  },
   at: string,
 ) {
   for (const { documentId, pages } of hand.handOffs) {
     const document = { personId, documentId };
     if ((await working(trx, hand.caller, document)).length > 0) continue;
-    const [open] = await working(trx, [hand.agent], document);
-    if (open) {
-      const targets = [...new Set([...open.targets, ...pages])].sort(
-        (a, b) => a - b,
-      );
-      await trx
-        .updateTable("jobs")
-        .set({ targets: JSON.stringify(targets) })
-        .where("id", "=", open.id)
-        .where("state", "=", "working")
-        .execute();
-      continue;
-    }
     await trx
       .insertInto("jobs")
       .values({
@@ -211,6 +214,7 @@ export async function openJobs(
         person_id: personId,
         kind: "document_read",
         agent_id: hand.agent,
+        call_id: hand.call,
         state: "working",
         document_id: documentId,
         targets: JSON.stringify(pages),
@@ -223,17 +227,23 @@ export async function openJobs(
 
 /**
  * The working job a save of the document by the agent whose line is
- * `line` (the agent, then its parent, up) counts for: the nearest's.
+ * `line` (the agent, then its parent, up) counts for: the nearest agent's,
+ * and of its hand-offs the oldest whose message it has taken (`taken`), so
+ * a hand-off still waiting in its queue stays open; the oldest when none
+ * is taken.
  */
 export async function jobFor(
   db: Db,
   personId: string,
   documentId: string,
   line: readonly string[],
+  taken: (call: string) => boolean = () => true,
 ): Promise<Working | undefined> {
   const open = await working(db, line, { personId, documentId });
   for (const agent of line) {
-    const found = open.find((job) => job.agent === agent);
+    const mine = open.filter((job) => job.agent === agent);
+    const found =
+      mine.find((job) => job.call === null || taken(job.call)) ?? mine[0];
     if (found) return found;
   }
   return undefined;
@@ -271,7 +281,14 @@ export async function endAll(
 ): Promise<string[]> {
   let query = trx
     .selectFrom("jobs")
-    .select(["id", "person_id", "agent_id", "document_id", "targets"])
+    .select([
+      "id",
+      "person_id",
+      "agent_id",
+      "call_id",
+      "document_id",
+      "targets",
+    ])
     .where("kind", "=", "document_read")
     .where("state", "=", "working");
   if (agents) {

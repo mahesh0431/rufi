@@ -264,6 +264,7 @@ export function rufiCaller(
                   chatId: chat.id,
                   callId,
                   line: below?.line() ?? [scope.agent],
+                  ...(below && { taken: below.taken }),
                 },
                 input,
                 trx,

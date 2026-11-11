@@ -56,6 +56,8 @@ export interface SaveReadingScope {
   callId: string;
   /** The saving agent, then the agent that started it, up to Rufi AI. */
   line: readonly string[];
+  /** Whether a hand-off's message, by its call, has gone to its agent. */
+  taken?: (call: string) => boolean;
 }
 
 export interface SaveReadingAnswer {
@@ -265,7 +267,13 @@ export function saveReading(
     const saved = input.pages.map((p) => p.page);
     const sorted = (pages: Iterable<number>) =>
       [...new Set(pages)].sort((a, b) => a - b);
-    const found = await jobFor(trx, personId, document.id, scope.line);
+    const found = await jobFor(
+      trx,
+      personId,
+      document.id,
+      scope.line,
+      scope.taken,
+    );
     // No job working on it here: one is made for this save, its targets
     // also the document's pages no finished reading has copied, so they
     // show as not looked at, never as read, until a reading saves them.
