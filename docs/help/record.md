@@ -9,7 +9,6 @@ Overview is the first page you see. It has three parts, in this order:
 1. **Needs you:** documents that wait for you, then follow-ups that are overdue, due now or coming up in the next 30 days:
    - a document that was read, with results not saved yet, says how many it has and how many to check;
    - a document with pages that couldn't be read says "couldn't be read · try a clearer scan". Add a clearer scan or photo, or click **Retry** on its page;
-   - a document whose reading couldn't finish says so;
    - a follow-up says when it is due, for example "overdue, was due Sep 2026" (see [Follow-ups](follow-ups.md)).
 
    Click **Open** to go to the document's page (see [Documents](documents.md)), or to that follow-up on Follow-ups. Click **Ask Rufi** to put it in the chat's box and ask about it (see [Adding to a message](chat.md#adding-to-a-message)). A document read with nothing to save isn't here. When nothing waits, this part isn't shown.

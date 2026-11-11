@@ -194,7 +194,10 @@ const endedWhy = (agent: Agent | undefined): EndedWhy => {
       return "stopped";
     case "failed":
       return "failed";
-    default:
+    // At rest, a done agent stopped working without saving the rest.
+    case "done":
+    case "running":
+    case "continuing":
       return "no_save";
   }
 };
