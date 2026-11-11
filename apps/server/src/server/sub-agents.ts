@@ -10,10 +10,18 @@
 // it and for the agents below it: the person's messages and Rufi's notes
 // change in Rufi first, as the screens change them. An agent runs only on
 // one of Rufi's four models whose provider is signed in: one it starts, or
-// one below it moved to another while it isn't running.
+// one below it moved to another while it isn't running. An agent started or
+// written to with documents is handed them to read: a job opens for it
+// (core/documents/jobs.ts), beside its owner when it starts.
 import type { Agents, WaitingInput } from "@rufi/agents/agents";
 import { modelOf, type ProviderStatus, type QueueItem } from "@rufi/contracts";
 import type { chatAgents } from "../core/chat/agents.ts";
+import {
+  handOffsOf,
+  openJobs,
+  type HandOffInput,
+} from "../core/documents/jobs.ts";
+import type { Store } from "../core/store/database.ts";
 import type { ChatQueue } from "../core/chat/queue.ts";
 import { Refusal, type AgentTools } from "../core/tools/registry.ts";
 import type { TurnScope } from "../core/tools/tools.ts";
@@ -25,15 +33,43 @@ import type { ProviderUsage } from "./rufi-ai.ts";
 /** How many turns a page of an agent's conversation holds. */
 const PAGE = 10;
 
-/** Whether the agent is at work: not yet run, running, or going on after a restart. */
-export const agentRuns = (agents: Agents, id: string) => {
-  const status = agents.get(id)?.status;
-  return status === "idle" || status === "running" || status === "continuing";
+/** The agent, then the agent that started it, up to its root. */
+export const lineOf = (agents: Agents, id: string): string[] => {
+  const line: string[] = [];
+  for (
+    let at = agents.get(id);
+    at !== undefined && !line.includes(at.id);
+    at = at.parent === null ? undefined : agents.get(at.parent)
+  ) {
+    line.push(at.id);
+  }
+  return line;
 };
+
+/**
+ * Whether the agent and every agent below it have stopped working: none
+ * has a turn, is running or going on, or has a message waiting that isn't
+ * held (it would start a turn).
+ */
+export const atRest = (agents: Agents, id: string) =>
+  [id, ...agents.below(id)].every((one) => {
+    const status = agents.get(one)?.status;
+    return (
+      agents.current(one) === undefined &&
+      status !== "running" &&
+      status !== "continuing" &&
+      agents.waiting(one).every((input) => input.held !== null)
+    );
+  });
 
 export function subAgents(deps: {
   agents: Agents;
   kept: ReturnType<typeof chatAgents>;
+  /** The record, written: the jobs a hand-off opens. */
+  record: Store;
+  /** The person's documents changed: their screens read them again. */
+  documents?: (personId: string) => void;
+  now?: () => string;
   queue: ChatQueue;
   log: Log;
   /** The chat's waiting messages, as its screens change them: Rufi first. */
@@ -44,6 +80,7 @@ export function subAgents(deps: {
   usage: () => Promise<readonly ProviderUsage[]>;
 }): (scope: TurnScope) => AgentTools {
   const { agents, kept } = deps;
+  const now = deps.now ?? (() => new Date().toISOString());
   /** One of the four whose provider is signed in, else refused in one line. */
   const runnable = async (model: string) => {
     const found = modelOf(model);
@@ -59,12 +96,19 @@ export function subAgents(deps: {
       id === scope.agent || agents.below(scope.agent).includes(id)
         ? agents.get(id)
         : undefined;
+    const personId = scope.chat.personId;
+    /** The documents given, checked; none when none are. */
+    const handOffs = (documents: HandOffInput | undefined) =>
+      documents === undefined
+        ? Promise.resolve([])
+        : handOffsOf(deps.record.query, personId, documents);
     return {
-      start: async ({ title, task, model, effort }, callId) => {
+      start: async ({ title, task, model, effort, documents }, callId) => {
         const parent = agents.get(scope.agent);
         if (!parent) throw new Error(`No agent ${scope.agent}.`);
         // Its own or its parent's: one of the four either way.
         const on = await runnable(model ?? parent.model);
+        const given = await handOffs(documents);
         // Each step again finds what it did: a crash before the owner is
         // kept leaves an agent the next start removes, its task with it.
         if (!agents.get(callId)) {
@@ -87,12 +131,27 @@ export function subAgents(deps: {
           parts: [task],
         });
         if (!(await kept.owner(callId))) {
-          await kept.own({
-            agent: callId,
-            personId: scope.chat.personId,
-            chatId: scope.chat.id,
-            root: false,
-          });
+          await kept.own(
+            {
+              agent: callId,
+              personId,
+              chatId: scope.chat.id,
+              root: false,
+            },
+            undefined,
+            (trx) =>
+              openJobs(
+                trx,
+                personId,
+                {
+                  agent: callId,
+                  caller: lineOf(agents, scope.agent),
+                  handOffs: given,
+                },
+                now(),
+              ),
+          );
+          if (given.length > 0) deps.documents?.(personId);
         }
         agents.admit(callId);
         return { agent: callId, title: agents.get(callId)?.title ?? title };
@@ -117,7 +176,7 @@ export function subAgents(deps: {
         };
       },
 
-      send: ({ to, text, kind = "steer" }, callId) => {
+      send: async ({ to, text, kind = "steer", documents }, callId) => {
         const self = agents.get(scope.agent);
         const target =
           to === "parent" ? (self?.parent ?? undefined) : reachable(to)?.id;
@@ -127,6 +186,27 @@ export function subAgents(deps: {
               ? "You have no parent: you are Rufi AI. Answer the user in your reply."
               : `No agent ${to} is below you: write to "parent", or to an agent agent_status lists.`,
           );
+        }
+        if (documents !== undefined && to === "parent") {
+          throw new Refusal(
+            "Documents go only to an agent below you: write to the agent that started you without them.",
+          );
+        }
+        const given = await handOffs(documents);
+        if (given.length > 0) {
+          await deps.record.query.transaction().execute((trx) =>
+            openJobs(
+              trx,
+              personId,
+              {
+                agent: target,
+                caller: lineOf(agents, scope.agent),
+                handOffs: given,
+              },
+              now(),
+            ),
+          );
+          deps.documents?.(personId);
         }
         agents.send(target, {
           id: callId,
@@ -219,15 +299,7 @@ export function subAgents(deps: {
         return { stopping: children ? [id, ...agents.below(id)] : [id] };
       },
 
-      // The chat's agents share its root, as read checks.
-      inChat: (agent) => {
-        const found = agents.get(agent);
-        return (
-          found !== undefined && found.root === agents.get(scope.agent)?.root
-        );
-      },
-
-      runs: (agent) => agentRuns(agents, agent),
+      line: () => lineOf(agents, scope.agent),
 
       usage: async () => ({
         yours: agents.get(scope.agent)?.provider ?? null,

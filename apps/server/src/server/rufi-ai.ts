@@ -24,6 +24,13 @@ import type {
   Transcripts,
 } from "../core/chat/transcript.ts";
 import { startAgents, type AgentSystem, type Apply } from "./agents.ts";
+import { atRest, lineOf } from "./sub-agents.ts";
+import {
+  endAll,
+  endJob,
+  working,
+  type EndedWhy,
+} from "../core/documents/jobs.ts";
 import { agentLogs, type AgentLogs } from "./agent-logs.ts";
 import type { Placed } from "./door.ts";
 
@@ -163,6 +170,34 @@ const APPLIED = new Set([
   "input.waiting",
   "input.released",
 ]);
+
+/**
+ * A sub-agent's events after which a job handed to it, or to an agent
+ * above it, may have nobody working on it any more.
+ */
+const SETTLING = new Set([
+  "turn.ended",
+  "turn.not_started",
+  "input.held",
+  "input.removed",
+  "agent.stopped",
+]);
+
+/** Why a job ended, from its agent as it is once its tree has stopped. */
+const endedWhy = (agent: Agent | undefined): EndedWhy => {
+  switch (agent?.status) {
+    case undefined:
+      return "agent_lost";
+    case "idle":
+      return "not_started";
+    case "stopped":
+      return "stopped";
+    case "failed":
+      return "failed";
+    default:
+      return "no_save";
+  }
+};
 
 /** An input's hold as the chat shows it: signed out with Rufi's line. */
 /** How many of a sub-agent's turns its new conversation hears. */
@@ -454,7 +489,40 @@ export async function startRufiAi(
   // answer, and its end when the chat didn't save it; and what became of
   // each row the package handed over (transcripts.applyStart, applyEnd,
   // applyInput).
-  const apply: Apply = async (event, advance) => {
+  // A job ends once its agent and everything below it have stopped with
+  // pages unsaved, and with forgotten agents: in the transaction that
+  // moves the cursor past the event (core/documents/jobs.ts).
+  const settle: Apply = async (event, advance, agents) => {
+    const forgotten =
+      event.type === "agents.forgotten"
+        ? (event.payload as { agents: string[] }).agents
+        : undefined;
+    if (!forgotten && (event.agent === null || !SETTLING.has(event.type))) {
+      return false;
+    }
+    const db = options.record.query;
+    const open = forgotten
+      ? []
+      : (await working(db, lineOf(agents, event.agent ?? ""))).filter((job) =>
+          atRest(agents, job.agent),
+        );
+    if (!forgotten && open.length === 0) return false;
+    const people = await db.transaction().execute(async (trx) => {
+      const at = (options.now ?? (() => new Date().toISOString()))();
+      for (const job of open) {
+        await endJob(trx, job, endedWhy(agents.get(job.agent)), at);
+      }
+      const lost = forgotten
+        ? await endAll(trx, "agent_lost", at, forgotten)
+        : [];
+      await advance(trx);
+      return [...open.map((job) => job.personId), ...lost];
+    });
+    for (const person of new Set(people)) options.documents?.(person);
+    return true;
+  };
+
+  const apply: Apply = async (event, advance, agents) => {
     // Whatever a sub-agent's change, its chat's screens read it again.
     if (event.agent !== null) screens.logs?.changed(event.agent);
     const said = event.payload as { held?: Hold; reason?: string };
@@ -464,9 +532,12 @@ export async function startRufiAi(
     ) {
       options.signedOut?.();
     }
-    if (event.agent === null || !APPLIED.has(event.type)) return false;
+    // Jobs are handed to a chat's sub-agents: their events are never the
+    // chat's own below.
+    const settled = await settle(event, advance, agents);
+    if (event.agent === null || !APPLIED.has(event.type)) return settled;
     const row = await chatOf(event.agent);
-    if (!row) return false;
+    if (!row) return settled;
     await chat?.saved();
     const payload = event.payload as {
       input: string;

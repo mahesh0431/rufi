@@ -12,12 +12,7 @@ import {
 } from "./agents.ts";
 import { briefResult, createBrief } from "./brief.ts";
 import { readChat } from "./chat.ts";
-import {
-  getDocuments,
-  saveReading,
-  setReader,
-  sortDocuments,
-} from "./documents.ts";
+import { getDocuments, saveReading, sortDocuments } from "./documents.ts";
 import { logDose, logDoseFor, readDoses } from "./doses.ts";
 import { showFace } from "./face.ts";
 import { getOverview } from "./overview.ts";
@@ -44,7 +39,6 @@ import type { Log } from "../../platform/logs.ts";
 import type { ChatRow, ToolCall, Transcripts } from "../chat/transcript.ts";
 import { createBrief as makeBrief } from "../briefs/briefs.ts";
 import type { Pages } from "../documents/pages.ts";
-import { setReader as setDocumentReader } from "../documents/readers.ts";
 import {
   keptReading,
   keptUnsaved,
@@ -68,7 +62,6 @@ export const TOOLS: readonly Tool[] = [
   dismissItems,
   sortDocuments,
   saveReading,
-  setReader,
   createBrief,
   readDoses,
   logDose,
@@ -266,7 +259,12 @@ export function rufiCaller(
             { ...made, input: keptReading(input, true) },
             (trx) =>
               reading.run(
-                { personId: chat.personId, chatId: chat.id, callId },
+                {
+                  personId: chat.personId,
+                  chatId: chat.id,
+                  callId,
+                  line: below?.line() ?? [scope.agent],
+                },
                 input,
                 trx,
               ),
@@ -275,22 +273,6 @@ export function rufiCaller(
           kept();
           reading.done(chat.personId);
           return saved;
-        },
-        setReader: async (input) => {
-          if (!below?.inChat(input.agent)) {
-            throw new Refusal(
-              `No agent ${input.agent} is in your chat: give an agent agent_status lists.`,
-            );
-          }
-          const set = await transcripts.withToolCall(
-            chat,
-            made,
-            (trx) => setDocumentReader(trx, chat.personId, input),
-            answerOf,
-          );
-          kept();
-          reading?.done(chat.personId);
-          return set;
         },
         logDose: (input, callId) => {
           if (!doses) throw new Refusal("Rufi can't log a dose here.");

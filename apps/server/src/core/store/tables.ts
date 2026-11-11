@@ -177,7 +177,6 @@ export interface Tables {
     deleted_at: string | null;
     from_document: string | null;
     sent_at: string | null;
-    reader_agent: string | null;
   };
   dose_log: {
     id: string;
@@ -246,14 +245,12 @@ export interface Tables {
     id: string;
     person_id: string;
     kind: string;
-    document_id: string;
+    agent_id: string | null;
     state: string;
-    attempt: number;
-    targets: string;
-    retries: number;
-    retry_at: string | null;
+    ended_why: string | null;
+    document_id: string | null;
+    targets: string | null;
     started_at: string | null;
-    run_at: string | null;
     ended_at: string | null;
     error: string | null;
     usage: string | null;
