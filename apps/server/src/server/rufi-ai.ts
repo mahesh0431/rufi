@@ -503,24 +503,28 @@ export async function startRufiAi(
     if (!forgotten && (event.agent === null || !SETTLING.has(event.type))) {
       return false;
     }
-    const db = options.record.query;
-    const open = forgotten
-      ? []
-      : (await working(db, lineOf(agents, event.agent ?? ""))).filter((job) =>
-          atRest(agents, job.agent),
-        );
-    if (!forgotten && open.length === 0) return false;
-    const people = await db.transaction().execute(async (trx) => {
-      const at = (options.now ?? (() => new Date().toISOString()))();
-      for (const job of open) {
-        await endJob(trx, job, endedWhy(agents.get(job.agent)), at);
-      }
-      const lost = forgotten
-        ? await endAll(trx, "agent_lost", at, forgotten)
-        : [];
-      await advance(trx);
-      return [...open.map((job) => job.personId), ...lost];
-    });
+    // Read in the transaction that ends them: a save meanwhile may have
+    // finished one.
+    const people = await options.record.query
+      .transaction()
+      .execute(async (trx) => {
+        const open = forgotten
+          ? []
+          : (await working(trx, lineOf(agents, event.agent ?? ""))).filter(
+              (job) => atRest(agents, job.agent),
+            );
+        const at = (options.now ?? (() => new Date().toISOString()))();
+        for (const job of open) {
+          await endJob(trx, job, endedWhy(agents.get(job.agent)), at);
+        }
+        const lost = forgotten
+          ? await endAll(trx, "agent_lost", at, forgotten)
+          : [];
+        if (open.length === 0 && !forgotten) return undefined;
+        await advance(trx);
+        return [...open.map((job) => job.personId), ...lost];
+      });
+    if (people === undefined) return false;
     for (const person of new Set(people)) options.documents?.(person);
     return true;
   };
