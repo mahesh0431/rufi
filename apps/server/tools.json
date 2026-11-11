@@ -3000,7 +3000,8 @@
       "examples": [
         {
           "to": "parent",
-          "text": "Page 3 is cut off. Shall I read the rest?"
+          "text": "Page 3 is cut off. Shall I read the rest?",
+          "asks": true
         }
       ]
     },

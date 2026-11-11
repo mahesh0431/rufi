@@ -197,7 +197,11 @@ export const sendAgent = defineTool({
   readOnly: false,
   destructive: false,
   examples: [
-    { to: "parent", text: "Page 3 is cut off. Shall I read the rest?" },
+    {
+      to: "parent",
+      text: "Page 3 is cut off. Shall I read the rest?",
+      asks: true,
+    },
   ],
   run: (input, { agents, callId }) => {
     if (!agents || callId === undefined) throw outside();
