@@ -18,16 +18,14 @@ CREATE TABLE agents (
   provider_ref TEXT,             -- its provider conversation, once one is open
   conversation INTEGER NOT NULL DEFAULT 0, -- that conversation's number: 1 for the first, one more each time a new one replaces it, 0 before any
   admitted INTEGER NOT NULL DEFAULT 0 CHECK (admitted IN (0, 1)), -- 1 once the host keeps its owner: an agent not admitted never runs
-  status TEXT NOT NULL DEFAULT 'idle' CHECK (status IN ('idle', 'running', 'continuing', 'waiting', 'done', 'stopped', 'failed')), -- idle: not started yet; continuing: its turn was cut by a restart and it goes on; waiting: as `waiting` says; done: finished
-  waiting TEXT CHECK (waiting IN ('asked', 'signed_out')), -- what a waiting agent waits for: the answer to its question to its parent, or a sign-in to start
+  status TEXT NOT NULL DEFAULT 'idle' CHECK (status IN ('idle', 'running', 'continuing', 'done', 'stopped', 'failed')), -- idle: no turn yet; continuing: its turn was cut by a restart and it goes on
   result TEXT,                   -- its latest result: its last answer, or why it stopped or failed
   stopped_by TEXT,               -- who stopped it, as the host names them: the person, an agent's id, a restart
   continues INTEGER NOT NULL DEFAULT 0, -- automatic continues in a row, after restarts
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   CHECK ((parent_id IS NULL) = (root_id = id)),
-  CHECK ((status = 'stopped') = (stopped_by IS NOT NULL)),
-  CHECK ((status = 'waiting') = (waiting IS NOT NULL))
+  CHECK ((status = 'stopped') = (stopped_by IS NOT NULL))
 ) STRICT;
 
 CREATE INDEX agents_parent ON agents (parent_id);
