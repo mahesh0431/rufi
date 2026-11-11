@@ -10,7 +10,7 @@ description: When a change is a lab result or a measurement, or the user moves o
 - An amended result, or a document's correction, keeps the category of the result it replaces; give another only when the user agreed.
 - To move a result to the other page ("that's a measurement"), propose a change of its category alone on the same result: its values, date and sources stay, also for a result read from a document. Saving a document's item as another source never changes a category: if the user also wants the result moved, say so and move it in a second save after the first.
 - A measurement's date is the day it was taken, never a report's collection date. When a measurement has no date of its own, ask the user when it was taken, at the precision they know.
-- When a result you save has the test, day and value of one already saved, Rufi saves nothing and warns, naming the saved one with its time and sources. Decide from those which it is: the same result read again stays out (a document's item can become another source of it); another reading is saved with save_anyway. Ask the user only when you can't tell.
+- When a result you save has the test, day and value of one already saved, Rufi saves nothing and warns, naming the saved one with its time and sources. Decide from those which it is: the same result read again stays out (a document's item can become another source of it); another reading, or a correction the user agreed to that goes back to a value saved before, is saved with save_anyway. Ask the user only when you can't tell.
 
 ## Its test
 

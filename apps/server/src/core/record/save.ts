@@ -250,7 +250,7 @@ export const SaveInput = Schema.Struct({
   save_anyway: Schema.optionalKey(
     Schema.Boolean.annotate({
       description:
-        "true only after Rufi warned that a result of this save is already saved and you decided it is another reading: saves it anyway. For this call only.",
+        "true only after Rufi warned that a result of this save is already saved and you decided it is another reading, or a correction the user agreed to that goes back to a value saved before: saves it anyway. For this call only.",
     }),
   ),
 }).check(
@@ -996,7 +996,7 @@ async function repeatsOf(
       at: change.at,
       item: change.item?.id,
       adding: `${change.kind.label(columns)} on ${shownDate(measured)}`,
-      fix: `Already saved: ${named.join("; ")}. If this is the same result read again, leave it out${change.item ? ", or save the item as another_source of that result" : ""}. If it is another reading, save again with save_anyway: true. Ask the user only when you can't tell.`,
+      fix: `Already saved: ${named.join("; ")}. If this is the same result read again, leave it out${change.item ? ", or save the item as another_source of that result" : ""}. If it is another reading, or a correction the user agreed to that goes back to a value saved before, save again with save_anyway: true. Ask the user only when you can't tell.`,
     });
   }
   return repeats;
