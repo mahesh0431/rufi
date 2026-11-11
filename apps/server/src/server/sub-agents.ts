@@ -180,7 +180,7 @@ export function subAgents(deps: {
         };
       },
 
-      send: async ({ to, text, kind = "steer", documents }, callId) => {
+      send: async ({ to, text, kind = "steer", documents, asks }, callId) => {
         const self = agents.get(scope.agent);
         const target =
           to === "parent" ? (self?.parent ?? undefined) : reachable(to)?.id;
@@ -201,12 +201,16 @@ export function subAgents(deps: {
         const again = agents.input(callId) !== undefined;
         // The message waits first, so its agent isn't at rest when the job
         // opens (rufi-ai.ts ends a job whose agents all are).
+        // A question to its parent: it waits for the answer once its turn ends.
+        const asked = to === "parent" && asks === true;
         agents.send(target, {
           id: callId,
           sender: scope.agent,
           kind,
-          parts: [`${self.title} (${self.id}) writes:\n\n${text}`],
-          about: "wrote",
+          parts: [
+            `${self.title} (${self.id}) ${asked ? "asks" : "writes"}:\n\n${text}`,
+          ],
+          about: asked ? "asked" : "wrote",
           said: text,
         });
         if (given.length > 0 && !again) {

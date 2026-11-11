@@ -78,6 +78,12 @@ export const SendAgentInput = Schema.Struct({
     }),
   ),
   documents: Schema.optionalKey(HandOffInput),
+  asks: Schema.optionalKey(
+    Schema.Boolean.annotate({
+      description:
+        'true when you ask "parent" something and wait for its answer: if your turn ends before it answers, you show as waiting for it.',
+    }),
+  ),
 });
 export type SendAgentInput = typeof SendAgentInput.Type;
 

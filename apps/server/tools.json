@@ -2985,6 +2985,10 @@
             "minItems": 1,
             "maxItems": 100,
             "description": "The documents it reads, when its task is reading: each shows as Reading while it, or an agent it starts, reads it, until their pages are saved or they stop."
+          },
+          "asks": {
+            "type": "boolean",
+            "description": "true when you ask \"parent\" something and wait for its answer: if your turn ends before it answers, you show as waiting for it."
           }
         },
         "required": [

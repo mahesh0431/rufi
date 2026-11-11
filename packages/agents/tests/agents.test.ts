@@ -916,7 +916,7 @@ describe("an agent's status", () => {
     parts: [words],
   });
 
-  it("waits for its parent once it asked, and runs again with the answer", async () => {
+  it("waits for its parent once it asked, in its turn or by writing to it, and runs again with the answer", async () => {
     asha();
     agents.create(reader);
     agents.admit(reader.id);
@@ -941,6 +941,55 @@ describe("an agent's status", () => {
         waiting: null,
       });
     });
+
+    // Asked as send_agent asks: a message to its parent, then its turn ends.
+    agents.send(ASHA.id, {
+      id: "ask",
+      sender: reader.id,
+      kind: "steer",
+      parts: ["Reading report.pdf (agent-reader) asks:\n\nIs page 3 yours?"],
+      about: "asked",
+      said: "Is page 3 yours?",
+    });
+    fake.end(
+      String(
+        rows(
+          "SELECT provider_ref AS ref FROM agents WHERE id = ?",
+          reader.id,
+        )[0]?.["ref"],
+      ),
+    );
+    await until(() => {
+      expect(agents.get(reader.id)).toMatchObject({
+        status: "waiting",
+        waiting: "asked",
+      });
+    });
+  });
+
+  it("stays stopped when its tree is stopped while it waits for a sign-in, also once signed in", async () => {
+    asha();
+    agents.create(reader);
+    agents.admit(reader.id);
+    fake.script.signedIn = false;
+    agents.send(reader.id, task("task", "Read report.pdf."));
+    await until(() => {
+      expect(agents.get(reader.id)?.waiting).toBe("signed_out");
+    });
+
+    await agents.stop(ASHA.id, "person", { children: true });
+    expect(agents.get(reader.id)?.status).toBe("stopped");
+
+    fake.script.signedIn = true;
+    agents.signedIn();
+    await sleep(50);
+    expect(agents.get(reader.id)?.status).toBe("stopped");
+    expect(rows("SELECT state, held FROM queue WHERE id = 'task'")).toEqual([
+      { state: "waiting", held: "stopped" },
+    ]);
+    expect(rows("SELECT id FROM turns WHERE agent_id = ?", reader.id)).toEqual(
+      [],
+    );
   });
 
   it("waits for a sign-in when its start is held, its parent hears so, and it runs once signed in", async () => {

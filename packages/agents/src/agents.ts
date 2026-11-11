@@ -157,8 +157,11 @@ export interface Sent {
   kind: "steer" | "queue";
   /** What is sent; none when the host keeps the words and claims give them. */
   parts?: readonly string[];
-  /** A message one agent wrote to another (its done messages are the package's). */
-  about?: "wrote";
+  /**
+   * A message one agent wrote to another (its done messages are the
+   * package's): asked, when it asks its parent and waits for the answer.
+   */
+  about?: "wrote" | "asked";
   /** What the sending agent wrote, in its own words, without the line around them. */
   said?: string;
   /**
@@ -1272,9 +1275,20 @@ export function createAgents(options: {
         title: question.title,
         options: JSON.parse(question.options) as string[],
       }));
-      // One that asked its parent waits for the answer.
+      // One that asked its parent, in the turn or by a message it
+      // wrote it then and had no answer to since, waits for the answer.
       const asked =
-        end.status === "done" && parent !== null && questions.length > 0;
+        end.status === "done" &&
+        parent !== null &&
+        (questions.length > 0 ||
+          db
+            .prepare(
+              `SELECT 1 FROM queue ask JOIN turns ON turns.id = ?
+               WHERE ask.sender = ? AND ask.agent_id = ? AND ask.about = 'asked' AND ask.created_at >= turns.started_at
+                 AND NOT EXISTS (SELECT 1 FROM queue answer WHERE answer.agent_id = ? AND answer.sender = ? AND answer.turn_id = turns.id AND answer.created_at > ask.created_at)
+               LIMIT 1`,
+            )
+            .get(turn.id, live.id, parent, live.id, parent) !== undefined);
       const { status } = row(live.id) ?? {};
       if (status) {
         moveAgent(
@@ -2407,12 +2421,18 @@ export function createAgents(options: {
       const tree = [id, ...api.below(id)];
       for (const agent of tree) trees.set(agent, (trees.get(agent) ?? 0) + 1);
       try {
-        // What waits for any of them never goes by itself.
+        // What waits for any of them never goes by itself, nor when a
+        // hold such as a sign-in's is lifted.
         for (const agent of tree) {
           const found = get(agent);
           if (!found) continue;
           const live = liveOf(found);
-          for (const input of waitingOf(agent)) {
+          const waiting = db
+            .prepare(
+              "SELECT id FROM queue WHERE agent_id = ? AND state = 'waiting' AND held IS NOT 'stopped' ORDER BY position",
+            )
+            .all(agent) as { id: string }[];
+          for (const input of waiting) {
             move(live, input.id, "waiting", STOPPED);
           }
         }

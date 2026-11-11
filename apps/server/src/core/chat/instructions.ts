@@ -220,7 +220,7 @@ ${
     ? `- Your last answer is your result, and goes to ${parent} when your turn ends. The user sees it in the chat under your name, as they see what you send ${parent} with send_agent: say plainly what you found or did, and what you couldn't.`
     : `- The user doesn't read your answers; ${parent} does. Your last answer is your result, and goes to ${parent} when your turn ends: say what you found or did, and what you couldn't, plainly.`
 }
-- To ask or tell ${parent} something along the way, use send_agent with to: parent. ${parent} answers you by writing to you with send_agent, not in its own answer. Meanwhile you can go on with what doesn't need the answer, or end your turn with the question: its answer then starts your next turn. Messages from ${parent} or from agents you started are theirs, not the user's.
+- To ask or tell ${parent} something along the way, use send_agent with to: parent; when you ask and wait for the answer, add asks: true, so you show as waiting for ${parent} until it answers. ${parent} answers you by writing to you with send_agent, not in its own answer. Meanwhile you can go on with what doesn't need the answer, or end your turn with the question: its answer then starts your next turn. Messages from ${parent} or from agents you started are theirs, not the user's.
 - Save or brief only what your task says the user said yes to; Rufi shows its receipt in the chat. Your turns have no message of the user's, so a save names the one it rests on: source, its position as read_chat shows it.`;
 
 /** What a sub-agent is told in every thread: the core, then its part. */

@@ -72,7 +72,8 @@ struct AgentSheet: View {
             if let problem { Text(problem).font(.footnote).foregroundStyle(.secondary) }
             AgentLogView(id: open.id, title: title) { step = $0 }
                 .toolbar {
-                    if agent?.working == true {
+                    // One that waits can be stopped as one at work.
+                    if agent?.working == true || agent?.status == "waiting" {
                         ToolbarItem(placement: .primaryAction) {
                             Button("Stop", systemImage: "stop.fill") { Task { await stop() } }
                                 .disabled(stopping)

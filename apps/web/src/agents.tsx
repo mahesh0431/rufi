@@ -107,6 +107,8 @@ function Sheet({
   const [problem, setProblem] = useState<string | null>(null);
   const title = agent?.title ?? opened;
   const busy = agent !== undefined && working(agent);
+  // One that waits can be stopped as one at work.
+  const stoppable = busy || agent?.status === "waiting";
   return (
     <>
       <div className="flex items-start gap-2.5 border-b border-line px-4 py-2.5">
@@ -125,7 +127,7 @@ function Sheet({
             </p>
           )}
         </div>
-        {busy && (
+        {stoppable && (
           <Button
             icon={Square}
             busy={stopping && "Stopping…"}
