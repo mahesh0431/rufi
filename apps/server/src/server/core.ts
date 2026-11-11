@@ -300,12 +300,17 @@ export const startCore = (options: CoreOptions) =>
     const signIns = options.signIns ?? {};
     const isProvider = (id: string): id is Provider =>
       id === "codex" || id === "claude";
+    // Once a provider is signed in again, the agents' starts held as
+    // signed out go again: from when the agents may go.
+    let lift = (): void => undefined;
     // How each provider is signed in, as it last said (server/signin.ts).
     // Both end, with their providers' processes, before Rufi stops: closed
     // together, as a sign-in's last step waits on a sign-in check.
     const { signedIn, signIn } = yield* Effect.acquireRelease(
       Effect.sync(() => {
-        const kept = keptSignIns(signIns);
+        const kept = keptSignIns(signIns, undefined, () => {
+          lift();
+        });
         return {
           signedIn: kept,
           signIn: signInFlow(signIns, log, kept.refresh),
@@ -649,6 +654,14 @@ export const startCore = (options: CoreOptions) =>
       continuesAfterRestart(transcripts.setting),
     );
     yield* attempt(() => agentSystem.agents.dispatch({ continues }));
+    lift = () => {
+      agentSystem.agents.signedIn();
+    };
+    // Signed in since Rufi last ran: what was held as signed out goes.
+    const signedInNow = yield* attempt(() =>
+      Promise.all([signedIn.status("codex"), signedIn.status("claude")]),
+    );
+    if (signedInNow.some(({ state }) => state === "signed_in")) lift();
     convertLoop.start();
     yield* attempt(() => door.start());
     yield* Effect.acquireRelease(

@@ -96,9 +96,19 @@ extension Words {
     }
 
     /// An agent's line in its sheet: "running · 1:05 · GPT-6-Astra · Medium".
-    static func agent(_ agent: SubAgent, now: Date) -> String {
+    static func agent(_ agent: SubAgent, among agents: [SubAgent], now: Date) -> String {
         let elapsed = agent.working ? agent.since.flatMap(instant).map { clock(now.timeIntervalSince($0)) } : nil
-        return [agent.status, elapsed, model(agent.model), effort(agent.effort)].compactMap { $0 }.joined(separator: " · ")
+        return [status(agent, among: agents), elapsed, model(agent.model), effort(agent.effort)].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// An agent's status in words: what a waiting one waits for, the answer of
+    /// the agent that started it (Rufi AI, or one of `agents`) or a sign-in.
+    static func status(_ agent: SubAgent, among agents: [SubAgent]) -> String {
+        switch agent.waiting {
+        case "signed_out": "signed out"
+        case "asked": "waiting for \(agents.first { $0.id == agent.parent }?.title ?? "Rufi AI")"
+        default: agent.status
+        }
     }
 
     /// How a reply that didn't complete ended, as Rufi says it.

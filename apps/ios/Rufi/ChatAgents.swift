@@ -66,7 +66,7 @@ struct AgentSheet: View {
         ChatSheet(title: title) {
             if let agent {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
-                    Text(Words.agent(agent, now: context.date)).font(.footnote).foregroundStyle(.secondary)
+                    Text(Words.agent(agent, among: chat.agents, now: context.date)).font(.footnote).foregroundStyle(.secondary)
                 }
             }
             if let problem { Text(problem).font(.footnote).foregroundStyle(.secondary) }
@@ -250,7 +250,7 @@ struct SubAgentLine: View {
                     StatusSign(status: agent.map { $0.working ? "running" : $0.status } ?? "running")
                     Text(title).fontWeight(.medium).foregroundStyle(.primary).fixedSize()
                     if let agent {
-                        Text("· " + ([agent.status] + [agent.result].compactMap { $0 }).joined(separator: " · "))
+                        Text("· " + ([Words.status(agent, among: chat.agents)] + [agent.result].compactMap { $0 }).joined(separator: " · "))
                             .lineLimit(1)
                     }
                     Image(systemName: below ? "chevron.right" : "arrow.up.right")
@@ -269,7 +269,7 @@ struct SubAgentLine: View {
     }
 }
 
-/// A step's sign: running, failed, stopped, or done.
+/// A step's sign: running, failed, stopped, waiting, or done.
 struct StatusSign: View {
     let status: String?
 
@@ -278,6 +278,7 @@ struct StatusSign: View {
         case "running": ProgressView().controlSize(.mini)
         case "failed": Image(systemName: "xmark").font(.caption)
         case "stopped": Image(systemName: "square.fill").font(.system(size: 9))
+        case "waiting": Image(systemName: "hourglass").font(.caption)
         default: Image(systemName: "checkmark").font(.caption)
         }
     }

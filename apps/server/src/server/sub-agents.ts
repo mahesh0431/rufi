@@ -48,16 +48,18 @@ export const lineOf = (agents: Agents, id: string): string[] => {
 
 /**
  * Whether the agent and every agent below it have stopped working: none
- * has a turn, is running or going on, or has a message waiting that isn't
- * held (it would start a turn).
+ * has a turn, is running or going on, waits for the answer to a question
+ * it asked, or has a message waiting that isn't held (it would start a
+ * turn).
  */
 export const atRest = (agents: Agents, id: string) =>
   [id, ...agents.below(id)].every((one) => {
-    const status = agents.get(one)?.status;
+    const found = agents.get(one);
     return (
       agents.current(one) === undefined &&
-      status !== "running" &&
-      status !== "continuing" &&
+      found?.status !== "running" &&
+      found?.status !== "continuing" &&
+      found?.waiting !== "asked" &&
       agents.waiting(one).every((input) => input.held !== null)
     );
   });
@@ -171,6 +173,7 @@ export function subAgents(deps: {
               model: found.model,
               effort: found.effort,
               status: found.status,
+              ...(found.waiting !== null && { waiting: found.waiting }),
               result: found.result,
             };
           }),

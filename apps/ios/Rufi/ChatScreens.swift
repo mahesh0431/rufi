@@ -359,6 +359,7 @@ private struct AgentBubble: View {
                     Image(systemName: "cpu").accessibilityHidden(true)
                     Text(title).fontWeight(.medium).foregroundStyle(.primary)
                     if let about = entry.from?.about, about == "stopped" || about == "failed" { Text("· \(about)") }
+                    if entry.from?.about == "signed_out" { Text("· signed out") }
                 }
                 .padding(.vertical, 4)
                 .contentShape(.rect)

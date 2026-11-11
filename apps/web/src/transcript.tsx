@@ -27,6 +27,7 @@ import {
   ChevronRight,
   ChevronsUp,
   FileText,
+  Hourglass,
   LoaderCircle,
   RotateCw,
   Square,
@@ -74,6 +75,7 @@ import { KeepPlace, Visual, VisualWaiting } from "./visual.tsx";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
 import {
   openAgent,
+  statusWords,
   useChatAgents,
   useElapsed,
   working,
@@ -1138,9 +1140,8 @@ const InPopup = createContext(false);
 function SubAgentLine({ id, reported }: { id: string; reported: string }) {
   const personId = use(Whose);
   const below = use(InPopup);
-  const agent = useChatAgents(personId).data?.agents.find(
-    (one) => one.id === id,
-  );
+  const agents = useChatAgents(personId).data?.agents;
+  const agent = agents?.find((one) => one.id === id);
   const [open, setOpen] = useState(false);
   const log = useId();
   const title = agent?.title ?? reported;
@@ -1169,7 +1170,7 @@ function SubAgentLine({ id, reported }: { id: string; reported: string }) {
         {agent && (
           // Its status stays in view; a long result is cut at the end.
           <span className="min-w-0 truncate">
-            {` · ${[agent.status, agent.result ?? []].flat().join(" · ")}`}
+            {` · ${[statusWords(agent, agents), agent.result ?? []].flat().join(" · ")}`}
           </span>
         )}
         {below ? (
@@ -1251,6 +1252,7 @@ function AgentMessage({ entry }: { entry: Entry }) {
           {title}
         </button>
         {(about === "stopped" || about === "failed") && <span>· {about}</span>}
+        {about === "signed_out" && <span>· signed out</span>}
       </p>
       {entry.text !== "" && (
         <>
@@ -1483,6 +1485,7 @@ const STATUS_WORDS = {
   done: "done",
   failed: "failed",
   stopped: "stopped",
+  waiting: "waiting",
 } as const;
 
 function ActivityIcon({
@@ -1507,6 +1510,8 @@ function StatusSign({ status }: { status: keyof typeof STATUS_WORDS | null }) {
     <X size={13} className="shrink-0" aria-hidden />
   ) : status === "stopped" ? (
     <Square size={11} className="shrink-0" aria-hidden />
+  ) : status === "waiting" ? (
+    <Hourglass size={12} className="shrink-0" aria-hidden />
   ) : (
     <Check size={13} className="shrink-0" aria-hidden />
   );
