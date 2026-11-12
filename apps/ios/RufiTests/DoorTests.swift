@@ -28,14 +28,21 @@ struct DoorTests {
         }
     }
 
-    /// Tailscale answers a gateway error, without Rufi's words, when Rufi
-    /// isn't running on the Mac: Rufi can't be reached. Rufi's own 502 keeps
-    /// its words.
-    @Test func tailscalesGatewayErrorIsUnreachable() async {
+    /// A gateway answers its own error, without Rufi's words, when nothing
+    /// answers behind it: Tailscale's 502 when Rufi isn't running on the Mac,
+    /// Cloudflare's 530 (error 1033) when its tunnel is down, as when the Mac
+    /// sleeps. Rufi can't be reached. Rufi's own 502 keeps its words.
+    @Test func gatewaysOwnErrorsAreUnreachable() async {
         func door(_ host: String) -> Door { Door(origin: URL(string: "https://\(host)")!, key: "a-key") }
 
         await #expect(throws: Door.Problem.unreachable) {
             try await door("stopped.test").me()
+        }
+        await #expect(throws: Door.Problem.unreachable) {
+            try await door("tunnel-down.test").me()
+        }
+        await #expect(throws: Door.Problem.unreachable) {
+            try await door("origin-gone.test").open("/people/asha/chat")
         }
         await #expect(throws: Door.Problem.refused("The AI couldn't do that.")) {
             try await door("rufi.test").open("/people/asha/chat")
@@ -46,6 +53,21 @@ struct DoorTests {
         }
         await #expect(throws: Door.Problem.refused("The AI couldn't do that.")) {
             try await door("rufi.test").send(message, for: "asha")
+        }
+    }
+
+    /// Cloudflare refuses an add larger than its limit before Rufi sees it:
+    /// one line, no number (the limit is the person's plan's). Rufi's own
+    /// 413 keeps its words.
+    @Test func aProxysTooLargeSaysSo() async {
+        func door(_ host: String) -> Door { Door(origin: URL(string: "https://\(host)")!, key: "a-key") }
+        let photo = Door.Upload(name: "report.jpg", type: "image/jpeg", data: Data("fictional".utf8))
+
+        await #expect(throws: Door.Problem.refused(Door.tooLarge)) {
+            _ = try await door("too-large.test").add(person: "asha", files: [photo], together: false)
+        }
+        await #expect(throws: Door.Problem.refused("Those files are too large to add at once (256 MB at most). Add fewer at a time.")) {
+            _ = try await door("rufi-too-large.test").add(person: "asha", files: [photo], together: false)
         }
     }
 
@@ -131,6 +153,11 @@ nonisolated final class StandInDoor: URLProtocol, @unchecked Sendable {
             (422, #"{"answer":"refused","problems":["no_batch_id"],"error":"Rufi on your Mac refused a batch (no_batch_id)."}"#)
         case ("/api/batches", _): (404, #"{"error":"Not found."}"#)
         case (_, "stopped.test"): (502, "")
+        case (_, "tunnel-down.test"): (530, "<html>error code: 1033</html>")
+        case (_, "origin-gone.test"): (522, "<html>Connection timed out</html>")
+        case (_, "too-large.test"): (413, "<html>413 Request Entity Too Large</html>")
+        case (_, "rufi-too-large.test"):
+            (413, #"{"error":"Those files are too large to add at once (256 MB at most). Add fewer at a time."}"#)
         case (_, "rufi.test"): (502, #"{"error":"The AI couldn't do that."}"#)
         case ("/api/pair", _): (410, #"{"error":"That code was used or is too old.","problem":"code_expired"}"#)
         case ("/api/me", _): (401, #"{"error":"This iPhone isn't paired.","problem":"unpaired"}"#)

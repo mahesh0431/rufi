@@ -482,6 +482,34 @@ test("in the iPhone app, what the app adds from its box comes back as a chip, ev
   expect((await phone.boxes()).some((m) => m["text"] === "")).toBe(false);
 });
 
+test("in the iPhone app, Cloudflare's own page when its tunnel is down (530, error 1033) tells the app Rufi can't be reached", async ({
+  page,
+  rufi,
+}) => {
+  await rufi.family();
+  await rufi.start();
+  await asPhone(page);
+  const phone = app(page);
+  await page.goto(rufi.link());
+  await expect
+    .poll(phone.told)
+    .toContainEqual({ type: "page", path: "/", title: "Overview", box: "bar" });
+
+  // The Mac sleeps behind Cloudflare: its edge answers with its own page.
+  await page.route("**/api/**", (route) =>
+    route.fulfill({
+      status: 530,
+      contentType: "text/html",
+      body: "<html>error code: 1033</html>",
+    }),
+  );
+  await phone.open("/people/asha/record/lab_result");
+  await expect
+    .poll(phone.told)
+    .toContainEqual({ type: "connection", reachable: false });
+  await expect(page.getByText("Rufi can't be reached.")).toHaveCount(0);
+});
+
 test("in the iPhone app, Rufi not running behind Tailscale tells the app it can't be reached, with no line on the page and no retries of its own, and the app's reconnect reads the page again", async ({
   page,
   rufi,
