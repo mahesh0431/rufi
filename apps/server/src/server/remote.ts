@@ -1,15 +1,19 @@
 // The remote door (docs/adr/0032): a second listener, on 127.0.0.1 at a port
-// of its own, that paired apps reach through Tailscale Serve. It has the
-// shared protections of every listener (http.ts) with its own checks: the
-// Mac's tailnet name as Host, and who is asking. Each route is in one
+// of its own, that paired apps reach through its route (remote-route.ts),
+// Tailscale Serve unless another is chosen. It has the shared protections of
+// every listener (http.ts) with its own checks: the route's address as Host,
+// and who is asking. Each route is in one
 // class: public (the screens' files), a pairing code, a launch token, the
 // app's key, or the key or the app's session; everything else is 404, and
 // so is another person's route. A paired app's Apple Health batches come in
 // by its key only, into its own device source under its person. It runs while an app is paired or a
 // pairing code is live. A pairing code lives in memory only: single use,
 // 10 minutes, one at a time.
+import { execFile } from "node:child_process";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { AddressInfo, Socket } from "node:net";
+import { hostname } from "node:os";
+import { promisify } from "node:util";
 import { serve, type HttpBindings, type ServerType } from "@hono/node-server";
 import type { Status } from "@rufi/contracts";
 import {
@@ -31,18 +35,29 @@ import { errorCode, type Log } from "../platform/logs.ts";
 import { PROOF_HEADER, screensRoute, type SettingsReads } from "./api.ts";
 import { body, HttpError, shared, type App } from "./http.ts";
 import { personRoutes, type PersonDeps } from "./person-routes.ts";
+import {
+  ROUTE_SETTING,
+  RouteProblem,
+  routeKind,
+  type RemoteRoute,
+  type Routes,
+} from "./remote-route.ts";
 import { appSessions } from "./session.ts";
-import { TailscaleProblem, type Tailscale } from "./tailscale.ts";
 import { visualCardRoute, visualFrameRoute } from "./visual-frame.ts";
 
 /** How long a pairing code works. */
 const CODE_MS = 10 * 60 * 1000;
+/**
+ * How long the check through the route may take: the first HTTPS request on
+ * a name gets its certificate, and a tunnel takes a moment to connect.
+ */
+const CHECK_MS = 30_000;
+/** How soon the check asks again while what answers isn't Rufi. */
+const RECHECK_MS = 2_000;
 
-/** The door's address and port, kept at a pairing, so Serve's route and the apps' links stay. */
+/** The door's address and port, kept at a pairing, so the route and the apps' links stay. */
 const HOST_SETTING = "remote.host";
 const PORT_SETTING = "remote.port";
-/** The port Rufi asked Serve to pass on: its own route, removed when nothing needs it. */
-const SERVED_SETTING = "remote.served";
 
 const hashOf = (text: string) => createHash("sha256").update(text).digest();
 
@@ -53,7 +68,12 @@ export interface RemoteDeps {
   setting: (key: string) => Promise<string | undefined>;
   /** Saves a setting; null removes it. */
   saveSetting: (key: string, value: string | null) => Promise<void>;
-  tailscale: Tailscale;
+  /** The routes the door can be reached by; `remote.route` names the one in use. */
+  routes: Routes;
+  /** Asks a URL, as `fetch` does: the check that the route reaches the door. */
+  reach?: Reach;
+  /** This Mac's own name, as the paired apps show it. */
+  macName: () => Promise<string>;
   /**
    * Keeps each answer in the core's work: Rufi finishes it before closing
    * the record and letting the data folder go, as the screens' answers.
@@ -81,17 +101,38 @@ export interface Remote {
   /** What Settings › iPhone shows. */
   state: () => Promise<Listed>;
   /**
-   * The Tailscale steps, then a new code for `personId`'s record; any older
-   * code goes. Refused with one line on what to do when a step fails.
+   * The route's steps and the check through it, then a new code for
+   * `personId`'s record; any older code goes. Refused with one line on what
+   * to do when a step fails.
    */
   pair: (personId: string) => Promise<Pairing>;
   /** The live code goes. */
   cancel: () => Promise<void>;
   /** Revokes the app; false when it isn't paired. */
   unpair: (appId: string) => Promise<boolean>;
-  /** Closes the door, its connections too; Serve's route stays. */
+  /** Closes the door, its connections too; a route that outlives Rufi stays. */
   close: () => Promise<void>;
 }
+
+/**
+ * This Mac's own name, as System Settings › General › Sharing shows it;
+ * its network name when macOS doesn't say.
+ */
+export async function computerName(): Promise<string> {
+  const named = await promisify(execFile)(
+    "/usr/sbin/scutil",
+    ["--get", "ComputerName"],
+    { timeout: 5_000 },
+  ).then(
+    ({ stdout }) => stdout.trim(),
+    // Not macOS, or no name set: the network name.
+    () => "",
+  );
+  return named !== "" ? named : hostname().replace(/\.local$/, "");
+}
+
+/** Asks `url` as `fetch` does. */
+export type Reach = (url: string, init: RequestInit) => Promise<Response>;
 
 /** A request on the door. */
 type DoorContext = Context<{ Bindings: HttpBindings }>;
@@ -202,13 +243,14 @@ export function remote(deps: RemoteDeps): Remote {
     return found.app;
   };
 
-  /** The Mac's name for the app: the first part of its tailnet name. */
-  const mac = () => (host ?? "").split(".")[0] ?? "";
+  /** The Mac's name for the app, read once. */
+  let macName: Promise<string> | undefined;
+  const mac = () => (macName ??= deps.macName());
 
   const door: App = new Hono();
   const { adds } = shared(door, {
     log,
-    // Only by the Mac's tailnet name, as Serve passes it on; a page may
+    // Only by the route's address, as the route passes it on; a page may
     // call only from the door's own origin.
     guard: async (c, next) => {
       if (host === undefined || c.req.header("host") !== host) {
@@ -241,7 +283,7 @@ export function remote(deps: RemoteDeps): Remote {
       void inTurn(() => settle());
     });
     log("remote.paired");
-    return c.json({ ...added, mac: mac() } satisfies Paired);
+    return c.json({ ...added, mac: await mac() } satisfies Paired);
   });
 
   // The app's web view swaps a launch token for a new session of that app.
@@ -336,17 +378,15 @@ export function remote(deps: RemoteDeps): Remote {
     await next();
   });
 
-  door.get("/api/me", (c) => {
+  door.get("/api/me", async (c) => {
     const { app } = asker(c);
-    return apps.folder().then((folder) =>
-      c.json({
-        person: app.person,
-        mac: mac(),
-        folder: folder ?? "",
-        place: "phone",
-        api: REMOTE_API,
-      } satisfies PhoneMe),
-    );
+    return c.json({
+      person: app.person,
+      mac: await mac(),
+      folder: (await apps.folder()) ?? "",
+      place: "phone",
+      api: REMOTE_API,
+    } satisfies PhoneMe);
   });
   door.get("/api/settings", async (c) => c.json(await deps.read.settings(c)));
   door.get("/api/status", async (c) => c.json(await deps.account()));
@@ -466,26 +506,86 @@ export function remote(deps: RemoteDeps): Remote {
   const unneeded = async () =>
     !code && pairing === 0 && (await apps.list()).length === 0;
 
-  /** Removes Rufi's own Serve route, when it set one; no other. */
-  const unserve = async () => {
-    const served = Number(await deps.setting(SERVED_SETTING));
-    if (!Number.isInteger(served) || served <= 0) return;
+  /** The route in use. */
+  const route = async (): Promise<RemoteRoute> =>
+    deps.routes[routeKind(await deps.setting(ROUTE_SETTING))];
+
+  /** Takes down what the route set, and only that. */
+  const unroute = async () => {
     try {
-      await deps.tailscale.off(served);
-      await deps.saveSetting(SERVED_SETTING, null);
+      await (await route()).down();
     } catch (error) {
       log("remote.failed", { error: errorCode(error) });
     }
   };
 
   /**
-   * With no app paired and no code live, the door closes and its Serve
-   * route goes; `cut` ends its open answers too (unpaired on the Mac).
+   * With no app paired and no code live, the door closes and its route
+   * goes; `cut` ends its open answers too (unpaired on the Mac).
    */
   const settle = async (cut = false) => {
     if (!(await unneeded())) return;
     await shut(cut);
-    await unserve();
+    await unroute();
+  };
+
+  /**
+   * The door answers through the route at `origin`: proves the address, its
+   * certificate, the route and the door together. Only Rufi's own answer to
+   * a used-up code passes. While what answers isn't Rufi (no connection
+   * yet, the route's own error page), it asks again until its deadline.
+   */
+  const reachSelf = async (origin: string, label: string) => {
+    const reach: Reach = deps.reach ?? ((url, init) => fetch(url, init));
+    const until = Date.now() + CHECK_MS;
+    const fails = (why: string, cause?: unknown) =>
+      new RouteProblem(
+        `Rufi couldn't reach itself through ${label} (${why}). Try again in a minute.`,
+        { cause },
+      );
+    for (;;) {
+      let answer: {
+        status: number;
+        said: { error?: unknown; problem?: unknown };
+      };
+      try {
+        const response = await reach(`${origin}/api/pair`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ code: "check", name: "check" }),
+          redirect: "error",
+          signal: AbortSignal.timeout(Math.max(until - Date.now(), 1)),
+        });
+        answer = {
+          status: response.status,
+          said: ((await response.json().catch(() => ({}))) ?? {}) as {
+            error?: unknown;
+          },
+        };
+      } catch (error) {
+        if (Date.now() + RECHECK_MS >= until) {
+          throw fails(
+            (error as Error).name === "TimeoutError"
+              ? "no answer in time"
+              : "no answer",
+            error,
+          );
+        }
+        await new Promise((resolve) => setTimeout(resolve, RECHECK_MS));
+        continue;
+      }
+      if (answer.status === 410 && answer.said.problem === "code_expired") {
+        return;
+      }
+      // Rufi's own words: it answered, and not as the check needs.
+      if (
+        typeof answer.said.error === "string" ||
+        Date.now() + RECHECK_MS >= until
+      ) {
+        throw fails(`it answered ${String(answer.status)}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, RECHECK_MS));
+    }
   };
 
   const savedPort = async () => {
@@ -498,14 +598,17 @@ export function remote(deps: RemoteDeps): Remote {
       inTurn(async () => {
         // Nothing paired: a route left by a Rufi that stopped mid-pairing goes.
         if ((await apps.list()).length === 0) {
-          await unserve();
+          await unroute();
           return;
         }
         host = await deps.setting(HOST_SETTING);
-        await open(await savedPort()).catch((error: unknown) => {
+        try {
+          const at = await open(await savedPort());
+          await (await route()).resume(at);
+        } catch (error) {
           // Rufi runs on; Settings › iPhone says what to do.
           trouble = (error as Error).message;
-        });
+        }
       }),
 
     state: async () => ({
@@ -528,19 +631,14 @@ export function remote(deps: RemoteDeps): Remote {
           throw new HttpError(404, "That person isn't in this record.");
         }
         try {
-          const name = await deps.tailscale.name();
+          const using = await route();
           const at = await open(await savedPort());
-          host = `${name}:${String(at)}`;
+          host = await using.up(at);
           await deps.saveSetting(HOST_SETTING, host);
-          await deps.tailscale.serve(at);
-          await deps.saveSetting(SERVED_SETTING, String(at));
-          await deps.tailscale.check(`https://${host}`, async (response) => {
-            const answer = (await response.json()) as { problem?: unknown };
-            return response.status === 410 && answer.problem === "code_expired";
-          });
+          await reachSelf(`https://${host}`, using.label);
         } catch (error) {
           await settle(true);
-          if (error instanceof TailscaleProblem) {
+          if (error instanceof RouteProblem) {
             throw new HttpError(409, error.message);
           }
           throw error;
@@ -582,16 +680,22 @@ export function remote(deps: RemoteDeps): Remote {
       return revoked;
     },
 
-    // Quitting: with an app paired, Serve's route stays for the next start;
-    // with none, it goes.
+    // Quitting: with an app paired, a route that outlives Rufi stays for
+    // the next start, and the rest ends; with none, it goes.
     close: () =>
       inTurn(async () => {
         dropCode();
         // A record already closed (Rufi lost its lock) can't say: the next
         // start removes the route then.
         await (async () => {
-          if (await unneeded()) await unserve();
+          if (await unneeded()) await unroute();
         })().catch(() => undefined);
+        // What can't outlive Rufi ends, whichever route was in use.
+        for (const each of Object.values(deps.routes)) {
+          await each.close().catch((error: unknown) => {
+            log("remote.failed", { error: errorCode(error) });
+          });
+        }
         await shut(true);
       }),
   };

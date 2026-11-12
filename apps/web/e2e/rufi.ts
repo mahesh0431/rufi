@@ -42,10 +42,8 @@ import {
   type Core,
 } from "../../server/src/server/core.ts";
 import type { ProviderSignIn } from "../../server/src/server/signin.ts";
-import {
-  TailscaleProblem,
-  type Tailscale,
-} from "../../server/src/server/tailscale.ts";
+import type { Reach } from "../../server/src/server/remote.ts";
+import type { Tailscale } from "../../server/src/server/tailscale.ts";
 
 const SERVER = join(import.meta.dirname, "../../server");
 const FAKE = join(SERVER, "tests/fake-codex.ts");
@@ -82,8 +80,8 @@ export class Rufi {
   readonly shown: string[] = [];
   /**
    * What Tailscale was asked ("serve <port>", "off <port>"). No real
-   * `tailscale` runs: Rufi gets a Mac signed in with HTTPS on, and the check
-   * through Serve reaches the door as Serve would.
+   * `tailscale` runs: Rufi gets a Mac signed in with HTTPS on, and the
+   * door's check through Serve reaches the door as Serve would.
    */
   readonly tailscale: string[] = [];
   /** While set, the check through Serve waits for it: a slow first certificate. */
@@ -130,6 +128,8 @@ export class Rufi {
       source?: FolderSource;
       /** Tailscale; when not given, a stand-in that serves nothing. */
       tailscale?: Tailscale;
+      /** The door's check; when not given, as Serve would pass it on. */
+      reach?: Reach;
     } = {},
   ): Promise<Core> {
     const { port } = options;
@@ -170,6 +170,8 @@ export class Rufi {
           },
         },
         tailscale: options.tailscale ?? this.#tailscale(),
+        reach: options.reach ?? ((url, init) => this.#throughServe(url, init)),
+        macName: () => Promise.resolve("Asha's MacBook Pro"),
         ...(port !== undefined && { port }),
         ...(options.now !== undefined && { now: options.now }),
       }).pipe(Scope.provide(scope)),
@@ -189,33 +191,34 @@ export class Rufi {
         this.tailscale.push(`off ${String(port)}`);
         return Promise.resolve();
       },
-      check: async (origin, answers) => {
-        await this.holdCheck;
-        const { host, port } = new URL(origin);
-        const response = await new Promise<Response>((resolve, reject) => {
-          const sent = request(
-            {
-              host: "127.0.0.1",
-              port: Number(port),
-              method: "POST",
-              path: "/api/pair",
-              headers: { host, "content-type": "application/json" },
-            },
-            (answer) => {
-              let text = "";
-              answer.setEncoding("utf8");
-              answer.on("data", (chunk: string) => (text += chunk));
-              answer.on("end", () => {
-                resolve(new Response(text, { status: answer.statusCode }));
-              });
-            },
-          );
-          sent.on("error", reject);
-          sent.end(JSON.stringify({ code: "check", name: "check" }));
-        });
-        if (!(await answers(response))) throw new TailscaleProblem("no");
-      },
     };
+  }
+
+  /** The door's check, as Serve passes it on, with the address's Host. */
+  async #throughServe(url: string, init: RequestInit) {
+    await this.holdCheck;
+    const { host, port } = new URL(url);
+    return new Promise<Response>((resolve, reject) => {
+      const sent = request(
+        {
+          host: "127.0.0.1",
+          port: Number(port),
+          method: "POST",
+          path: "/api/pair",
+          headers: { host, "content-type": "application/json" },
+        },
+        (answer) => {
+          let text = "";
+          answer.setEncoding("utf8");
+          answer.on("data", (chunk: string) => (text += chunk));
+          answer.on("end", () => {
+            resolve(new Response(text, { status: answer.statusCode }));
+          });
+        },
+      );
+      sent.on("error", reject);
+      sent.end(typeof init.body === "string" ? init.body : "");
+    });
   }
 
   /** A provider's sign-in as the test says it stands. */

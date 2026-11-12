@@ -1,6 +1,7 @@
 // The remote door as a paired app, its web view and Settings › iPhone meet
 // it: the core started on a fictional data folder, with Tailscale stood in
-// for (no real `tailscale` runs), its check reaching the door as Serve would.
+// for (no real `tailscale` runs), and the door's check reaching it as Serve
+// would.
 import { createHash, randomUUID } from "node:crypto";
 import fs, { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { request as httpRequest, type IncomingMessage } from "node:http";
@@ -17,7 +18,9 @@ import { databasePath, openWritable } from "../core/store/database.ts";
 import { holdRufiLock } from "../platform/files.ts";
 import { PROOF_HEADER } from "./api.ts";
 import { agentSetup, startCore, type Core } from "./core.ts";
-import { TailscaleProblem, type Tailscale } from "./tailscale.ts";
+import type { Reach } from "./remote.ts";
+import { RouteProblem } from "./remote-route.ts";
+import type { Tailscale } from "./tailscale.ts";
 
 const FAKE = join(import.meta.dirname, "../../tests/fake-codex.ts");
 const DOCUMENTS = join(import.meta.dirname, "../../tests/fixtures/documents");
@@ -27,6 +30,7 @@ const PHONE_BATCH = join(
   "../../tests/fixtures/device/phone-batch.json",
 );
 const NAME = "asha-mbp.tail1234.ts.net";
+const MAC = "Asha's MacBook Pro";
 
 let home: string;
 let scope: Scope.Closeable | undefined;
@@ -102,27 +106,29 @@ const standIn = (more: Partial<Tailscale> = {}): Tailscale => ({
     asked.push(`off ${String(port)}`);
     return Promise.resolve();
   },
-  // Serve passes the request on with its Host, as it came.
-  check: async (origin, answers) => {
-    const { host, port } = new URL(origin);
-    const answer = await call(
-      Number(port),
-      "POST",
-      "/api/pair",
-      { host },
-      { code: "check", name: "check" },
-    );
-    const response = new Response(JSON.stringify(answer.body), {
-      status: answer.status,
-    });
-    if (!(await answers(response))) throw new TailscaleProblem("no answer");
-  },
   ...more,
 });
+
+/**
+ * The door's check, as Serve passes it on: to the door's port on
+ * 127.0.0.1, with the address's Host as it came.
+ */
+const throughServe: Reach = async (url, init) => {
+  const { host, port, pathname } = new URL(url);
+  const answer = await call(
+    Number(port),
+    init.method ?? "GET",
+    pathname,
+    { host },
+    typeof init.body === "string" ? init.body : undefined,
+  );
+  return new Response(JSON.stringify(answer.body), { status: answer.status });
+};
 
 async function start(
   tailscale: Tailscale = standIn(),
   screens?: string,
+  reach: Reach = throughServe,
 ): Promise<Core> {
   const opened = await Effect.runPromise(Scope.make());
   const core = await Effect.runPromise(
@@ -139,6 +145,8 @@ async function start(
       ],
       log: (event) => logged.push(event),
       tailscale,
+      reach,
+      macName: () => Promise.resolve(MAC),
       ...(screens !== undefined && { screens }),
     }).pipe(Scope.provide(opened)),
   );
@@ -376,14 +384,14 @@ describe("pairing", () => {
     expect(paired.body).toMatchObject({
       app: { id: expect.any(String) as string },
       person: { id: "asha", name: "Asha Fictional" },
-      mac: "asha-mbp",
+      mac: MAC,
     });
     const key = String(paired.body["key"]);
     const me = await door(port, "GET", "/api/me", { key });
     expect(me.status).toBe(200);
     expect(me.body).toEqual({
       person: { id: "asha", name: "Asha Fictional" },
-      mac: "asha-mbp",
+      mac: MAC,
       folder: paired.body["folder"],
       place: "phone",
       api: 1,
@@ -463,7 +471,7 @@ describe("pairing", () => {
       standIn({
         serve: () =>
           Promise.reject(
-            new TailscaleProblem(
+            new RouteProblem(
               "Tailscale couldn't serve Rufi: Serve is not enabled on your tailnet.",
             ),
           ),
@@ -480,6 +488,66 @@ describe("pairing", () => {
       "Tailscale couldn't serve Rufi: Serve is not enabled on your tailnet.",
     );
     expect((await api("GET", "/api/paired-apps")).body["pairing"]).toBeNull();
+  });
+});
+
+describe("the check through the route", () => {
+  it("asks again while what answers isn't Rufi, as a tunnel still connecting, and shows the code once Rufi answers", async () => {
+    let early = 2;
+    const connecting: Reach = (url, init) => {
+      if (early > 0) {
+        early -= 1;
+        // The route's own error page, without Rufi's words.
+        return Promise.resolve(
+          new Response("error code: 1033", { status: 530 }),
+        );
+      }
+      return throughServe(url, init);
+    };
+    const api = await settings(await start(standIn(), undefined, connecting));
+
+    const made = await api("POST", "/api/paired-apps/pairing", {
+      personId: "asha",
+    });
+
+    expect(made.status).toBe(200);
+    expect(early).toBe(0);
+    expect(made.body["pairing"]).toMatchObject({
+      link: expect.stringMatching(
+        /^https:\/\/asha-mbp\.tail1234\.ts\.net:\d+\/pair#code=/,
+      ) as string,
+    });
+  });
+
+  it("fails at once, with no code and nothing left open, when Rufi answers at another address than the route's", async () => {
+    // The route passes on a Host the door wasn't told: Rufi refuses it.
+    const elsewhere: Reach = async (url, init) => {
+      const { port, pathname } = new URL(url);
+      const answer = await call(
+        Number(port),
+        init.method ?? "GET",
+        pathname,
+        { host: `elsewhere.test:${port}` },
+        typeof init.body === "string" ? init.body : undefined,
+      );
+      return new Response(JSON.stringify(answer.body), {
+        status: answer.status,
+      });
+    };
+    const api = await settings(await start(standIn(), undefined, elsewhere));
+    const began = Date.now();
+
+    const made = await api("POST", "/api/paired-apps/pairing", {
+      personId: "asha",
+    });
+
+    expect(made.status).toBe(409);
+    expect(made.body["error"]).toBe(
+      "Rufi couldn't reach itself through Tailscale (it answered 403). Try again in a minute.",
+    );
+    expect(Date.now() - began).toBeLessThan(2_000);
+    expect((await api("GET", "/api/paired-apps")).body["pairing"]).toBeNull();
+    expect(asked.at(-1)).toMatch(/^off \d+$/);
   });
 });
 

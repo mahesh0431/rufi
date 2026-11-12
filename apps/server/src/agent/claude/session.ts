@@ -54,10 +54,11 @@ const TOOLS = [
 /** The name Claude knows Rufi's plugin by: its skills are `rufi:<name>`. */
 const PLUGIN = "rufi";
 
-/** Claude Code's own plugins (2.1.312), off like everything not Rufi's. */
+/** Claude Code's own plugins (2.1.322), off like everything not Rufi's. */
 const BUILT_IN_PLUGINS = [
   "cc-plugin-agents-md",
   "cc-plugin-telemetry",
+  "cc-plugin-privacy",
   "cc-plugin-plugin-authoring",
 ];
 
