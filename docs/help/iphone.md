@@ -137,6 +137,7 @@ Settings says what went wrong in one line, and shows no code:
 - **Tailscale Funnel's port … is in use by something else on this Mac.** With an iPhone paired, Rufi keeps its port, so your iPhones keep their address. Free that port in Tailscale, or unpair your iPhones and pair them again.
 - **Rufi couldn't reach itself through Tailscale** (or **Tailscale Funnel**). The first time can take a while, while Tailscale gets a certificate for your Mac. Try again in a minute.
 - **Unpair your iPhones first.** You changed how your iPhone reaches your Mac while one is paired or a code is waiting.
+- **Rufi couldn't turn off Tailscale Funnel. Try again.** (or Tailscale's own words, such as **Tailscale isn't connected on this Mac.**) You changed how your iPhone reaches your Mac, and Rufi couldn't remove its Funnel route first, so the choice stays as it was. Fix what it says, then choose again.
 - **Rufi can't open its iPhone port (…): another app is using it.** Quit that app and restart Rufi.
 
 ## After a restore

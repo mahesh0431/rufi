@@ -680,6 +680,47 @@ describe("the route", () => {
     expect(third.address).toBe(`${NAME}:8443`);
   });
 
+  it("keeps Funnel chosen while Rufi can't turn it off, saying why, and switches once it can", async () => {
+    let connected = true;
+    const core = await start(
+      standIn({
+        name: () =>
+          connected
+            ? Promise.resolve(NAME)
+            : Promise.reject(
+                new RouteProblem("Tailscale isn't connected on this Mac."),
+              ),
+      }),
+    );
+    const api = await settings(core);
+    await api("PUT", "/api/remote/route", { kind: "funnel" });
+    await pairedThroughFunnel(api);
+    connected = false;
+    const [paired] = (await api("GET", "/api/paired-apps")).body["apps"] as {
+      id: string;
+    }[];
+    await api("POST", `/api/paired-apps/${paired?.id ?? ""}/unpair`);
+
+    const refused = await api("PUT", "/api/remote/route", {
+      kind: "tailscale",
+    });
+    expect(refused.status).toBe(409);
+    expect(refused.body["error"]).toBe(
+      "Tailscale isn't connected on this Mac.",
+    );
+    expect((await api("GET", "/api/paired-apps")).body["route"]).toMatchObject({
+      kind: "funnel",
+    });
+    expect(config.AllowFunnel?.[`${NAME}:8443`]).toBe(true);
+
+    connected = true;
+    const chosen = await api("PUT", "/api/remote/route", { kind: "tailscale" });
+    expect(chosen.status).toBe(200);
+    expect(chosen.body["route"]).toMatchObject({ kind: "tailscale" });
+    expect(config.AllowFunnel?.[`${NAME}:8443`]).toBeUndefined();
+    expect(asked.at(-1)).toBe("funnel off 8443");
+  });
+
   it("takes no Funnel port something else holds, and with a phone paired never moves it: it says so instead", async () => {
     // The person's own site on 8443, and something in the foreground on 10000.
     config = {

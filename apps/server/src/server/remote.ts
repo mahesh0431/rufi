@@ -114,7 +114,8 @@ export interface Remote {
   /**
    * Uses `kind` from now, after taking down what the old route set. Refused
    * while an app is paired or a code is live or being used: their address
-   * would change under them.
+   * would change under them; and when the old route can't be taken down,
+   * keeping it chosen.
    */
   choose: (kind: RouteKind) => Promise<void>;
   /** Closes the door, its connections too; a route that outlives Rufi stays. */
@@ -694,8 +695,21 @@ export function remote(deps: RemoteDeps): Remote {
         if (!(await unneeded())) {
           throw new HttpError(409, "Unpair your iPhones first.");
         }
-        if ((await route()) === deps.routes[kind]) return;
-        await unroute();
+        const using = await route();
+        if (using === deps.routes[kind]) return;
+        // The old route goes first: saved only once it has, so a public
+        // route never stays open under a choice that says otherwise.
+        try {
+          await using.down(await savedPort());
+        } catch (error) {
+          log("remote.failed", { error: errorCode(error) });
+          throw new HttpError(
+            409,
+            error instanceof RouteProblem
+              ? error.message
+              : `Rufi couldn't turn off ${using.label}. Try again.`,
+          );
+        }
         await deps.saveSetting(ROUTE_SETTING, kind);
       }),
 
