@@ -169,14 +169,15 @@ struct ChatTests {
         let pending = Pending(file: PendingTests.file())
         let chat = ChatModel(door: Door(origin: URL(string: "https://chat.test")!, key: "a-key"), person: "asha",
                              pending: pending)
+        ChatDoor.whileReplying = "queue"
         chat.open()
-        try await Self.until { chat.loaded }
+        try await Self.until { chat.loaded && chat.whileReplying == "queue" }
         chat.typed("And my ferritin")
         #expect(chat.append("", [Chip(type: "document", id: "doc-asha-aug", label: "")]))
 
         chat.answer("Yes, save metformin 500 mg, twice a day")
         try await Self.until { ChatDoor.sent.count == 1 }
-        // A reply runs: the next goes as the Mac's setting says (steer, at first).
+        // A reply runs: the next goes as the Mac's setting says (Queue here).
         chat.take(.update(revision: 1, entries: [], turns: [Self.running], chat: nil))
         chat.answer("  Not now, don't save metformin  ")
         chat.answer("   ")
@@ -184,7 +185,7 @@ struct ChatTests {
         try await Task.sleep(for: .milliseconds(100))
 
         #expect(ChatDoor.sent.map(\.text) == ["Yes, save metformin 500 mg, twice a day", "Not now, don't save metformin"])
-        #expect(ChatDoor.sent.map(\.kind) == [nil, "steer"])
+        #expect(ChatDoor.sent.map(\.kind) == [nil, "queue"])
         #expect(ChatDoor.sent.map(\.refs) == [[], []])
         #expect(chat.text == "And my ferritin")
         #expect(chat.chips.map(\.ref.id) == ["doc-asha-aug"])
@@ -332,6 +333,9 @@ enum ChatDoor {
     nonisolated(unsafe) static var draftReads = 0
     /// Messages refused, as when the Mac needs a sign-in.
     nonisolated(unsafe) static var refusing = false
+    /// Settings › Chat › While a reply runs, as the Mac's settings answer it;
+    /// none: the settings aren't read.
+    nonisolated(unsafe) static var whileReplying: String?
     /// Draft saves can't reach the Mac.
     nonisolated(unsafe) static var savesAway = false
     /// A save whose words have this can't reach the Mac.
@@ -342,6 +346,7 @@ enum ChatDoor {
     static func reset() {
         (away, sent, draft, holds, draftReads, refusing, savesAway, awayFor, saves) =
             (false, [], #"{"text":"","refs":[]}"#, [:], 0, false, false, nil, [])
+        whileReplying = nil
     }
 
     /// The hold for this request, if the test holds it.
@@ -357,6 +362,9 @@ enum ChatDoor {
         switch (request.httpMethod ?? "GET", request.url?.path() ?? "") {
         case ("GET", "/api/people/asha/chat/draft"):
             return (200, draft)
+        case ("GET", "/api/settings"):
+            guard let whileReplying else { return (404, #"{"error":"Not found."}"#) }
+            return (200, #"{"activity":"folded","whileReplying":"\#(whileReplying)","replyFlow":"paragraphs"}"#)
         case ("PUT", "/api/people/asha/chat/draft"):
             // Kept as it came: its words come back.
             struct Saved: Decodable { let text: String }
