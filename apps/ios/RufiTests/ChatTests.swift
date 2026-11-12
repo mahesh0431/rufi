@@ -185,9 +185,9 @@ struct ChatTests {
 
         #expect(ChatDoor.sent.map(\.text) == ["Yes, save metformin 500 mg, twice a day", "Not now, don't save metformin"])
         #expect(ChatDoor.sent.map(\.kind) == [nil, "steer"])
-        #expect(ChatDoor.sent.allSatisfy(\.refs.isEmpty))
+        #expect(ChatDoor.sent.map(\.refs) == [[], []])
         #expect(chat.text == "And my ferritin")
-        #expect(chat.chips.map(\.id) == ["doc-asha-aug"])
+        #expect(chat.chips.map(\.ref.id) == ["doc-asha-aug"])
         #expect(pending.messages.isEmpty)
         chat.end()
     }
