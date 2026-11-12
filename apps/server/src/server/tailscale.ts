@@ -31,7 +31,7 @@ const COMMANDS = [
 ];
 
 const INSTALL =
-  "Rufi reaches your iPhone through Tailscale. Install it and sign in on this Mac and your iPhone, then try again.";
+  "Rufi reaches your iPhone through Tailscale. Install it and sign in on this Mac, then try again.";
 
 export interface Tailscale {
   /** This Mac's name on the tailnet, such as mahesh-mbp.tail1234.ts.net. */
