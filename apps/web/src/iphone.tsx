@@ -1,12 +1,15 @@
-// Settings → iPhone (docs/help/iphone.md): the apps paired with this Rufi,
-// each for one person's record, with Unpair; and Pair an iPhone, which sets
-// up Tailscale and shows a code, as a QR code and a link, that works once
-// for 10 minutes. Phones are for your own record only for now.
+// Settings → iPhone (docs/help/iphone.md): how the iPhone reaches this Mac
+// (Tailscale, or Tailscale Funnel), changed only while nothing is paired;
+// the apps paired with this Rufi, each for one person's record, with
+// Unpair; and Pair an iPhone, which sets up the route and shows a code, as
+// a QR code and a link, that works once for 10 minutes. Phones are for your
+// own record only for now.
 import { Dialog } from "@base-ui/react/dialog";
 import {
   PairedApps,
   type PairedApp,
   type Pairing,
+  type RouteKind,
 } from "@rufi/contracts/remote";
 import { useMutation } from "@tanstack/react-query";
 import { Check, Copy, Plus, Unlink, X } from "lucide-react";
@@ -14,6 +17,7 @@ import { toDataURL } from "qrcode";
 import { useEffect, useId, useState } from "react";
 import { read } from "./api.ts";
 import { printedDay, printedTime } from "./dates.ts";
+import { PUBLIC_LINE } from "./public-line.ts";
 import { queries, usePairedApps, usePeople } from "./reads.ts";
 import { Button, Problem, Section } from "./ui.tsx";
 
@@ -22,14 +26,34 @@ const PANEL =
 const BACKDROP = "fixed inset-0 z-50 bg-ink/25";
 
 /**
- * How long Pair an iPhone may take: two Tailscale commands, its check
- * through Serve (30 s, for the first certificate), and the clean-up after a
- * failure.
+ * How long Pair an iPhone may take: the route's commands, the check through
+ * it (30 s, for the first certificate), and the clean-up after a failure.
  */
 const PAIRING_MS = 60_000;
 
 const OWN_RECORD =
   "Pair a phone for your own record only for now: Rufi AI on the phone can read every person's files in this folder.";
+
+/** Each route: its name, its line under the choice, and the hint under Pair. */
+const ROUTES: readonly {
+  kind: RouteKind;
+  label: string;
+  line: string;
+  hint: string;
+}[] = [
+  {
+    kind: "tailscale",
+    label: "Tailscale",
+    line: "Your tailnet only.",
+    hint: "Through Tailscale, on this Mac and the iPhone.",
+  },
+  {
+    kind: "funnel",
+    label: "Tailscale Funnel",
+    line: PUBLIC_LINE.funnel,
+    hint: "Through Tailscale Funnel; the iPhone needs no VPN.",
+  },
+];
 
 const shown = (state: PairedApps) => {
   queries.setQueryData(["paired-apps"], state);
@@ -48,7 +72,7 @@ export function IPhoneSection() {
     before: readonly string[];
   }>();
   const start = useMutation({
-    // Rufi sets up Tailscale first, and checks it can reach itself through
+    // Rufi sets up the route first, and checks it can reach itself through
     // it: that can take most of a minute the first time.
     mutationFn: (personId: string) =>
       read(
@@ -96,96 +120,162 @@ export function IPhoneSection() {
     if (only) start.mutate(only.id);
     else setAsking(true);
   };
+  const route = ROUTES.find(({ kind }) => kind === state.route.kind);
   return (
-    <Section title="Paired iPhones">
-      <div className="flex flex-col gap-3">
-        {state.trouble !== null && (
-          <p role="alert" className="text-accent-ink">
-            {state.trouble}
-          </p>
-        )}
-        {state.apps.length > 0 && (
-          <ul className="flex flex-col gap-2">
-            {state.apps.map((app) => (
-              <AppLine key={app.id} app={app} />
-            ))}
-          </ul>
-        )}
-        {asking ? (
-          <fieldset className="flex flex-col gap-2 rounded-lg border border-line bg-page p-3">
-            <legend id={whoseId} className="font-medium">
-              Whose record does this iPhone open?
-            </legend>
-            <div role="radiogroup" aria-labelledby={whoseId}>
-              {people.map((person) => (
-                <label key={person.id} className="flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name="whose-iphone"
-                    checked={whose === person.id}
-                    onChange={() => {
-                      setWhose(person.id);
-                    }}
-                  />
-                  {person.displayName}
-                </label>
-              ))}
-            </div>
-            <p className="text-muted">{OWN_RECORD}</p>
-            <div className="flex gap-2">
-              <Button
-                icon={X}
-                disabled={start.isPending}
-                onClick={() => {
-                  setAsking(false);
-                  setWhose(undefined);
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                look="main"
-                icon={Plus}
-                disabled={whose === undefined}
-                busy={start.isPending && "Setting up Tailscale…"}
-                onClick={() => {
-                  if (whose !== undefined) start.mutate(whose);
-                }}
-              >
-                Pair
-              </Button>
-            </div>
-          </fieldset>
-        ) : (
-          <div className="flex flex-col items-start gap-1">
-            <Button
-              icon={Plus}
-              busy={start.isPending && "Setting up Tailscale…"}
-              onClick={pair}
-            >
-              Pair an iPhone
-            </Button>
-            <p className="text-muted">
-              Through Tailscale, on this Mac and the iPhone.
+    <>
+      <RouteChoice state={state} />
+      <Section title="Paired iPhones">
+        <div className="flex flex-col gap-3">
+          {state.trouble !== null && (
+            <p role="alert" className="text-accent-ink">
+              {state.trouble}
             </p>
-          </div>
+          )}
+          {state.apps.length > 0 && (
+            <ul className="flex flex-col gap-2">
+              {state.apps.map((app) => (
+                <AppLine key={app.id} app={app} />
+              ))}
+            </ul>
+          )}
+          {asking ? (
+            <fieldset className="flex flex-col gap-2 rounded-lg border border-line bg-page p-3">
+              <legend id={whoseId} className="font-medium">
+                Whose record does this iPhone open?
+              </legend>
+              <div role="radiogroup" aria-labelledby={whoseId}>
+                {people.map((person) => (
+                  <label key={person.id} className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="whose-iphone"
+                      checked={whose === person.id}
+                      onChange={() => {
+                        setWhose(person.id);
+                      }}
+                    />
+                    {person.displayName}
+                  </label>
+                ))}
+              </div>
+              <p className="text-muted">{OWN_RECORD}</p>
+              <div className="flex gap-2">
+                <Button
+                  icon={X}
+                  disabled={start.isPending}
+                  onClick={() => {
+                    setAsking(false);
+                    setWhose(undefined);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  look="main"
+                  icon={Plus}
+                  disabled={whose === undefined}
+                  busy={start.isPending && "Connecting…"}
+                  onClick={() => {
+                    if (whose !== undefined) start.mutate(whose);
+                  }}
+                >
+                  Pair
+                </Button>
+              </div>
+            </fieldset>
+          ) : (
+            <div className="flex flex-col items-start gap-1">
+              <Button
+                icon={Plus}
+                busy={start.isPending && "Connecting…"}
+                onClick={pair}
+              >
+                Pair an iPhone
+              </Button>
+              {route && <p className="text-muted">{route.hint}</p>}
+            </div>
+          )}
+          {start.error && (
+            <p role="alert" className="text-muted">
+              {start.error.message}
+            </p>
+          )}
+        </div>
+        {made !== undefined && (
+          <PairingDialog
+            state={state}
+            code={made.code}
+            before={made.before}
+            closing={close.isPending}
+            close={(live) => {
+              close.mutate(live);
+            }}
+          />
         )}
-        {start.error && (
-          <p role="alert" className="text-muted">
-            {start.error.message}
-          </p>
-        )}
+      </Section>
+    </>
+  );
+}
+
+/**
+ * How the iPhone reaches this Mac: one route at a time, chosen only while
+ * no iPhone is paired and no code is live, since a paired iPhone keeps the
+ * address it paired at. A public route says so once, under it.
+ */
+function RouteChoice({ state }: { state: PairedApps }) {
+  const heading = useId();
+  const busy = state.apps.length > 0 || state.pairing !== null;
+  // What was just chosen, shown until the core has it.
+  const [picked, setPicked] = useState<RouteKind>();
+  const choose = useMutation({
+    scope: { id: "route" },
+    mutationFn: (kind: RouteKind) =>
+      read(PairedApps, "PUT", "/api/remote/route", { kind }),
+    onSuccess: shown,
+    onSettled: () => {
+      setPicked(undefined);
+    },
+  });
+  const chosen = picked ?? state.route.kind;
+  const line = ROUTES.find(({ kind }) => kind === chosen)?.line ?? "";
+  return (
+    <Section title="How your iPhone reaches this Mac" id={heading}>
+      <div
+        role="radiogroup"
+        aria-labelledby={heading}
+        aria-disabled={busy}
+        className="inline-flex self-start rounded-lg border border-line bg-side p-0.5"
+      >
+        {ROUTES.map((route) => (
+          <label
+            key={route.kind}
+            className="relative rounded-md px-3 py-0.5 text-muted has-checked:bg-surface has-checked:text-ink has-checked:shadow-sm has-disabled:opacity-60 has-focus-visible:outline-2 has-focus-visible:outline-accent"
+          >
+            <input
+              type="radio"
+              name="iphone-route"
+              value={route.kind}
+              checked={chosen === route.kind}
+              disabled={busy}
+              onChange={() => {
+                setPicked(route.kind);
+                choose.mutate(route.kind);
+              }}
+              // Over the whole segment, unseen: the segment is the radio.
+              className="absolute inset-0 m-0 cursor-pointer opacity-0 disabled:cursor-default"
+            />
+            {route.label}
+          </label>
+        ))}
       </div>
-      {made !== undefined && (
-        <PairingDialog
-          state={state}
-          code={made.code}
-          before={made.before}
-          closing={close.isPending}
-          close={(live) => {
-            close.mutate(live);
-          }}
-        />
+      {line !== "" && <p className="text-muted">{line}</p>}
+      {busy && (
+        <p className="text-muted">Unpair your iPhones to change this.</p>
+      )}
+      {choose.error && (
+        <p role="alert" className="text-muted">
+          {choose.error.message}
+        </p>
       )}
     </Section>
   );

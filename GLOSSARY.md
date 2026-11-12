@@ -399,8 +399,12 @@ A paired app's secret, shown once when it pairs. Whoever holds it acts as that p
 _Avoid_: token, password
 
 **Remote door**:
-How paired apps reach Rufi on the Mac: its own address on your tailnet, through Tailscale, open only while an app is paired or a pairing code is live. Not the agents' door to Rufi's tools.
+How paired apps reach Rufi on the Mac: its own https address, through the remote route chosen in Settings, open only while an app is paired or a pairing code is live. Not the agents' door to Rufi's tools.
 _Avoid_: server, tunnel, API (for the door itself)
+
+**Remote route**:
+How paired apps reach the remote door: Tailscale (the start, your tailnet only) or Tailscale Funnel (public). One at a time, changed only while nothing is paired. Not one of the door's HTTP routes.
+_Avoid_: tunnel (for the route itself), connection
 
 **Pairing**:
 Giving an app its key: the Mac shows a code, as a QR code and the same link, that works once, for 10 minutes; the app scans or pastes it.

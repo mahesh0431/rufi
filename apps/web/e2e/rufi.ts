@@ -226,6 +226,11 @@ export class Rufi {
   /** Funnel's public ports, each to the door's port. */
   readonly #funnelled = new Map<number, number>();
 
+  /** The door's port behind `at`: Funnel's public port, or Serve's own. */
+  doorPortAt(at: number): number {
+    return this.#funnelled.get(at) ?? at;
+  }
+
   /** The door's check, as Serve or Funnel passes it on, with the address's Host. */
   async #throughServe(url: string, init: RequestInit) {
     await this.holdCheck;
@@ -235,7 +240,7 @@ export class Rufi {
       const sent = request(
         {
           host: "127.0.0.1",
-          port: Number(port),
+          port,
           method: "POST",
           path: "/api/pair",
           headers: { host, "content-type": "application/json" },
