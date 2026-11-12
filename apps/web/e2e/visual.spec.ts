@@ -522,3 +522,33 @@ test("a visual's button whose answer was lost says so under it; the next click k
     1,
   );
 });
+
+test("a visual's button whose send is refused says why under it, where you clicked: the chat doesn't jump away from it", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi);
+  await send(page, ANSWERS);
+  const inside = page.frameLocator(".reply iframe[title='Visual']");
+  const save = inside.getByRole("button", { name: "Save" });
+  await expect(save).toBeVisible({ timeout: 15_000 });
+  // Later words push the card up; read back up to it.
+  await send(
+    page,
+    `Further words. ${"A plain line of made-up words. ".repeat(120)}`,
+  );
+  await expect(log(page)).toHaveAttribute("aria-busy", "false");
+  await cards(page).scrollIntoViewIfNeeded();
+  // The core refuses it, as when the AI's provider is signed out.
+  await page.route("**/messages", (route) =>
+    route.fulfill({
+      status: 400,
+      json: { error: "Sign in to Codex on your Mac." },
+    }),
+  );
+  await save.click();
+  const why = log(page).locator(".visual").getByRole("alert");
+  await expect(why).toHaveText("Sign in to Codex on your Mac.");
+  await expect(why).toBeInViewport();
+  await expect(save).toBeInViewport();
+});
