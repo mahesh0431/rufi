@@ -1,5 +1,6 @@
 // Settings → iPhone (docs/help/iphone.md): how the iPhone reaches this Mac
-// (Tailscale, or Tailscale Funnel), changed only while nothing is paired;
+// (Tailscale, Tailscale Funnel or Cloudflare Tunnel, set up here too),
+// changed only while nothing is paired;
 // the apps paired with this Rufi, each for one person's record, with
 // Unpair; and Pair an iPhone, which sets up the route and shows a code, as
 // a QR code and a link, that works once for 10 minutes. Phones are for your
@@ -16,6 +17,7 @@ import { Check, Copy, Plus, Unlink, X } from "lucide-react";
 import { toDataURL } from "qrcode";
 import { useEffect, useId, useState } from "react";
 import { read } from "./api.ts";
+import { CloudflareSetup } from "./cloudflare.tsx";
 import { printedDay, printedTime } from "./dates.ts";
 import { PUBLIC_LINE } from "./public-line.ts";
 import { queries, usePairedApps, usePeople } from "./reads.ts";
@@ -52,6 +54,12 @@ const ROUTES: readonly {
     label: "Tailscale Funnel",
     line: PUBLIC_LINE.funnel,
     hint: "Through Tailscale Funnel; the iPhone needs no VPN.",
+  },
+  {
+    kind: "cloudflare",
+    label: "Cloudflare Tunnel",
+    line: PUBLIC_LINE.cloudflare,
+    hint: "Through Cloudflare Tunnel; the iPhone needs no VPN.",
   },
 ];
 
@@ -121,6 +129,10 @@ export function IPhoneSection() {
     else setAsking(true);
   };
   const route = ROUTES.find(({ kind }) => kind === state.route.kind);
+  // Cloudflare pairs only once it is set up.
+  const ready =
+    state.route.kind !== "cloudflare" ||
+    state.route.cloudflare.address !== null;
   return (
     <>
       <RouteChoice state={state} />
@@ -187,12 +199,17 @@ export function IPhoneSection() {
             <div className="flex flex-col items-start gap-1">
               <Button
                 icon={Plus}
+                disabled={!ready}
                 busy={start.isPending && "Connecting…"}
                 onClick={pair}
               >
                 Pair an iPhone
               </Button>
-              {route && <p className="text-muted">{route.hint}</p>}
+              {!ready ? (
+                <p className="text-muted">Set up Cloudflare first.</p>
+              ) : (
+                route && <p className="text-muted">{route.hint}</p>
+              )}
             </div>
           )}
           {start.error && (
@@ -269,6 +286,9 @@ function RouteChoice({ state }: { state: PairedApps }) {
         ))}
       </div>
       {line !== "" && <p className="text-muted">{line}</p>}
+      {picked === undefined && state.route.kind === "cloudflare" && (
+        <CloudflareSetup state={state} locked={busy} />
+      )}
       {busy && (
         <p className="text-muted">Unpair your iPhones to change this.</p>
       )}

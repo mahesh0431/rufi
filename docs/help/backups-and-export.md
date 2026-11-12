@@ -16,7 +16,8 @@ A backup doesn't hold:
 - the AI's own files, such as its own copy of the chat;
 - the AI's folder, with its programs, notes and research files (see [Your data and the AI](your-data-and-the-ai.md#what-the-ai-can-do-in-its-folder));
 - the JPEG copies Rufi makes to show HEIC photos: Rufi makes them again when they are needed;
-- Rufi's log.
+- Rufi's log;
+- Cloudflare Tunnel's setup (the `cloudflare/` folder, with the tunnel's secret): after a restore, set it up again (see [Set up Cloudflare Tunnel](iphone.md#set-up-cloudflare-tunnel)).
 
 Rufi keeps the newest backup of each of the last 7 days that had one, and of each of the last 4 weeks that had one: about 5 weeks. It removes older backups only after a new backup passed its check, so it never removes your last good backups, however long Rufi was closed.
 
