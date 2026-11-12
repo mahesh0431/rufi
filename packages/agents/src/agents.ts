@@ -24,13 +24,40 @@ import {
 } from "./provider.ts";
 import type { AgentStore, Change } from "./store.ts";
 
+/**
+ * Where an agent is: not started yet (idle), running, going on after a
+ * restart (continuing), waiting (for what, `waiting` says), finished
+ * (done), stopped or failed.
+ */
 export type AgentStatus =
   | "idle"
   | "running"
   | "continuing"
+  | "waiting"
   | "done"
   | "stopped"
   | "failed";
+
+/**
+ * What a waiting agent waits for: the answer to the question it asked its
+ * parent, or a sign-in, its start held as signed out.
+ */
+export type WaitingFor = "asked" | "signed_out";
+
+/**
+ * The moves an agent's status may make, each by `moveAgent`. A move to
+ * where it is moves nothing; a waiting agent may come to wait for
+ * something else.
+ */
+const MOVES: Record<AgentStatus, readonly AgentStatus[]> = {
+  idle: ["running", "waiting", "stopped"],
+  running: ["continuing", "waiting", "done", "stopped", "failed"],
+  continuing: ["running", "waiting", "stopped"],
+  waiting: ["running", "waiting", "stopped"],
+  done: ["running", "waiting"],
+  stopped: ["running", "waiting"],
+  failed: ["running", "waiting"],
+};
 
 export interface Agent {
   id: string;
@@ -49,6 +76,8 @@ export interface Agent {
   conversation: number;
   admitted: boolean;
   status: AgentStatus;
+  /** What it waits for, while it waits. */
+  waiting: WaitingFor | null;
   /** Its latest result: its last answer, or why it failed. */
   result: string | null;
   stoppedBy: string | null;
@@ -128,8 +157,11 @@ export interface Sent {
   kind: "steer" | "queue";
   /** What is sent; none when the host keeps the words and claims give them. */
   parts?: readonly string[];
-  /** A message one agent wrote to another (its done messages are the package's). */
-  about?: "wrote";
+  /**
+   * A message one agent wrote to another (its done messages are the
+   * package's): asked, when it asks its parent and waits for the answer.
+   */
+  about?: "wrote" | "asked";
   /** What the sending agent wrote, in its own words, without the line around them. */
   said?: string;
   /**
@@ -140,7 +172,13 @@ export interface Sent {
 }
 
 /** Why an input from one agent to another came. */
-export type About = "done" | "stopped" | "failed" | "asked" | "wrote";
+export type About =
+  | "done"
+  | "stopped"
+  | "failed"
+  | "asked"
+  | "wrote"
+  | "signed_out";
 
 /**
  * A message from another agent among what an agent took, as its events
@@ -517,6 +555,7 @@ interface AgentRow {
   conversation: number;
   admitted: number;
   status: AgentStatus;
+  waiting: WaitingFor | null;
   result: string | null;
   stopped_by: string | null;
   continues: number;
@@ -535,6 +574,7 @@ const toAgent = (row: AgentRow): Agent => ({
   conversation: row.conversation,
   admitted: row.admitted === 1,
   status: row.status,
+  waiting: row.waiting,
   result: row.result,
   stoppedBy: row.stopped_by,
 });
@@ -573,28 +613,78 @@ function saidAtEnd(
   }
 }
 
+/** What an agent's parent is told, why, and what the agent said in it. */
+interface ToParent {
+  about: About;
+  said: string;
+  text: string;
+}
+
+const whoIs = (agent: Agent) => `${agent.title} (${agent.id})`;
+
 /**
  * What an agent's parent is told when its turn ends, in its done message:
  * its title and id, then what it said, or how it stopped or failed.
  */
-function doneText(
+function turnEnded(
   agent: Agent,
   end: TurnEnd,
   by: string | null,
-  said: string,
-  asked: boolean,
-): string {
-  const who = `${agent.title} (${agent.id})`;
+  questions: readonly { title: string; options: readonly string[] }[],
+): ToParent {
+  const who = whoIs(agent);
+  const said = saidAtEnd(end, questions);
   switch (end.status) {
-    case "done":
-      return [`${who} ${asked ? "asks" : "done"}:`, said]
-        .filter((part) => part !== "")
-        .join("\n\n");
+    case "done": {
+      const asked = questions.length > 0;
+      return {
+        about: asked ? "asked" : "done",
+        said,
+        text: [`${who} ${asked ? "asks" : "done"}:`, said]
+          .filter((part) => part !== "")
+          .join("\n\n"),
+      };
+    }
     case "stopped":
-      return `${who} stopped${by === null ? "" : ` (by ${by})`}.`;
+      return {
+        about: "stopped",
+        said,
+        text: `${who} stopped${by === null ? "" : ` (by ${by})`}.`,
+      };
     case "failed":
-      return `${who} failed: ${said}.`;
+      return { about: "failed", said, text: `${who} failed: ${said}.` };
   }
+}
+
+/**
+ * Moves the agent's status from `from` to `to`, with why (what a waiting
+ * agent waits for, or who stopped it), and its event: every status move is
+ * made here. Nothing moves when it isn't at `from` any more, or is at `to`
+ * already; a move MOVES doesn't have is refused. Inside a change. Answers
+ * whether it moved.
+ */
+export function moveAgent(
+  { db, event }: Change,
+  id: string,
+  from: AgentStatus,
+  to: AgentStatus,
+  why: string | null,
+  at: string,
+): boolean {
+  const found = db
+    .prepare("SELECT status, waiting FROM agents WHERE id = ?")
+    .get(id) as Pick<AgentRow, "status" | "waiting"> | undefined;
+  if (found?.status !== from) return false;
+  const waiting = to === "waiting" ? why : null;
+  if (from === to && found.waiting === waiting) return false;
+  if (from !== to && !MOVES[from].includes(to)) {
+    throw new Error(`An agent can't go from ${from} to ${to}.`);
+  }
+  db.prepare(
+    "UPDATE agents SET status = ?, waiting = ?, stopped_by = ?, updated_at = ? WHERE id = ?",
+  ).run(to, waiting, to === "stopped" ? why : null, at, id);
+  event("agent.status", id, { from, to, why });
+  return true;
 }
 
 export function createAgents(options: {
@@ -960,9 +1050,9 @@ export function createAgents(options: {
       db.prepare(
         "UPDATE queue SET state = 'delivered', turn_id = ?, updated_at = ? WHERE agent_id = ? AND state IN ('handing_over', 'delivered') AND id IN (SELECT value FROM json_each(?))",
       ).run(id, at, live.id, JSON.stringify(inputs));
-      db.prepare(
-        "UPDATE agents SET status = 'running', stopped_by = NULL, updated_at = ? WHERE id = ?",
-      ).run(at, live.id);
+      const { status } = row(live.id) ?? {};
+      if (status)
+        moveAgent({ db, event }, live.id, status, "running", null, at);
       const messages = messagesIn(inputs);
       event("turn.started", live.id, {
         turn: id,
@@ -1039,20 +1129,11 @@ export function createAgents(options: {
     event: Change["event"],
     agent: Agent,
     input: string,
-    end: TurnEnd,
-    stopBy: string | null,
-    questions: { title: string; options: string[] }[],
+    { about, said, text }: ToParent,
     at: string,
   ): void {
     const { parent } = agent;
     if (parent === null) return;
-    const about: About =
-      end.status === "done"
-        ? questions.length > 0
-          ? "asked"
-          : "done"
-        : end.status;
-    const said = saidAtEnd(end, questions);
     // Inside a tree that stops, it is kept but wakes nobody.
     const dropped = together(parent, agent.id);
     db.prepare(
@@ -1062,9 +1143,7 @@ export function createAgents(options: {
       input,
       parent,
       agent.id,
-      JSON.stringify([
-        doneText(agent, end, stopBy, said, questions.length > 0),
-      ]),
+      JSON.stringify([text]),
       about,
       said,
       dropped ? STOPPED.held : null,
@@ -1096,19 +1175,51 @@ export function createAgents(options: {
     by: string,
   ): void {
     const agent = get(id);
-    if (agent?.status !== "idle" && agent?.status !== "continuing") return;
+    if (
+      agent?.status !== "idle" &&
+      agent?.status !== "continuing" &&
+      agent?.status !== "waiting"
+    ) {
+      return;
+    }
     const at = now();
-    db.prepare(
-      "UPDATE agents SET status = 'stopped', stopped_by = ?, updated_at = ? WHERE id = ?",
-    ).run(by, at, id);
-    event("agent.stopped", id, { by });
+    moveAgent({ db, event }, id, agent.status, "stopped", by, at);
     tellParent(
       event,
       agent,
       `stopped:${input}`,
-      { status: "stopped" },
-      by,
-      [],
+      turnEnded(agent, { status: "stopped" }, by, []),
+      at,
+    );
+  }
+
+  /**
+   * The agent's start is held as signed out: it waits for a sign-in, and
+   * its parent hears so, as from a stopped start; once only, while it
+   * waits. Inside the change that holds the input.
+   */
+  function waitsForSignIn(
+    event: Change["event"],
+    id: string,
+    input: string,
+  ): void {
+    const agent = get(id);
+    if (!agent) return;
+    const at = now();
+    if (
+      !moveAgent({ db, event }, id, agent.status, "waiting", "signed_out", at)
+    ) {
+      return;
+    }
+    tellParent(
+      event,
+      agent,
+      `signed_out:${input}`,
+      {
+        about: "signed_out",
+        said: "",
+        text: `${whoIs(agent)} can't start: signed out.`,
+      },
       at,
     );
   }
@@ -1154,17 +1265,50 @@ export function createAgents(options: {
         at,
         turn.id,
       );
+      const questions = (
+        db
+          .prepare(
+            "SELECT title, options FROM questions WHERE turn_id = ? ORDER BY rowid",
+          )
+          .all(turn.id) as { title: string; options: string }[]
+      ).map((question) => ({
+        title: question.title,
+        options: JSON.parse(question.options) as string[],
+      }));
+      // One that asked its parent, in the turn or by a message it
+      // wrote it then and had no answer to since, waits for the answer.
+      const asked =
+        end.status === "done" &&
+        parent !== null &&
+        (questions.length > 0 ||
+          db
+            .prepare(
+              `SELECT 1 FROM queue ask JOIN turns ON turns.id = ?
+               WHERE ask.sender = ? AND ask.agent_id = ? AND ask.about = 'asked' AND ask.created_at >= turns.started_at
+                 AND NOT EXISTS (SELECT 1 FROM queue answer WHERE answer.agent_id = ? AND answer.sender = ? AND answer.turn_id = turns.id AND answer.created_at > ask.created_at)
+               LIMIT 1`,
+            )
+            .get(turn.id, live.id, parent, live.id, parent) !== undefined);
+      const { status } = row(live.id) ?? {};
+      if (status) {
+        moveAgent(
+          { db, event },
+          live.id,
+          status,
+          continuing ? "continuing" : asked ? "waiting" : end.status,
+          continuing ? null : asked ? "asked" : stopBy,
+          at,
+        );
+      }
       // A done turn starts the count of restarts in a row again.
       db.prepare(
-        "UPDATE agents SET status = ?, result = ?, stopped_by = ?, continues = ?, updated_at = ? WHERE id = ?",
+        "UPDATE agents SET result = ?, continues = ?, updated_at = ? WHERE id = ?",
       ).run(
-        continuing ? "continuing" : end.status,
         end.status === "done"
           ? end.answer
           : end.status === "failed"
             ? (end.text ?? end.reason)
             : null,
-        continuing ? null : stopBy,
         end.status === "done" ? 0 : continuing ? continues + 1 : continues,
         at,
         live.id,
@@ -1199,17 +1343,13 @@ export function createAgents(options: {
       }
       // Its parent hears how it went.
       if (!agent || parent === null) return;
-      const questions = (
-        db
-          .prepare(
-            "SELECT title, options FROM questions WHERE turn_id = ? ORDER BY rowid",
-          )
-          .all(turn.id) as { title: string; options: string }[]
-      ).map((question) => ({
-        title: question.title,
-        options: JSON.parse(question.options) as string[],
-      }));
-      tellParent(event, agent, `done:${turn.id}`, end, stopBy, questions, at);
+      tellParent(
+        event,
+        agent,
+        `done:${turn.id}`,
+        turnEnded(agent, end, stopBy, questions),
+        at,
+      );
     });
     if (parent !== null) pump(parent);
     if (live.current?.ref === ref) {
@@ -1485,16 +1625,25 @@ export function createAgents(options: {
         conversation = await conversationOf(live, agent);
       } catch (error) {
         if (lives.get(live.id) !== live) return;
-        move(live, input.id, "waiting", {
-          state: "held",
-          held:
-            error instanceof NotOpened
-              ? error.reason === "signed_out"
-                ? "signed_out"
-                : "open_failed"
-              : "failed",
-          text: message(error),
-        });
+        const held =
+          error instanceof NotOpened
+            ? error.reason === "signed_out"
+              ? "signed_out"
+              : "open_failed"
+            : "failed";
+        move(
+          live,
+          input.id,
+          "waiting",
+          { state: "held", held, text: message(error) },
+          undefined,
+          held === "signed_out"
+            ? (event) => {
+                waitsForSignIn(event, live.id, input.id);
+              }
+            : undefined,
+        );
+        if (held === "signed_out" && agent.parent !== null) pump(agent.parent);
         return;
       }
       const stopped = () =>
@@ -1570,17 +1719,24 @@ export function createAgents(options: {
         live.asks += 1;
         return;
       }
+      const signedOut = delivery.reason === "signed_out";
       move(
         live,
         input.id,
         "handing_over",
         {
           state: "held",
-          held: delivery.reason === "signed_out" ? "signed_out" : "failed",
+          held: signedOut ? "signed_out" : "failed",
           text: delivery.text,
         },
         turn,
+        signedOut
+          ? (event) => {
+              waitsForSignIn(event, live.id, input.id);
+            }
+          : undefined,
       );
+      if (signedOut && agent.parent !== null) pump(agent.parent);
       // A refused input doesn't keep the rest waiting.
       if (delivery.reason === undefined) live.asks += 1;
     } finally {
@@ -2265,12 +2421,18 @@ export function createAgents(options: {
       const tree = [id, ...api.below(id)];
       for (const agent of tree) trees.set(agent, (trees.get(agent) ?? 0) + 1);
       try {
-        // What waits for any of them never goes by itself.
+        // What waits for any of them never goes by itself, nor when a
+        // hold such as a sign-in's is lifted.
         for (const agent of tree) {
           const found = get(agent);
           if (!found) continue;
           const live = liveOf(found);
-          for (const input of waitingOf(agent)) {
+          const waiting = db
+            .prepare(
+              "SELECT id FROM queue WHERE agent_id = ? AND state = 'waiting' AND held IS NOT 'stopped' ORDER BY position",
+            )
+            .all(agent) as { id: string }[];
+          for (const input of waiting) {
             move(live, input.id, "waiting", STOPPED);
           }
         }
@@ -2279,6 +2441,15 @@ export function createAgents(options: {
         );
         for (const result of stopped) {
           if (result.status === "rejected") throw result.reason;
+        }
+        // One that waits, with no turn to stop, stops all the same.
+        for (const agent of tree) {
+          const found = get(agent);
+          if (found?.status !== "waiting") continue;
+          store.change(({ event }) => {
+            stoppedBefore(event, agent, randomUUID(), by);
+          });
+          if (found.parent !== null) pump(found.parent);
         }
       } finally {
         for (const agent of tree) {

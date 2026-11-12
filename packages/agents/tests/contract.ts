@@ -49,6 +49,8 @@ export interface Script {
   ignoresInterrupt?: boolean;
   /** Before it answers, a step whose result holds a picture: these bytes, base64. */
   picture?: string;
+  /** Before it answers, a question for whoever sent its input. */
+  question?: { title: string; options: string[] };
 }
 
 /** One case's adapter, and how its conversations open. */
