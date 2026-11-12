@@ -129,10 +129,11 @@ export function IPhoneSection() {
     else setAsking(true);
   };
   const route = ROUTES.find(({ kind }) => kind === state.route.kind);
-  // Cloudflare pairs only once it is set up.
+  // Cloudflare pairs only with cloudflared on this Mac, once it is set up.
   const ready =
     state.route.kind !== "cloudflare" ||
-    state.route.cloudflare.address !== null;
+    (state.route.cloudflare.installed &&
+      state.route.cloudflare.address !== null);
   return (
     <>
       <RouteChoice state={state} />

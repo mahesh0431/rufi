@@ -159,6 +159,7 @@ Settings says what went wrong in one line, and shows no code:
 - **Set up Cloudflare first.** Cloudflare Tunnel is chosen but not set up on this Mac (see [Set up Cloudflare Tunnel](#set-up-cloudflare-tunnel)).
 - **Install cloudflared on this Mac first: brew install cloudflared.** Run that line in Terminal, then try again.
 - **Wait for Cloudflare's setup to finish.** You paired or changed the choice while Cloudflare was being set up.
+- **Type the address as a name, like rufi.example.com.** The address is a name only, without `https://` or a path.
 - **That address isn't in a domain this token can reach.** The address must be in a domain on your Cloudflare account, and the token must be allowed that domain.
 - **Cloudflare couldn't …** followed by Cloudflare's own words: for example, the address already has a record, or the token is wrong or lacks a permission. Make a new token with **Create token** if you need one.
 - **Rufi couldn't reach Cloudflare.** Check this Mac's internet connection and try again.
