@@ -2490,6 +2490,7 @@ describe("the chat, on the scripted Codex", () => {
               reader(
                 "Reading the photo",
                 "Read the photo (document $document2) with the reading-documents skill.",
+                "$document2",
               ),
             ],
             "Read the report": [saves([1, 2])],
