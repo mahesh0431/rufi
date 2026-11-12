@@ -8,4 +8,5 @@ export const PUBLIC_LINE: Readonly<
   Record<Exclude<RouteKind, "tailscale">, string>
 > = {
   funnel: "",
+  cloudflare: "",
 };

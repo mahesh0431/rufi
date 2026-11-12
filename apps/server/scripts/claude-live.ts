@@ -59,6 +59,7 @@ import { agentDoor } from "../src/server/door.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "../src/server/mcp.ts";
 import { backupsPath } from "../src/core/store/backup.ts";
 import { childEnvironment, rufiHome } from "../src/platform/config.ts";
+import { cloudflareFolder } from "../src/server/cloudflare.ts";
 import { aiSandbox } from "../src/server/core.ts";
 import { caseSandbox, signInsOf } from "./live-run.ts";
 
@@ -116,9 +117,13 @@ const SECRET = "SECRET-CANARY";
 /** A file in Claude's folder, there to be read. */
 const claudeFile = (home: string) => join(claudeFolder(home), ".claude.json");
 
+/** The Cloudflare tunnel's credentials, there to be read. */
+const tunnelFile = (home: string) =>
+  join(cloudflareFolder(home), "tunnel.json");
+
 /**
  * A fictional file at each path of the data folder `home` that the AI can't
- * read; the backups and Claude's folder get one inside.
+ * read; the backups, Claude's folder and Cloudflare's get one inside.
  */
 async function unreadableFiles(home: string) {
   for (const path of aiSandbox(home).unreadable) {
@@ -127,7 +132,9 @@ async function unreadableFiles(home: string) {
         ? join(path, "copy.sqlite")
         : path === claudeFolder(home)
           ? claudeFile(home)
-          : path;
+          : path === cloudflareFolder(home)
+            ? tunnelFile(home)
+            : path;
     await mkdir(dirname(file), { recursive: true });
     await writeFile(file, `${SECRET} in ${file}\n`);
   }

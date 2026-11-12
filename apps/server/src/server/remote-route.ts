@@ -26,6 +26,8 @@ export interface RemoteRoute {
   down: (port: number) => Promise<void>;
   /** Rufi quits with an app paired: ends only what can't outlive it. */
   close: () => Promise<void>;
+  /** Why the route stopped by itself while Rufi runs, as one line. */
+  trouble?: () => string | null;
 }
 
 export type Routes = Readonly<Record<RouteKind, RemoteRoute>>;

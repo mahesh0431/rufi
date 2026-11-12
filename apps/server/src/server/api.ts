@@ -27,7 +27,12 @@ import {
   type Instructions,
 } from "@rufi/contracts/instructions";
 import { KeepValues, type DeviceData } from "@rufi/contracts/devices";
-import { ChooseRoute, StartPairing, type Me } from "@rufi/contracts/remote";
+import {
+  ChooseRoute,
+  SetUpCloudflare,
+  StartPairing,
+  type Me,
+} from "@rufi/contracts/remote";
 import { createReadStream } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { Readable } from "node:stream";
@@ -86,7 +91,10 @@ export interface ApiDeps extends PersonDeps {
   /** The pictures and pages the AI made, that replies show. */
   files: AiFiles;
   /** The remote door: paired apps and pairing (Settings › iPhone). */
-  remote: Pick<Remote, "state" | "pair" | "cancel" | "unpair" | "choose">;
+  remote: Pick<
+    Remote,
+    "state" | "pair" | "cancel" | "unpair" | "choose" | "setUpCloudflare"
+  >;
   /** The secret `pnpm start` shows to get a fresh link while Rufi runs. */
   launcher: string;
   /** A fresh single-use link that opens Rufi. */
@@ -365,6 +373,12 @@ export function api(deps: ApiDeps): App {
   app.put("/api/remote/route", async (c) => {
     const { kind } = await body(c, ChooseRoute);
     await deps.remote.choose(kind);
+    return c.json(await deps.remote.state());
+  });
+  // The token is used for this call only: never stored or logged.
+  app.post("/api/remote/cloudflare/setup", async (c) => {
+    const { address, token } = await body(c, SetUpCloudflare);
+    await deps.remote.setUpCloudflare(address, token);
     return c.json(await deps.remote.state());
   });
   app.post("/api/paired-apps/pairing/cancel", async (c) => {

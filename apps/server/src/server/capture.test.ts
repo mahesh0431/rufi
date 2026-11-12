@@ -48,6 +48,7 @@ import { agentsPath } from "./agents.ts";
 import { chat as openChat, type Chat } from "./chat.ts";
 import { subAgents } from "./sub-agents.ts";
 import { tempPath, tempPattern } from "../platform/files.ts";
+import { cloudflareFolder } from "./cloudflare.ts";
 import { agentSetup, aiSandbox, coreFile } from "./core.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "./mcp.ts";
 
@@ -934,6 +935,13 @@ describe.runIf(process.platform === "darwin")(
           );
           await mkdir(dirname(claudeFile), { recursive: true });
           await writeFile(claudeFile, JSON.stringify({ fictional: true }));
+          // A fictional Cloudflare tunnel's credentials.
+          const tunnelFile = join(cloudflareFolder(home), "tunnel.json");
+          await mkdir(cloudflareFolder(home), { recursive: true });
+          await writeFile(
+            tunnelFile,
+            JSON.stringify({ TunnelSecret: `fictional-${uuid()}` }),
+          );
           // A fictional keychain in the commands' fictional HOME.
           const keychain = join(
             userHome,
@@ -957,13 +965,14 @@ describe.runIf(process.platform === "darwin")(
             ),
             join(home, "backups", "copy.sqlite"),
             claudeFile,
+            tunnelFile,
             keychain,
           ]
             .filter((path) => existsSync(path))
             .map((path) => `cat ${q(path)}`);
-          // No journals (two), and the backup's copy, Claude's file and the
-          // keychain.
-          expect(denied).toHaveLength(unreadable.length - 2 + 3);
+          // No journals (two), and the backup's copy, Claude's file, the
+          // tunnel's credentials and the keychain.
+          expect(denied).toHaveLength(unreadable.length - 2 + 4);
           // What a command reads of Rufi's processes: Rufi's own and the
           // Codex it runs now, each with a value it surely holds.
           await writeFile(join(probe, "procargs.py"), PROCARGS);

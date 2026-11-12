@@ -35,6 +35,7 @@ import type { KeyHolder, PairedApps } from "../core/paired/paired-apps.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import { PROOF_HEADER, screensRoute, type SettingsReads } from "./api.ts";
 import { body, HttpError, shared, type App } from "./http.ts";
+import type { Cloudflare } from "./cloudflare.ts";
 import { personRoutes, type PersonDeps } from "./person-routes.ts";
 import {
   ROUTE_SETTING,
@@ -71,6 +72,8 @@ export interface RemoteDeps {
   saveSetting: (key: string, value: string | null) => Promise<void>;
   /** The routes the door can be reached by; `remote.route` names the one in use. */
   routes: Routes;
+  /** Cloudflare's setup on this Mac, for its route. */
+  cloudflare: Pick<Cloudflare, "state" | "setup">;
   /** Asks a URL, as `fetch` does: the check that the route reaches the door. */
   reach?: Reach;
   /** This Mac's own name, as the paired apps show it. */
@@ -117,6 +120,11 @@ export interface Remote {
    * would change under them.
    */
   choose: (kind: RouteKind) => Promise<void>;
+  /**
+   * Sets up Cloudflare Tunnel at `address` with the person's `token`.
+   * Refused as `choose` is; pairing and choosing wait for it.
+   */
+  setUpCloudflare: (address: string, token: string) => Promise<void>;
   /** Closes the door, its connections too; a route that outlives Rufi stays. */
   close: () => Promise<void>;
 }
@@ -174,6 +182,8 @@ export function remote(deps: RemoteDeps): Remote {
   let trouble: string | null = null;
   /** Codes taken whose app isn't written yet: the door stays open for them. */
   let pairing = 0;
+  /** Cloudflare's setup is running: pairing and choosing are refused. */
+  let settingUp = false;
   const sessions = appSessions();
   const askers = new WeakMap<Request, Asker>();
   const answering = new Set<Answering>();
@@ -509,6 +519,13 @@ export function remote(deps: RemoteDeps): Remote {
     });
   };
 
+  /** Refused while Cloudflare's setup runs. */
+  const notSettingUp = () => {
+    if (settingUp) {
+      throw new HttpError(409, "Wait for Cloudflare's setup to finish.");
+    }
+  };
+
   /** Whether nothing needs the door: no app paired, no code live or being used. */
   const unneeded = async () =>
     !code && pairing === 0 && (await apps.list()).length === 0;
@@ -627,12 +644,16 @@ export function remote(deps: RemoteDeps): Remote {
             expiresAt: code.expiresAt.toISOString(),
           }
         : null,
-      trouble,
-      route: { kind: routeKind(await deps.setting(ROUTE_SETTING)) },
+      trouble: trouble ?? (await route()).trouble?.() ?? null,
+      route: {
+        kind: routeKind(await deps.setting(ROUTE_SETTING)),
+        cloudflare: await deps.cloudflare.state(),
+      },
     }),
 
-    pair: (personId) =>
-      inTurn(async () => {
+    pair: (personId) => {
+      notSettingUp();
+      return inTurn(async () => {
         dropCode();
         const person = (await deps.people()).find(({ id }) => id === personId);
         if (!person) {
@@ -673,7 +694,8 @@ export function remote(deps: RemoteDeps): Remote {
           person: made.person,
           expiresAt: expiresAt.toISOString(),
         };
-      }),
+      });
+    },
 
     cancel: () =>
       inTurn(async () => {
@@ -689,15 +711,39 @@ export function remote(deps: RemoteDeps): Remote {
       return revoked;
     },
 
-    choose: (kind) =>
-      inTurn(async () => {
+    choose: (kind) => {
+      notSettingUp();
+      return inTurn(async () => {
         if (!(await unneeded())) {
           throw new HttpError(409, "Unpair your iPhones first.");
         }
         if ((await route()) === deps.routes[kind]) return;
         await unroute();
         await deps.saveSetting(ROUTE_SETTING, kind);
-      }),
+      });
+    },
+
+    setUpCloudflare: async (address, token) => {
+      notSettingUp();
+      settingUp = true;
+      try {
+        await inTurn(async () => {
+          if (!(await unneeded())) {
+            throw new HttpError(409, "Unpair your iPhones first.");
+          }
+          try {
+            await deps.cloudflare.setup(address, token);
+          } catch (error) {
+            if (error instanceof RouteProblem) {
+              throw new HttpError(409, error.message);
+            }
+            throw error;
+          }
+        });
+      } finally {
+        settingUp = false;
+      }
+    },
 
     // Quitting: with an app paired, a route that outlives Rufi stays for
     // the next start, and the rest ends; with none, it goes.
