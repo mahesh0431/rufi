@@ -33,6 +33,7 @@ import { networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { Rufi } from "../../web/e2e/rufi.ts";
+import type { Reach } from "../../server/src/server/remote.ts";
 import type { Tailscale } from "../../server/src/server/tailscale.ts";
 
 /** A visual of the family's HbA1c, as Rufi AI draws one (ADR 0034). */
@@ -187,32 +188,33 @@ const tailscale: Tailscale = {
     served.delete(port);
     if (server) await new Promise((closed) => server.close(closed));
   },
-  check: async (origin, answers) => {
-    const { port } = new URL(origin);
-    const response = await new Promise<Response>((resolve, reject) => {
-      const sent = request(
-        {
-          host: address,
-          port: Number(port),
-          method: "POST",
-          path: "/api/pair",
-          ca: tls.ca,
-          headers: { "content-type": "application/json" },
-        },
-        (answer) => {
-          let text = "";
-          answer.setEncoding("utf8");
-          answer.on("data", (chunk: string) => (text += chunk));
-          answer.on("end", () => {
-            resolve(new Response(text, { status: answer.statusCode }));
-          });
-        },
-      );
-      sent.on("error", reject);
-      sent.end(JSON.stringify({ code: "check", name: "check" }));
-    });
-    if (!(await answers(response))) throw new Error("The door didn't answer.");
-  },
+};
+
+/** The door's check, through the stand-in's HTTPS, trusting its authority. */
+const reach: Reach = (url, init) => {
+  const { hostname, port, pathname } = new URL(url);
+  return new Promise<Response>((resolve, reject) => {
+    const sent = request(
+      {
+        host: hostname,
+        port: Number(port),
+        method: init.method ?? "GET",
+        path: pathname,
+        ca: tls.ca,
+        headers: { "content-type": "application/json" },
+      },
+      (answer) => {
+        let text = "";
+        answer.setEncoding("utf8");
+        answer.on("data", (chunk: string) => (text += chunk));
+        answer.on("end", () => {
+          resolve(new Response(text, { status: answer.statusCode }));
+        });
+      },
+    );
+    sent.on("error", reject);
+    sent.end(typeof init.body === "string" ? init.body : "");
+  });
 };
 
 const rufi = new Rufi(await mkdtemp(join(folder, "data-")));
@@ -259,6 +261,7 @@ await rufi.start({
     },
   },
   tailscale: said,
+  reach,
 });
 console.log(`The Simulator trusts ${ca} once added to it.`);
 console.log("Rufi on this Mac (its link works once):");

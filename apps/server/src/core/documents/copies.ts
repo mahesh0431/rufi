@@ -33,12 +33,11 @@ export interface SavedCopy {
   why?: string;
 }
 
-/** The reading a copy is saved for: whose, which document, its job and run. */
+/** The reading a copy is saved for: whose, which document, its job. */
 export interface ReadingRun {
   personId: string;
   documentId: string;
   jobId: string;
-  attempt: number;
 }
 
 /**
@@ -64,7 +63,8 @@ export async function writeCopy(
     throw new Refusal(`This document has no page ${String(position)}.`);
   }
   const values = {
-    attempt: run.attempt,
+    // An older reader's run; a reading saved now has one.
+    attempt: 1,
     outcome: saved.outcome,
     copy: saved.copy,
     why: saved.why ?? null,
@@ -90,7 +90,7 @@ export async function writeCopy(
     .set({
       entry: null,
       entry_job_id: run.jobId,
-      entry_attempt: run.attempt,
+      entry_attempt: 1,
       entry_at: at,
       entry_checks: null,
     })
