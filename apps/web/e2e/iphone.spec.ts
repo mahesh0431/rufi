@@ -3,6 +3,7 @@
 // first. Tailscale and Cloudflare are stood in for (rufi.ts); the phone is a
 // request to the door, as Serve, Funnel or Cloudflare passes it on.
 import { request } from "node:http";
+import type { Page } from "@playwright/test";
 import { TOKEN } from "../../server/tests/cloudflare-standin.ts";
 import { expect, openSettings, TAILNET_NAME, test } from "./rufi.ts";
 
@@ -219,6 +220,31 @@ test("chooses Tailscale Funnel while nothing is paired, pairs through Funnel's o
   await expect(settings).toContainText("Unpair your iPhones to change this.");
 });
 
+/**
+ * Whether `text` is anywhere in the page's JavaScript memory, after a full
+ * collection: a heap snapshot, as Chromium's DevTools takes it.
+ */
+async function inMemory(page: Page, text: string): Promise<boolean> {
+  const devtools = await page.context().newCDPSession(page);
+  const chunks: string[] = [];
+  devtools.on("HeapProfiler.addHeapSnapshotChunk", ({ chunk }) => {
+    chunks.push(chunk);
+  });
+  await devtools.send("HeapProfiler.enable");
+  await devtools.send("HeapProfiler.collectGarbage");
+  await devtools.send("HeapProfiler.takeHeapSnapshot", {
+    reportProgress: false,
+  });
+  await devtools.detach();
+  return chunks.join("").includes(text);
+}
+
+/** Types the token as a person pastes it: through the page only. */
+async function pasteToken(page: Page, field: ReturnType<Page["getByLabel"]>) {
+  await field.focus();
+  await page.keyboard.insertText(TOKEN);
+}
+
 test("with Cloudflare Tunnel chosen and cloudflared missing, shows the line to install it, to copy", async ({
   page,
   context,
@@ -244,7 +270,7 @@ test("with Cloudflare Tunnel chosen and cloudflared missing, shows the line to i
   ).toBeDisabled();
 });
 
-test("sets up Cloudflare Tunnel with an address and a token, keeping the address and not the token when Cloudflare refuses, then pairs at the address", async ({
+test("sets up Cloudflare Tunnel with an address and a token, keeping the address and forgetting the token when Cloudflare refuses or accepts, then pairs at the address", async ({
   page,
   context,
   rufi,
@@ -279,18 +305,22 @@ test("sets up Cloudflare Tunnel with an address and a token, keeping the address
   const address = routes.getByLabel("Address");
   const token = routes.getByLabel("Token");
   await address.fill("blog.example.com");
-  await token.fill(TOKEN);
+  await pasteToken(page, token);
+  // The page holds it until Set up; the check below would see it.
+  expect(await inMemory(page, TOKEN)).toBe(true);
   await routes.getByRole("button", { name: "Set up" }).click();
   await expect(routes.getByRole("alert")).toContainText(
     "An A, AAAA, or CNAME record with that host already exists.",
   );
   await expect(address).toHaveValue("blog.example.com");
   await expect(token).toHaveValue("");
+  expect(await inMemory(page, TOKEN)).toBe(false);
 
   await address.fill("rufi.example.com");
-  await token.fill(TOKEN);
+  await pasteToken(page, token);
   await routes.getByRole("button", { name: "Set up" }).click();
   await expect(routes).toContainText("rufi.example.com");
+  expect(await inMemory(page, TOKEN)).toBe(false);
   await expect(routes).toContainText(
     "You can delete the token in Cloudflare now.",
   );

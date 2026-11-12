@@ -3,7 +3,6 @@
 // token made on Cloudflare's own form, and the address once set up. Rufi
 // uses the token for the setup only and doesn't keep it.
 import { PairedApps } from "@rufi/contracts/remote";
-import { useMutation } from "@tanstack/react-query";
 import { Cloud, Copy, ExternalLink, Pencil, X } from "lucide-react";
 import { useId, useState } from "react";
 import { read } from "./api.ts";
@@ -51,21 +50,37 @@ export function CloudflareSetup({
   const [copied, setCopied] = useState<string>();
   const addressId = useId();
   const tokenId = useId();
-  const setUp = useMutation({
-    scope: { id: "route" },
-    mutationFn: (sent: { address: string; token: string }) =>
-      read(PairedApps, "POST", "/api/remote/cloudflare/setup", sent, SETUP_MS),
-    onSuccess: (next) => {
-      queries.setQueryData(["paired-apps"], next);
+  // Not a mutation: TanStack keeps a mutation's variables after it ends,
+  // and the token must go when the call does.
+  const [settingUp, setSettingUp] = useState(false);
+  // Only its words: an Error keeps the functions on its stack, and so the
+  // token they saw.
+  const [problem, setProblem] = useState<string>();
+  const setUp = async () => {
+    const sent = { address: typed ?? "", token };
+    setToken("");
+    setSettingUp(true);
+    setProblem(undefined);
+    try {
+      queries.setQueryData(
+        ["paired-apps"],
+        await read(
+          PairedApps,
+          "POST",
+          "/api/remote/cloudflare/setup",
+          sent,
+          SETUP_MS,
+        ),
+      );
       setChanging(false);
       setTyped(undefined);
       setJustSetUp(true);
-    },
-    // The token goes from the page either way; the address stays.
-    onSettled: () => {
-      setToken("");
-    },
-  });
+    } catch (error) {
+      setProblem((error as Error).message);
+    } finally {
+      setSettingUp(false);
+    }
+  };
 
   if (!installed) {
     return (
@@ -128,14 +143,14 @@ export function CloudflareSetup({
     );
   }
 
-  const busy = setUp.isPending || locked;
+  const busy = settingUp || locked;
   const value = typed ?? "";
   return (
     <form
       className="flex max-w-[420px] flex-col gap-3"
       onSubmit={(event) => {
         event.preventDefault();
-        setUp.mutate({ address: value, token });
+        void setUp();
       }}
     >
       <div className="flex flex-col gap-1.5">
@@ -185,21 +200,21 @@ export function CloudflareSetup({
           className={FIELD}
         />
       </div>
-      {setUp.error && (
+      {problem && (
         <p role="alert" className="text-muted">
-          {setUp.error.message}
+          {problem}
         </p>
       )}
       <div className="flex gap-2">
         {changing && (
           <Button
             icon={X}
-            disabled={setUp.isPending}
+            disabled={settingUp}
             onClick={() => {
               setChanging(false);
               setTyped(undefined);
               setToken("");
-              setUp.reset();
+              setProblem(undefined);
             }}
           >
             Cancel
@@ -210,7 +225,7 @@ export function CloudflareSetup({
           look="main"
           icon={Cloud}
           disabled={busy || value.trim() === "" || token === ""}
-          busy={setUp.isPending && "Setting up Cloudflare…"}
+          busy={settingUp && "Setting up Cloudflare…"}
         >
           Set up
         </Button>

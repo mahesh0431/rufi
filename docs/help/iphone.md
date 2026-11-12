@@ -24,7 +24,7 @@ You need a domain of your own on Cloudflare (its free plan is enough), and cloud
 
 Rufi then makes a tunnel of its own in your Cloudflare account, and a record that points your address at it. It never changes or deletes a record you have: if your address already has one, Cloudflare says so, and Rufi shows its words; choose another address, or delete that record in Cloudflare first. When it's done, Settings shows your address, and **Pair an iPhone** works.
 
-- **Rufi doesn't keep the token.** It uses it for the setup only. The token stays valid in Cloudflare until you delete it: delete it there after setup (My Profile or your account's **API Tokens**).
+- **Rufi doesn't keep the token.** It uses it for the setup only. The token stays valid in Cloudflare until you delete it: after setup, in the same Cloudflare account, open **Manage account › Account API tokens** and delete the token named **Rufi**.
 - **The tunnel's own secret** stays in your data folder's `cloudflare/` folder, which Rufi AI's commands can't read. It isn't in Rufi's backups.
 - **Change** next to the address sets Cloudflare up again with a new address (only while no iPhone is paired and no code is waiting). Rufi keeps its tunnel. Old addresses' records, and tunnels from an earlier setup, stay in your Cloudflare account: delete them in Cloudflare's dashboard (your domain's **DNS** page, and **Networks › Tunnels**).
 - **Uploads go through Cloudflare,** which limits how much one can send: 100 MB on its Free and Pro plans. Over that, the iPhone says **Too large to send to your Mac. Add fewer at a time.**, and keeps what you chose in the box.
