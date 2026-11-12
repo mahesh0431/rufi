@@ -303,7 +303,8 @@ export async function pagesOf(
     .$if(text, (q) => q.select("c.copy"))
     .where("c.person_id", "=", personId)
     .where("p.document_id", "in", documentIds)
-    .where("j.state", "=", "done")
+    // A finished reading's: a working one's copies wait for it.
+    .where("j.state", "!=", "working")
     .orderBy("j.created_at")
     .orderBy("j.id")
     .execute();
@@ -434,26 +435,6 @@ export function sorting(
         "There is no such document for this person: read the list with get_documents for its id.",
       );
     }
-    const reading = await trx
-      .selectFrom("jobs as j")
-      .innerJoin("documents as d", (join) =>
-        join
-          .onRef("d.person_id", "=", "j.person_id")
-          .onRef("d.id", "=", "j.document_id"),
-      )
-      .select("j.id")
-      .where("j.person_id", "=", personId)
-      .where("j.state", "in", ["queued", "running"])
-      .where((eb) =>
-        eb.or([eb("d.id", "=", add.id), eb("d.from_document", "=", add.id)]),
-      )
-      .executeTakeFirst();
-    if (reading) {
-      throw new Refusal(
-        "The reader is reading pages of this add now. Sort it once its reading has ended.",
-      );
-    }
-
     const documents = await documentsOf(trx, personId, add.id);
     const pages = await pagesOf(
       trx,

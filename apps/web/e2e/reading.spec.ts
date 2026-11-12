@@ -157,11 +157,11 @@ test("a file waits in the box until Send; then Rufi AI has a reader read it, a l
   await accessible(page);
 });
 
-test("a file shows Reading, with no Retry, while the reader Rufi AI set on it works", async ({
+test("a file shows Reading, with no Retry, while the reader Rufi AI gave it to works", async ({
   page,
   rufi,
 }) => {
-  // Rufi AI starts a reader and sets it on the file; the reader works on.
+  // Rufi AI starts a reader, giving it the file; the reader works on.
   await opened(page, rufi, {
     callsByText: {
       "Read it": [
@@ -171,12 +171,8 @@ test("a file shows Reading, with no Retry, while the reader Rufi AI set on it wo
           arguments: {
             title: "Reading",
             task: "hang: read (document $document) with the reading-documents skill.",
+            documents: [{ id: "$document" }],
           },
-        },
-        {
-          id: "set-reader",
-          tool: "set_reader",
-          arguments: { documents: ["$document"], agent: "$started" },
         },
       ],
     },

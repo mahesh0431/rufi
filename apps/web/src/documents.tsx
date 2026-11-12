@@ -217,7 +217,6 @@ function statusOf(document: DocumentSummary): string {
   if (document.status === "not_read" || reading === null) return "Not read yet";
   const read = `read ${String(reading.saved)} of ${String(reading.of)}`;
   if (document.status === "reading") return `Reading · ${read}`;
-  if (document.status === "failed") return `Failed · ${read}`;
   if (document.notSorted) return "Not sorted yet";
   if (reading.hasPending) {
     return reading.results > 0

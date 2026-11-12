@@ -202,19 +202,16 @@ function Sheet({
               `read ${String(reading.saved)} of ${String(reading.of)}`,
               ...(elapsed ? [elapsed] : []),
             ].join(" · ")
-          : reading.status === "failed"
-            ? `failed · read ${String(reading.saved)} of ${String(reading.of)}`
-            : reading.status === "done"
-              ? "read"
-              : "not read yet";
+          : reading.status === "done"
+            ? "read"
+            : "not read yet";
   const canRetry =
     reading !== undefined &&
     document?.status !== "reading" &&
-    (reading.status === "failed" ||
-      (reading.status === "done" &&
-        reading.pages.some(
-          (p) => p.state === "unreadable" || p.state === "not_looked_at",
-        )));
+    reading.status === "done" &&
+    reading.pages.some(
+      (p) => p.state === "unreadable" || p.state === "not_looked_at",
+    );
   return (
     <>
       <div className="flex items-center gap-2.5 border-b border-line px-4 py-2.5">
@@ -240,8 +237,6 @@ function Sheet({
             {view.error.message}
           </p>
         )}
-        {/* Why it failed, in full: it can be long (a sign-in to renew). */}
-        {reading?.status === "failed" && <p>{reading.error ?? "it stopped"}</p>}
         {items.error && (
           <Problem error={items.error} retry={() => void items.refetch()} />
         )}

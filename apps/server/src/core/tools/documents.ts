@@ -11,8 +11,7 @@ import { Schema } from "effect";
 import { DELETED_DOCUMENT, ranges } from "../documents/naming.ts";
 import { readerValues } from "../documents/items.ts";
 import type { Entry } from "../documents/notebook.ts";
-import { readersOf, SetReaderInput } from "../documents/readers.ts";
-import { readings } from "../documents/reading.ts";
+import { readings, type ReadingStatus } from "../documents/reading.ts";
 import { SaveReadingInput } from "../documents/save-reading.ts";
 import {
   addOf,
@@ -26,6 +25,13 @@ import {
 import { defineTool, Refusal, WithImage } from "./registry.ts";
 
 type Fields = DraftItem["fields"];
+
+/** A document's reading as the AI sees it: its status, its agent while one reads it, and why its latest reading ended. */
+const shownStatus = (status: ReadingStatus | undefined) => ({
+  ...(status?.agent != null && { agent: status.agent }),
+  status: status?.status ?? "not_read",
+  ...(status?.ended != null && { ended: status.ended }),
+});
 
 /** Documents, pages or draft items in one answer at most; the description says the same. */
 export const PART = { documents: 50, pages: 100, items: 100, copies: 20 };
@@ -63,7 +69,7 @@ const Input = Schema.Struct({
 
 export const getDocuments = defineTool({
   name: "get_documents",
-  description: `The active person's documents (lab reports, prescriptions, letters they added), read only. Without document: the list, newest first, each with its id, when it was added, its kind and date (as sorted), its files and pages, its agent (the reader you set on it with set_reader), its status: "not_read" (no reading saved yet), "reading" (its agent is at work and hasn't saved its reading, or an older reader was copying its pages), "done" or "failed", and "not sorted yet" when its pages wait for you to sort them. One add (what the user added at once: a PDF, or photos together) can be several documents once sorted: such a document names its pages in the add ("pages 3–4 of 5"). With document: its version (it rises when a sort, a reading or a fix changes its draft items or pages), kind, date, lab and report number, its agent and status as in the list, its add (every document of it, with their pages, and the pages not sorted yet), its pages (each with its number in the add, its state and whether it is sorted; an older reading's facts and issues) and its draft items: what you or an older reader drafted, each with its id, version, page, status (not saved, saved with how and into which record, or dismissed), fields exactly as printed or as the user fixed them on the document's page (a fixed item has fixed_by_user, and drafted: what was drafted in each field the user changed, null where none), the words it came from (quote), why it is worth a look, and out_of_date when its page was read again after the reading it was drafted from. Draft items are not saved: they are not the record and count in no answer until the user saves them. With document and page: that page's image first, then the reader's copy, and the page's own text when the PDF has some. Read the page from its image; the PDF's text can help confirm a character you see, never in place of the image, and where they differ the image is right. A photo or a scan is the image and the copy. A page comes at the usual size, which reads most print; with full_size too, it comes again at full size, for print too small to read, at several times the cost. With document and copies: the reader's copy of every page of its add, as Markdown, exactly as printed, with the reader's marks where something is unclear (2[3?]6, [unclear: ...], ~~crossed out~~, [handwritten: ...]). Each copy names its reading: a draft made from it names the same. At most ${String(PART.documents)} documents, ${String(PART.pages)} pages, ${String(PART.items)} draft items or ${String(PART.copies)} copies come back; when there are more, the answer has "next": pass it as after to read on. Rufi chooses the person, not you.`,
+  description: `The active person's documents (lab reports, prescriptions, letters they added), read only. Without document: the list, newest first, each with its id, when it was added, its kind and date (as sorted), its files and pages, its status: "not_read" (no reading saved yet), "reading" (an agent you gave it to with start_agent or send_agent, or one that agent started, is at work and its pages aren't all saved; with that agent), or "done"; ended with why when its latest reading ended with pages not saved (not_started: its agent never started, no_save: it stopped working without saving them, stopped, failed, agent_lost: Rufi lost its agents, deleted), and "not sorted yet" when its pages wait for you to sort them. One add (what the user added at once: a PDF, or photos together) can be several documents once sorted: such a document names its pages in the add ("pages 3–4 of 5"). With document: its version (it rises when a sort, a reading or a fix changes its draft items or pages), kind, date, lab and report number, its agent and status as in the list, its add (every document of it, with their pages, and the pages not sorted yet), its pages (each with its number in the add, its state and whether it is sorted; an older reading's facts and issues) and its draft items: what you or an older reader drafted, each with its id, version, page, status (not saved, saved with how and into which record, or dismissed), fields exactly as printed or as the user fixed them on the document's page (a fixed item has fixed_by_user, and drafted: what was drafted in each field the user changed, null where none), the words it came from (quote), why it is worth a look, and out_of_date when its page was read again after the reading it was drafted from. Draft items are not saved: they are not the record and count in no answer until the user saves them. With document and page: that page's image first, then the reader's copy, and the page's own text when the PDF has some. Read the page from its image; the PDF's text can help confirm a character you see, never in place of the image, and where they differ the image is right. A photo or a scan is the image and the copy. A page comes at the usual size, which reads most print; with full_size too, it comes again at full size, for print too small to read, at several times the cost. With document and copies: the reader's copy of every page of its add, as Markdown, exactly as printed, with the reader's marks where something is unclear (2[3?]6, [unclear: ...], ~~crossed out~~, [handwritten: ...]). Each copy names its reading: a draft made from it names the same. At most ${String(PART.documents)} documents, ${String(PART.pages)} pages, ${String(PART.items)} draft items or ${String(PART.copies)} copies come back; when there are more, the answer has "next": pass it as after to read on. Rufi chooses the person, not you.`,
   input: Input,
   callers: "model",
   readOnly: true,
@@ -82,9 +88,8 @@ export const getDocuments = defineTool({
     },
     { document: "01a12345-0000-7000-8000-000000000000", copies: true },
   ],
-  run: async (input, { store, personId, pages, agents }) => {
+  run: async (input, { store, personId, pages }) => {
     if (!store) return { note: "Rufi has no documents yet." };
-    const runs = (agent: string) => agents?.runs(agent) ?? false;
     if (personId === undefined) {
       throw new Refusal(
         "No person is chosen in Rufi, so documents can't be read. Ask the user which person they mean.",
@@ -140,12 +145,6 @@ export const getDocuments = defineTool({
         .orderBy((eb) => eb.fn.min("position"))
         .execute();
       const statuses = await readings(store).statuses(personId);
-      const readers = await readersOf(
-        db,
-        personId,
-        part.map((d) => d.id),
-        runs,
-      );
       const waiting = await unsorted(db, personId);
       const places = await placesOf(db, personId);
       return {
@@ -154,10 +153,7 @@ export const getDocuments = defineTool({
           added_at: d.added_at,
           kind: d.kind,
           date: d.date,
-          ...(readers.get(d.id) && { agent: readers.get(d.id)?.agent }),
-          status: readers.get(d.id)?.reading
-            ? "reading"
-            : (statuses.get(d.id)?.status ?? "not_read"),
+          ...shownStatus(statuses.get(d.id)),
           ...(waiting.has(d.id) && { sorting: "not sorted yet" }),
           ...(places.get(d.id)?.words && { pages: places.get(d.id)?.words }),
           files: files
@@ -283,9 +279,6 @@ export const getDocuments = defineTool({
     const [part, at] = parsed;
     const from = Number(at);
     const status = (await readings(store).statuses(personId)).get(document.id);
-    const reader = (await readersOf(db, personId, [document.id], runs)).get(
-      document.id,
-    );
     const counted = await db
       .selectFrom("draft_items")
       .select((eb) => eb.fn.countAll<number>().as("items"))
@@ -398,8 +391,7 @@ export const getDocuments = defineTool({
         report_number: document.report_number,
       }),
       version: document.version,
-      ...(reader && { agent: reader.agent }),
-      status: reader?.reading ? "reading" : (status?.status ?? "not_read"),
+      ...shownStatus(status),
       ...(status?.status === "reading" && {
         reading: `copied ${String(status.saved)} of ${String(status.of)} pages so far; sort it once the reading has ended`,
       }),
@@ -525,7 +517,7 @@ export const sortDocuments = defineTool({
 
 export const saveReading = defineTool({
   name: "save_reading",
-  description: `Saves your reading of a document, once, when you have copied every page you were asked to read (the reading-documents skill): your copy of each page, as Markdown exactly as printed with your marks where something is unclear, the part of your notes for that page. Each page is its number as get_documents gives it, once; outcome read, nothing_here (a blank page) or unreadable (with why, and what you could copy). Rufi keeps the copies as a reading of the document: its pages then wait for Rufi AI to sort them. Nothing is saved to the record. A document the user deleted refuses it. All or nothing; the same call again gets the same answer.`,
+  description: `Saves your reading of a document once you have copied the pages you read (the reading-documents skill): your copy of each page, as Markdown exactly as printed with your marks where something is unclear, the part of your notes for that page. Each page is its number as get_documents gives it, once; outcome read, nothing_here (a blank page) or unreadable (with why, and what you could copy). Rufi keeps the copies for the reading you were given (shared with the agent that started you, when it was given the document): once every page that reading asked for is saved, by you or an agent you started, its pages wait for Rufi AI to sort them. Nothing is saved to the record. A document the user deleted refuses it. All or nothing; the same call again gets the same answer.`,
   input: SaveReadingInput,
   callers: "model",
   readOnly: false,
@@ -553,26 +545,5 @@ export const saveReading = defineTool({
       throw new Refusal("A reading can be saved only in Rufi's own chat.");
     }
     return saveReading(input, callId);
-  },
-});
-
-export const setReader = defineTool({
-  name: "set_reader",
-  description: `Sets the agent that reads these documents: after you start a reader with start_agent (its id is in the answer), or send a reader at work another document with send_agent. A document has one reader: setting another replaces the one before; one agent can read several documents. The agent is one in your chat. get_documents then gives each document its agent, and its status is "reading" while that agent is at work and hasn't saved its reading. A document the user deleted refuses it. All or nothing.`,
-  input: SetReaderInput,
-  callers: "model",
-  readOnly: false,
-  destructive: false,
-  examples: [
-    {
-      documents: ["01a12345-0000-7000-8000-000000000000"],
-      agent: "01a12345-0000-7000-8000-000000000020",
-    },
-  ],
-  run: async (input, { setReader, callId }) => {
-    if (!setReader || callId === undefined) {
-      throw new Refusal("A reader can be set only in Rufi's own chat.");
-    }
-    return setReader(input, callId);
   },
 });

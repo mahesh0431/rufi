@@ -3060,8 +3060,8 @@ describe("documents over the API", () => {
     const store = openWritable(databasePath(home));
     try {
       store.db.exec(`
-        INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, created_at)
-          VALUES ('j1', '${person}', 'document_read', '${document}', 'done', 1, '[1]', '2026-10-10T09:00:00Z');
+        INSERT INTO jobs (id, person_id, kind, document_id, state, targets, created_at)
+          VALUES ('j1', '${person}', 'document_read', '${document}', 'done', '[1]', '2026-10-10T09:00:00Z');
         INSERT INTO draft_items (id, person_id, document_id, page, seq, job_id, kind, fields, original, created_at)
           VALUES ('i1', '${person}', '${document}', 1, 1, 'j1', 'lab_result',
             '{"test_name":"Haemoglobin","value_text":"13.2"}', '{"test_name":"Haemoglobin","value_text":"13.2"}', '2026-10-10T09:00:00Z');

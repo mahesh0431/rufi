@@ -36,6 +36,8 @@ export interface AgentSystem {
 export type Apply = (
   event: StoredEvent,
   advance: (trx: Kysely<Tables>) => Promise<void>,
+  /** The agents as they are now. */
+  agents: Agents,
 ) => Promise<boolean>;
 
 export async function startAgents(options: {
@@ -84,8 +86,10 @@ export async function startAgents(options: {
           const last = events.at(-1);
           if (!last) return;
           for (const event of events) {
-            const applied = await options.apply?.(event, (trx) =>
-              kept.advance(event.number, trx),
+            const applied = await options.apply?.(
+              event,
+              (trx) => kept.advance(event.number, trx),
+              agents,
             );
             if (applied) cursor = event.number;
           }

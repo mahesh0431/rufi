@@ -1,10 +1,11 @@
-// A reading saved whole: a reading agent copies each page into its working
-// folder, splits its notes by page itself and calls save_reading once. In
-// the call's transaction (the chat's, which keeps the call) Rufi writes what
-// a reader's run writes: a reading (`jobs`), its copy of each page with the
-// page's bookkeeping (copies.ts), and its normal end (reading.ts), so its
-// pages wait to be sorted as an old reader's do. Code reads none of the
-// words. It keeps only what must never go wrong: whose document it is, that
+// A reading saved: a reading agent copies each page into its working
+// folder, splits its notes by page itself and calls save_reading. In the
+// call's transaction (the chat's, which keeps the call) Rufi writes its copy
+// of each page with the page's bookkeeping (copies.ts) for the job the save
+// counts for (jobs.ts): the working one handed to this agent or the
+// nearest above it. Once every page that job asked for is saved, it is done
+// (reading.ts), and its pages wait to be sorted. A save with no working job
+// makes one, done at once. Code reads none of the words. It keeps only what must never go wrong: whose document it is, that
 // it wasn't deleted first, and that each page is the document's, once. What
 // Rufi keeps of the call holds no page text: deleting the document takes its
 // words with it. The same call again gets its kept answer.
@@ -16,6 +17,7 @@ import type { Tables } from "../store/tables.ts";
 import { Refusal, type Issue } from "../tools/registry.ts";
 import { PageCopy, writeCopy } from "./copies.ts";
 import { DELETED_DOCUMENT, ranges } from "./naming.ts";
+import { jobFor } from "./jobs.ts";
 import { finishIn } from "./reading.ts";
 
 type Trx = Transaction<Tables>;
@@ -52,6 +54,10 @@ export interface SaveReadingScope {
   personId: string;
   chatId: string;
   callId: string;
+  /** The saving agent, then the agent that started it, up to Rufi AI. */
+  line: readonly string[];
+  /** Whether a hand-off's message, by its call, has gone to its agent. */
+  taken?: (call: string) => boolean;
 }
 
 export interface SaveReadingAnswer {
@@ -62,6 +68,8 @@ export interface SaveReadingAnswer {
   unreadable?: string;
   /** The document's pages no reading has copied yet. */
   not_read?: string;
+  /** Pages this reading asked for that no save of it has copied yet. */
+  waiting?: string;
   note: string;
 }
 
@@ -220,7 +228,7 @@ export function saveReading(
                 .whereRef("c.file_id", "=", "p.file_id")
                 .whereRef("c.page_in_file", "=", "p.page_in_file")
                 // A finished reading's copy, as sorting counts it.
-                .where("j.state", "=", "done"),
+                .where("j.state", "!=", "working"),
             )
             .as("copied"),
       ])
@@ -255,42 +263,84 @@ export function saveReading(
       );
     }
 
-    // A reader's run, written whole: running, its copies, then its end. The
-    // document's pages no finished reading has copied are its pages too, so
-    // they show as not looked at, never as read, until a reading saves them.
     const at = now();
     const saved = input.pages.map((p) => p.page);
-    const missing = rows
-      .filter((p) => !p.copied && !saved.includes(p.position))
-      .map((p) => p.position);
-    const targets = [...saved, ...missing].sort((a, b) => a - b);
+    const sorted = (pages: Iterable<number>) =>
+      [...new Set(pages)].sort((a, b) => a - b);
+    const found = await jobFor(
+      trx,
+      personId,
+      document.id,
+      scope.line,
+      scope.taken,
+    );
+    // No job working on it here: one is made for this save, its targets
+    // also the document's pages no finished reading has copied, so they
+    // show as not looked at, never as read, until a reading saves them.
+    const missing = found
+      ? []
+      : rows
+          .filter((p) => !p.copied && !saved.includes(p.position))
+          .map((p) => p.position);
+    const job = found ?? {
+      id: uuid(),
+      targets: [] as number[],
+    };
+    const targets = sorted([...job.targets, ...saved, ...missing]);
+    if (found) {
+      await trx
+        .updateTable("jobs")
+        .set({ targets: JSON.stringify(targets) })
+        .where("id", "=", job.id)
+        .execute();
+    } else {
+      await trx
+        .insertInto("jobs")
+        .values({
+          id: job.id,
+          person_id: personId,
+          kind: "document_read",
+          agent_id: scope.line[0] ?? null,
+          state: "working",
+          document_id: document.id,
+          targets: JSON.stringify(targets),
+          started_at: at,
+          created_at: at,
+        })
+        .execute();
+    }
     const run = {
-      jobId: uuid(),
-      attempt: 1,
+      jobId: job.id,
       personId,
       documentId: document.id,
       targets,
     };
-    await trx
-      .insertInto("jobs")
-      .values({
-        id: run.jobId,
-        person_id: personId,
-        kind: "document_read",
-        document_id: document.id,
-        state: "running",
-        attempt: run.attempt,
-        targets: JSON.stringify(targets),
-        retries: 0,
-        started_at: at,
-        run_at: at,
-        created_at: at,
-      })
-      .execute();
     for (const { page, ...copy } of input.pages) {
       await writeCopy(trx, run, page, copy, at);
     }
-    await finishIn(trx, run, at);
+    // Done once every page it asked for has its copy: a helper's save and
+    // its parent's count together.
+    const copied = new Set(
+      (
+        await trx
+          .selectFrom("page_copies as c")
+          .innerJoin("document_pages as p", (join) =>
+            join
+              .onRef("p.person_id", "=", "c.person_id")
+              .onRef("p.file_id", "=", "c.file_id")
+              .onRef("p.page_in_file", "=", "c.page_in_file"),
+          )
+          .select("p.position")
+          .where("c.person_id", "=", personId)
+          .where("c.job_id", "=", job.id)
+          .where("p.document_id", "=", document.id)
+          .execute()
+      ).map((c) => c.position),
+    );
+    const waiting = targets.filter(
+      (page) => !copied.has(page) && !missing.includes(page),
+    );
+    if (waiting.length === 0) await finishIn(trx, run, at);
 
     const unreadable = input.pages
       .filter((p) => p.outcome === "unreadable")
@@ -301,10 +351,13 @@ export function saveReading(
       pages: ranges(saved),
       ...(unreadable.length > 0 && { unreadable: ranges(unreadable) }),
       ...(missing.length > 0 && { not_read: ranges(missing) }),
+      ...(waiting.length > 0 && { waiting: ranges(waiting) }),
       note:
-        missing.length > 0
-          ? `Saved. No reading has copied pages ${ranges(missing)} yet: they show as not looked at until one saves them. Rufi AI sorts what you saved; a short line on what you read is a good way to end.`
-          : "Saved. Rufi AI sorts it from here; a short line on what you read is a good way to end.",
+        waiting.length > 0
+          ? `Saved. This reading also asked for pages ${ranges(waiting)}: it is done once they are saved too, by you or an agent you started.`
+          : missing.length > 0
+            ? `Saved. No reading has copied pages ${ranges(missing)} yet: they show as not looked at until one saves them. Rufi AI sorts what you saved; a short line on what you read is a good way to end.`
+            : "Saved. Rufi AI sorts it from here; a short line on what you read is a good way to end.",
     };
   };
 }
