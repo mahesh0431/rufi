@@ -1,4 +1,4 @@
-// How paired apps reach the remote door (docs/adr/0032, 0035): a route gives the
+// How paired apps reach the remote door (docs/adr/0032, 0036): a route gives the
 // door its https address and passes requests on to it on 127.0.0.1. One is
 // in use at a time, kept in the record's settings as `remote.route`. Each
 // route sets up and takes down only what it set itself. Whether the address

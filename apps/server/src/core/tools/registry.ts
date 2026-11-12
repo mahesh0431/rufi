@@ -4,7 +4,6 @@ import { Result, Schema, SchemaIssue } from "effect";
 import { errorCode, type Log } from "../../platform/logs.ts";
 import type { BriefInput, Made } from "../briefs/briefs.ts";
 import type { Pages } from "../documents/pages.ts";
-import type { SetReaderInput } from "../documents/readers.ts";
 import type {
   SaveReadingAnswer,
   SaveReadingInput,
@@ -63,10 +62,6 @@ export interface ToolContext {
   saveReading?:
     | ((input: SaveReadingInput, callId: string) => Promise<SaveReadingAnswer>)
     | undefined;
-  /** Sets the agent that reads documents (set_reader): only in Rufi's own chat. */
-  setReader?:
-    | ((input: SetReaderInput, callId: string) => Promise<unknown>)
-    | undefined;
   /** Logs a dose the user told of (log_dose): only in Rufi's own chat. */
   logDose?:
     | ((input: LogDoseInput, callId: string) => Promise<unknown>)
@@ -87,10 +82,10 @@ export interface AgentTools {
   read: (input: ReadAgentInput) => Promise<unknown>;
   /** Stops an agent below the caller, or itself; with children, all below it too. */
   stop: (input: StopAgentInput) => unknown;
-  /** Whether an agent is in the caller's chat. */
-  inChat: (agent: string) => boolean;
-  /** Whether an agent is at work: not yet run, running or going on. */
-  runs: (agent: string) => boolean;
+  /** The caller, then the agent that started it, up to Rufi AI. */
+  line: () => readonly string[];
+  /** Whether a message, by its id, has gone to its agent. */
+  taken: (input: string) => boolean;
   /** What waits for the caller and the agents below it: listed or changed. */
   waiting: (input: WaitingMessagesInput) => Promise<unknown>;
   /** An idle agent below the caller, on another model from its next turn. */
