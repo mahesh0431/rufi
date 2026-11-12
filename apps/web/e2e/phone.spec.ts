@@ -482,45 +482,63 @@ test("in the iPhone app, what the app adds from its box comes back as a chip, ev
   expect((await phone.boxes()).some((m) => m["text"] === "")).toBe(false);
 });
 
-test("in the iPhone app, Rufi not running behind Tailscale tells the app it can't be reached, with no line on the page and no retries of its own, and the app's reconnect reads the page again", async ({
-  page,
-  rufi,
-}) => {
-  await rufi.family();
-  await rufi.start();
-  await page.clock.install();
-  await asPhone(page);
-  const phone = app(page);
-  await page.goto(rufi.link());
-  await expect
-    .poll(phone.told)
-    .toContainEqual({ type: "page", path: "/", title: "Overview", box: "bar" });
+// A gateway's own answer, without Rufi's words: Rufi stopped behind
+// Tailscale (502), or the Mac asleep behind Cloudflare, whose edge answers
+// with its own page when the tunnel is down (530, error 1033).
+for (const { name, status, body } of [
+  { name: "Rufi not running behind Tailscale (502)", status: 502, body: "" },
+  {
+    name: "Cloudflare's own page when its tunnel is down (530)",
+    status: 530,
+    body: "<html>error code: 1033</html>",
+  },
+]) {
+  test(`in the iPhone app, ${name} tells the app it can't be reached, with no line on the page and no retries of its own, and the app's reconnect reads the page again`, async ({
+    page,
+    rufi,
+  }) => {
+    await rufi.family();
+    await rufi.start();
+    await page.clock.install();
+    await asPhone(page);
+    const phone = app(page);
+    await page.goto(rufi.link());
+    await expect.poll(phone.told).toContainEqual({
+      type: "page",
+      path: "/",
+      title: "Overview",
+      box: "bar",
+    });
 
-  // Rufi stopped on the Mac: Tailscale answers 502, without Rufi's words.
-  await page.route("**/api/**", (route) => route.fulfill({ status: 502 }));
-  await phone.open("/people/asha/record/lab_result");
-  await expect
-    .poll(phone.told)
-    .toContainEqual({ type: "connection", reachable: false });
-  // The page shows only the dog resting: the app's line says the rest.
-  await expect(page.getByRole("img", { name: "Rufi, resting" })).toBeVisible();
-  await expect(page.getByRole("status")).toHaveCount(0);
-  await expect(page.getByText("Rufi can't be reached.")).toHaveCount(0);
-  // The app retries: the page doesn't ask again by itself.
-  const asked = page
-    .waitForRequest("**/api/status", { timeout: 1_000 })
-    .catch(() => undefined);
-  await page.clock.fastForward(10_000);
-  expect(await asked).toBeUndefined();
+    await page.route("**/api/**", (route) =>
+      route.fulfill({ status, contentType: "text/html", body }),
+    );
+    await phone.open("/people/asha/record/lab_result");
+    await expect
+      .poll(phone.told)
+      .toContainEqual({ type: "connection", reachable: false });
+    // The page shows only the dog resting: the app's line says the rest.
+    await expect(
+      page.getByRole("img", { name: "Rufi, resting" }),
+    ).toBeVisible();
+    await expect(page.getByRole("status")).toHaveCount(0);
+    await expect(page.getByText("Rufi can't be reached.")).toHaveCount(0);
+    // The app retries: the page doesn't ask again by itself.
+    const asked = page
+      .waitForRequest("**/api/status", { timeout: 1_000 })
+      .catch(() => undefined);
+    await page.clock.fastForward(10_000);
+    expect(await asked).toBeUndefined();
 
-  // Back: the app tells the page, which reads again.
-  await page.unroute("**/api/**");
-  await page.evaluate(() => {
-    window.told = [];
+    // Back: the app tells the page, which reads again.
+    await page.unroute("**/api/**");
+    await page.evaluate(() => {
+      window.told = [];
+    });
+    await phone.reconnect();
+    await expect
+      .poll(phone.told)
+      .toContainEqual({ type: "connection", reachable: true });
+    await expect(page.getByRole("main")).toContainText("HbA1c");
   });
-  await phone.reconnect();
-  await expect
-    .poll(phone.told)
-    .toContainEqual({ type: "connection", reachable: true });
-  await expect(page.getByRole("main")).toContainText("HbA1c");
-});
+}

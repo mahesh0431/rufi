@@ -1,18 +1,17 @@
 // Tailscale, as Rufi uses it for the remote door (docs/adr/0032): this
 // Mac's name on the tailnet, and Tailscale Serve passing HTTPS on the door's
-// port to the door on 127.0.0.1. Never Funnel. Each command has a deadline
-// and no secret in its arguments. A failure is one line for Settings, with
-// Tailscale's own words as they came.
+// port to the door on 127.0.0.1, as the door's route. Never Funnel. Each
+// command has a deadline and no secret in its arguments. A failure is one
+// line for Settings, with Tailscale's own words as they came.
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { RouteProblem, type RemoteRoute } from "./remote-route.ts";
 
 /** How long one `tailscale` command may take. */
 const COMMAND_MS = 5_000;
-/**
- * How long the check through Serve may take: the first HTTPS request on a
- * name gets its certificate, which can take a while.
- */
-const CHECK_MS = 30_000;
+
+/** The port Rufi asked Serve to pass on: its own route, removed when nothing needs it. */
+const SERVED_SETTING = "remote.served";
 
 /** Where `tailscale` is: the Mac app's own, then the command line's. */
 const COMMANDS = [
@@ -25,9 +24,6 @@ const COMMANDS = [
 const INSTALL =
   "Rufi reaches your iPhone through Tailscale. Install it and sign in on this Mac and your iPhone, then try again.";
 
-/** Why a Tailscale step failed, as the one line Settings shows. */
-export class TailscaleProblem extends Error {}
-
 export interface Tailscale {
   /** This Mac's name on the tailnet, such as mahesh-mbp.tail1234.ts.net. */
   name: () => Promise<string>;
@@ -35,15 +31,6 @@ export interface Tailscale {
   serve: (port: number) => Promise<void>;
   /** Serve stops passing `port`. */
   off: (port: number) => Promise<void>;
-  /**
-   * The door answers through Serve at `origin`: proves the name, its
-   * certificate, Serve and the door together. `answers` reads the door's
-   * answer.
-   */
-  check: (
-    origin: string,
-    answers: (response: Response) => Promise<boolean>,
-  ) => Promise<void>;
 }
 
 /** Runs `tailscale` with `args`: its output, or an error with its own. */
@@ -94,9 +81,9 @@ export function tailscale(run: Run = runTailscale): Tailscale {
         found = JSON.parse(await run(["status", "--json"])) as typeof found;
       } catch (error) {
         if ((error as { code?: unknown }).code === "ENOENT") {
-          throw new TailscaleProblem(INSTALL, { cause: error });
+          throw new RouteProblem(INSTALL, { cause: error });
         }
-        throw new TailscaleProblem(
+        throw new RouteProblem(
           `Rufi couldn't ask Tailscale about this Mac: ${said(error)}`,
           { cause: error },
         );
@@ -106,12 +93,12 @@ export function tailscale(run: Run = runTailscale): Tailscale {
           ? found.Self.DNSName.replace(/\.$/, "")
           : "";
       if (found.BackendState !== "Running" || name === "") {
-        throw new TailscaleProblem(
+        throw new RouteProblem(
           "Tailscale isn't connected on this Mac. Open Tailscale and sign in, then try again.",
         );
       }
       if (!Array.isArray(found.CertDomains) || found.CertDomains.length === 0) {
-        throw new TailscaleProblem(
+        throw new RouteProblem(
           "Turn on HTTPS in your Tailscale admin console (DNS page), then try again.",
         );
       }
@@ -124,7 +111,7 @@ export function tailscale(run: Run = runTailscale): Tailscale {
         `--https=${String(port)}`,
         `http://127.0.0.1:${String(port)}`,
       ]).catch((error: unknown) => {
-        throw new TailscaleProblem(
+        throw new RouteProblem(
           `Tailscale couldn't serve Rufi: ${said(error)}`,
           { cause: error },
         );
@@ -133,32 +120,40 @@ export function tailscale(run: Run = runTailscale): Tailscale {
     off: async (port) => {
       await run(["serve", `--https=${String(port)}`, "off"]);
     },
-    check: async (origin, answers) => {
-      const fails = (why: string, cause?: unknown) =>
-        new TailscaleProblem(
-          `Rufi couldn't reach itself through Tailscale (${why}). Try again in a minute.`,
-          { cause },
-        );
-      let response: Response;
-      try {
-        response = await fetch(`${origin}/api/pair`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ code: "check", name: "check" }),
-          redirect: "error",
-          signal: AbortSignal.timeout(CHECK_MS),
-        });
-      } catch (error) {
-        throw fails(
-          (error as Error).name === "TimeoutError"
-            ? "no answer in time"
-            : "no answer",
-          error,
-        );
-      }
-      if (!(await answers(response).catch(() => false))) {
-        throw fails(`it answered ${String(response.status)}`);
-      }
+  };
+}
+
+/** The record's settings, as the route keeps what it set. */
+export interface RouteSettings {
+  setting: (key: string) => Promise<string | undefined>;
+  /** Saves a setting; null removes it. */
+  saveSetting: (key: string, value: string | null) => Promise<void>;
+}
+
+/**
+ * Tailscale Serve as the door's route: HTTPS on the door's own port at the
+ * Mac's tailnet name. Serve keeps its route across Rufi's restarts; Rufi
+ * remembers the port it asked for, so it removes only that one.
+ */
+export function tailscaleRoute(
+  steps: Tailscale,
+  { setting, saveSetting }: RouteSettings,
+): RemoteRoute {
+  return {
+    label: "Tailscale",
+    up: async (port) => {
+      const name = await steps.name();
+      await steps.serve(port);
+      await saveSetting(SERVED_SETTING, String(port));
+      return `${name}:${String(port)}`;
     },
+    resume: () => Promise.resolve(),
+    down: async () => {
+      const served = Number(await setting(SERVED_SETTING));
+      if (!Number.isInteger(served) || served <= 0) return;
+      await steps.off(served);
+      await saveSetting(SERVED_SETTING, null);
+    },
+    close: () => Promise.resolve(),
   };
 }

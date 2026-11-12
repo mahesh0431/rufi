@@ -73,8 +73,8 @@ import { aiFiles } from "./files.ts";
 import { mcpEndpoint, mcpKeys, skillResources } from "./mcp.ts";
 import { startRufiAi } from "./rufi-ai.ts";
 import { converter as openConverter } from "./converter.ts";
-import { remote as openRemote } from "./remote.ts";
-import { tailscale, type Tailscale } from "./tailscale.ts";
+import { computerName, remote as openRemote, type Reach } from "./remote.ts";
+import { tailscale, tailscaleRoute, type Tailscale } from "./tailscale.ts";
 import { secret, sessions } from "./session.ts";
 import { subAgents } from "./sub-agents.ts";
 import { keptSignIns, signInFlow, type ProviderSignIn } from "./signin.ts";
@@ -111,6 +111,10 @@ export interface CoreOptions {
   now?: () => string;
   /** Tailscale, for the remote door; the Mac's own `tailscale` when not given. */
   tailscale?: Tailscale;
+  /** How the door's check asks its address; `fetch` when not given. */
+  reach?: Reach;
+  /** This Mac's name, as paired apps show it; macOS's own when not given. */
+  macName?: () => Promise<string>;
 }
 
 /** What `pnpm start` reads to reach the running Rufi; there while it runs. */
@@ -300,12 +304,17 @@ export const startCore = (options: CoreOptions) =>
     const signIns = options.signIns ?? {};
     const isProvider = (id: string): id is Provider =>
       id === "codex" || id === "claude";
+    // Once a provider is signed in again, the agents' starts held as
+    // signed out go again: from when the agents may go.
+    let lift = (): void => undefined;
     // How each provider is signed in, as it last said (server/signin.ts).
     // Both end, with their providers' processes, before Rufi stops: closed
     // together, as a sign-in's last step waits on a sign-in check.
     const { signedIn, signIn } = yield* Effect.acquireRelease(
       Effect.sync(() => {
-        const kept = keptSignIns(signIns);
+        const kept = keptSignIns(signIns, undefined, () => {
+          lift();
+        });
         return {
           signedIn: kept,
           signIn: signInFlow(signIns, log, kept.refresh),
@@ -538,7 +547,14 @@ export const startCore = (options: CoreOptions) =>
           people: () => transcripts.people(),
           setting: transcripts.setting,
           saveSetting: transcripts.saveSetting,
-          tailscale: options.tailscale ?? tailscale(),
+          routes: {
+            tailscale: tailscaleRoute(options.tailscale ?? tailscale(), {
+              setting: transcripts.setting,
+              saveSetting: transcripts.saveSetting,
+            }),
+          },
+          ...(options.reach !== undefined && { reach: options.reach }),
+          macName: options.macName ?? computerName,
           working,
           person,
           receive: async (app, bytes) => {
@@ -649,6 +665,14 @@ export const startCore = (options: CoreOptions) =>
       continuesAfterRestart(transcripts.setting),
     );
     yield* attempt(() => agentSystem.agents.dispatch({ continues }));
+    lift = () => {
+      agentSystem.agents.signedIn();
+    };
+    // Signed in since Rufi last ran: what was held as signed out goes.
+    const signedInNow = yield* attempt(() =>
+      Promise.all([signedIn.status("codex"), signedIn.status("claude")]),
+    );
+    if (signedInNow.some(({ state }) => state === "signed_in")) lift();
     convertLoop.start();
     yield* attempt(() => door.start());
     yield* Effect.acquireRelease(

@@ -180,7 +180,7 @@
     },
     {
       "name": "rufi.read_chat",
-      "description": "Earlier parts of this chat, newest first. Each entry's kind is \"message\" (the user's), \"steer\" (the user's, sent while you were replying), \"reply\" (yours), \"activity\" (one thing you did: a title and one short detail, never its output), \"receipt\" (Rufi's line for a save to the record: what was saved), \"event\" (Rufi's own line about something that happened, never the user's words), \"brief\" (Rufi's line for a visit brief made with create_brief) or \"agent\" (a message to you from an agent you started, in its own words, with its agent's id, its name then and why it came: done, asked, wrote, stopped or failed; never the user's words). \"at\" is when it was written. At most 50 entries a page; pass the page's next_before to read further back. Rufi chooses the chat, not you.",
+      "description": "Earlier parts of this chat, newest first. Each entry's kind is \"message\" (the user's), \"steer\" (the user's, sent while you were replying), \"reply\" (yours), \"activity\" (one thing you did: a title and one short detail, never its output), \"receipt\" (Rufi's line for a save to the record: what was saved), \"event\" (Rufi's own line about something that happened, never the user's words), \"brief\" (Rufi's line for a visit brief made with create_brief) or \"agent\" (a message to you from an agent you started, in its own words, with its agent's id, its name then and why it came: done, asked, wrote, stopped, failed or signed_out (its start waits for a sign-in); never the user's words). \"at\" is when it was written. At most 50 entries a page; pass the page's next_before to read further back. Rufi chooses the chat, not you.",
       "callers": "model",
       "readOnly": true,
       "destructive": false,
@@ -2910,7 +2910,7 @@
     },
     {
       "name": "rufi.agent_status",
-      "description": "How the agents below you are: the ones you started and theirs, each with its title, the agent that started it (self: you), its model and effort, its status (idle before its first turn, running, done, stopped or failed) and its latest result. An id that isn't below you is not found. It doesn't wait.",
+      "description": "How the agents below you are: the ones you started and theirs, each with its title, the agent that started it (self: you), its model and effort, its status (idle before its first turn, running, waiting, done once finished, stopped or failed) and its latest result. A waiting agent says what for: asked (the answer to the question it asked the agent that started it, which it gets as that agent writes to it) or signed_out (its start, held until its provider is signed in again). An id that isn't below you is not found. It doesn't wait.",
       "callers": "model",
       "readOnly": true,
       "destructive": false,
@@ -2989,6 +2989,10 @@
             "minItems": 1,
             "maxItems": 100,
             "description": "The documents it reads, when its task is reading: each shows as Reading while it, or an agent it starts, reads it, until their pages are saved or they stop."
+          },
+          "asks": {
+            "type": "boolean",
+            "description": "true when you ask \"parent\" something and wait for its answer: if your turn ends before it answers, you show as waiting for it."
           }
         },
         "required": [
@@ -3000,7 +3004,8 @@
       "examples": [
         {
           "to": "parent",
-          "text": "Page 3 is cut off. Shall I read the rest?"
+          "text": "Page 3 is cut off. Shall I read the rest?",
+          "asks": true
         }
       ]
     },

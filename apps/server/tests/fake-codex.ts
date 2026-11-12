@@ -13,7 +13,8 @@
 // runs), "drip" streams its answer in five parts 250 ms
 // apart (on a busy machine, parts closer together can reach the page as
 // one), "trickle" streams its answer in parts of 24 characters 60 ms
-// apart, as a reply is written, "long" streams 200 parts of 1,000 characters, "think" streams a
+// apart, as a reply is written, the first 250 ms before the rest (so it
+// reaches the page alone), "long" streams 200 parts of 1,000 characters, "think" streams a
 // reasoning summary (fake-model.ts's THINKING) before it answers, "commentary"
 // writes a progress note (fake-model.ts's NOTE) before it answers ("whole
 // commentary": only when it completes; "cut commentary": half of it, and
@@ -770,12 +771,12 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
     });
     // A Stop may end the turn between parts.
     const stopped = () => thread.running?.turnId !== turnId;
-    for (const delta of parts) {
+    for (const [at, delta] of parts.entries()) {
       if (stopped()) return;
       event("item/agentMessage/delta", { itemId: "item-1", delta });
       if (text.includes("drip") || text.includes("trickle"))
         await new Promise((resolve) =>
-          setTimeout(resolve, text.includes("drip") ? 250 : 60),
+          setTimeout(resolve, text.includes("drip") || at === 0 ? 250 : 60),
         );
     }
     event("item/completed", {

@@ -180,7 +180,7 @@ const SETTLING = new Set([
   "turn.not_started",
   "input.held",
   "input.removed",
-  "agent.stopped",
+  "agent.status",
 ]);
 
 /** Why a job ended, from its agent as it is once its tree has stopped. */
@@ -190,6 +190,9 @@ const endedWhy = (agent: Agent | undefined): EndedWhy => {
       return "agent_lost";
     case "idle":
       return "not_started";
+    // Its start held, as signed out; one that asked isn't at rest.
+    case "waiting":
+      return agent.waiting === "signed_out" ? "not_started" : "no_save";
     case "stopped":
       return "stopped";
     case "failed":
