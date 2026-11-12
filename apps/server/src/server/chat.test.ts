@@ -2536,7 +2536,11 @@ describe("the chat, on the scripted Codex", () => {
       expect(new Set(messages.map((entry) => entry.from?.title))).toEqual(
         new Set(["Reading the photo", "Reading the report"]),
       );
-      expect(await listed()).toEqual(
+      // When it fails, each tool call's answer, as the fake Codex got it.
+      const answers = (await readFile(join(home, "fake.jsonl"), "utf8"))
+        .split("\n")
+        .filter((line) => line.includes('"answered":"tools/call"'));
+      expect(await listed(), answers.join("\n")).toEqual(
         expect.arrayContaining([
           { id: report, kind: "letter", notSorted: false },
           { id: photo, kind: "letter", notSorted: false },
