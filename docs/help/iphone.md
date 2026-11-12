@@ -146,7 +146,7 @@ When nothing is paired and no code is waiting, Rufi stops listening for phones a
 
 Settings says what went wrong in one line, and shows no code:
 
-- **Rufi reaches your iPhone through Tailscale. Install it and sign in on this Mac and your iPhone, then try again.** Install Tailscale from tailscale.com.
+- **Rufi reaches your iPhone through Tailscale. Install it and sign in on this Mac, then try again.** Install Tailscale from tailscale.com. With **Tailscale** (not Funnel), your iPhone needs it too, signed in to the same tailnet.
 - **Tailscale isn't connected on this Mac.** Open Tailscale on the Mac and sign in.
 - **Turn on HTTPS in your Tailscale admin console (DNS page), then try again.**
 - **Tailscale couldn't serve Rufi: …** followed by Tailscale's own words. If it says Serve isn't enabled on your tailnet, open the link it gives and enable it, then try again.

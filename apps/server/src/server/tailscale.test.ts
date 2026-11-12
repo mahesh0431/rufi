@@ -42,7 +42,7 @@ describe("Tailscale", () => {
       code: "ENOENT",
     });
     await expect(tailscale(standIn(missing)).name()).rejects.toThrow(
-      "Rufi reaches your iPhone through Tailscale. Install it and sign in on this Mac and your iPhone, then try again.",
+      "Rufi reaches your iPhone through Tailscale. Install it and sign in on this Mac, then try again.",
     );
     await expect(
       tailscale(standIn({ ...READY, BackendState: "NeedsLogin" })).name(),
