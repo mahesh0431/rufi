@@ -70,7 +70,8 @@ const VISUALS = `Visuals:
 - Use Rufi's colours and font, so it fits light and dark: var(--ink) for text, var(--muted) for labels and axes, var(--line) for grid lines and borders, var(--accent) and var(--accent-soft) for the data, var(--surface) for a fill, and var(--font-ui). Keep the background transparent.
 - Fit any width, down to a phone's (width 100%, an SVG with a viewBox), and keep it under 480 px tall.
 - Every value is as the record or document keeps it, with its unit and date, labelled on the visual or in a table inside it. A value a chart can't place, such as "<5", goes in the text. Show the lab's flag as printed; never colour a value good or bad by your own judgement.
-- Say in one sentence of text what the visual shows. Links go in the text: a visual can't open them.`;
+- Say in one sentence of text what the visual shows. Links go in the text: a visual can't open them.
+- When you ask the user something with a few clear answers, such as a yes to a change you proposed, you can add the answers as buttons in a visual: <button data-rufi-send="…">…</button>, with a few words on the button and, in data-rufi-send, the whole message it sends. A click sends that message into the chat as the user's own, as if they typed it, and does nothing else. It can come later, or twice, so make each message name what it answers. Ask the question in the text as well; the user can always type instead. Leave the buttons unstyled: Rufi styles them.`;
 
 /** How each reply style looks, one line each: Settings › Chat › Replies. */
 const REPLY_STYLES: Record<ReplyStyle, string> = {
