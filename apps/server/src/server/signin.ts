@@ -115,6 +115,8 @@ export type SignInFlow = ReturnType<typeof signInFlow>;
 export function keptSignIns(
   providers: Partial<Record<Provider, ProviderSignIn>>,
   everyMs = KEEP_MS,
+  /** A provider said it is signed in, when it didn't before. */
+  signedIn: (provider: Provider) => void = () => undefined,
 ) {
   interface Kept {
     status: ProviderStatus;
@@ -133,7 +135,10 @@ export function keptSignIns(
     )
       .catch(unavailable)
       .then((status) => {
+        const back =
+          status.state === "signed_in" && one.status.state !== "signed_in";
         one.status = status;
+        if (back) signedIn(provider);
       })
       .finally(() => {
         one.asking = undefined;

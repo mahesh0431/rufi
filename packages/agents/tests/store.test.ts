@@ -1,5 +1,6 @@
 // The agent database on a real SQLite file: a change and its events commit
 // together, and the host can tell a new file from the one it knew.
+import { readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -183,6 +184,64 @@ describe("the file", () => {
     const lost = open();
     expect(lost.fresh).toBe(true);
     expect(lost.eventsAfter(0)).toEqual([]);
+  });
+
+  it("from version 5 keeps every agent and input, and an agent can then wait", () => {
+    // A file as version 5 left it: a root, its child, a turn and an input.
+    const db = new DatabaseSync(path);
+    for (const name of [
+      "0001-agents.sql",
+      "0002-questions.sql",
+      "0003-agents-talk-back.sql",
+      "0004-turn-usage.sql",
+      "0005-what-an-agent-said.sql",
+    ]) {
+      db.exec(
+        readFileSync(
+          new URL(`../src/migrations/${name}`, import.meta.url),
+          "utf8",
+        ),
+      );
+    }
+    const at = "2026-11-11T10:00:00Z";
+    db.exec(`
+      INSERT INTO agents (id, parent_id, root_id, title, provider, model, effort, tools, cwd, status, result, created_at, updated_at)
+        VALUES ('root', NULL, 'root', 'Rufi AI', 'fake', 'fake-model', 'medium', '[]', '/fictional', 'done', 'All read.', '${at}', '${at}'),
+               ('child', 'root', 'root', 'Reading report.pdf', 'fake', 'fake-model', 'medium', '[]', '/fictional', 'done', 'Pages copied.', '${at}', '${at}');
+      INSERT INTO turns (id, agent_id, conversation, model, effort, status, started_at, ended_at)
+        VALUES ('turn-1', 'child', 1, 'fake-model', 'medium', 'done', '${at}', '${at}');
+      INSERT INTO queue (id, agent_id, sender, kind, parts, position, state, turn_id, about, said, created_at, updated_at)
+        VALUES ('done:turn-1', 'root', 'child', 'steer', '["Reading report.pdf (child) done:"]', 1, 'delivered', NULL, 'done', 'Pages copied.', '${at}', '${at}');
+      PRAGMA user_version = 5;
+    `);
+    const before = (sql: string) => db.prepare(sql).all();
+    const agents = before("SELECT * FROM agents ORDER BY id");
+    const turns = before("SELECT * FROM turns");
+    const queue = before("SELECT * FROM queue");
+    db.close();
+
+    const store = open();
+    const rows = (sql: string) => store.db.prepare(sql).all();
+    expect(rows("SELECT * FROM agents ORDER BY id")).toEqual(
+      agents.map((agent) => ({ ...agent, waiting: null })),
+    );
+    expect(rows("SELECT * FROM turns")).toEqual(turns);
+    expect(rows("SELECT * FROM queue")).toEqual(queue);
+    store.change(({ db: change, event }) => {
+      change
+        .prepare(
+          "UPDATE agents SET status = 'waiting', waiting = 'asked' WHERE id = 'child'",
+        )
+        .run();
+      event("agent.status", "child", {
+        from: "done",
+        to: "waiting",
+        why: "asked",
+      });
+    });
+    expect(
+      rows("SELECT status, waiting FROM agents WHERE id = 'child'"),
+    ).toEqual([{ status: "waiting", waiting: "asked" }]);
   });
 
   it("from a newer version isn't opened, and is left as it was", () => {

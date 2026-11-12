@@ -313,6 +313,7 @@ const SAYS = {
   wrote: "writes:",
   stopped: "stopped.",
   failed: "failed:",
+  signed_out: "can't start: signed out.",
 } as const;
 
 /**
