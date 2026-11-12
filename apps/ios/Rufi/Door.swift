@@ -195,6 +195,7 @@ nonisolated struct Door: Sendable {
             let refusal = (try? Data(contentsOf: staged)).flatMap { try? JSONDecoder().decode(Refusal.self, from: $0) }
             try? FileManager.default.removeItem(at: staged)
             if http.statusCode == 401, refusal?.problem == "unpaired" { throw .unpaired }
+            if Self.gateways(http.statusCode, refusal) { throw .unreachable }
             throw .refused(refusal?.error ?? "Rufi on your Mac refused (\(http.statusCode)).")
         }
         return (staged, http)
@@ -483,6 +484,16 @@ nonisolated struct Door: Sendable {
         return body
     }
 
+    /// A proxy in front of the door refused a request as too large.
+    static let tooLarge = "Too large to send to your Mac. Add fewer at a time."
+
+    /// A gateway's own answer, no words of Rufi's: Tailscale's when Rufi
+    /// isn't running behind it, Cloudflare's (530) when its tunnel is down,
+    /// as when the Mac sleeps. Rufi can't be reached.
+    private static func gateways(_ status: Int, _ refusal: Refusal?) -> Bool {
+        refusal?.error == nil && ((502...504).contains(status) || (520...530).contains(status))
+    }
+
     /// The answer when the door took the call; else why not.
     private static func taken(_ data: Data, _ response: URLResponse) throws(Problem) -> Data {
         guard let http = response as? HTTPURLResponse else { throw .unreachable }
@@ -491,8 +502,9 @@ nonisolated struct Door: Sendable {
         case 200..<300: return data
         case 401 where refusal?.problem == "unpaired": throw .unpaired
         case 410 where refusal?.problem == "code_expired": throw .codeExpired
-        // Tailscale's answer when Rufi isn't running behind it: no words of Rufi's.
-        case 502...504 where refusal?.error == nil: throw .unreachable
+        case _ where gateways(http.statusCode, refusal): throw .unreachable
+        // Cloudflare's limit on what one request may carry, below Rufi's own.
+        case 413 where refusal?.error == nil: throw .refused(Self.tooLarge)
         default:
             throw .refused(refusal?.error ?? "Rufi on your Mac refused (\(http.statusCode)).")
         }
