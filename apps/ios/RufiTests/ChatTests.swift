@@ -194,30 +194,33 @@ struct ChatTests {
     }
 
     /// A card's answer is the pairing's own: one that comes after its
-    /// pairing ended, once the iPhone is paired again, is never kept or sent.
+    /// pairing ended is never kept, so the next pairing never sends it,
+    /// also when the chat hadn't yet heard that its pairing ended.
     @Test func aCardsLateAnswerNeverGoesToTheNextPairing() async throws {
         let pending = Pending(file: PendingTests.file())
         let door = Door(origin: URL(string: "https://chat.test")!, key: "a-key")
-        let old = ChatModel(door: door, person: "asha", pending: pending)
-        old.open()
-        try await Self.until { old.loaded }
         // Unpaired, as AppModel does it: the chat ends, the messages go.
-        old.end()
+        let ended = ChatModel(door: door, person: "asha", pending: pending)
+        ended.end()
         pending.clear()
-        let new = ChatModel(door: door, person: "asha", pending: pending)
-        new.open()
-        try await Self.until { new.loaded }
-
-        old.answer("Yes, save metformin 500 mg, twice a day")
-        // Even before the old chat heard that its pairing ended.
-        let stale = ChatModel(door: door, person: "asha", pending: pending)
-        pending.clear()
-        stale.answer("Not now, don't save metformin")
-        await new.deliver()
-
+        ended.answer("Yes, save metformin 500 mg, twice a day")
         #expect(pending.messages.isEmpty)
-        #expect(ChatDoor.sent.isEmpty)
-        new.end()
+        // Unpaired again before this chat heard of it.
+        let unaware = ChatModel(door: door, person: "asha", pending: pending)
+        pending.clear()
+        unaware.answer("Not now, don't save metformin")
+        #expect(pending.messages.isEmpty)
+
+        // The pairing now: it sends its own answer, and only that.
+        let current = ChatModel(door: door, person: "asha", pending: pending)
+        current.open()
+        try await Self.until { current.loaded }
+        current.answer("Yes, add a follow-up for my HbA1c")
+        try await Self.until { ChatDoor.sent.count == 1 }
+        await current.deliver()
+        #expect(ChatDoor.sent.map(\.text) == ["Yes, add a follow-up for my HbA1c"])
+        #expect(pending.messages.isEmpty)
+        current.end()
     }
 
     /// A refused message's words go back in the box, and the message stays
