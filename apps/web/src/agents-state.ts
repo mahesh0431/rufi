@@ -15,6 +15,20 @@ export const useChatAgents = (personId: string) =>
     queryFn: () => read(SubAgents, "GET", `${chatPath(personId)}/agents`),
   });
 
+/**
+ * Its status in words: what a waiting one waits for, the answer of the
+ * agent that started it (Rufi AI, or one of `agents`) or a sign-in.
+ */
+export const statusWords = (
+  agent: Pick<SubAgent, "status" | "waiting" | "parent">,
+  agents: readonly Pick<SubAgent, "id" | "title">[] = [],
+) =>
+  agent.waiting === "signed_out"
+    ? "signed out"
+    : agent.waiting === "asked"
+      ? `waiting for ${agents.find((one) => one.id === agent.parent)?.title ?? "Rufi AI"}`
+      : agent.status;
+
 /** At work: before its first turn, running, or going on after a restart. */
 export const working = (agent: Pick<SubAgent, "status">) =>
   agent.status === "idle" ||

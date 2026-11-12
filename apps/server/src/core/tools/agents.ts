@@ -78,6 +78,12 @@ export const SendAgentInput = Schema.Struct({
     }),
   ),
   documents: Schema.optionalKey(HandOffInput),
+  asks: Schema.optionalKey(
+    Schema.Boolean.annotate({
+      description:
+        'true when you ask "parent" something and wait for its answer: if your turn ends before it answers, you show as waiting for it.',
+    }),
+  ),
 });
 export type SendAgentInput = typeof SendAgentInput.Type;
 
@@ -170,7 +176,7 @@ export const startAgent = defineTool({
 export const agentStatus = defineTool({
   name: "agent_status",
   description:
-    "How the agents below you are: the ones you started and theirs, each with its title, the agent that started it (self: you), its model and effort, its status (idle before its first turn, running, done, stopped or failed) and its latest result. An id that isn't below you is not found. It doesn't wait.",
+    "How the agents below you are: the ones you started and theirs, each with its title, the agent that started it (self: you), its model and effort, its status (idle before its first turn, running, waiting, done once finished, stopped or failed) and its latest result. A waiting agent says what for: asked (the answer to the question it asked the agent that started it, which it gets as that agent writes to it) or signed_out (its start, held until its provider is signed in again). An id that isn't below you is not found. It doesn't wait.",
   input: AgentStatusInput,
   callers: "model",
   readOnly: true,
@@ -191,7 +197,11 @@ export const sendAgent = defineTool({
   readOnly: false,
   destructive: false,
   examples: [
-    { to: "parent", text: "Page 3 is cut off. Shall I read the rest?" },
+    {
+      to: "parent",
+      text: "Page 3 is cut off. Shall I read the rest?",
+      asks: true,
+    },
   ],
   run: (input, { agents, callId }) => {
     if (!agents || callId === undefined) throw outside();
