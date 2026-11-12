@@ -518,7 +518,8 @@ const steerLine = (by?: { title: string; id: string }) =>
 const STOPPED = { state: "held", held: "stopped", text: "Stopped." } as const;
 
 /** What an agent a restart cut is told first, to carry on. */
-const CONTINUE = "Rufi stopped suddenly (restart). Please continue.";
+const CONTINUE =
+  "Rufi stopped suddenly and has restarted. A step you took just before the stop may already have finished, so check whether it happened before you do it again.";
 
 /** Where an input goes next. */
 type Move =
