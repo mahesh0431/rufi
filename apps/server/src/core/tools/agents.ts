@@ -8,6 +8,7 @@
 // that starts it.
 import { Effort, MODELS, ModelId } from "@rufi/contracts";
 import { Schema } from "effect";
+import { HandOffInput } from "../documents/jobs.ts";
 import { defineTool, NoInput, Refusal } from "./registry.ts";
 
 /** Rufi's four models, by id and name, for the tools' descriptions. */
@@ -33,6 +34,7 @@ export const StartAgentInput = Schema.Struct({
         "How hard it thinks: low is fastest, xhigh thinks longest. Leave it out for yours.",
     }),
   ),
+  documents: Schema.optionalKey(HandOffInput),
 });
 export type StartAgentInput = typeof StartAgentInput.Type;
 
@@ -75,6 +77,7 @@ export const SendAgentInput = Schema.Struct({
         "steer (the default): into its turn as soon as it can take it, or it starts one; queue: after its turn ends.",
     }),
   ),
+  documents: Schema.optionalKey(HandOffInput),
 });
 export type SendAgentInput = typeof SendAgentInput.Type;
 
@@ -140,7 +143,7 @@ const outside = () =>
 export const startAgent = defineTool({
   name: "start_agent",
   description:
-    "Starts an agent of your own for a task that can run on its own: it runs at once, on your model and effort unless you give others (a model whose provider isn't signed in is refused, yours too), and goes on after your turn ends. Give it a title and its whole task, its first message. It has all of your tools. Its saves and briefs show in the chat with Rufi's receipt. Answers its id; agent_status says how it is, and read_agent reads its conversation.",
+    "Starts an agent of your own for a task that can run on its own: it runs at once, on your model and effort unless you give others (a model whose provider isn't signed in is refused, yours too), and goes on after your turn ends. Give it a title and its whole task, its first message; when the task is reading documents, give them in documents too, with the pages to read. It has all of your tools. Its saves and briefs show in the chat with Rufi's receipt. Answers its id; agent_status says how it is, and read_agent reads its conversation.",
   input: StartAgentInput,
   callers: "model",
   readOnly: false,
@@ -149,6 +152,13 @@ export const startAgent = defineTool({
     {
       title: "Checking the thyroid results",
       task: "Read the user's thyroid results with get_records and say which are outside the lab's range.",
+    },
+    {
+      title: "Reading report.pdf",
+      task: "Read pages 1–4 of document 01a12345-0000-7000-8000-000000000000 with the reading-documents skill.",
+      documents: [
+        { id: "01a12345-0000-7000-8000-000000000000", pages: [1, 2, 3, 4] },
+      ],
     },
   ],
   run: (input, { agents, callId }) => {
@@ -175,7 +185,7 @@ export const agentStatus = defineTool({
 export const sendAgent = defineTool({
   name: "send_agent",
   description:
-    'Writes to an agent below you, or to the agent that started you ("parent"): a question, feedback, more to do, anything. It gets your words with your title, and an idle one starts a turn for it. Answers steered, queued or will start the next turn; it is never refused for being busy. An agent you started sends you its answer by itself when its turn ends; one further below sends its answer to the agent that started it. To answer an agent you started, write to it by its id: your own answer at the end of your turn doesn\'t go to it.',
+    'Writes to an agent below you, or to the agent that started you ("parent"): a question, feedback, more to do, anything. It gets your words with your title, and an idle one starts a turn for it. When you give an agent below you documents to read, give them in documents too, with the pages. Answers steered, queued or will start the next turn; it is never refused for being busy. An agent you started sends you its answer by itself when its turn ends; one further below sends its answer to the agent that started it. To answer an agent you started, write to it by its id: your own answer at the end of your turn doesn\'t go to it.',
   input: SendAgentInput,
   callers: "model",
   readOnly: false,

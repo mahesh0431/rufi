@@ -1,36 +1,50 @@
-// Readings of documents: the jobs that read them. A reading agent that Rufi
-// AI starts saves a whole reading at once (save-reading.ts); the older
-// reader's jobs ran one at a time, their runs writing page copies
-// (copies.ts). Either way a reading targets some pages of its document (all
-// of them first; a read-again only the pages that couldn't be read), and
-// finishes once: page states, the document's version, the job done. Rufi AI
-// then sorts the pages (sorting.ts), which makes the drafts. An older job
-// that didn't finish failed with its copies kept, and its pages are read
-// again when its document is sent again. Nothing here writes the record or
-// decides what a page means. Pages an older reader saved as notebook entries
-// keep them, and are shown as they are.
+// Readings of documents: the document_read jobs that read them (jobs.ts).
+// A reading targets some pages of its document (all of them first; a
+// read-again only the pages that couldn't be read), works while its agent
+// or one below it reads, and finishes once, done or ended: page states, the
+// document's version. Rufi AI then sorts the pages (sorting.ts), which
+// makes the drafts. A reading that ended keeps the copies it saved, and its
+// other pages are read again when its document is sent again. Nothing here
+// writes the record or decides what a page means. Pages an older reader
+// saved as notebook entries keep them, and are shown as they are.
 import type { Chip } from "@rufi/contracts";
 import type { Transaction } from "kysely";
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
 import type { ReadingRun } from "./copies.ts";
+import type { EndedWhy } from "./jobs.ts";
 import type { Checks, Entry } from "./notebook.ts";
 import { documentName, ranges } from "./naming.ts";
-import { readersOf } from "./readers.ts";
 import { pagesOf } from "./sorting.ts";
 
 export interface Job {
   id: string;
   personId: string;
   documentId: string;
-  state: "queued" | "running" | "done" | "failed";
-  attempt: number;
+  state: "working" | "done" | "ended";
+  /** Why it ended; null unless it did. */
+  endedWhy: EndedWhy | null;
+  /** The agent it was handed to; null for an older reader's. */
+  agent: string | null;
   targets: number[];
-  /** Automatic retries used since its start or the person's Retry. */
-  retries: number;
-  /** A queued automatic retry runs from then on. */
-  retryAt: string | null;
-  startedAt: string | null;
+}
+
+/** A document's reading, as the Documents page and get_documents show it. */
+export interface ReadingStatus {
+  status: "reading" | "done" | "not_read";
+  /** Why its latest reading ended, when it did and none is working: also when an earlier reading is the one shown. */
+  ended: EndedWhy | null;
+  /** The agent reading it, while one is. */
+  agent: string | null;
+  saved: number;
+  of: number;
+  results: number;
+  hasPending: boolean;
+  toCheck: number;
+  itemsSaved: number;
+  itemsSetAside: number;
+  canRetry: boolean;
+  error: string | null;
 }
 
 /** The AI use of an older reader's runs, summed, as the agent reported it. */
@@ -51,13 +65,11 @@ type Trx = Transaction<Tables>;
 const jobOf = (row: Tables["jobs"]): Job => ({
   id: row.id,
   personId: row.person_id,
-  documentId: row.document_id,
+  documentId: row.document_id ?? "",
   state: row.state as Job["state"],
-  attempt: row.attempt,
-  targets: JSON.parse(row.targets) as number[],
-  retries: row.retries,
-  retryAt: row.retry_at,
-  startedAt: row.started_at,
+  endedWhy: row.ended_why as EndedWhy | null,
+  agent: row.agent_id,
+  targets: JSON.parse(row.targets ?? "[]") as number[],
 });
 
 /** The copies a reading saved of its document's pages, by position. */
@@ -84,17 +96,18 @@ const copiedBy = async (
   );
 
 /**
- * In `trx`: a running reading's normal end, once per job: each target's
- * state (its copy's outcome, or not looked at), the document's version
- * raised, the job done. A reading with nothing to sort (only unreadable
- * pages) is sorted as it ends. Draft items come from Rufi AI's sort
- * (sorting.ts), never from here. save_reading (save-reading.ts) ends a
- * reading through it.
+ * In `trx`: a working reading's end, once per job: done, or ended with
+ * `why`. Each target's state (its copy's outcome, or not looked at), the
+ * document's version raised. A reading with nothing to sort (only
+ * unreadable pages) is sorted as it ends. Draft items come from Rufi AI's
+ * sort (sorting.ts), never from here. save_reading (save-reading.ts) and
+ * jobs.ts end a reading through it.
  */
 export async function finishIn(
   trx: Trx,
   run: ReadingRun & { targets: readonly number[] },
   at: string,
+  why?: EndedWhy,
 ) {
   const copied = await copiedBy(trx, run);
   const sorts = [...copied.values()].some(
@@ -102,13 +115,16 @@ export async function finishIn(
   );
   const ended = await trx
     .updateTable("jobs")
-    .set({ state: "done", ended_at: at, error: null })
+    .set({
+      state: why === undefined ? "done" : "ended",
+      ended_why: why ?? null,
+      ended_at: at,
+    })
     .where("id", "=", run.jobId)
-    .where("state", "=", "running")
-    .where("attempt", "=", run.attempt)
+    .where("state", "=", "working")
     .executeTakeFirst();
   if (ended.numUpdatedRows !== 1n) {
-    throw new Error("The reading isn't running any more.");
+    throw new Error("The reading isn't working any more.");
   }
   if (!sorts) {
     await trx
@@ -118,8 +134,34 @@ export async function finishIn(
       .where("job_id", "=", run.jobId)
       .execute();
   }
+  // A page another finished reading copied keeps its state when this one
+  // has no copy of it.
+  const elsewhere = new Set(
+    (
+      await trx
+        .selectFrom("page_copies as c")
+        .innerJoin("jobs as j", (join) =>
+          join
+            .onRef("j.person_id", "=", "c.person_id")
+            .onRef("j.id", "=", "c.job_id"),
+        )
+        .innerJoin("document_pages as p", (join) =>
+          join
+            .onRef("p.person_id", "=", "c.person_id")
+            .onRef("p.file_id", "=", "c.file_id")
+            .onRef("p.page_in_file", "=", "c.page_in_file"),
+        )
+        .select("p.position")
+        .where("c.person_id", "=", run.personId)
+        .where("p.document_id", "=", run.documentId)
+        .where("c.job_id", "!=", run.jobId)
+        .where("j.state", "!=", "working")
+        .execute()
+    ).map((p) => p.position),
+  );
   for (const target of run.targets) {
     const copy = copied.get(target);
+    if (!copy && elsewhere.has(target)) continue;
     await trx
       .updateTable("document_pages")
       .set({
@@ -139,23 +181,13 @@ export async function finishIn(
     .execute();
 }
 
-/** What a document sent with a message needs read: new pages, or the rest of a reading that stopped. */
-type Plan =
-  | { kind: "new"; targets: number[] }
-  /** An older reader's reading that stopped. */
-  | { kind: "again"; job: Job }
-  | undefined;
+/** The pages a document sent with a message needs read. */
+type Plan = { targets: number[] } | undefined;
 
 /** Why a reading Rufi stopped in the middle failed, for the person. */
 export const CLOSED_WHILE_READING = "Rufi closed while reading";
 
-export function readings(
-  store: Store,
-  options: {
-    /** Whether an agent is at work (server/sub-agents.ts); none when not given. */
-    runs?: (agent: string) => boolean;
-  } = {},
-) {
+export function readings(store: Store) {
   const db = store.query;
   const listeners = new Map<string, Set<() => void>>();
 
@@ -180,22 +212,22 @@ export function readings(
     ).map((p) => p.position);
 
   /**
-   * The latest reading of any of the document's pages: a reading of its
-   * add (a split document's pages were read with the add) or of the
+   * The readings of any of the document's pages, latest first: a reading
+   * of its add (a split document's pages were read with the add) or of the
    * document itself, whose targets include one of its pages.
    */
-  const readingOf = async (
+  const readingsOf = async (
     trx: Trx | Store["query"],
     personId: string,
     documentId: string,
-  ): Promise<Job | undefined> => {
+  ): Promise<Job[]> => {
     const document = await trx
       .selectFrom("documents")
       .select(["id", "from_document"])
       .where("person_id", "=", personId)
       .where("id", "=", documentId)
       .executeTakeFirst();
-    if (!document) return undefined;
+    if (!document) return [];
     const add = document.from_document ?? document.id;
     const mine = new Set(await positions(trx, personId, documentId));
     const rows = await trx
@@ -213,7 +245,34 @@ export function readings(
       .orderBy("j.created_at", "desc")
       .orderBy("j.id", "desc")
       .execute();
-    return rows.map(jobOf).find((job) => job.targets.some((t) => mine.has(t)));
+    return rows
+      .map(jobOf)
+      .filter((job) => job.targets.some((t) => mine.has(t)));
+  };
+
+  /**
+   * The reading a document shows: one working, else the latest that is
+   * done or saved some of its pages, else the latest (one that ended
+   * without saving any).
+   */
+  const readingOf = async (
+    trx: Trx | Store["query"],
+    personId: string,
+    documentId: string,
+  ): Promise<Job | undefined> => {
+    const all = await readingsOf(trx, personId, documentId);
+    const working = all.find((job) => job.state === "working");
+    if (working) return working;
+    for (const job of all) {
+      if (job.state === "done") return job;
+      const copied = await copiedBy(trx, {
+        jobId: job.id,
+        personId,
+        documentId,
+      });
+      if (copied.size > 0) return job;
+    }
+    return all[0];
   };
 
   /** What the document's reading needs when a message sends it. */
@@ -232,28 +291,26 @@ export function readings(
       .executeTakeFirst();
     if (!live) return undefined;
     const job = await readingOf(trx, personId, documentId);
-    if (!job) {
-      return {
-        kind: "new",
-        targets: await positions(trx, personId, documentId),
-      };
-    }
-    if (job.state === "queued" || job.state === "running") return undefined;
-    if (job.state === "failed" && job.documentId === documentId) {
-      return { kind: "again", job };
-    }
-    if (!again && job.state !== "failed") return undefined;
+    if (!job) return { targets: await positions(trx, personId, documentId) };
+    if (job.state === "working") return undefined;
+    if (!again && job.state === "done") return undefined;
     const failed = (
       await trx
         .selectFrom("document_pages")
         .select("position")
         .where("person_id", "=", personId)
         .where("document_id", "=", documentId)
-        .where("state", "in", ["unreadable", "not_looked_at"])
+        // A page no reading finished has no state.
+        .where((eb) =>
+          eb.or([
+            eb("state", "in", ["unreadable", "not_looked_at"]),
+            eb("state", "is", null),
+          ]),
+        )
         .orderBy("position")
         .execute()
     ).map((p) => p.position);
-    return failed.length === 0 ? undefined : { kind: "new", targets: failed };
+    return failed.length === 0 ? undefined : { targets: failed };
   };
 
   return {
@@ -272,9 +329,9 @@ export function readings(
     /**
      * Rufi's note for the AI on the documents among a message's chips that
      * aren't read: each one's pages to read (every page of one never read,
-     * those of an older reading that stopped, and with Retry the pages that
-     * couldn't be read or weren't looked at). Undefined when all are read.
-     * Writes nothing.
+     * and, after a reading that ended or with Retry, the pages that couldn't
+     * be read or weren't looked at). Undefined when all are read or a
+     * reading of it is working. Writes nothing.
      */
     toRead: async (
       personId: string,
@@ -295,11 +352,7 @@ export function readings(
           .execute();
         const name = documentName(pages.map((p) => p.file_name));
         const of = `of ${String(pages.length)}`;
-        if (plan.kind === "again") {
-          lines.push(
-            `- ${name} (document ${ref.id}): pages ${ranges(plan.job.targets)} ${of}, whose reading stopped before it finished`,
-          );
-        } else if (plan.targets.length === pages.length) {
+        if (plan.targets.length === pages.length) {
           lines.push(
             `- ${name} (document ${ref.id}): ${pages.length === 1 ? "its page" : `all ${String(pages.length)} pages`}`,
           );
@@ -318,17 +371,13 @@ export function readings(
 
     /**
      * Each of the person's documents' reading, for the Documents page and
-     * get_documents: not read yet, reading, done or failed, with counts.
-     * Worked out from the document's own pages, so a document split from
-     * an add has the add's reading of its pages.
+     * get_documents, with counts: reading while a reading of its pages is
+     * working (its agent with it); else its latest reading's, done, or
+     * ended with why, which shows as not read when it saved none of the
+     * document's pages and as done when it saved some (the others weren't
+     * looked at). Worked out from the document's own pages, so a document
+     * split from an add has the add's reading of its pages.
      */
-    /**
-     * These documents' readers: each one's agent, and whether it is reading
-     * the document now (readers.ts).
-     */
-    readers: (personId: string, documentIds: readonly string[]) =>
-      readersOf(db, personId, documentIds, options.runs ?? (() => false)),
-
     statuses: async (personId: string) => {
       const jobs = (
         await db
@@ -368,30 +417,26 @@ export function readings(
         .select(["document_id", "status", "unsure", "fields"])
         .where("person_id", "=", personId)
         .execute();
-      const statuses = new Map<
-        string,
-        {
-          status: "reading" | "done" | "failed";
-          saved: number;
-          of: number;
-          results: number;
-          hasPending: boolean;
-          toCheck: number;
-          itemsSaved: number;
-          itemsSetAside: number;
-          canRetry: boolean;
-          error: string | null;
-        }
-      >();
+      const statuses = new Map<string, ReadingStatus>();
       for (const document of documents) {
         const add = addOf.get(document.id);
         const mine = pages.filter((p) => p.document_id === document.id);
         const here = new Set(mine.map((p) => p.position));
-        const found = jobs.find(
+        const covering = jobs.filter(
           ({ job }) =>
             addOf.get(job.documentId) === add &&
             job.targets.some((t) => here.has(t)),
         );
+        // An ended reading that saved none of its pages gives way to an
+        // earlier one that did: the document was read.
+        const savedSome = ({ job }: (typeof jobs)[number]) =>
+          copies.some(
+            (c) => c.job_id === job.id && c.document_id === document.id,
+          ) || mine.some((p) => p.entry_job_id === job.id);
+        const found =
+          covering.find(({ job }) => job.state === "working") ??
+          covering.find((one) => one.job.state === "done" || savedSome(one)) ??
+          covering[0];
         if (!found) continue;
         const { job, error } = found;
         const targets = job.targets.filter((t) => here.has(t));
@@ -413,16 +458,25 @@ export function readings(
           drafts.filter(
             (d) => d.document_id === document.id && d.status === status,
           ).length;
+        const saved = mine.filter(
+          (p) =>
+            targets.includes(p.position) &&
+            (copied.has(p.position) || p.entry_job_id === job.id),
+        ).length;
         statuses.set(document.id, {
           status:
-            job.state === "queued" || job.state === "running"
+            job.state === "working"
               ? "reading"
-              : job.state,
-          saved: mine.filter(
-            (p) =>
-              targets.includes(p.position) &&
-              (copied.has(p.position) || p.entry_job_id === job.id),
-          ).length,
+              : job.state === "ended" && saved === 0
+                ? "not_read"
+                : "done",
+          // The latest hand-off's end, also when an earlier reading shows.
+          ended:
+            job.state === "working"
+              ? null
+              : (covering[0]?.job.endedWhy ?? null),
+          agent: job.state === "working" ? job.agent : null,
+          saved,
           of: targets.length,
           results: current.length,
           hasPending: pending.length > 0,
@@ -430,7 +484,7 @@ export function readings(
           itemsSaved: done("saved"),
           itemsSetAside: done("dismissed"),
           canRetry:
-            job.state === "failed" ||
+            job.state === "ended" ||
             (job.state === "done" &&
               mine.some(
                 (p) => p.state === "unreadable" || p.state === "not_looked_at",
@@ -456,7 +510,7 @@ export function readings(
         job &&
         (await db
           .selectFrom("jobs")
-          .select(["usage", "reader", "run_at", "error"])
+          .select(["usage", "reader", "started_at", "error"])
           .where("id", "=", job.id)
           .executeTakeFirstOrThrow());
       const pages = await db
@@ -485,7 +539,7 @@ export function readings(
       );
       // While it reads, the copies it saved so far.
       const sofar = new Map(
-        job && (job.state === "queued" || job.state === "running")
+        job?.state === "working"
           ? (
               await db
                 .selectFrom("page_copies as c")
@@ -505,21 +559,30 @@ export function readings(
       );
       const targets =
         job?.targets.filter((t) => pages.some((p) => p.position === t)) ?? [];
+      const copied = job
+        ? [
+            ...(
+              await copiedBy(db, { jobId: job.id, personId, documentId })
+            ).keys(),
+          ].filter((position) => targets.includes(position)).length
+        : 0;
       return {
         name: documentName(pages.map((p) => p.file_name)),
         status:
           job === undefined
             ? ("not_read" as const)
-            : job.state === "queued" || job.state === "running"
+            : job.state === "working"
               ? ("reading" as const)
-              : job.state,
+              : job.state === "ended" && copied === 0
+                ? ("not_read" as const)
+                : ("done" as const),
         saved: job
           ? pages.filter(
               (p) => p.entry_job_id === job.id && targets.includes(p.position),
             ).length
           : 0,
         of: job ? targets.length : pages.length,
-        runAt: job?.state === "running" ? (row?.run_at ?? null) : null,
+        runAt: job?.state === "working" ? (row?.started_at ?? null) : null,
         error: row?.error ?? null,
         note: document.reader_note,
         pages: pages.map((p) => ({
