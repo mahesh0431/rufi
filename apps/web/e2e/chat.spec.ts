@@ -1850,7 +1850,8 @@ test("a helper's long Activity shows its latest lines, and earlier ones on reque
   await send(page, "Read every page");
   await log(chat(page)).getByRole("button", { name: ENDED }).first().click();
   const reader = log(chat(page)).getByRole("button", { name: /Reader · / });
-  await expect(reader).toHaveText(/^Reader · done/);
+  // Its turn ended asking Rufi AI: it waits for the answer.
+  await expect(reader).toHaveText(/^Reader · waiting for Rufi AI/);
   await reader.click();
   const popup = page.getByRole("dialog", { name: "Reader" });
   const lines = popup
