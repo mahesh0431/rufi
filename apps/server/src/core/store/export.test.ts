@@ -302,8 +302,8 @@ second line', NULL, '');
     const store = openWritable(databasePath(home));
     try {
       store.db.exec(`
-        INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, created_at)
-          SELECT 'job-copy', 'asha', 'document_read', document_id, 'done', 1, '[1]', '2026-10-08T09:00:00Z'
+        INSERT INTO jobs (id, person_id, kind, document_id, state, targets, created_at)
+          SELECT 'job-copy', 'asha', 'document_read', document_id, 'done', '[1]', '2026-10-08T09:00:00Z'
           FROM document_pages WHERE file_id = '${file ?? ""}' AND page_in_file = 1;
       `);
       store.db

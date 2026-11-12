@@ -4,8 +4,9 @@
 // ledger, kept even when the agent database is lost, so forget can find
 // them), and how far Rufi has read the agent database's events
 // (`agent_cursor`). A hand-over Rufi claims for an agent names it in
-// `sent_as` (sentAs).
-import type { Kysely } from "kysely";
+// `sent_as` (sentAs). A job handed to an agent that is gone ends as lost.
+import type { Kysely, Transaction } from "kysely";
+import { endAll } from "../documents/jobs.ts";
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
 
@@ -79,6 +80,7 @@ export function chatAgents(
           .executeTakeFirst();
         if (cursor && !fresh) return cursor.number;
         await trx.deleteFrom("agent_owners").execute();
+        await endAll(trx, "agent_lost", now());
         await trx
           .insertInto("agent_cursor")
           .values({ id: 1, number: 0 })
@@ -140,12 +142,14 @@ export function chatAgents(
       )?.agent_id,
 
     /** The agent is gone from the agent database: it has no owner. */
-    drop: async (agent: string) => {
-      await db
-        .deleteFrom("agent_owners")
-        .where("agent_id", "=", agent)
-        .execute();
-    },
+    drop: (agent: string) =>
+      db.transaction().execute(async (trx) => {
+        await trx
+          .deleteFrom("agent_owners")
+          .where("agent_id", "=", agent)
+          .execute();
+        await endAll(trx, "agent_lost", now(), [agent]);
+      }),
 
     /** Chats with no agent of their own yet; only `chatId`, when given. */
     unrooted: async (chatId?: string): Promise<Unrooted[]> => {
@@ -201,8 +205,14 @@ export function chatAgents(
      * The agent is the owner's, in one transaction with the conversation
      * it takes over, as its first, in the ledger.
      */
-    own: (owner: Owner, adopted?: { provider: string; ref: string }) =>
+    own: (
+      owner: Owner,
+      adopted?: { provider: string; ref: string },
+      /** What is written with the owner, in its transaction. */
+      within?: (trx: Transaction<Tables>) => Promise<void>,
+    ) =>
       db.transaction().execute(async (trx) => {
+        await within?.(trx);
         const at = now();
         await trx
           .insertInto("agent_owners")

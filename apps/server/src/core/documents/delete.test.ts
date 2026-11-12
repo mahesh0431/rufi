@@ -447,9 +447,9 @@ describe("a delete", () => {
     const id = await add("asha", "ravi-lipid-panel.pdf", "lipid.pdf");
     // A reader that copies read it, and Asha's September photo.
     store.db.exec(`
-      INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, created_at) VALUES
-        ('job-copy-lipid', 'asha', 'document_read', '${id}', 'done', 1, '[1]', '${NOW}'),
-        ('job-copy-sep', 'asha', 'document_read', 'doc-asha-sep', 'done', 1, '[1]', '${NOW}');
+      INSERT INTO jobs (id, person_id, kind, document_id, state, targets, created_at) VALUES
+        ('job-copy-lipid', 'asha', 'document_read', '${id}', 'done', '[1]', '${NOW}'),
+        ('job-copy-sep', 'asha', 'document_read', 'doc-asha-sep', 'done', '[1]', '${NOW}');
       INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at) VALUES
         ('asha', '${RAVI_FILE}', 1, 'job-copy-lipid', 1, 'read', '# Lipid panel', '${NOW}'),
         ('asha', '${SEP_FILE}', 1, 'job-copy-sep', 1, 'read', '# Thyroid recheck', '${NOW}');
@@ -473,8 +473,8 @@ describe("a delete", () => {
   it("marks the chat's chips of the document and its draft items as deleted, takes Open off its reading's line, and brief sources say so", async () => {
     const id = await add("asha", "ravi-lipid-panel.pdf", "lipid.pdf");
     store.db.exec(`
-      INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, ended_at, created_at)
-        VALUES ('job-lipid', 'asha', 'document_read', '${id}', 'done', 1, '[1]', '${NOW}', '${NOW}');
+      INSERT INTO jobs (id, person_id, kind, document_id, state, targets, ended_at, created_at)
+        VALUES ('job-lipid', 'asha', 'document_read', '${id}', 'done', '[1]', '${NOW}', '${NOW}');
       INSERT INTO draft_items (id, person_id, document_id, page, seq, job_id, kind, fields, original, created_at)
       VALUES ('item-1', 'asha', '${id}', 1, 1, 'job-lipid', 'lab_result',
         '{"test_name":"LDL cholesterol","value_text":"162","unit":"mg/dL"}',
@@ -743,8 +743,8 @@ describe("a document Rufi AI split from an add", () => {
     store.db.exec(`
       INSERT INTO files (id, size, media_type, created_at) VALUES ('f-pile', 1, 'application/pdf', '${NOW}');
       INSERT INTO documents (id, person_id, added_at, added_from, version, sent_at) VALUES ('pile', 'asha', '${NOW}', 'documents_page', 1, '${NOW}');
-      INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, ended_at, created_at)
-        VALUES ('job-pile', 'asha', 'document_read', 'pile', 'done', 1, '[1,2]', '${NOW}', '${NOW}');
+      INSERT INTO jobs (id, person_id, kind, document_id, state, targets, ended_at, created_at)
+        VALUES ('job-pile', 'asha', 'document_read', 'pile', 'done', '[1,2]', '${NOW}', '${NOW}');
       INSERT INTO document_pages (person_id, document_id, position, file_id, page_in_file, file_name, state, entry_job_id, entry_attempt) VALUES
         ('asha', 'pile', 1, 'f-pile', 1, 'pile.pdf', 'read', 'job-pile', 1),
         ('asha', 'pile', 2, 'f-pile', 2, 'pile.pdf', 'read', 'job-pile', 1);

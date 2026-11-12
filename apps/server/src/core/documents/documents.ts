@@ -232,9 +232,6 @@ export function documents(
         .orderBy("p.position")
         .execute();
       const statuses = await reads?.statuses(personId);
-      const readers = await reads?.readers(personId, [
-        ...new Set(rows.map((row) => row.id)),
-      ]);
       const waiting = await unsorted(db, personId);
       const places = await placesOf(db, personId);
       type File = { -readonly [K in keyof DocumentFile]: DocumentFile[K] };
@@ -244,7 +241,6 @@ export function documents(
         let document = list.at(-1);
         if (document?.id !== row.id) {
           const reading = statuses?.get(row.id);
-          const reader = readers?.get(row.id);
           document = {
             id: row.id,
             addedAt: row.added_at,
@@ -258,10 +254,8 @@ export function documents(
                 : null;
             })(),
             notSorted: waiting.has(row.id),
-            reader: reader?.agent ?? null,
-            status: reader?.reading
-              ? "reading"
-              : (reading?.status ?? "not_read"),
+            reader: reading?.agent ?? null,
+            status: reading?.status ?? "not_read",
             reading: reading
               ? {
                   saved: reading.saved,

@@ -306,8 +306,8 @@ describe("get_documents", () => {
     );
     const at = "2026-10-10T09:00:00.000Z";
     store.db
-      .exec(`INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, created_at)
-      VALUES ('j1', 'asha', 'document_read', '${id}', 'done', 1, '[1,2]', '${at}')`);
+      .exec(`INSERT INTO jobs (id, person_id, kind, document_id, state, targets, created_at)
+      VALUES ('j1', 'asha', 'document_read', '${id}', 'done', '[1,2]', '${at}')`);
     const haemoglobin = JSON.stringify({
       test_name: "Haemoglobin",
       value_text: "13.2",
