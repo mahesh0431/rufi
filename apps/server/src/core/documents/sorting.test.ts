@@ -45,8 +45,8 @@ beforeEach(async () => {
     INSERT INTO chats (id, person_id, created_at) VALUES ('c-asha', 'asha', '${T0}'), ('c-ravi', 'ravi', '${T0}');
     INSERT INTO files (id, size, media_type, created_at) VALUES ('f-pile', 1, 'application/pdf', '${T0}');
     INSERT INTO documents (id, person_id, added_at, added_from, version, sent_at) VALUES ('pile', 'asha', '${T0}', 'documents_page', 1, '${T0}');
-    INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, ended_at, created_at)
-      VALUES ('job-1', 'asha', 'document_read', 'pile', 'done', 1, '[1,2,3,4,5]', '${T0}', '${T0}');
+    INSERT INTO jobs (id, person_id, kind, document_id, state, targets, ended_at, created_at)
+      VALUES ('job-1', 'asha', 'document_read', 'pile', 'done', '[1,2,3,4,5]', '${T0}', '${T0}');
   `);
   for (const [index, copy] of COPIES.entries()) {
     const page = index + 1;
@@ -194,8 +194,8 @@ describe("a draft's reading", () => {
   /** Page 2 read again, by a reading not sorted yet: its current copy now. */
   const readAgain = () => {
     store.db.exec(`
-      INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, ended_at, created_at)
-        VALUES ('job-2', 'asha', 'document_read', 'pile', 'done', 1, '[2]', '${T0}', '${T0}');
+      INSERT INTO jobs (id, person_id, kind, document_id, state, targets, ended_at, created_at)
+        VALUES ('job-2', 'asha', 'document_read', 'pile', 'done', '[2]', '${T0}', '${T0}');
       INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at)
         VALUES ('asha', 'f-pile', 2, 'job-2', 1, 'read', '| Ferritin | 1,25 | ng/mL |\n| Vitamin B12 | 104 | pg/mL |', '${T0}');
     `);
@@ -235,8 +235,8 @@ describe("a draft's reading", () => {
     // Ravi's reading of the same file.
     store.db.exec(`
       INSERT INTO documents (id, person_id, added_at, added_from, version, sent_at) VALUES ('pile-ravi', 'ravi', '${T0}', 'documents_page', 1, '${T0}');
-      INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, ended_at, created_at)
-        VALUES ('job-ravi', 'ravi', 'document_read', 'pile-ravi', 'done', 1, '[1]', '${T0}', '${T0}');
+      INSERT INTO jobs (id, person_id, kind, document_id, state, targets, ended_at, created_at)
+        VALUES ('job-ravi', 'ravi', 'document_read', 'pile-ravi', 'done', '[1]', '${T0}', '${T0}');
       INSERT INTO document_pages (person_id, document_id, position, file_id, page_in_file, file_name, state, entry_job_id, entry_attempt)
         VALUES ('ravi', 'pile-ravi', 1, 'f-pile', 1, 'pile.pdf', 'read', 'job-ravi', 1);
       INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at)
@@ -495,14 +495,10 @@ describe("a sort", () => {
     expect(documents()).toHaveLength(1);
   });
 
-  it("refuses another person's add, and an add that is being read", async () => {
+  it("refuses another person's add", async () => {
     await expect(
       sorts.sort({ ...personal(), personId: "ravi", chatId: "c-ravi" }, THREE),
     ).rejects.toThrow("There is no such document for this person");
-    store.db.exec("UPDATE jobs SET state = 'running'");
-    await expect(sorts.sort(personal(), THREE)).rejects.toThrow(
-      "The reader is reading pages of this add now.",
-    );
     expect(documents()).toHaveLength(1);
   });
 
@@ -581,8 +577,8 @@ describe("a sort", () => {
     const lakeside = documents()[1];
     // Page 4 read again is a letter.
     store.db.exec(`
-      INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, ended_at, created_at)
-        VALUES ('job-2', 'asha', 'document_read', 'pile', 'done', 1, '[4]', '${T0}', '${T0}');
+      INSERT INTO jobs (id, person_id, kind, document_id, state, targets, ended_at, created_at)
+        VALUES ('job-2', 'asha', 'document_read', 'pile', 'done', '[4]', '${T0}', '${T0}');
       INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at)
         VALUES ('asha', 'f-pile', 4, 'job-2', 1, 'read', 'Dear Asha, see you on 21/08/2026.', '${T0}');
     `);

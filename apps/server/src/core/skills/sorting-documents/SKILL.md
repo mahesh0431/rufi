@@ -11,15 +11,13 @@ A file is read, then sorted. A reader, an agent you start, copies each page as p
 
 Rufi's note names the files the user sent that aren't read yet: each document's id and the pages to read. Some ways to go about it:
 
-- Before you start a reader, look at the document with get_documents: its agent is the reader set on it, and its status says "reading" while that agent is at work and hasn't saved. agent_status, and read_agent when you need more, show how the agent is getting on. If it is still reading and getting on, tell the user it is still being read, and start nothing new. If it is stuck or failed, stop it if it still runs, then start a fresh reader. If there is none, start one.
-- Start a reader for each file with start_agent: a title such as "Reading report.pdf", and a task that names the document's id and the pages to read, and asks it to use the reading-documents skill.
-- A reader that is still at work can take another file too: send it the document and pages with send_agent.
-- Then set the reader on its documents with set_reader, with the agent's id from start_agent's answer: the user sees the document as Reading while it works, and you see its agent the next time you look.
-- Before you start readers, write your plan in your to-do list: the readers to start, and setting each on its documents. After a restart ("Rufi stopped suddenly (restart). Please continue."), the list shows what is still to do, such as a reader you started and haven't set on its documents yet.
+- Before you start a reader, look at the document with get_documents: its status says "reading" while a reader you gave it to, or an agent that reader started, is at work and its pages aren't all saved, with that reader as its agent. agent_status, and read_agent when you need more, show how the agent is getting on. If it is still reading and getting on, tell the user it is still being read, and start nothing new. If it is stuck or failed, stop it if it still runs, then start a fresh reader. If there is none, start one.
+- Start a reader for each file with start_agent: a title such as "Reading report.pdf", a task that names the document's id and the pages to read and asks it to use the reading-documents skill, and the document with those pages in documents. The user sees the document as Reading while the reader works.
+- A reader that is still at work can take another file too: send it the document and pages with send_agent, with the document in documents.
 - Choose each reader's model and effort (start_agent names them). A clear printed PDF may need less than a blurred photo, handwriting or a long table; usage shows how much of the plan is left.
-- A long document can go to several readers, each with some of its pages.
+- A long document can go to several readers, each given some of its pages.
 - While readers work, you can tell the user what is being read and end your turn: each reader's result wakes you.
-- When a reading fails or stops, you can start a reader again for the pages it didn't save, on the same model or another, or tell the user what happened and let them choose.
+- When a reading ends before its pages are saved, get_documents says why (ended): its reader never started, stopped working without saving them, was stopped, or failed. You can start a reader again for the pages it didn't save, on the same model or another, or tell the user what happened and let them choose.
 - Once a file's reading is saved, sort it. You can sort each file as its reading comes back, or wait for the others and sort them together: how much to sort at once is your call.
 
 ## Sorting what was read

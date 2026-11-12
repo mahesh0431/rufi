@@ -18,12 +18,12 @@ export default defineConfig({
       testDir: "apps/web/e2e",
       use: { browserName: "chromium" },
     },
-    // A visual's guard in WebKit, the iPhone's engine (ADR 0034).
+    // A visual's guard and its buttons in WebKit, the iPhone's engine (ADR 0034, 0035).
     {
       name: "screens-webkit",
       testDir: "apps/web/e2e",
       testMatch: "visual.spec.ts",
-      grep: /reaches neither the network/,
+      grep: /reaches neither the network|buttons send their messages as yours/,
       use: { browserName: "webkit" },
     },
     { name: "desktop", testDir: "apps/desktop/e2e", timeout: 60_000 },

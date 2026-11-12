@@ -1,4 +1,4 @@
-# 0035 · Paired apps reach the remote door by one route of three
+# 0036 · Paired apps reach the remote door by one route of three
 
 **Date:** 12 Nov 2026 · **Status:** accepted · amends [0032](0032-paired-apps-reach-rufi-through-the-remote-door.md)
 

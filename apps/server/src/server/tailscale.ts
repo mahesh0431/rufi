@@ -1,4 +1,4 @@
-// Tailscale, as Rufi uses it for the remote door (docs/adr/0032, 0035): this
+// Tailscale, as Rufi uses it for the remote door (docs/adr/0032, 0036): this
 // Mac's name on the tailnet, and two of the door's routes to the door on
 // 127.0.0.1: Tailscale Serve, HTTPS on the door's port for the tailnet only,
 // and Tailscale Funnel, HTTPS on a port of Rufi's own for anyone. Rufi never

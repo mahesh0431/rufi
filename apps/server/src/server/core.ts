@@ -81,7 +81,7 @@ import {
   type Tailscale,
 } from "./tailscale.ts";
 import { secret, sessions } from "./session.ts";
-import { agentRuns, subAgents } from "./sub-agents.ts";
+import { subAgents } from "./sub-agents.ts";
 import { keptSignIns, signInFlow, type ProviderSignIn } from "./signin.ts";
 
 export interface CoreOptions {
@@ -276,11 +276,7 @@ export const startCore = (options: CoreOptions) =>
     const transcripts = openTranscripts(writer, options.now);
     const drafts = openDrafts(writer, options.now);
     const queue = chatQueue(writer, options.now);
-    // Whether a document's reader is at work: the agent system is made by
-    // the time anything lists documents.
-    const readings = openReadings(writer, {
-      runs: (agent) => agentRuns(agentSystem.agents, agent),
-    });
+    const readings = openReadings(writer);
     const sorting = openSorting(writer, options.now);
     const deviceData = openDevices(
       writer,
@@ -419,6 +415,11 @@ export const startCore = (options: CoreOptions) =>
               subAgents({
                 agents: agentSystem.agents,
                 kept: chatAgents(writer, options.now),
+                record: writer,
+                documents: (personId) => {
+                  readings.changed(personId);
+                },
+                ...(options.now && { now: options.now }),
                 queue,
                 log,
                 // The chat these tools run in: made by now.
