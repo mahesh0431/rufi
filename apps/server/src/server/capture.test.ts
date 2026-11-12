@@ -936,8 +936,12 @@ describe.runIf(process.platform === "darwin")(
           await mkdir(dirname(claudeFile), { recursive: true });
           await writeFile(claudeFile, JSON.stringify({ fictional: true }));
           // A fictional Cloudflare tunnel's credentials.
-          const tunnelFile = join(cloudflareFolder(home), "tunnel.json");
-          await mkdir(cloudflareFolder(home), { recursive: true });
+          const tunnelFile = join(
+            cloudflareFolder(home),
+            "tunnels",
+            "fictional.json",
+          );
+          await mkdir(dirname(tunnelFile), { recursive: true });
           await writeFile(
             tunnelFile,
             JSON.stringify({ TunnelSecret: `fictional-${uuid()}` }),

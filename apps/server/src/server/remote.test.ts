@@ -805,7 +805,7 @@ const throughTunnel: Reach = async (url, init) => {
 };
 
 describe("Cloudflare Tunnel", () => {
-  it("is set up, then pairs a phone at its address through the tunnel; the last unpair stops cloudflared", async () => {
+  it("is set up, then makes a pairing code at its address once the check through the tunnel passes; cancelling the code stops cloudflared", async () => {
     const core = await start(standIn(), undefined, throughTunnel);
     const api = await settings(core);
     await api("PUT", "/api/remote/route", { kind: "cloudflare" });

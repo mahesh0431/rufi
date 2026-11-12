@@ -119,7 +119,7 @@ const claudeFile = (home: string) => join(claudeFolder(home), ".claude.json");
 
 /** The Cloudflare tunnel's credentials, there to be read. */
 const tunnelFile = (home: string) =>
-  join(cloudflareFolder(home), "tunnel.json");
+  join(cloudflareFolder(home), "tunnels", "fictional.json");
 
 /**
  * A fictional file at each path of the data folder `home` that the AI can't

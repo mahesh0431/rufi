@@ -8,7 +8,7 @@
 import type { ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, writeFile } from "node:fs/promises";
 import { delimiter, join } from "node:path";
 import { killGroup, spawnWatched } from "../agent/codex/processes.ts";
 import { readJson, writePrivateJson } from "../platform/files.ts";
@@ -74,7 +74,9 @@ const HOSTNAME =
 export function cloudflare(options: CloudflareOptions): Cloudflare {
   const { log } = options;
   const folder = cloudflareFolder(options.home);
-  const tunnelFile = join(folder, "tunnel.json");
+  /** Each tunnel's credentials, by its id: one setup never replaces another's. */
+  const tunnels = join(folder, "tunnels");
+  const tunnelFile = (id: string) => join(tunnels, `${id}.json`);
   const routeFile = join(folder, "route.json");
   const configFile = join(folder, "config.yml");
   const api = options.api ?? ((url, init) => fetch(url, init));
@@ -100,21 +102,34 @@ export function cloudflare(options: CloudflareOptions): Cloudflare {
       : undefined;
   };
 
-  const credentials = async (): Promise<Credentials | undefined> => {
-    const read = (await readJson(tunnelFile)) as
-      | Partial<Credentials>
-      | undefined;
-    return typeof read?.AccountTag === "string" &&
-      typeof read.TunnelID === "string"
-      ? (read as Credentials)
-      : undefined;
+  /** Every tunnel Rufi made from this Mac whose credentials it has. */
+  const credentials = async (): Promise<Credentials[]> => {
+    const ids = await readdir(tunnels).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    });
+    const found: Credentials[] = [];
+    for (const name of ids.filter((each) => each.endsWith(".json"))) {
+      const read = (await readJson(join(tunnels, name))) as
+        | Partial<Credentials>
+        | undefined;
+      if (
+        typeof read?.AccountTag === "string" &&
+        typeof read.TunnelID === "string"
+      ) {
+        found.push(read as Credentials);
+      }
+    }
+    return found;
   };
 
   /** Runs cloudflared for `using` to the door on `port`, unless it runs. */
   const run = async (port: number) => {
     const using = await saved();
-    const tunnel = await credentials();
-    if (!using || tunnel?.TunnelID !== using.tunnel) {
+    const tunnel =
+      using &&
+      (await credentials()).find(({ TunnelID }) => TunnelID === using.tunnel);
+    if (!using || !tunnel) {
       throw new RouteProblem("Set up Cloudflare first.");
     }
     if (child) return using.address;
@@ -129,7 +144,7 @@ export function cloudflare(options: CloudflareOptions): Cloudflare {
       configFile,
       [
         `tunnel: ${using.tunnel}`,
-        `credentials-file: ${JSON.stringify(tunnelFile)}`,
+        `credentials-file: ${JSON.stringify(tunnelFile(using.tunnel))}`,
         "ingress:",
         `  - hostname: ${using.address}`,
         `    service: http://127.0.0.1:${String(port)}`,
@@ -277,9 +292,16 @@ export function cloudflare(options: CloudflareOptions): Cloudflare {
         );
       }
 
-      // Rufi's own tunnel in this account, or a new one.
-      let tunnel = await credentials();
-      if (tunnel?.AccountTag !== zone.account) {
+      // Rufi's own tunnel in this account (the one in use first, then one
+      // a setup cut short made), or a new one.
+      const inUse = (await saved())?.tunnel;
+      const mine = (await credentials())
+        .filter(({ AccountTag }) => AccountTag === zone.account)
+        .sort(
+          (a, b) => Number(b.TunnelID === inUse) - Number(a.TunnelID === inUse),
+        );
+      let tunnel = mine[0];
+      if (!tunnel) {
         const secret = randomBytes(32).toString("base64");
         const made = (await call(
           "create the tunnel",
@@ -297,7 +319,7 @@ export function cloudflare(options: CloudflareOptions): Cloudflare {
           TunnelSecret: secret,
         };
         await mkdir(folder, { recursive: true, mode: 0o700 });
-        await writePrivateJson(tunnelFile, tunnel);
+        await writePrivateJson(tunnelFile(tunnel.TunnelID), tunnel);
       }
 
       // The address's record: one to this tunnel stays; Cloudflare refuses

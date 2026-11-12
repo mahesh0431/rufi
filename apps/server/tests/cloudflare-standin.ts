@@ -46,8 +46,15 @@ const ok = (result: unknown) =>
 const refused = (status: number, code: number, message: string) =>
   answer(status, { success: false, errors: [{ code, message }], result: null });
 
-/** Cloudflare's API for one account with `zones` (name → id). */
-export function cloudflareApi(zones: Record<string, string>): StandInApi {
+/**
+ * Cloudflare's API with `zones` (name → id), each in `accounts`' account
+ * for its id, or the one account.
+ */
+export function cloudflareApi(
+  zones: Record<string, string>,
+  accounts: Record<string, string> = {},
+): StandInApi {
+  const accountOf = (zone: string) => accounts[zone] ?? ACCOUNT;
   const asked: Asked[] = [];
   const tunnels: StandInApi["tunnels"] = [];
   const records = new Map<string, DnsRecord[]>(
@@ -79,17 +86,22 @@ export function cloudflareApi(zones: Record<string, string>): StandInApi {
       return ok(
         Object.entries(zones)
           .filter(([zone]) => zone === name)
-          .map(([zone, id]) => ({ id, name: zone, account: { id: ACCOUNT } })),
+          .map(([zone, id]) => ({
+            id,
+            name: zone,
+            account: { id: accountOf(id) },
+          })),
       );
     }
-    if (method === "POST" && path === `/accounts/${ACCOUNT}/cfd_tunnel`) {
+    const creating = /^\/accounts\/([^/]+)\/cfd_tunnel$/.exec(path);
+    if (method === "POST" && creating) {
       const made = {
         id: randomUUID(),
         name: String(body?.["name"]),
         secret: String(body?.["tunnel_secret"]),
       };
       tunnels.push(made);
-      return ok({ id: made.id, name: made.name, account_tag: ACCOUNT });
+      return ok({ id: made.id, name: made.name, account_tag: creating[1] });
     }
     const dns = /^\/zones\/([^/]+)\/dns_records$/.exec(path);
     const zone = dns && records.get(dns[1] ?? "");
