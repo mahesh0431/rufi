@@ -78,8 +78,8 @@ INSERT INTO record_sources (person_id, kind, record_id, type, visit_id) VALUES
 -- A reading of Asha's August report, done and sorted: page 1 read, with
 -- its copy and three draft items not saved yet (one fixed by her, one
 -- worth a look, one an earlier value); page 2 has nothing to read.
-INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, started_at, run_at, ended_at, created_at) VALUES
-  ('job-aug', 'asha', 'document_read', 'doc-asha-aug', 'done', 1, '[1,2]', '2026-10-01T09:00:00Z', '2026-10-01T09:00:00Z', '2026-10-01T09:02:00Z', '2026-10-01T09:00:00Z');
+INSERT INTO jobs (id, person_id, kind, document_id, state, targets, started_at, ended_at, created_at) VALUES
+  ('job-aug', 'asha', 'document_read', 'doc-asha-aug', 'done', '[1,2]', '2026-10-01T09:00:00Z', '2026-10-01T09:02:00Z', '2026-10-01T09:00:00Z');
 UPDATE document_pages SET state = 'read', entry_job_id = 'job-aug', entry_attempt = 1, entry_at = '2026-10-01T09:01:00Z'
   WHERE person_id = 'asha' AND document_id = 'doc-asha-aug' AND position = 1;
 UPDATE document_pages SET state = 'nothing_here', entry_job_id = 'job-aug', entry_attempt = 1, entry_at = '2026-10-01T09:02:00Z'
@@ -133,8 +133,8 @@ UPDATE chats SET revision = 4 WHERE id = 'c-asha';
 -- An older Rufi's reading of the September photo that failed partway: its
 -- reader's entry for the page (no copy), with an issue it noted, and Rufi's
 -- check that it may be incomplete.
-INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, error, started_at, run_at, ended_at, created_at) VALUES
-  ('job-sep', 'asha', 'document_read', 'doc-asha-sep', 'failed', 1, '[1]', 'The reader stopped before it finished.', '2026-09-02T18:31:00Z', '2026-09-02T18:31:00Z', '2026-09-02T18:33:00Z', '2026-09-02T18:31:00Z');
+INSERT INTO jobs (id, person_id, kind, document_id, state, ended_why, targets, error, started_at, ended_at, created_at) VALUES
+  ('job-sep', 'asha', 'document_read', 'doc-asha-sep', 'ended', 'failed', '[1]', 'The reader stopped before it finished.', '2026-09-02T18:31:00Z', '2026-09-02T18:33:00Z', '2026-09-02T18:31:00Z');
 UPDATE document_pages SET entry_job_id = 'job-sep', entry_attempt = 1, entry_at = '2026-09-02T18:32:00Z',
   entry = '{"outcome":"read","facts":{"issuer":"Sunrise Labs","dates":[{"label":"Collected","date":"1 Sep 2026"}]},"rows_seen":2,"items":[{"test_name":"TSH","value_text":"4.6","unit":"mIU/L","reference_range":"0.4–4.0","flag_text":"H","unsure":"The value is faint."}],"issues":["The bottom of the photo is cut off."]}',
   entry_checks = '{"incomplete":{"rows_seen":2,"items":1},"items":[{"item":1,"why":"Its unit is not on the page."}]}'

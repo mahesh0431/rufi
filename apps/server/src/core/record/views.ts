@@ -922,8 +922,8 @@ const isNeed = (group: FollowUpGroup): group is FollowUpNeed["state"] =>
   group === "overdue" || group === "due" || group === "coming_up";
 
 /**
- * Documents waiting for the person: read with results not saved, read with
- * pages that couldn't be read (Retry reads them), or a reading that failed.
+ * Documents waiting for the person: read with results not saved, or read
+ * with pages that couldn't be read (Retry reads them).
  * A document read cleanly with nothing to save waits for nothing.
  */
 export function waiting(
@@ -933,23 +933,21 @@ export function waiting(
     const name = documentName(document.files.map((file) => file.name));
     const reading = document.reading;
     const state =
-      document.status === "failed"
-        ? "failed"
-        : document.status !== "done" || !reading
-          ? undefined
-          : reading.results > 0
-            ? "to_save"
-            : reading.canRetry
-              ? "unread_pages"
-              : undefined;
+      document.status !== "done" || !reading
+        ? undefined
+        : reading.results > 0
+          ? "to_save"
+          : reading.canRetry
+            ? "unread_pages"
+            : undefined;
     if (state === undefined) return [];
     return [
       {
         id: document.id,
         name,
         state,
-        results: state === "failed" ? 0 : (reading?.results ?? 0),
-        toCheck: state === "failed" ? 0 : (reading?.toCheck ?? 0),
+        results: reading?.results ?? 0,
+        toCheck: reading?.toCheck ?? 0,
       },
     ];
   });

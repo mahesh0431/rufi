@@ -50,12 +50,13 @@ export const DocumentSummary = Schema.Struct({
   notSorted: Schema.Boolean,
   /**
    * not_read: no reading of it saved (none started, or its reader stopped
-   * or failed first); Retry puts it in the chat. reading: the agent Rufi AI
-   * set on it runs and hasn't saved a reading of it (or an older reader's
-   * reading ran).
+   * before it saved any of its pages); Retry puts it in the chat. reading:
+   * a reader Rufi AI gave it to, or one that reader started, is at work and
+   * its pages aren't all saved. done: its latest reading saved pages (any
+   * it didn't weren't looked at).
    */
-  status: Schema.Literals(["not_read", "reading", "done", "failed"]),
-  /** The agent Rufi AI set to read it, by its id; null when none. */
+  status: Schema.Literals(["not_read", "reading", "done"]),
+  /** The agent reading it, by its id, while one is; null otherwise. */
   reader: Schema.NullOr(Schema.String),
   /** The latest reading: pages saved of those it reads, and its drafts. */
   reading: Schema.NullOr(
@@ -143,7 +144,7 @@ export type ReadEntry = typeof ReadEntry.Type;
 /** A document's reading as Open shows it: the reader's work, read only. */
 export const ReadingView = Schema.Struct({
   name: Schema.String,
-  status: Schema.Literals(["not_read", "reading", "done", "failed"]),
+  status: Schema.Literals(["not_read", "reading", "done"]),
   saved: Schema.Int,
   of: Schema.Int,
   runAt: Schema.NullOr(Schema.String),

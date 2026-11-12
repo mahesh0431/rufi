@@ -94,7 +94,6 @@ CREATE TABLE documents (
   deleted_at TEXT,       -- when the person deleted it: a tombstone, out of every list and action
   from_document TEXT,    -- the add Rufi AI split it from; null for an add
   sent_at TEXT,          -- when the person sent it in a message; null while it waits unsent in the chat box (a split document has its add's)
-  reader_agent TEXT,     -- the agent Rufi AI set to read it (set_reader), in agents.sqlite; whether it is reading is worked out when shown
   UNIQUE (person_id, id),
   FOREIGN KEY (person_id, from_document) REFERENCES documents (person_id, id)
 ) STRICT;
@@ -130,29 +129,35 @@ CREATE TABLE document_pages (
   FOREIGN KEY (person_id, entry_job_id) REFERENCES jobs (person_id, id)
 ) STRICT;
 
--- A document's readings, one row per job. A reader's save_reading writes
--- one whole, done (save-reading.ts). An older reader's job ran in Rufi's
--- part of a reply, one attempt at a time, and was queued or running only
--- while it ran; one that hadn't finished failed when Rufi upgraded.
+-- A task Rufi AI handed to an agent, one row per hand-off (jobs.ts). kind
+-- says what the task is; only document_read now: reading pages of a
+-- document. start_agent or send_agent with documents opens one, working;
+-- a save_reading from the agent or one below it saves its pages (the
+-- oldest hand-off whose message the agent has taken), and it is done once
+-- every page it asked for is saved; it ends, with why, when the
+-- agent and everything below it have stopped with pages unsaved. A
+-- save_reading with none open makes one, done. An older reader's job keeps
+-- its error, usage and reader.
 CREATE TABLE jobs (
   id TEXT PRIMARY KEY,
   person_id TEXT NOT NULL,
   kind TEXT NOT NULL CHECK (kind IN ('document_read')),
-  document_id TEXT NOT NULL,
-  state TEXT NOT NULL CHECK (state IN ('queued', 'running', 'done', 'failed')),
-  attempt INTEGER NOT NULL DEFAULT 0, -- 1, 2, 3... as runs start
-  targets TEXT NOT NULL,               -- JSON array of page positions
-  retries INTEGER NOT NULL DEFAULT 0,  -- automatic retries used since its start or the person's Retry
-  retry_at TEXT,                       -- a queued automatic retry runs from then on
-  started_at TEXT,                     -- its first real start
-  run_at TEXT,                         -- the current run's start
+  agent_id TEXT,                       -- the agent it was handed to, in agents.sqlite; null for an older reader's
+  call_id TEXT,                        -- the start_agent or send_agent call that handed it over, its message's id there; null when a save made it
+  state TEXT NOT NULL CHECK (state IN ('working', 'done', 'ended')),
+  ended_why TEXT CHECK (ended_why IN ('not_started', 'no_save', 'stopped', 'failed', 'agent_lost', 'deleted')),
+  document_id TEXT,                    -- document_read: the document
+  targets TEXT,                        -- document_read: the page positions it asked for (JSON array)
+  started_at TEXT,
   ended_at TEXT,
-  error TEXT,                          -- why it failed, in words for the person
-  usage TEXT,                          -- its runs' AI use as the agent reported it, summed (JSON)
-  reader TEXT,                         -- the reader version of its last run (JSON)
+  error TEXT,                          -- an older reader's: why it failed, in words for the person
+  usage TEXT,                          -- an older reader's runs' AI use, summed (JSON)
+  reader TEXT,                         -- an older reader's version (JSON)
   created_at TEXT NOT NULL,
   UNIQUE (person_id, id),
-  FOREIGN KEY (person_id, document_id) REFERENCES documents (person_id, id)
+  FOREIGN KEY (person_id, document_id) REFERENCES documents (person_id, id),
+  CHECK ((state = 'ended') = (ended_why IS NOT NULL)),
+  CHECK ((kind = 'document_read') = (document_id IS NOT NULL AND targets IS NOT NULL))
 ) STRICT;
 
 -- What Rufi AI drafted from a page copy (or an older reader read) and the
@@ -813,7 +818,7 @@ CREATE TABLE device_values (
 
 CREATE INDEX documents_by_added ON documents (person_id, added_at);
 CREATE INDEX documents_by_add ON documents (person_id, from_document);
-CREATE INDEX jobs_by_state ON jobs (state, created_at);
+CREATE INDEX jobs_by_agent ON jobs (agent_id, state);
 CREATE INDEX jobs_by_document ON jobs (person_id, document_id, created_at);
 CREATE INDEX page_copies_by_job ON page_copies (person_id, job_id);
 CREATE INDEX reports_by_document ON reports (person_id, document_id);
@@ -877,4 +882,4 @@ CREATE TABLE agent_cursor (
 ) STRICT;
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 34;
+PRAGMA user_version = 35;

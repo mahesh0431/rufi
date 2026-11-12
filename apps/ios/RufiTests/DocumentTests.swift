@@ -14,7 +14,7 @@ struct DocumentTests {
     @Test func documentsSayEachOnesStatusAndWhetherRetryWouldRead() throws {
         let documents = try read("documents", as: DocumentList.self).documents
         #expect(documents.map { Words.describe($0).name } == ["thyroid recheck.jpg", "Sunrise Labs August.pdf"])
-        #expect(documents.map { Words.status(of: $0) } == ["Failed · read 1 of 1", "Not saved · 2 results"])
+        #expect(documents.map { Words.status(of: $0) } == ["To check", "Not saved · 2 results"])
         #expect(documents.map(Words.canRetry) == [true, false])
         #expect(Words.place(DocumentSummary.Place(pages: [1, 2, 4], of: 5)) == "pages 1–2, 4 of 5")
     }

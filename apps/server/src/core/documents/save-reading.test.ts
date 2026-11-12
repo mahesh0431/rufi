@@ -219,12 +219,12 @@ describe("a reading agent's saved reading", () => {
     ]);
   });
 
-  it("counts only a finished reading's copy: a page an older stopped reading copied, and no reading since, stays not looked at", async () => {
+  it("counts only a finished reading's copy: a page another reader's working reading copied, and no reading finished, stays not looked at", async () => {
     rufi.store.db.exec(`
-      INSERT INTO jobs (id, person_id, kind, document_id, state, attempt, targets, error, created_at)
-        VALUES ('job-stopped', 'asha', 'document_read', 'doc-asha-aug', 'failed', 1, '[1,2]', 'Rufi closed while reading', '${NOW}');
+      INSERT INTO jobs (id, person_id, kind, agent_id, document_id, state, targets, created_at)
+        VALUES ('job-other', 'asha', 'document_read', 'another-reader', 'doc-asha-aug', 'working', '[1]', '${NOW}');
       INSERT INTO page_copies (person_id, file_id, page_in_file, job_id, attempt, outcome, copy, saved_at)
-        SELECT 'asha', file_id, page_in_file, 'job-stopped', 1, 'read', 'Half a copy', '${NOW}'
+        SELECT 'asha', file_id, page_in_file, 'job-other', 1, 'read', 'Half a copy', '${NOW}'
         FROM document_pages WHERE document_id = 'doc-asha-aug' AND position = 1;
     `);
     const saved = await call(

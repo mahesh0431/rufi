@@ -20,6 +20,7 @@ import type { Tables } from "../store/tables.ts";
 import { removeNotes } from "../store/work.ts";
 import { Refusal } from "../tools/registry.ts";
 import type { FileGate } from "./gate.ts";
+import { endDeleted } from "./jobs.ts";
 import { removeBytes, sweepBytes } from "./originals.ts";
 import { DELETED_DOCUMENT, documentName } from "./naming.ts";
 import { addOf, placesOf } from "./sorting.ts";
@@ -136,7 +137,7 @@ async function previewIn(
     .select((eb) => eb.fn.countAll<number>().as("readings"))
     .where("person_id", "=", personId)
     .where("document_id", "=", documentId)
-    .where("state", "in", ["queued", "running"])
+    .where("state", "=", "working")
     .executeTakeFirstOrThrow();
   const { unsaved } = await db
     .selectFrom("draft_items")
@@ -503,6 +504,8 @@ export function deletions(deps: {
             .where("person_id", "=", personId)
             .where("document_id", "=", documentId)
             .execute();
+          // A reading of it under way ends: its agent's save is refused.
+          await endDeleted(trx, personId, [documentId], at);
           // Its readings, but one whose copies or drafts another document
           // of its add still has (a split document's pages were read with
           // the add): it stays while they do, and goes with the last of
