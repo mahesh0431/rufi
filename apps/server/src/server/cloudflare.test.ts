@@ -17,7 +17,10 @@ import { RouteProblem } from "./remote-route.ts";
 const ZONES = {
   "example.com": "zone-example",
   "home.example.com": "zone-home",
+  "other.org": "zone-other",
 };
+/** other.org is in a second account of the person's. */
+const ACCOUNTS = { "zone-other": "acc1second" };
 
 let home: string;
 let stand: StandInApi;
@@ -27,7 +30,7 @@ let made: Cloudflare;
 
 beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), "rufi-cloudflare-"));
-  stand = cloudflareApi(ZONES);
+  stand = cloudflareApi(ZONES, ACCOUNTS);
   fake = await fakeCloudflared(join(home, "bin"));
   logged = [];
   made = open();
@@ -78,7 +81,11 @@ describe("setting up Cloudflare", () => {
       address: "rufi.home.example.com",
     });
     // The tunnel's credentials, for this user only.
-    const credentials = join(cloudflareFolder(home), "tunnel.json");
+    const credentials = join(
+      cloudflareFolder(home),
+      "tunnels",
+      `${tunnel?.id ?? ""}.json`,
+    );
     expect((await stat(credentials)).mode & 0o777).toBe(0o600);
     expect(JSON.parse(await readFile(credentials, "utf8"))).toMatchObject({
       TunnelID: tunnel?.id,
@@ -121,6 +128,22 @@ describe("setting up Cloudflare", () => {
     expect(stand.tunnels).toHaveLength(1);
     expect(stand.records.get("zone-example")).toHaveLength(1);
     expect(await made.state()).toMatchObject({ address: "rufi.example.com" });
+  });
+
+  it("keeps the address set up before working when a change to another account fails, and reuses that account's new tunnel on the retry", async () => {
+    await made.setup("rufi.example.com", TOKEN);
+    stand.failNext("POST /zones/zone-other/dns_records");
+    await expect(made.setup("rufi.other.org", TOKEN)).rejects.toThrow(
+      "Cloudflare couldn't add the address's record",
+    );
+
+    expect(await made.state()).toMatchObject({ address: "rufi.example.com" });
+    expect(await made.route.up(41234, true)).toBe("rufi.example.com");
+    await made.route.down(41234);
+
+    await made.setup("rufi.other.org", TOKEN);
+    expect(stand.tunnels).toHaveLength(2);
+    expect(await made.route.up(41234, true)).toBe("rufi.other.org");
   });
 
   it("never replaces another record at the address, and keeps the address set up before", async () => {
