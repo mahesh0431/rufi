@@ -543,6 +543,26 @@ final class ChatModel {
         Task { await deliver() }
     }
 
+    /// A visual's button (ADR 0035): its message goes as the person's own,
+    /// kept on the iPhone first, as a send from the box does, while the box
+    /// keeps its words and chips. Only for this chat's pairing, checked as
+    /// it is kept: a card of a pairing that ended, answering late, adds
+    /// nothing to the next pairing's messages.
+    func answer(_ text: String) {
+        let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !ended, pairing == pending.generation, !words.isEmpty else { return }
+        let kind = transcript.running == nil ? nil : whileReplying
+        do {
+            try pending.add(words, kind: kind)
+        } catch {
+            notice = "Rufi couldn't keep that. Try again."
+            return
+        }
+        sends += 1
+        settle()
+        Task { await deliver() }
+    }
+
     /// Sends what waits on the iPhone, in order. One the Mac took shows as
     /// sent until the chat has it; one it refused comes back into the box,
     /// with its words.
