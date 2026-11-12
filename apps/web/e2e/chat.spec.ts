@@ -289,7 +289,8 @@ test("while a reply is written it shows as Settings › Chat says: paragraph by 
     "- Fasting glucose: 5.4 mmol/L\n- LDL: 2.9 mmol/L",
     "Nothing else changed.",
   ];
-  // "trickle" writes it in parts of 24 characters, 60 ms apart.
+  // "trickle" writes it in parts of 24 characters, 60 ms apart, its first
+  // alone, so the reply shows from its first words on.
   await opened(page, rufi, { scenario: { answer: answer.join("\n\n") } });
   const flat = (text: string) => text.replace(/\s+/g, " ").trim();
   const whole = flat(answer.join(" ").replaceAll("- ", ""));
