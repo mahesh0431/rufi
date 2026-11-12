@@ -499,7 +499,7 @@ describe("the core", () => {
     ).toEqual([
       "q-handed",
       "q-first",
-      "ok:Rufi stopped suddenly (restart). Please continue.",
+      "ok:Rufi stopped suddenly and has restarted. A step you took just before the stop may already have finished, so check whether it happened before you do it again.",
       "q-second",
       "ok:Second",
     ]);
