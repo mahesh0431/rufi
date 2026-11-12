@@ -216,10 +216,8 @@ struct ChatTests {
         current.open()
         try await Self.until { current.loaded }
         current.answer("Yes, add a follow-up for my HbA1c")
-        try await Self.until { ChatDoor.sent.count == 1 }
-        await current.deliver()
+        try await Self.until { pending.messages.isEmpty && !ChatDoor.sent.isEmpty }
         #expect(ChatDoor.sent.map(\.text) == ["Yes, add a follow-up for my HbA1c"])
-        #expect(pending.messages.isEmpty)
         current.end()
     }
 
