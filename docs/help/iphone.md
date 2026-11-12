@@ -155,6 +155,7 @@ Settings says what went wrong in one line, and shows no code:
 - **Tailscale Funnel's port … is in use by something else on this Mac.** With an iPhone paired, Rufi keeps its port, so your iPhones keep their address. Free that port in Tailscale, or unpair your iPhones and pair them again.
 - **Rufi couldn't reach itself through Tailscale** (or **Tailscale Funnel**, or **Cloudflare Tunnel**). The first time can take a while, while Tailscale gets a certificate for your Mac, or Cloudflare's new record and tunnel start working. Try again in a minute.
 - **Unpair your iPhones first.** You changed how your iPhone reaches your Mac, or set up Cloudflare, while one is paired or a code is waiting.
+- **Rufi couldn't turn off Tailscale Funnel. Try again.** (or **Cloudflare Tunnel**, or Tailscale's own words, such as **Tailscale isn't connected on this Mac.**) You changed how your iPhone reaches your Mac, and Rufi couldn't remove the route in use first, so the choice stays as it was. Fix what it says, then choose again.
 - **Set up Cloudflare first.** Cloudflare Tunnel is chosen but not set up on this Mac (see [Set up Cloudflare Tunnel](#set-up-cloudflare-tunnel)).
 - **Install cloudflared on this Mac first: brew install cloudflared.** Run that line in Terminal, then try again.
 - **Wait for Cloudflare's setup to finish.** You paired or changed the choice while Cloudflare was being set up.
