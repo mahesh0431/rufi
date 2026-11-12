@@ -73,8 +73,8 @@ import { aiFiles } from "./files.ts";
 import { mcpEndpoint, mcpKeys, skillResources } from "./mcp.ts";
 import { startRufiAi } from "./rufi-ai.ts";
 import { converter as openConverter } from "./converter.ts";
-import { remote as openRemote } from "./remote.ts";
-import { tailscale, type Tailscale } from "./tailscale.ts";
+import { computerName, remote as openRemote, type Reach } from "./remote.ts";
+import { tailscale, tailscaleRoute, type Tailscale } from "./tailscale.ts";
 import { secret, sessions } from "./session.ts";
 import { agentRuns, subAgents } from "./sub-agents.ts";
 import { keptSignIns, signInFlow, type ProviderSignIn } from "./signin.ts";
@@ -111,6 +111,10 @@ export interface CoreOptions {
   now?: () => string;
   /** Tailscale, for the remote door; the Mac's own `tailscale` when not given. */
   tailscale?: Tailscale;
+  /** How the door's check asks its address; `fetch` when not given. */
+  reach?: Reach;
+  /** This Mac's name, as paired apps show it; macOS's own when not given. */
+  macName?: () => Promise<string>;
 }
 
 /** What `pnpm start` reads to reach the running Rufi; there while it runs. */
@@ -537,7 +541,14 @@ export const startCore = (options: CoreOptions) =>
           people: () => transcripts.people(),
           setting: transcripts.setting,
           saveSetting: transcripts.saveSetting,
-          tailscale: options.tailscale ?? tailscale(),
+          routes: {
+            tailscale: tailscaleRoute(options.tailscale ?? tailscale(), {
+              setting: transcripts.setting,
+              saveSetting: transcripts.saveSetting,
+            }),
+          },
+          ...(options.reach !== undefined && { reach: options.reach }),
+          macName: options.macName ?? computerName,
           working,
           person,
           receive: async (app, bytes) => {
