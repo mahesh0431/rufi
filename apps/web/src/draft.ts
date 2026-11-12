@@ -142,7 +142,7 @@ const inTurn = <T>(
 export const held = (state: BoxState) => state.sending;
 
 /** Whether the core answered the request that failed (it refused it). */
-const answered = (error: unknown) =>
+export const answered = (error: unknown) =>
   typeof error === "object" &&
   error !== null &&
   "body" in error &&
@@ -305,6 +305,19 @@ export function draftBox(api: DraftApi) {
      * to send again: the chat follows it, as it follows the box's own.
      */
     sent: counted,
+
+    /**
+     * A card's button sends `text` as the person's message (ADR 0035), under
+     * `id`, as Enter in the box would while a reply runs (`kind`). The box's
+     * text and draft stay as they are. Once the core took it, the chat
+     * follows it; a refusal or a lost answer throws, as `request` does, and
+     * the chat stays at the card, where its line says why.
+     */
+    async answer(id: string, text: string, kind: WhileReplying): Promise<void> {
+      await api.call("POST", "messages", { id, text, kind, draft: "keep" });
+      store.setState({ accepted: id });
+      counted();
+    },
 
     /** Saves now what isn't saved yet: Retry, or the box leaves the screen. */
     saveNow: save,
