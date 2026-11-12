@@ -44,6 +44,11 @@ struct DoorTests {
         await #expect(throws: Door.Problem.unreachable) {
             try await door("origin-gone.test").open("/people/asha/chat")
         }
+        let staging = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try? FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        await #expect(throws: Door.Problem.unreachable) {
+            _ = try await door("tunnel-down.test").file(person: "asha", document: "doc-1", file: "f-1", into: staging)
+        }
         await #expect(throws: Door.Problem.refused("The AI couldn't do that.")) {
             try await door("rufi.test").open("/people/asha/chat")
         }
