@@ -162,25 +162,44 @@ function pass(port: number, incoming: IncomingMessage, out: ServerResponse) {
   incoming.pipe(sent);
 }
 
-const served = new Map<number, Server>();
+/** The stand-in's HTTPS listeners: each public port, and the door's port it passes to. */
+const served = new Map<number, { server: Server; door: number }>();
+/** Listens with HTTPS on `at`, passing each request to the door on `door`. */
+const listen = async (at: number, door: number) => {
+  if (served.has(at)) return;
+  const server = createServer(tls, (incoming, out) => {
+    pass(door, incoming, out);
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(at, address, resolve);
+  });
+  served.set(at, { server, door });
+};
+const unlisten = async (at: number) => {
+  const found = served.get(at);
+  served.delete(at);
+  if (found) await new Promise((closed) => found.server.close(closed));
+};
 const tailscale: Tailscale = {
   name: () => Promise.resolve(address),
-  serve: async (port) => {
-    if (served.has(port)) return;
-    const server = createServer(tls, (incoming, out) => {
-      pass(port, incoming, out);
-    });
-    await new Promise<void>((resolve, reject) => {
-      server.once("error", reject);
-      server.listen(port, address, resolve);
-    });
-    served.set(port, server);
-  },
-  off: async (port) => {
-    const server = served.get(port);
-    served.delete(port);
-    if (server) await new Promise((closed) => server.close(closed));
-  },
+  serve: (port) => listen(port, port),
+  off: unlisten,
+  // Funnel's public port, as Tailscale would say it serves it.
+  served: () =>
+    Promise.resolve({
+      Web: Object.fromEntries(
+        [...served].map(([at, { door }]) => [
+          `${address}:${String(at)}`,
+          { Handlers: { "/": { Proxy: `http://127.0.0.1:${String(door)}` } } },
+        ]),
+      ),
+      AllowFunnel: Object.fromEntries(
+        [...served.keys()].map((at) => [`${address}:${String(at)}`, true]),
+      ),
+    }),
+  funnel: listen,
+  funnelOff: unlisten,
 };
 
 /** The door's check, through the stand-in's HTTPS, trusting its authority. */

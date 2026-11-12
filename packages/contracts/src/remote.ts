@@ -17,9 +17,20 @@ export const PairedApp = Schema.Struct({
 });
 export type PairedApp = typeof PairedApp.Type;
 
+/**
+ * How paired apps reach the door: Tailscale Serve (the tailnet only, the
+ * default) or Tailscale Funnel (public).
+ */
+export const RouteKind = Schema.Literals(["tailscale", "funnel"]);
+export type RouteKind = typeof RouteKind.Type;
+
+/** Settings › iPhone: the route to use from now. */
+export const ChooseRoute = Schema.Struct({ kind: RouteKind });
+export type ChooseRoute = typeof ChooseRoute.Type;
+
 /** The live pairing code, as a link for the app to scan or paste. */
 export const Pairing = Schema.Struct({
-  /** https://<mac>.<tailnet>.ts.net:<door port>/pair#code=<code> */
+  /** https://<the route's address>/pair#code=<code> */
   link: Schema.String,
   person: Person,
   expiresAt: Schema.String,
@@ -32,6 +43,8 @@ export const PairedApps = Schema.Struct({
   pairing: Schema.NullOr(Pairing),
   /** Why the door can't open now, as one line, while that lasts. */
   trouble: Schema.NullOr(Schema.String),
+  /** The route in use. */
+  route: Schema.Struct({ kind: RouteKind }),
 });
 export type PairedApps = typeof PairedApps.Type;
 

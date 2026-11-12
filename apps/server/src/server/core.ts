@@ -74,7 +74,12 @@ import { mcpEndpoint, mcpKeys, skillResources } from "./mcp.ts";
 import { startRufiAi } from "./rufi-ai.ts";
 import { converter as openConverter } from "./converter.ts";
 import { computerName, remote as openRemote, type Reach } from "./remote.ts";
-import { tailscale, tailscaleRoute, type Tailscale } from "./tailscale.ts";
+import {
+  funnelRoute,
+  tailscale,
+  tailscaleRoute,
+  type Tailscale,
+} from "./tailscale.ts";
 import { secret, sessions } from "./session.ts";
 import { agentRuns, subAgents } from "./sub-agents.ts";
 import { keptSignIns, signInFlow, type ProviderSignIn } from "./signin.ts";
@@ -541,12 +546,17 @@ export const startCore = (options: CoreOptions) =>
           people: () => transcripts.people(),
           setting: transcripts.setting,
           saveSetting: transcripts.saveSetting,
-          routes: {
-            tailscale: tailscaleRoute(options.tailscale ?? tailscale(), {
+          routes: (() => {
+            const steps = options.tailscale ?? tailscale();
+            const settings = {
               setting: transcripts.setting,
               saveSetting: transcripts.saveSetting,
-            }),
-          },
+            };
+            return {
+              tailscale: tailscaleRoute(steps, settings),
+              funnel: funnelRoute(steps, settings),
+            };
+          })(),
           ...(options.reach !== undefined && { reach: options.reach }),
           macName: options.macName ?? computerName,
           working,

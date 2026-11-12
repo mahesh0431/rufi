@@ -2,7 +2,7 @@
 // the one line Settings shows for each way it isn't ready. No real
 // `tailscale` runs.
 import { describe, expect, it } from "vitest";
-import { tailscale, type Run } from "./tailscale.ts";
+import { funnelRoute, tailscale, type Run } from "./tailscale.ts";
 
 /** A `tailscale` that answers `status --json` with `status`, and logs the rest. */
 const standIn = (status: object | Error, ran: string[] = []): Run => {
@@ -70,5 +70,55 @@ describe("Tailscale", () => {
     await expect(tailscale(refused).serve(47860)).rejects.toThrow(
       "Tailscale couldn't serve Rufi: Serve is not enabled on your tailnet. To enable, visit: https://login.tailscale.com/f/serve?node=n1",
     );
+  });
+
+  it("funnels the door from the first Funnel port nothing holds, a foreground command's too, and turns off only its own", async () => {
+    const ran: string[] = [];
+    const settings = new Map<string, string>();
+    // Serve on 8443 for the tailnet; `tailscale funnel 10000` in a terminal.
+    let config: object = {
+      Web: {
+        "asha-mbp.tail1234.ts.net:8443": {
+          Handlers: { "/": { Proxy: "http://127.0.0.1:3000" } },
+        },
+      },
+      Foreground: { "session-1": { TCP: { "10000": { HTTPS: true } } } },
+    };
+    const run: Run = (args) => {
+      ran.push(args.join(" "));
+      if (args[0] === "status") return Promise.resolve(JSON.stringify(READY));
+      if (args.join(" ") === "funnel status --json") {
+        return Promise.resolve(JSON.stringify(config));
+      }
+      return Promise.resolve("");
+    };
+    const route = funnelRoute(tailscale(run), {
+      setting: (key) => Promise.resolve(settings.get(key)),
+      saveSetting: (key, value) => {
+        if (value === null) settings.delete(key);
+        else settings.set(key, value);
+        return Promise.resolve();
+      },
+    });
+
+    expect(await route.up(47860, true)).toBe("asha-mbp.tail1234.ts.net");
+    expect(ran).toContain("funnel --bg --https=443 http://127.0.0.1:47860");
+
+    // Rufi's own Funnel now, as Tailscale reports it.
+    config = {
+      ...config,
+      Web: {
+        ...(config as { Web: object }).Web,
+        "asha-mbp.tail1234.ts.net:443": {
+          Handlers: { "/": { Proxy: "http://127.0.0.1:47860" } },
+        },
+      },
+      AllowFunnel: { "asha-mbp.tail1234.ts.net:443": true },
+    };
+    await route.down(47860);
+    expect(ran.at(-1)).toBe("funnel --https=443 off");
+    expect(
+      ran.some((step) => step.includes("8443") || step.includes("10000")),
+    ).toBe(false);
   });
 });
