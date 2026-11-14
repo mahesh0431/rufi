@@ -169,6 +169,7 @@ export function agentLogs(deps: {
             id,
             title: agent.title,
             status: agent.status,
+            waiting: agent.waiting,
             result:
               result !== null && result.length > RESULT_CHARS
                 ? `${result.slice(0, RESULT_CHARS).trimEnd()}…`

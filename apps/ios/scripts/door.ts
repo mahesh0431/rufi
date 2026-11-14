@@ -1,7 +1,8 @@
 // Rufi's door for the iPhone app in the Simulator, on this Mac only, with
 // fictional data. It is the screens' test setup (apps/web/e2e/rufi.ts): a
 // fresh folder with the fictional family, and a scripted Rufi AI whose
-// every reply thinks, then answers REPLY, with a visual. A message with
+// every reply thinks, then answers REPLY, with a visual and a question
+// whose answers are buttons (ADR 0035). A message with
 // "hang" in it keeps its reply running until Stop (what is sent meanwhile
 // waits); "Read my report" starts an agent, Reader, that works until
 // stopped; "Ask a checker" starts one, Checker, that answers. Each has
@@ -56,6 +57,12 @@ const REPLY = [
   "```",
   "",
   "[See your HbA1c results](rufi:/tests/tst-hba1c) · [What HbA1c measures](https://example.com/hba1c)",
+  "",
+  "Shall I add a follow-up to recheck it in three months?",
+  "",
+  "```rufi-visual",
+  '<button data-rufi-send="Yes, add a follow-up to recheck my HbA1c in three months">Add</button><button data-rufi-send="Not now, no follow-up for my HbA1c">Not now</button>',
+  "```",
 ].join("\n");
 const THOUGHT = "**Reading the record**\n\nAsha's HbA1c results, newest first.";
 

@@ -146,6 +146,14 @@ export function fakeProvider(
               payload: { result: [{ type: "image", data: "(not kept)" }] },
             });
           }
+          if (fake.script.question !== undefined) {
+            emit(ref, {
+              type: "question",
+              turn,
+              item: `${turn}-question`,
+              ...fake.script.question,
+            });
+          }
           emit(ref, {
             type: "text",
             turn,

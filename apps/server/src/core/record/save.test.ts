@@ -70,12 +70,17 @@ async function say(text: string, to = chat): Promise<string> {
 }
 
 /** The AI calls save_changes in the chat's turn. */
-async function save(changes: unknown[], callId = "call-1", to = chat) {
+async function save(
+  changes: unknown[],
+  callId = "call-1",
+  to = chat,
+  also: Record<string, unknown> = {},
+) {
   const answer = await rufiCaller(
     reader,
     transcripts,
     () => undefined,
-  )(turnScope(to, "t-1"))("save_changes", { changes }, callId);
+  )(turnScope(to, "t-1"))("save_changes", { changes, ...also }, callId);
   return {
     ok: answer.ok,
     body: JSON.parse(answer.text) as Record<string, unknown> & {
@@ -2120,6 +2125,131 @@ describe("a visit and the records saved from it", () => {
       ],
     ]);
     expect(written()).toEqual(before);
+  });
+});
+
+describe("a result already saved", () => {
+  /** Asha's fasting glucose, in its test, on a day at the precision given. */
+  const glucose = (value: string, measured: string) => ({
+    kind: "result",
+    action: "add",
+    fields: {
+      test: "Glucose",
+      value,
+      number: Number(value),
+      unit: "mg/dL",
+      category: "lab",
+      measured: { date: measured, words: measured },
+      in_test: "tst-glucose",
+      test_number: Number(value),
+    },
+  });
+
+  it("is warned of and not saved when its day, test and value match, and its time when both have one, until the save says to save it anyway", async () => {
+    // The record has Glucose 118 mg/dL on 12 Aug from page 1 of the August
+    // report, with no time (res-a2).
+    await say("My fasting glucose was 118 at 7:30 on 12 Aug");
+    const before = written();
+    const warned = await save([glucose("118", "2026-08-12T07:30")]);
+    expect(warned.ok).toBe(false);
+    expect(warned.body.issues).toEqual([
+      expect.objectContaining({
+        path: "changes.0",
+        fix: expect.stringMatching(
+          /12 Aug 2026[^0-9].*Sunrise Labs August\.pdf page 1.*res-a2/,
+        ) as unknown,
+      }),
+    ]);
+    expect(written()).toEqual(before);
+
+    const anyway = await save(
+      [glucose("118", "2026-08-12T07:30")],
+      "call-2",
+      chat,
+      { save_anyway: true },
+    );
+    expect(anyway.ok).toBe(true);
+    const second = anyway.body.result.changes[0]?.id ?? "";
+    expect(row("results", second)).toMatchObject({
+      value_text: "118",
+      measured_at: "2026-08-12T07:30",
+    });
+
+    // Another time, the same day: both saved ones are named, with the time
+    // of the one that has it.
+    await say("And 118 again on 12 Aug");
+    const again = await save([glucose("118", "2026-08-12")], "call-3");
+    expect(again.ok).toBe(false);
+    const [fix] = again.body.issues.map((issue) => issue.fix);
+    expect(fix).toContain("res-a2");
+    expect(fix).toContain(second);
+    expect(fix).toContain("12 Aug 2026 07:30");
+
+    // Two times on a day with no untimed result: another time is another
+    // reading, the same time is warned of.
+    await say("118 at 8:00 and 118 at 20:00 on 20 Aug");
+    const twice = await save(
+      [glucose("118", "2026-08-20T08:00"), glucose("118", "2026-08-20T20:00")],
+      "call-4",
+    );
+    expect(twice.ok, JSON.stringify(twice.body)).toBe(true);
+    await say("118 at 8:00 on 20 Aug");
+    const same = await save([glucose("118", "2026-08-20T08:00")], "call-5");
+    expect(same.ok).toBe(false);
+    expect(same.body.issues.map((issue) => issue.fix)).toEqual([
+      expect.stringContaining("20 Aug 2026 08:00") as unknown,
+    ]);
+    expect(same.body.issues[0]?.fix).not.toContain("20:00");
+  });
+
+  it("is saved with no warning when its value or its day differs", async () => {
+    await say("My fasting glucose was 119 on 12 Aug and 118 on 13 Aug");
+    const saved = await save([
+      glucose("119", "2026-08-12"),
+      glucose("118", "2026-08-13"),
+    ]);
+    expect(saved.ok, JSON.stringify(saved.body)).toBe(true);
+    expect(saved.body.result.changes).toHaveLength(2);
+  });
+
+  it("is no match for the result an amendment replaces", async () => {
+    await say("The lab amended my 12 Aug glucose: still 118, range 70 - 100");
+    const amended = await save([
+      {
+        kind: "result",
+        action: "add",
+        fields: {
+          test: "Glucose",
+          value: "118",
+          unit: "mg/dL",
+          range: "70 - 100",
+          measured: { date: "2026-08-12", words: "12 Aug" },
+          replaces: "res-a2",
+        },
+      },
+    ]);
+    expect(amended.ok, JSON.stringify(amended.body)).toBe(true);
+  });
+
+  it("holds a whole save with one, naming only that one; sent again without it, the others are saved in one receipt", async () => {
+    await say("Glucose 118 on 12 Aug, 121 on 20 Aug and 117 on 27 Aug");
+    const before = written();
+    const batch = [
+      glucose("121", "2026-08-20"),
+      glucose("118", "2026-08-12"),
+      glucose("117", "2026-08-27"),
+    ];
+    const warned = await save(batch);
+    expect(warned.ok).toBe(false);
+    expect(warned.body.issues.map((issue) => issue.path)).toEqual([
+      "changes.1",
+    ]);
+    expect(written()).toEqual(before);
+
+    const saved = await save([batch[0], batch[2]], "call-2");
+    expect(saved.ok).toBe(true);
+    expect(saved.body.result.changes).toHaveLength(2);
+    expect(receipts()).toHaveLength(1);
   });
 });
 

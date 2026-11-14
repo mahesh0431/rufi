@@ -9,6 +9,7 @@ import { LoaderCircle, Square, X } from "lucide-react";
 import { useState } from "react";
 import {
   openAgent,
+  statusWords,
   stopAgent,
   useChatAgents,
   useElapsed,
@@ -98,15 +99,16 @@ function Sheet({
   agent: string;
   title: string;
 }) {
-  const agent = useChatAgents(personId).data?.agents.find(
-    (one) => one.id === id,
-  );
+  const agents = useChatAgents(personId).data?.agents;
+  const agent = agents?.find((one) => one.id === id);
   const model = modelOf(agent?.model ?? "");
   const elapsed = useElapsed(agent?.since ?? null);
   const [stopping, setStopping] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const title = agent?.title ?? opened;
   const busy = agent !== undefined && working(agent);
+  // One that waits can be stopped as one at work.
+  const stoppable = busy || agent?.status === "waiting";
   return (
     <>
       <div className="flex items-start gap-2.5 border-b border-line px-4 py-2.5">
@@ -117,7 +119,7 @@ function Sheet({
           {agent && (
             <p className="truncate text-xs text-muted">
               {[
-                agent.status,
+                statusWords(agent, agents),
                 ...(busy && elapsed !== undefined ? [elapsed] : []),
                 model?.name ?? agent.model,
                 effortName(agent.effort),
@@ -125,7 +127,7 @@ function Sheet({
             </p>
           )}
         </div>
-        {busy && (
+        {stoppable && (
           <Button
             icon={Square}
             busy={stopping && "Stopping…"}

@@ -196,8 +196,10 @@ nonisolated struct SubAgent: Decodable, Equatable, Identifiable, Sendable {
     let id: String
     /// The name the agent that started it gave it.
     let title: String
-    /// idle, running, continuing, done, stopped or failed.
+    /// idle, running, continuing, waiting, done, stopped or failed.
     let status: String
+    /// What it waits for, while it waits: asked (its parent's answer) or signed_out.
+    let waiting: String?
     /// Its latest result's start: its last answer, or why it stopped or failed.
     let result: String?
     /// The agent that started it; none: Rufi AI's own.
