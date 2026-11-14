@@ -802,8 +802,8 @@ export function transcripts(
    * reply's, above the card, also where its agent gave it as progress notes
    * (Codex's commentary). These are the reply's whole notes since its last
    * step that ended (the ask's own still runs); each becomes a reply by its
-   * step's id, so the screens draw it in its place, and leaves Activity.
-   * Gives their ids.
+   * step's id, so the screens draw it in its place, and leaves Activity;
+   * one an earlier card made a reply stays as it is. Gives the new ones.
    */
   async function textBefore(
     trx: Transaction<Tables>,
@@ -822,8 +822,10 @@ export function transcripts(
         notes.unshift(step);
       } else if (step.type === "step" && step.status !== "running") break;
     }
+    const replies = await repliesOf(trx, turn);
     const ids: string[] = [];
     for (const note of notes) {
+      if (replies.has(stepId(turn.id, note.id))) continue;
       ids.push(
         await insertEntry(trx, chat, revision, {
           id: stepId(turn.id, note.id),

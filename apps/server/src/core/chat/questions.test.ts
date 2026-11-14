@@ -142,7 +142,7 @@ describe("ask", () => {
     });
   });
 
-  it("keeps the text Rufi AI wrote just before the card as its reply, above the card, also given as progress notes; notes before an ended step stay in Activity", async () => {
+  it("keeps the text Rufi AI wrote just before the card as its reply, above the card, also given as progress notes; notes before an ended step stay in Activity, and a second card after the same notes moves nothing again", async () => {
     store.db
       .prepare(
         "INSERT INTO agent_owners (agent_id, person_id, chat_id, root, created_at) VALUES ('rufi-ai', 'asha', ?, 1, '2026-11-10T09:00:00Z')",
@@ -212,6 +212,27 @@ describe("ask", () => {
       ["activity", "rufi.ask"],
     ]);
     expect(later.map((entry) => entry.id)).not.toContain(asked[0]?.id);
+
+    // A second card that sees the same notes: two cards, one explanation.
+    const second = await ask(
+      {
+        ...CARD,
+        key: "Next visit",
+        question: "Book it?",
+        answers: ["Book", "Not now"],
+      },
+      "call-ask-2",
+    );
+    const now = await entries();
+    expect(said(now.filter((entry) => entry.kind !== "activity"))).toEqual([
+      ["reply", "Your LDL is 138 mg/dL,"],
+      ["reply", " above the lab's range."],
+      ["question", expect.stringContaining("Lipid panel")],
+      ["question", expect.stringContaining("Next visit")],
+    ]);
+    expect(now.filter((entry) => entry.kind === "question").at(-1)?.id).toBe(
+      second,
+    );
   });
 
   it("makes one card for the same call, also with other words and from a Rufi started again", async () => {
