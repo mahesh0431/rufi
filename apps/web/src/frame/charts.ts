@@ -27,6 +27,34 @@ const isObject = (value: unknown): value is Json =>
 const textOf = (raw: unknown) =>
   isObject(raw) && typeof raw["text"] === "string" ? raw["text"] : undefined;
 
+interface Item {
+  raw: unknown;
+  dataset: { label?: unknown; indexAxis?: unknown };
+  chart: { options: { indexAxis?: unknown } };
+}
+
+/**
+ * Rufi's tooltip: the point's date as written, at its precision, from its
+ * index field (y for a horizontal chart), and its value as printed. With no
+ * date as written there is no title: never a coordinate turned into one.
+ */
+const callbacks = {
+  title: (items: Item[]) => {
+    const item = items[0];
+    if (!item || !isObject(item.raw)) return "";
+    const axis = item.dataset.indexAxis ?? item.chart.options.indexAxis;
+    const date = item.raw[axis === "y" ? "y" : "x"];
+    return typeof date === "string" ? printedDate(date) : "";
+  },
+  label: (item: Item) => {
+    const text = textOf(item.raw) ?? "";
+    const label = item.dataset.label;
+    return typeof label === "string" && label !== ""
+      ? `${label}: ${text}`
+      : text;
+  },
+};
+
 /** One chart, from its canvas's JSON. */
 function chartOn(canvas: HTMLCanvasElement, theme: ChartTheme): void {
   const given: unknown = JSON.parse(
@@ -56,26 +84,17 @@ function chartOn(canvas: HTMLCanvasElement, theme: ChartTheme): void {
   plugins["tooltip"] = {
     ...(isObject(plugins["tooltip"]) ? plugins["tooltip"] : {}),
     filter: (item: { raw: unknown }) => textOf(item.raw) !== undefined,
-    callbacks: {
-      title: (items: { raw: unknown }[]) => {
-        const raw = items[0]?.raw;
-        return isObject(raw) && typeof raw["x"] === "string"
-          ? printedDate(raw["x"])
-          : undefined;
-      },
-      label: (item: { raw: unknown; dataset: { label?: unknown } }) => {
-        const text = textOf(item.raw) ?? "";
-        const label = item.dataset.label;
-        return typeof label === "string" && label !== ""
-          ? `${label}: ${text}`
-          : text;
-      },
-    },
+    callbacks,
   };
   const datasets = Array.isArray(data["datasets"]) ? data["datasets"] : [];
   datasets.forEach((dataset: unknown, index) => {
+    if (!isObject(dataset)) return;
+    // A series' own tooltip callbacks come before the chart's: Rufi's
+    // there too.
+    if (isObject(dataset["tooltip"])) {
+      dataset["tooltip"] = { ...dataset["tooltip"], callbacks };
+    }
     if (
-      !isObject(dataset) ||
       dataset["borderColor"] !== undefined ||
       dataset["backgroundColor"] !== undefined
     ) {
@@ -129,5 +148,3 @@ addEventListener("message", (event: MessageEvent<unknown>) => {
   }
   draw();
 });
-
-export { Chart };

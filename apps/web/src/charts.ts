@@ -17,9 +17,11 @@ import {
   LineElement,
   PointElement,
   type PointStyle,
+  type TimeUnit,
   ScatterController,
   TimeScale,
   Tooltip,
+  _adapters,
 } from "chart.js";
 import "chartjs-adapter-date-fns";
 
@@ -41,6 +43,31 @@ Chart.register(
 // don't fit, rather than tilting every month's.
 Chart.defaults.scales.time.ticks.maxRotation = 0;
 Chart.defaults.scales.time.ticks.autoSkipPadding = 12;
+
+// A time axis's step always moves on. date-fns adds a day, week, month,
+// quarter or year only whole, and a clock unit only to the whole
+// millisecond: a step of half a day would add nothing, and Chart.js would
+// add it for ever. So a fraction becomes the next whole one, away from zero.
+const { add } = _adapters._date.prototype as {
+  add: (time: number, amount: number, unit: TimeUnit) => number | Date;
+};
+const CLOCK: Record<string, number> = {
+  millisecond: 1,
+  second: 1_000,
+  minute: 60_000,
+  hour: 3_600_000,
+};
+const whole = (amount: number) =>
+  amount > 0 ? Math.ceil(amount) : Math.floor(amount);
+_adapters._date.override({
+  add(time, amount, unit) {
+    if (Number.isInteger(amount)) return +add.call(this, time, amount, unit);
+    const ms = CLOCK[unit];
+    return ms === undefined
+      ? +add.call(this, time, whole(amount), unit)
+      : +add.call(this, time, whole(amount * ms), "millisecond");
+  },
+});
 
 export { Chart };
 
