@@ -276,6 +276,15 @@ export function ChatPage({ person }: { person: Person }) {
   useEffect(() => {
     if (!onPhone) field.current?.focus();
   }, [person.id]);
+  // Something put in the box from the chat (a question card's Reply): the
+  // box takes the focus, for the person's words.
+  const asked = usePanel((state) => state.asked);
+  const seenAsk = useRef(asked);
+  useEffect(() => {
+    if (asked === seenAsk.current) return;
+    seenAsk.current = asked;
+    if (!onPhone) field.current?.focus();
+  }, [asked]);
   // ⌘J goes to the box.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {

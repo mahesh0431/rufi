@@ -3,8 +3,10 @@
 // show (files.tsx), each picture the AI generated, and under each
 // answer its Activity; Rufi's receipt for
 // each save to the record, Rufi's own event lines (never your words), the
-// line of each visit brief, which opens it, and how a reply ended when it
-// didn't finish. A line between days, and a quiet line where a new AI thread
+// line of each visit brief, which opens it, each question card Rufi AI asked
+// with (question.tsx), and how a reply ended when it didn't finish. A message
+// that answers a card starts with its quote, which goes back to the card,
+// loading earlier pages until it is there. A line between days, and a quiet line where a new AI thread
 // started, and where Codex compacts or compacted the chat history. Activity is what the AI's agent reported,
 // in order: its progress notes in full, its thinking headings and its steps,
 // each step opening to all the agent gave about it (activity.tsx). From the
@@ -29,6 +31,7 @@ import {
   FileText,
   Hourglass,
   LoaderCircle,
+  MessageCircleQuestionMark,
   RotateCw,
   Square,
   X,
@@ -72,6 +75,8 @@ import { fileIn, NativePicture, Picture } from "./files.tsx";
 import { rehypeVisuals, visualHtml } from "./visual-blocks.ts";
 import { finishedBlocks, useWordByWord } from "./reply-flow.ts";
 import { Answer, KeepPlace, Visual, VisualWaiting } from "./visual.tsx";
+import { cardOf, QuestionCard, useCardSends } from "./question.tsx";
+import { loadOlder } from "./live.ts";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
 import {
   openAgent,
@@ -390,6 +395,7 @@ export function TranscriptView({
   const before = useStore(live, (state) => state.before);
   const older = useStore(live, (state) => state.older);
   const clock = useWorkingClock(live, personId);
+  useCardSends(live, personId);
   const going = useStore(live, useShallow(goingNow));
   const opening = useStore(live, (state) => state.window);
   const now = useToday();
@@ -467,6 +473,27 @@ export function TranscriptView({
   const whileReplying = useSettings().data?.whileReplying ?? "steer";
   const answer = (id: string, text: string) =>
     boxFor(personId).answer(id, text, whileReplying);
+
+  // A quote goes to its question card: earlier pages load until it is
+  // there, then the chat shows it and it takes the focus.
+  const goTo = async (id: string) => {
+    for (;;) {
+      const card = log.current?.querySelector(
+        `[data-entry="${CSS.escape(id)}"]`,
+      );
+      if (card instanceof HTMLElement) {
+        pinned.current = false;
+        card.scrollIntoView({ block: "center" });
+        card.focus({ preventScroll: true });
+        if (scroller.current) seen.current = viewOf(scroller.current);
+        return;
+      }
+      const state = live.getState();
+      if (state.before === null || state.older === "failed") return;
+      await loadOlder(personId);
+      await new Promise((drawn) => requestAnimationFrame(drawn));
+    }
+  };
 
   // A visual that starts above what you read and changes height moves the
   // view with it, so what you read stays still; at the end, the chat follows
@@ -568,17 +595,19 @@ export function TranscriptView({
               </div>
             )}
             <KeepPlace value={keepPlace}>
-              <Answer value={answer}>
-                <Whose value={personId}>
-                  <Today value={now}>
-                    <WorkingClock value={clock}>
-                      {shown.map((line) => (
-                        <Line key={line} live={live} line={line} />
-                      ))}
-                    </WorkingClock>
-                  </Today>
-                </Whose>
-              </Answer>
+              <GoTo value={(id) => void goTo(id)}>
+                <Answer value={answer}>
+                  <Whose value={personId}>
+                    <Today value={now}>
+                      <WorkingClock value={clock}>
+                        {shown.map((line) => (
+                          <Line key={line} live={live} line={line} />
+                        ))}
+                      </WorkingClock>
+                    </Today>
+                  </Whose>
+                </Answer>
+              </GoTo>
             </KeepPlace>
             {/* Being given to the AI: sent, before the chat has it. */}
             {going.map((item) => (
@@ -766,7 +795,13 @@ const modelLine = (
 ) =>
   `Model changed: ${ranOn(from.model, from.effort)} → ${ranOn(to.model, to.effort)}`;
 
-/** Your message in the chat, with what you added to it. */
+/** Goes to a question card in the chat, by its entry. */
+const GoTo = createContext<(id: string) => void>(() => undefined);
+
+/**
+ * Your message in the chat, with what you added to it; an answer to a
+ * question card starts with the card's quote, which goes back to it.
+ */
 function MessageView({
   id,
   text,
@@ -776,17 +811,38 @@ function MessageView({
   text: string;
   refs: readonly Chip[] | undefined;
 }) {
+  const goTo = use(GoTo);
+  const quotes = refs?.filter(({ ref }) => ref.type === "question") ?? [];
+  const added = refs?.filter(({ ref }) => ref.type !== "question") ?? [];
   return (
     <div
       data-entry={id}
       className="max-w-[85%] self-end rounded-2xl bg-accent-soft px-3.5 py-2"
     >
-      {refs && refs.length > 0 && (
+      {quotes.map(({ ref, label }) => (
+        <button
+          key={ref.id}
+          type="button"
+          title="Go to the question"
+          onClick={() => {
+            goTo(ref.id);
+          }}
+          className="mb-1 flex max-w-full cursor-pointer items-center gap-1.5 border-l-2 border-line pl-2 text-left text-xs text-muted hover:text-ink"
+        >
+          <MessageCircleQuestionMark
+            size={13}
+            className="shrink-0"
+            aria-hidden
+          />
+          <span className="min-w-0 truncate">{label}</span>
+        </button>
+      ))}
+      {added.length > 0 && (
         <ul
           aria-label="Added to this message"
           className="mb-1 flex flex-wrap gap-1.5"
         >
-          {refs.map(({ ref, label, detail, deleted }) => (
+          {added.map(({ ref, label, detail, deleted }) => (
             <li key={`${ref.type}:${ref.id}`} className="max-w-full">
               <ChipView chip={{ pointer: ref, label, detail, deleted }} />
             </li>
@@ -801,11 +857,13 @@ function MessageView({
 function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
   const entry = useStore(live, (state) => state.entries[id]);
   const turn = useStore(live, (state) => state.turns[entry?.turnId ?? ""]);
+  const personId = use(Whose);
   // A reply the AI gave whole is judged as finished, though its turn runs.
   const streaming =
     turn?.status === "running" &&
     !(entry?.kind === "reply" && entry.status === "done");
   if (!entry) return null;
+  const card = cardOf(entry);
   return entry.kind === "message" || entry.kind === "steer" ? (
     <MessageView id={id} text={entry.text} refs={entry.refs} />
   ) : entry.kind === "receipt" ? (
@@ -839,6 +897,14 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
     <BriefLine id={id} text={entry.text} />
   ) : entry.kind === "agent" ? (
     <AgentMessage entry={entry} />
+  ) : card ? (
+    <QuestionCard
+      entry={entry}
+      card={card}
+      live={live}
+      personId={personId}
+      details={card.details !== undefined && <Marked text={card.details} />}
+    />
   ) : entry.kind === "activity" &&
     entry.activity === "picture" &&
     entry.status === "done" &&

@@ -481,3 +481,133 @@ describe("adding to the box from another page", () => {
     expect(sends()).toHaveLength(1);
   });
 });
+
+describe("a click on a question card's answer", () => {
+  /** A card's send as the box keeps it, by card. */
+  const cardOf = (box: ReturnType<typeof draftBox>, card: string) =>
+    box.store.getState().cards[card];
+
+  it("sends the answer as the person's message, quoting the card with the answer it chose, the box's words kept; a second click while it goes sends nothing", async () => {
+    const { api, sends } = core(editable("And my ferritin"));
+    const box = draftBox(api);
+    await settle();
+
+    void box.choose("card-1", 0, "Save", "queue");
+    void box.choose("card-1", 1, "Not now", "queue");
+    await settle();
+    expect(sends().map((send) => send.body)).toEqual([
+      {
+        id: "id-1",
+        text: "Save",
+        refs: [{ type: "question", id: "card-1", answer: 0 }],
+        kind: "queue",
+        draft: "keep",
+      },
+    ]);
+    expect(cardOf(box, "card-1")).toMatchObject({ status: "sending" });
+
+    sends()[0]?.answer({ id: "id-1" });
+    await settle();
+    // Taken: the card waits for the chat to show it.
+    expect(cardOf(box, "card-1")).toMatchObject({ status: "sent", index: 0 });
+    expect(box.store.getState().text).toBe("And my ferritin");
+    box.settle((id) => id === "id-1");
+    expect(cardOf(box, "card-1")).toBeUndefined();
+  });
+
+  it("keeps an answer with no answer yet through a reload: the new page shows it Not sent, and Retry sends the same id and payload; once the chat has it, the tab forgets it", async () => {
+    const stored = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        stored.set(key, value);
+      },
+      removeItem: (key: string) => {
+        stored.delete(key);
+      },
+    };
+    const first = core(editable(""));
+    first.api.storage = storage;
+    const box = draftBox(first.api);
+    await settle();
+    void box.choose("card-1", 0, "Save", "queue");
+    await settle();
+    // The page reloads before any answer came.
+    const second = core(editable(""));
+    second.api.storage = storage;
+    const reloaded = draftBox(second.api);
+    await settle();
+    expect(cardOf(reloaded, "card-1")).toMatchObject({
+      status: "lost",
+      id: "id-1",
+      index: 0,
+    });
+    // Another answer can't take its place; Retry sends it as it went.
+    void reloaded.choose("card-1", 1, "Not now", "steer");
+    void reloaded.retry("card-1");
+    await settle();
+    expect(second.sends().map((send) => send.body)).toEqual([
+      first.sends()[0]?.body,
+    ]);
+    reloaded.settle((id) => id === "id-1");
+    expect(stored.has("rufi/cards/draft/test")).toBe(false);
+  });
+
+  it("settles an answer once the chat has its message, whatever its request does: a lost one isn't Not sent, a late end changes nothing, and once its row is gone the card is open", async () => {
+    const { api, sends } = core(editable(""));
+    const box = draftBox(api);
+    await settle();
+
+    // The core took it and its queue row shows, but the answer is lost.
+    void box.choose("card-1", 0, "Save", "queue");
+    await settle();
+    box.settle((id) => id === "id-1");
+    sends()[0]?.fail(new Error("Rufi can't be reached."));
+    await settle();
+    expect(cardOf(box, "card-1")).toBeUndefined();
+
+    // Its row removed: a new click is a new message; the first request's
+    // late end, had it come now, wouldn't touch it.
+    void box.choose("card-1", 1, "Not now", "queue");
+    await settle();
+    expect(sends()[1]?.body).toMatchObject({ id: "id-2", text: "Not now" });
+    box.settle((id) => id === "id-2");
+    sends()[1]?.answer({ id: "id-2" });
+    await settle();
+    expect(cardOf(box, "card-1")).toBeUndefined();
+    expect(box.store.getState().accepted).toBeNull();
+  });
+
+  it("keeps an answer that was lost, and sends it again by the same id with the same answer and way; a refusal leaves the card open with the core's words", async () => {
+    const { api, sends } = core(editable(""));
+    const box = draftBox(api);
+    await settle();
+
+    void box.choose("card-1", 0, "Save", "queue");
+    await settle();
+    sends()[0]?.fail(new Error("Rufi can't be reached."));
+    await settle();
+    expect(cardOf(box, "card-1")).toMatchObject({ status: "lost", index: 0 });
+    // Another answer can't take its place while it is unresolved.
+    void box.choose("card-1", 1, "Not now", "steer");
+    await settle();
+    expect(sends()).toHaveLength(1);
+
+    // Settings say Steer by now: Retry still sends it as it went, queued.
+    void box.retry("card-1");
+    await settle();
+    expect(sends()[1]?.body).toEqual(sends()[0]?.body);
+    expect(sends()[1]?.body).toMatchObject({ kind: "queue" });
+    sends()[1]?.fail(refusal("Sign in to Codex on your Mac."));
+    await settle();
+    expect(cardOf(box, "card-1")).toMatchObject({
+      status: "refused",
+      why: "Sign in to Codex on your Mac.",
+    });
+
+    // Open again: a new click is a new message.
+    void box.choose("card-1", 1, "Not now", "steer");
+    await settle();
+    expect(sends()[2]?.body).toMatchObject({ id: "id-2", text: "Not now" });
+  });
+});
