@@ -39,10 +39,6 @@ Chart.register(
   Legend,
   Tooltip,
 );
-// A time axis's labels stay level, and Chart.js leaves out the ones that
-// don't fit, rather than tilting every month's.
-Chart.defaults.scales.time.ticks.maxRotation = 0;
-Chart.defaults.scales.time.ticks.autoSkipPadding = 12;
 
 // A time axis's step always moves on, or the chart fails. Chart.js adds
 // its step until the axis's end; date-fns adds a day or a month only whole,
