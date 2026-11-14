@@ -13,10 +13,18 @@ import { DatabaseSync } from "node:sqlite";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Effect, Exit, Scope } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  cloudflareApi,
+  fakeCloudflared,
+  TOKEN,
+  type StandInApi,
+} from "../../tests/cloudflare-standin.ts";
 import { codexAdapter } from "../agent/codex/adapter.ts";
+import { isRunning } from "../agent/codex/processes.ts";
 import { databasePath, openWritable } from "../core/store/database.ts";
 import { holdRufiLock } from "../platform/files.ts";
 import { PROOF_HEADER } from "./api.ts";
+import { cloudflareFolder } from "./cloudflare.ts";
 import { agentSetup, startCore, type Core } from "./core.ts";
 import type { Reach } from "./remote.ts";
 import { RouteProblem } from "./remote-route.ts";
@@ -39,12 +47,19 @@ let asked: string[];
 /** What the stand-in Tailscale serves, as `tailscale funnel status --json` says. */
 let config: ServeConfig;
 let logged: string[];
+/** Cloudflare's API and cloudflared, stood in for. */
+let cloudflareStandIn: StandInApi;
+let cloudflared: Awaited<ReturnType<typeof fakeCloudflared>>;
 
 beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), "rufi-remote-"));
   asked = [];
   config = {};
   logged = [];
+  cloudflareStandIn = cloudflareApi({ "example.com": "zone-example" });
+  cloudflared = await fakeCloudflared(
+    await mkdtemp(join(tmpdir(), "rufi-cloudflared-")),
+  );
   const store = openWritable(databasePath(home));
   store.db.exec(`
     INSERT INTO people (id, display_name) VALUES ('asha', 'Asha Fictional'), ('ravi', 'Ravi Fictional');
@@ -174,6 +189,10 @@ async function start(
       log: (event) => logged.push(event),
       tailscale,
       reach,
+      cloudflare: {
+        api: cloudflareStandIn.api,
+        places: [cloudflared.binary],
+      },
       macName: () => Promise.resolve(MAC),
       ...(screens !== undefined && { screens }),
     }).pipe(Scope.provide(opened)),
@@ -640,7 +659,7 @@ describe("the route", () => {
     await api("POST", "/api/paired-apps/pairing/cancel");
     const chosen = await api("PUT", "/api/remote/route", { kind: "funnel" });
     expect(chosen.status).toBe(200);
-    expect(chosen.body["route"]).toEqual({ kind: "funnel" });
+    expect(chosen.body["route"]).toMatchObject({ kind: "funnel" });
   });
 
   it("pairs two phones through Funnel on one public port of Rufi's own; both keep working after a restart; the last unpair turns off only that port, and the next pairing takes it again", async () => {
@@ -755,6 +774,104 @@ describe("the route", () => {
     expect(asked.filter((step) => step.startsWith("funnel"))).toEqual([
       expect.stringMatching(/^funnel 443 \d+$/) as string,
     ]);
+  });
+});
+
+/**
+ * The door's check as Cloudflare passes it on: to the service Rufi's
+ * config names for the address, with the address's Host as it came; or
+ * Cloudflare's own page when the tunnel has no route there.
+ */
+const throughTunnel: Reach = async (url, init) => {
+  const { hostname, pathname } = new URL(url);
+  const routing = await readFile(
+    join(cloudflareFolder(home), "config.yml"),
+    "utf8",
+  ).catch(() => "");
+  const service = new RegExp(
+    `hostname: ${hostname.replaceAll(".", "\\.")}\\n\\s+service: (\\S+)`,
+  ).exec(routing)?.[1];
+  if (service === undefined) {
+    return new Response("<html>Error 1033</html>", { status: 530 });
+  }
+  const answer = await call(
+    Number(new URL(service).port),
+    init.method ?? "GET",
+    pathname,
+    { host: hostname },
+    typeof init.body === "string" ? init.body : undefined,
+  );
+  return new Response(JSON.stringify(answer.body), { status: answer.status });
+};
+
+describe("Cloudflare Tunnel", () => {
+  it("is set up, then makes a pairing code at its address once the check through the tunnel passes; cancelling the code stops cloudflared", async () => {
+    const core = await start(standIn(), undefined, throughTunnel);
+    const api = await settings(core);
+    await api("PUT", "/api/remote/route", { kind: "cloudflare" });
+
+    const unset = await api("POST", "/api/paired-apps/pairing", {
+      personId: "asha",
+    });
+    expect(unset.status).toBe(409);
+    expect(unset.body["error"]).toBe("Set up Cloudflare first.");
+
+    const done = await api("POST", "/api/remote/cloudflare/setup", {
+      address: "rufi.example.com",
+      token: TOKEN,
+    });
+    expect(done.status).toBe(200);
+    expect(done.body["route"]).toEqual({
+      kind: "cloudflare",
+      cloudflare: { installed: true, address: "rufi.example.com" },
+    });
+
+    const made = await api("POST", "/api/paired-apps/pairing", {
+      personId: "asha",
+    });
+    expect(made.status).toBe(200);
+    const link = new URL((made.body["pairing"] as { link: string }).link);
+    expect(link.origin).toBe("https://rufi.example.com");
+    const { pid } = await cloudflared.ran();
+
+    await api("POST", "/api/paired-apps/pairing/cancel");
+    expect(isRunning(pid)).toBe(false);
+    expect(asked).toEqual([]);
+  });
+
+  it("can't be set up while a code is live, asking Cloudflare nothing; while a setup runs, pairing and choosing are refused", async () => {
+    const core = await start();
+    const api = await settings(core);
+    await pairingLink(api);
+
+    const refused = await api("POST", "/api/remote/cloudflare/setup", {
+      address: "rufi.example.com",
+      token: TOKEN,
+    });
+    expect(refused.status).toBe(409);
+    expect(refused.body["error"]).toBe("Unpair your iPhones first.");
+    expect(cloudflareStandIn.asked).toEqual([]);
+
+    await api("POST", "/api/paired-apps/pairing/cancel");
+    await api("PUT", "/api/remote/route", { kind: "cloudflare" });
+    const release = cloudflareStandIn.hold();
+    const setting = api("POST", "/api/remote/cloudflare/setup", {
+      address: "rufi.example.com",
+      token: TOKEN,
+    });
+    await expect.poll(() => cloudflareStandIn.asked.length).toBe(1);
+    for (const [method, path, body] of [
+      ["POST", "/api/paired-apps/pairing", { personId: "asha" }],
+      ["PUT", "/api/remote/route", { kind: "tailscale" }],
+    ] as const) {
+      const waiting = await api(method, path, body);
+      expect(waiting.status).toBe(409);
+      expect(waiting.body["error"]).toBe(
+        "Wait for Cloudflare's setup to finish.",
+      );
+    }
+    release();
+    expect((await setting).status).toBe(200);
   });
 });
 

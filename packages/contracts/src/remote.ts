@@ -19,14 +19,24 @@ export type PairedApp = typeof PairedApp.Type;
 
 /**
  * How paired apps reach the door: Tailscale Serve (the tailnet only, the
- * default) or Tailscale Funnel (public).
+ * default), Tailscale Funnel or Cloudflare Tunnel (both public).
  */
-export const RouteKind = Schema.Literals(["tailscale", "funnel"]);
+export const RouteKind = Schema.Literals(["tailscale", "funnel", "cloudflare"]);
 export type RouteKind = typeof RouteKind.Type;
 
 /** Settings › iPhone: the route to use from now. */
 export const ChooseRoute = Schema.Struct({ kind: RouteKind });
 export type ChooseRoute = typeof ChooseRoute.Type;
+
+/**
+ * Settings › iPhone: sets up Cloudflare Tunnel at `address` with the
+ * person's API token, used for this call only.
+ */
+export const SetUpCloudflare = Schema.Struct({
+  address: Schema.String,
+  token: Schema.String,
+});
+export type SetUpCloudflare = typeof SetUpCloudflare.Type;
 
 /** The live pairing code, as a link for the app to scan or paste. */
 export const Pairing = Schema.Struct({
@@ -43,8 +53,16 @@ export const PairedApps = Schema.Struct({
   pairing: Schema.NullOr(Pairing),
   /** Why the door can't open now, as one line, while that lasts. */
   trouble: Schema.NullOr(Schema.String),
-  /** The route in use. */
-  route: Schema.Struct({ kind: RouteKind }),
+  /** The route in use, and Cloudflare's setup on this Mac. */
+  route: Schema.Struct({
+    kind: RouteKind,
+    cloudflare: Schema.Struct({
+      /** Whether cloudflared is on this Mac. */
+      installed: Schema.Boolean,
+      /** The address set up; null: not set up. */
+      address: Schema.NullOr(Schema.String),
+    }),
+  }),
 });
 export type PairedApps = typeof PairedApps.Type;
 

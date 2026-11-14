@@ -1,6 +1,12 @@
 // Ending app-server and everything it started. Codex starts each command in a
-// new session, so killing app-server's own process group isn't enough.
-import { execFile } from "node:child_process";
+// new session, so killing app-server's own process group isn't enough. And
+// starting a program that must end when Rufi does.
+import {
+  execFile,
+  spawn,
+  type ChildProcess,
+  type IOType,
+} from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { promisify } from "node:util";
 
@@ -88,6 +94,45 @@ async function processTable(): Promise<Row[]> {
     .map((line) => line.trim().split(/\s+/).map(Number))
     .filter((cols) => cols.length === 3 && cols.every(Number.isInteger))
     .map(([pid = 0, ppid = 0, pgid = 0]) => ({ pid, ppid, pgid }));
+}
+
+/**
+ * A watcher holds a pipe only Rufi has open, and ends the program's process
+ * group when it closes, also when Rufi crashes: TERM, then KILL 5 s later
+ * (T3 Code's).
+ */
+const WATCHER = [
+  "{ trap '' TERM; read -r _ <&3; kill -TERM 0; sleep 5; kill -KILL 0; } </dev/null >/dev/null 2>&1 &",
+  'exec "$@" 3<&-',
+].join("\n");
+
+/**
+ * `command` in a process group of its own, with the watcher, so it ends
+ * when Rufi ends. When it ends, so does everything left in its group.
+ * `name` is its shell's name; `stdio` its stdin, stdout and stderr.
+ */
+export function spawnWatched(
+  name: string,
+  command: string,
+  args: readonly string[],
+  options: {
+    cwd?: string;
+    env: NodeJS.ProcessEnv;
+    signal?: AbortSignal;
+    stdio: readonly [IOType, IOType, IOType];
+  },
+): ChildProcess {
+  const child = spawn("/bin/sh", ["-c", WATCHER, name, command, ...args], {
+    ...(options.cwd !== undefined && { cwd: options.cwd }),
+    env: options.env,
+    ...(options.signal !== undefined && { signal: options.signal }),
+    stdio: [...options.stdio, "pipe"],
+    detached: true,
+  });
+  child.once("exit", () => {
+    killGroup(child.pid ?? 0);
+  });
+  return child;
 }
 
 /** Ends process group `pgid` at once, if anything of it is left. */

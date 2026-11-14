@@ -73,6 +73,11 @@ import { aiFiles } from "./files.ts";
 import { mcpEndpoint, mcpKeys, skillResources } from "./mcp.ts";
 import { startRufiAi } from "./rufi-ai.ts";
 import { converter as openConverter } from "./converter.ts";
+import {
+  cloudflare,
+  cloudflareFolder,
+  type CloudflareOptions,
+} from "./cloudflare.ts";
 import { computerName, remote as openRemote, type Reach } from "./remote.ts";
 import {
   funnelRoute,
@@ -118,6 +123,8 @@ export interface CoreOptions {
   tailscale?: Tailscale;
   /** How the door's check asks its address; `fetch` when not given. */
   reach?: Reach;
+  /** Cloudflare's API and where cloudflared is; the real ones when not given. */
+  cloudflare?: Pick<CloudflareOptions, "api" | "places">;
   /** This Mac's name, as paired apps show it; macOS's own when not given. */
   macName?: () => Promise<string>;
 }
@@ -147,6 +154,8 @@ export function aiSandbox(home: string): AgentSandbox {
       // Codex's sign-in, and Claude's folder with its own.
       join(home, "codex", "auth.json"),
       claudeFolder(home),
+      // The Cloudflare tunnel's own secret.
+      cloudflareFolder(home),
     ],
   };
 }
@@ -542,6 +551,12 @@ export const startCore = (options: CoreOptions) =>
     };
     // The remote door, open at the start when an app is paired; closed
     // before the record it reads.
+    const tailscaleSteps = options.tailscale ?? tailscale();
+    const routeSettings = {
+      setting: transcripts.setting,
+      saveSetting: transcripts.saveSetting,
+    };
+    const tunnel = cloudflare({ home, log, ...options.cloudflare });
     const door = yield* Effect.acquireRelease(
       Effect.sync(() =>
         openRemote({
@@ -552,17 +567,12 @@ export const startCore = (options: CoreOptions) =>
           people: () => transcripts.people(),
           setting: transcripts.setting,
           saveSetting: transcripts.saveSetting,
-          routes: (() => {
-            const steps = options.tailscale ?? tailscale();
-            const settings = {
-              setting: transcripts.setting,
-              saveSetting: transcripts.saveSetting,
-            };
-            return {
-              tailscale: tailscaleRoute(steps, settings),
-              funnel: funnelRoute(steps, settings),
-            };
-          })(),
+          routes: {
+            tailscale: tailscaleRoute(tailscaleSteps, routeSettings),
+            funnel: funnelRoute(tailscaleSteps, routeSettings),
+            cloudflare: tunnel.route,
+          },
+          cloudflare: tunnel,
           ...(options.reach !== undefined && { reach: options.reach }),
           macName: options.macName ?? computerName,
           working,

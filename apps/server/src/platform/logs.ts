@@ -61,6 +61,7 @@ const EVENTS = new Set([
   "remote.unpaired",
   "remote.failed",
   "remote.batch",
+  "remote.set_up",
 ] as const);
 
 export type LogEvent = typeof EVENTS extends Set<infer E> ? E : never;

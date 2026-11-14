@@ -59,6 +59,7 @@ import { agentDoor } from "../src/server/door.ts";
 import { mcpEndpoint, mcpKeys, serveMcp } from "../src/server/mcp.ts";
 import { backupsPath } from "../src/core/store/backup.ts";
 import { childEnvironment, rufiHome } from "../src/platform/config.ts";
+import { cloudflareFolder } from "../src/server/cloudflare.ts";
 import { aiSandbox } from "../src/server/core.ts";
 import { caseSandbox, signInsOf } from "./live-run.ts";
 
@@ -116,9 +117,13 @@ const SECRET = "SECRET-CANARY";
 /** A file in Claude's folder, there to be read. */
 const claudeFile = (home: string) => join(claudeFolder(home), ".claude.json");
 
+/** The Cloudflare tunnel's credentials, there to be read. */
+const tunnelFile = (home: string) =>
+  join(cloudflareFolder(home), "tunnels", "fictional.json");
+
 /**
  * A fictional file at each path of the data folder `home` that the AI can't
- * read; the backups and Claude's folder get one inside.
+ * read; the backups, Claude's folder and Cloudflare's get one inside.
  */
 async function unreadableFiles(home: string) {
   for (const path of aiSandbox(home).unreadable) {
@@ -127,7 +132,9 @@ async function unreadableFiles(home: string) {
         ? join(path, "copy.sqlite")
         : path === claudeFolder(home)
           ? claudeFile(home)
-          : path;
+          : path === cloudflareFolder(home)
+            ? tunnelFile(home)
+            : path;
     await mkdir(dirname(file), { recursive: true });
     await writeFile(file, `${SECRET} in ${file}\n`);
   }
@@ -747,6 +754,7 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
         core,
         join(home, "codex", "auth.json"),
         claudeFile(home),
+        tunnelFile(home),
       ].map((file) => ({ input: `cat '${file}'`, check: refusedRead })),
       {
         input: `echo hello > '${ai}/inside-command.txt'`,
@@ -842,6 +850,7 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
     // sandbox, so they're tried apart.
     const probes: Probe[] = [
       { tool: "Read", input: claudeFile(home), check: refusedRead },
+      { tool: "Read", input: tunnelFile(home), check: refusedRead },
       {
         tool: "Write",
         input: `${ai}/inside.txt`,
@@ -883,7 +892,7 @@ const CASES: Record<string, (context: Context) => Promise<string>> = {
       await rm(outside, { force: true });
       await rm("/tmp/rufi-claude-live", { force: true });
     }
-    return `Read refused in Claude's folder, Write in the AI's folder only; one command ran ${String(commands.length)} of its own: 6 reads of unreadable files (Codex's sign-in and Claude's folder among them) and 3 writes refused, its folder and temp written, the internet reached, no token it can use`;
+    return `Read refused in Claude's and Cloudflare's folders, Write in the AI's folder only; one command ran ${String(commands.length)} of its own: 7 reads of unreadable files (Codex's sign-in, Claude's folder and the Cloudflare tunnel's secret among them) and 3 writes refused, its folder and temp written, the internet reached, no token it can use`;
   },
 
   "the adapter lists Claude's models by exact id": async (context) =>

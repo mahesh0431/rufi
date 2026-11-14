@@ -407,7 +407,7 @@ How paired apps reach Rufi on the Mac: its own https address, through the remote
 _Avoid_: server, tunnel, API (for the door itself)
 
 **Remote route**:
-How paired apps reach the remote door: Tailscale (the start, your tailnet only) or Tailscale Funnel (public). One at a time, changed only while nothing is paired. Not one of the door's HTTP routes.
+How paired apps reach the remote door: Tailscale (the start, your tailnet only), Tailscale Funnel or Cloudflare Tunnel (both public). One at a time, changed only while nothing is paired. Not one of the door's HTTP routes.
 _Avoid_: tunnel (for the route itself), connection
 
 **Pairing**:
