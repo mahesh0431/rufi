@@ -1,11 +1,18 @@
 // A chip: a reference to health data in the chat box or a sent message. Its
 // icon says what it is (a document, a draft item, a saved record, a
-// report's results), its name
+// report's results, a question card's quote), its name
 // is what the page calls it, and the pointer shows where it comes from. In
 // the box, a Retry chip says read again. A chip
 // whose document was deleted keeps its name, says so, and is dimmed.
 import type { Pointer } from "@rufi/contracts";
-import { Activity, FileText, FlaskConical, Table2, X } from "lucide-react";
+import {
+  Activity,
+  FileText,
+  FlaskConical,
+  MessageCircleQuestionMark,
+  Table2,
+  X,
+} from "lucide-react";
 import { IconButton } from "./ui.tsx";
 
 const ICONS = {
@@ -13,6 +20,7 @@ const ICONS = {
   draft_item: FlaskConical,
   record: Activity,
   report: Table2,
+  question: MessageCircleQuestionMark,
 } as const;
 
 export function ChipView({

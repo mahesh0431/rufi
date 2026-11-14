@@ -16,13 +16,13 @@ import type {
 } from "@rufi/contracts/instructions";
 import { Option, Schema } from "effect";
 import { SKILLS } from "../skills/skills.ts";
-import { TOOLS } from "../tools/tools.ts";
+import { HELD, TOOLS } from "../tools/tools.ts";
 import { safetyInstructions } from "./safety.ts";
 
 /** The tools the AI can call, by name. */
-const TOOL_NAMES = TOOLS.filter((tool) => tool.callers !== "ui").map(
-  (tool) => tool.name,
-);
+const TOOL_NAMES = TOOLS.filter(
+  (tool) => tool.callers !== "ui" && !HELD.includes(tool.name),
+).map((tool) => tool.name);
 
 const list = (names: readonly string[]) =>
   `${names.slice(0, -1).join(", ")} and ${names.at(-1) ?? ""}`;

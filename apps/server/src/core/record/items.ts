@@ -295,8 +295,11 @@ export async function planItems(
     target: string;
     page: Planned["page"];
   }[] = [];
-  const asked = (type: Ref["type"], id: string) =>
-    context.refs.filter((ref) => ref.type === type && ref.id === id);
+  const asked = <T extends Ref["type"]>(type: T, id: string) =>
+    context.refs.filter(
+      (ref): ref is Extract<Ref, { type: T }> =>
+        ref.type === type && ref.id === id,
+    );
 
   for (const [index, save] of items.entries()) {
     const at = `items.${String(index)}`;
@@ -459,7 +462,8 @@ export async function planItems(
         .executeTakeFirst();
       const current = versions.get(`result:${target.id}`) ?? null;
       const pointed = context.refs.filter(
-        (r) => r.type === "record" && r.id === target.id,
+        (r): r is Extract<Ref, { type: "record" }> =>
+          r.type === "record" && r.id === target.id,
       );
       const wrong = !before
         ? "No result with this id is in this person's record."

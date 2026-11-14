@@ -35,6 +35,7 @@ export function drafts(
           personId,
           JSON.parse(row?.refs ?? "[]") as Pointer[],
           true,
+          id,
         ),
       };
     },
@@ -48,7 +49,7 @@ export function drafts(
       text: string,
       refs: readonly Pointer[] = [],
     ): Promise<Draft> => {
-      const chips = await chipsOf(db, personId, refs);
+      const chips = await chipsOf(db, personId, refs, false, id);
       const values = {
         text,
         // Pointers only: a chip's version and name are read when shown.

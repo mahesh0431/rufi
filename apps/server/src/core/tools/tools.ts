@@ -10,6 +10,7 @@ import {
   usage,
   waitingMessages,
 } from "./agents.ts";
+import { ask, askedResult } from "./ask.ts";
 import { briefResult, createBrief } from "./brief.ts";
 import { readChat } from "./chat.ts";
 import { getDocuments, saveReading, sortDocuments } from "./documents.ts";
@@ -63,6 +64,7 @@ export const TOOLS: readonly Tool[] = [
   sortDocuments,
   saveReading,
   createBrief,
+  ask,
   readDoses,
   logDose,
   showFace,
@@ -75,6 +77,13 @@ export const TOOLS: readonly Tool[] = [
   setAgentModel,
   usage,
 ];
+
+/**
+ * Rufi's tools no agent is given yet: ask, until both screens draw its card.
+ * TODO: give ask to Rufi AI with its instructions (the question card's last
+ * step), then drop this.
+ */
+export const HELD: readonly string[] = [ask.name];
 
 /**
  * The name the agent knows Rufi's MCP server by: on a code-mode model the AI
@@ -307,6 +316,19 @@ export function rufiCaller(
           kept();
           return written;
         },
+        // Rufi AI's alone: the door names a sub-agent by its title.
+        ...(scope.label === undefined && {
+          ask: async (input) => {
+            const asked = await transcripts.askWithCard(
+              chat,
+              made,
+              { kind: "choice", ...input },
+              (done) => answerOf(askedResult(done)),
+            );
+            kept();
+            return asked;
+          },
+        }),
       };
     };
     return async (

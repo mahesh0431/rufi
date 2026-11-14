@@ -45,7 +45,7 @@ import { remindersOf, saveReminders } from "../core/reminders/setting.ts";
 import { changeProfile, readProfile } from "../core/record/profile.ts";
 import { localTime } from "../core/record/dates.ts";
 import { pages } from "../core/documents/pages.ts";
-import { rufiCaller, forAgent } from "../core/tools/tools.ts";
+import { rufiCaller, forAgent, HELD } from "../core/tools/tools.ts";
 import {
   coreInstructions,
   rulesVersion,
@@ -332,10 +332,9 @@ export const startCore = (options: CoreOptions) =>
           record: writer,
           transcripts,
           adapters: options.adapters,
-          tools: forAgent(
-            () => ({ store: reader, personId: undefined }),
-            log,
-          ).specs.map((spec) => spec.name),
+          tools: forAgent(() => ({ store: reader, personId: undefined }), log)
+            .specs.map((spec) => spec.name)
+            .filter((name) => !HELD.includes(name)),
           cwd: aiSandbox(home).folder,
           model: DEFAULT_MODEL,
           documents: (personId) => {

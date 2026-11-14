@@ -25,6 +25,7 @@ import type { Store } from "../core/store/database.ts";
 import type { ChatQueue } from "../core/chat/queue.ts";
 import { Refusal, type AgentTools } from "../core/tools/registry.ts";
 import type { TurnScope } from "../core/tools/tools.ts";
+import { ask } from "../core/tools/ask.ts";
 import { errorCode, type Log } from "../platform/logs.ts";
 import { NOT_A_MODEL, notSignedIn } from "../core/chat/models.ts";
 import { ChatRefusal, type Chat } from "./chat.ts";
@@ -121,8 +122,9 @@ export function subAgents(deps: {
             provider: on.provider,
             model: on.id,
             effort: effort ?? parent.effort,
-            // Its parent's, all of them (T3 Code's way).
-            tools: parent.tools,
+            // Its parent's (T3 Code's way), but ask: only Rufi AI asks
+            // the person.
+            tools: parent.tools.filter((name) => name !== ask.name),
             cwd: parent.cwd,
           });
         }
