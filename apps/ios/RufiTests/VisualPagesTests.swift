@@ -156,7 +156,7 @@ private enum Probe: String, CaseIterable {
 /// A card's real web view on `pages`, in a window, with the frame of its
 /// visual at hand for the test.
 @MainActor
-private final class Card: NSObject, WKScriptMessageHandler {
+private final class Card: NSObject {
     static let light: [String: Any] = ["scheme": "light", "fontSize": "17px", "variables": ["--ink": "#111111"]]
     static let dark: [String: Any] = ["scheme": "dark", "fontSize": "17px", "variables": ["--ink": "#eeeeee"]]
     static let visual = #"<div id="drawn" style="height:120px">Drawn</div>"#
@@ -181,7 +181,7 @@ private final class Card: NSObject, WKScriptMessageHandler {
         coordinator = card(pages: pages, theme: Self.light).makeCoordinator()
         view = CardView.made(coordinator)
         let world = WKContentWorld.world(name: "gate")
-        view.configuration.userContentController.add(self, contentWorld: world, name: "gate")
+        view.configuration.userContentController.add(Told(self), contentWorld: world, name: "gate")
         view.configuration.userContentController.addUserScript(WKUserScript(
             source: "window.webkit.messageHandlers.gate.postMessage('here')",
             injectionTime: .atDocumentEnd, forMainFrameOnly: false, in: world))
@@ -209,8 +209,23 @@ private final class Card: NSObject, WKScriptMessageHandler {
         }
     }
 
-    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+    /// The visual's frame said it is there.
+    func told(_ message: WKScriptMessage) {
         if !message.frameInfo.isMainFrame { frame = message.frameInfo }
+    }
+
+    /// Holds the card weakly, as the card's own relay does: the web view
+    /// keeps its handlers, so the card goes when the test is done with it.
+    private final class Told: NSObject, WKScriptMessageHandler {
+        weak var card: Card?
+
+        init(_ card: Card) {
+            self.card = card
+        }
+
+        func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+            card?.told(message)
+        }
     }
 
     func theme(_ theme: [String: Any]) {
