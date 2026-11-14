@@ -88,7 +88,7 @@ When you delete a document (see [Documents](documents.md#delete-a-document)), it
 
 Activity shows what the AI did for a reply, as the AI's agent reported it. Rufi doesn't put it in other words.
 
-- **The AI's notes**, in full, such as "I'll check your fasting glucose and HbA1c first." The AI writes these while it works. They are part of Activity, not answers.
+- **The AI's notes**, in full, such as "I'll check your fasting glucose and HbA1c first." The AI writes these while it works. They are part of Activity, not answers. When the AI then asks you with a question card, the notes it wrote just before asking are its answer: they show above the card, not in Activity.
 - **The AI's thinking**, as the headings the AI service sends, such as "Comparing the reports", in their place among the steps. Click a heading to read the AI's whole summary, also when the line is cut on a narrow screen. On Codex and on Claude, the summary shows as the AI writes it, and once it's whole it shows as the AI finished it. If you stop the reply while the AI thinks, what showed stays. When the AI service sends nothing, there is no line.
 - **The steps**, each as it was reported: a command the AI ran, with its exit code; one of Rufi's tools, such as `rufi.get_records`, with what the AI asked for; the files the AI changed; a web search. A long step is cut in the middle, so the start and the file name show. A tick means it was done. Other signs mean it is running, it failed, or it stopped.
 
