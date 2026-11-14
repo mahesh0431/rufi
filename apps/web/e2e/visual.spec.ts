@@ -366,11 +366,15 @@ test("Tailwind in a visual reaches neither the network nor Rufi's page: its impo
     for (const probe of probes) await send(page, withVisual(probe));
     await expect(cards(page)).toHaveCount(probes.length);
     // Each visual's words still show.
-    for (const words of ["Imported", "Imported by url", "Classes", "Plugin"]) {
-      const card = page
-        .frameLocator(".reply iframe[title='Visual']")
-        .nth(["Imported", "Imported by url", "Classes", "Plugin"].indexOf(words));
-      await expect(card.getByText(words, { exact: true })).toBeVisible();
+    for (const [at, words] of [
+      "Imported",
+      "Imported by url",
+      "Classes",
+      "Plugin",
+    ].entries()) {
+      await expect(
+        cards(page).nth(at).contentFrame().getByText(words, { exact: true }),
+      ).toBeVisible();
     }
     // The imports and the class's addresses reached the CSS Tailwind made:
     // the probes are real, and only the policy stops them.
@@ -436,8 +440,9 @@ test("a visual is styled with Tailwind in Rufi's theme: the screens' sizes and c
   const style = (id: string, property: string) =>
     frame.evaluate(
       ({ id, property }) =>
-        getComputedStyle(document.getElementById(id) as Element)
-          .getPropertyValue(property),
+        getComputedStyle(
+          document.getElementById(id) as Element,
+        ).getPropertyValue(property),
       { id, property },
     );
   // Tailwind builds after the visual is in: wait for its classes.
@@ -447,9 +452,9 @@ test("a visual is styled with Tailwind in Rufi's theme: the screens' sizes and c
   expect(await style("small", "font-size")).toBe("14px");
   expect(await style("body", "font-size")).toBe("13px");
   // An arbitrary value works.
-  expect((await style("grid", "grid-template-columns")).split(" ")).toHaveLength(
-    2,
-  );
+  expect(
+    (await style("grid", "grid-template-columns")).split(" "),
+  ).toHaveLength(2);
   // Rufi's colours by the screens' names; Tailwind's own have none.
   expect(await style("small", "color")).toBe(await pageColour(page, "--muted"));
   expect(await style("red", "background-color")).toBe("rgba(0, 0, 0, 0)");

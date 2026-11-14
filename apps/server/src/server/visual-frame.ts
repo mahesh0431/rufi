@@ -168,17 +168,18 @@ const hash = (script: string) =>
  * allows a script file whose `integrity` names it, and its request leaves
  * before the file is checked.
  */
-const policyOf = (host: string, kit: string) => [
-  "sandbox allow-scripts",
-  "default-src 'none'",
-  `script-src ${hash(host)} ${hash(CARD)} ${hash(kit)}`,
-  "style-src 'unsafe-inline'",
-  "img-src data:",
-  "font-src data:",
-  "form-action 'none'",
-  "base-uri 'none'",
-  "frame-ancestors 'self'",
-].join("; ");
+const policyOf = (host: string, kit: string) =>
+  [
+    "sandbox allow-scripts",
+    "default-src 'none'",
+    `script-src ${hash(host)} ${hash(CARD)} ${hash(kit)}`,
+    "style-src 'unsafe-inline'",
+    "img-src data:",
+    "font-src data:",
+    "form-action 'none'",
+    "base-uri 'none'",
+    "frame-ancestors 'self'",
+  ].join("; ");
 const NO_SCRIPT_FILES = "script-src 'unsafe-inline'";
 
 /**
@@ -200,7 +201,9 @@ export function visualKit(screens: string | undefined): string {
   }
   // It is written into the visual's document as a script element's text.
   if (/<\/script/i.test(kit)) {
-    throw new Error(`The script for visuals can't end its own element (${path}).`);
+    throw new Error(
+      `The script for visuals can't end its own element (${path}).`,
+    );
   }
   return kit;
 }
