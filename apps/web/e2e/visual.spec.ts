@@ -843,10 +843,10 @@ test("a visual's chart JSON reaches neither the network nor Rufi's page: nothing
       expect(
         await frame.evaluate(() => ({
           ran: document.body.dataset["ran"] ?? "no",
-          polluted: String(({} as Record<string, unknown>)["polluted"] ?? "no"),
+          polluted: "polluted" in {},
           images: document.querySelectorAll("img[onerror]").length,
         })),
-      ).toEqual({ ran: "no", polluted: "no", images: 0 });
+      ).toEqual({ ran: "no", polluted: false, images: 0 });
     }
     // Not JSON, a type Rufi doesn't draw, and JSON cut short by a closing
     // tag each say so under the visual.
