@@ -75,7 +75,7 @@ import { fileIn, NativePicture, Picture } from "./files.tsx";
 import { rehypeVisuals, visualHtml } from "./visual-blocks.ts";
 import { finishedBlocks, useWordByWord } from "./reply-flow.ts";
 import { Answer, KeepPlace, Visual, VisualWaiting } from "./visual.tsx";
-import { QuestionCard } from "./question.tsx";
+import { cardOf, QuestionCard } from "./question.tsx";
 import { loadOlder } from "./live.ts";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
 import {
@@ -862,6 +862,7 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
     turn?.status === "running" &&
     !(entry?.kind === "reply" && entry.status === "done");
   if (!entry) return null;
+  const card = cardOf(entry);
   return entry.kind === "message" || entry.kind === "steer" ? (
     <MessageView id={id} text={entry.text} refs={entry.refs} />
   ) : entry.kind === "receipt" ? (
@@ -895,14 +896,13 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
     <BriefLine id={id} text={entry.text} />
   ) : entry.kind === "agent" ? (
     <AgentMessage entry={entry} />
-  ) : entry.kind === "question" && entry.card ? (
+  ) : card ? (
     <QuestionCard
       entry={entry}
+      card={card}
       live={live}
       personId={personId}
-      details={
-        entry.card.details !== undefined && <Marked text={entry.card.details} />
-      }
+      details={card.details !== undefined && <Marked text={card.details} />}
     />
   ) : entry.kind === "activity" &&
     entry.activity === "picture" &&

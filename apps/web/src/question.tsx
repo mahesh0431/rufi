@@ -6,7 +6,12 @@
 // with Retry when its answer was lost) and, once it went to Rufi AI, the
 // answer it chose, with no buttons. Reply puts the card's quote in the box,
 // for your own words; it answers nothing. To change your mind, you type.
-import type { Entry, QueueItem } from "@rufi/contracts";
+import {
+  type Entry,
+  QuestionCard as Card,
+  type QueueItem,
+} from "@rufi/contracts";
+import { Option, Schema } from "effect";
 import {
   Check,
   Hourglass,
@@ -31,13 +36,21 @@ const clickOn = (item: QueueItem, card: string) =>
       ref.type === "question" && ref.id === card && ref.answer !== undefined,
   )?.ref;
 
+/** The card, when its kind is one Rufi draws; else the chat shows its text. */
+export const cardOf = (entry: Entry): Card | undefined =>
+  entry.kind === "question"
+    ? Option.getOrUndefined(Schema.decodeUnknownOption(Card)(entry.card))
+    : undefined;
+
 export function QuestionCard({
   entry,
+  card,
   live,
   personId,
   details,
 }: {
   entry: Entry;
+  card: Card;
   live: StoreApi<Live>;
   personId: string;
   /** The card's details, drawn as the chat draws Markdown. */
@@ -61,8 +74,6 @@ export function QuestionCard({
     }
   }, [box, entry.id, entry.answer, waiting, send?.status]);
 
-  const card = entry.card;
-  if (!card) return null;
   const words = (index: number) => card.answers[index] ?? "";
   // The stored answer first, then the click on its way, else open.
   const state: { icon?: typeof Check; text: string; spin?: true } | null =
