@@ -151,7 +151,9 @@ test("a card shows Rufi AI's words; Reply quotes it in the box and leaves it ope
 
   // After a reload, the card still shows the answer chosen.
   await page.reload();
-  await expect(cardOf(page, "Next visit")).toContainText("Book");
+  await expect(cardOf(page, "Next visit")).toMatchAriaSnapshot(
+    `- paragraph: "Answered: Book"`,
+  );
   await expect(
     cardOf(page, "Next visit").getByRole("button", { name: "Book" }),
   ).toHaveCount(0);
@@ -179,6 +181,38 @@ test("while a reply runs, a click with Queue chosen waits, and its card says so;
   await waiting.getByRole("button", { name: "Remove" }).click();
   await expect(waiting).toHaveCount(0);
   await expect(visit.getByRole("button", { name: "Book" })).toBeVisible();
+});
+
+test("a click the core took whose answer was lost waits, with no Retry; removed from the queue, the card is open and a new click goes", async ({
+  page,
+  rufi,
+}) => {
+  await openChat(page, rufi, ASKED);
+  const settings = await openSettings(page, "Chat");
+  await settings.getByRole("radio", { name: "Queue" }).check();
+  await expect(settings.getByRole("radio", { name: "Queue" })).toBeChecked();
+  await page.keyboard.press("Escape");
+  await box(page).fill("hang");
+  await box(page).press("Enter");
+  await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
+
+  // The click reaches the core; its answer never reaches the page.
+  await page.route("**/messages", async (route) => {
+    await route.fetch();
+    await route.abort();
+  });
+  const visit = cardOf(page, "Next visit");
+  await visit.getByRole("button", { name: "Book" }).click();
+  await expect(visit).toContainText("Book · Waiting");
+  await expect(visit.getByRole("button", { name: "Retry" })).toHaveCount(0);
+  await page.unroute("**/messages");
+
+  const waiting = page.getByRole("region", { name: "Waiting messages" });
+  await waiting.getByRole("button", { name: "Remove" }).click();
+  await expect(waiting).toHaveCount(0);
+  await expect(visit).not.toContainText("Not sent");
+  await visit.getByRole("button", { name: "Not now" }).click();
+  await expect(visit).toContainText("Not now · Waiting");
 });
 
 test("a click whose answer is lost says Not sent and keeps the box; Retry sends it by the same id; a refused one says Can't send and stays open", async ({

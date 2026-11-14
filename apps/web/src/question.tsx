@@ -155,6 +155,10 @@ export function QuestionCard({
               />
             )}
             <span className={state.icon === Check ? "text-ink" : ""}>
+              {/* The tick, in words: the answer Rufi AI has. */}
+              {state.icon === Check && (
+                <span className="sr-only">Answered: </span>
+              )}
               {state.text}
             </span>
           </p>
