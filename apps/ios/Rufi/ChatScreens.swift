@@ -36,6 +36,8 @@ struct ChatView: View {
                 }
                 if chat.clock?.key == "starting" { ThinkingLine(since: chat.clock?.since ?? .now) }
             }
+            // Each line a target: a quote scrolls to its card by its line.
+            .scrollTargetLayout()
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
