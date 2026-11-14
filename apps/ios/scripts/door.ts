@@ -2,7 +2,8 @@
 // fictional data. It is the screens' test setup (apps/web/e2e/rufi.ts): a
 // fresh folder with the fictional family, and a scripted Rufi AI whose
 // every reply thinks, then answers REPLY, with a visual and a question
-// whose answers are buttons (ADR 0035). A message with
+// whose answers are buttons (ADR 0035); the chat has an open question
+// card (ADR 0036). A message with
 // "hang" in it keeps its reply running until Stop (what is sent meanwhile
 // waits); "Read my report" starts an agent, Reader, that works until
 // stopped; "Ask a checker" starts one, Checker, that answers. Each has
@@ -218,12 +219,30 @@ const reach: Reach = (url, init) => {
 };
 
 const rufi = new Rufi(await mkdtemp(join(folder, "data-")));
+/**
+ * A question card still open after the fixture's answered one (ADR 0036),
+ * to tap in the Simulator.
+ */
+const OPEN_CARD = `
+  INSERT INTO transcript_entries (id, person_id, chat_id, seq, turn_id, kind, text, card, revision, created_at, updated_at) VALUES
+    ('ent-a7', 'asha', 'c-asha', 7, NULL, 'question', '**Lipid panel, 12 Aug 2026**
+
+- LDL 138 mg/dL
+- HDL 41 mg/dL
+
+Save these 2 results to your health record?
+
+- Save
+- Not now', '{"kind":"choice","key":"Lipid panel, 12 Aug 2026","details":"- LDL 138 mg/dL\\n- HDL 41 mg/dL","question":"Save these 2 results to your health record?","answers":["Save","Not now"]}', 7, '2026-10-05T08:01:00Z', '2026-10-05T08:01:00Z');
+  UPDATE chats SET revision = 7 WHERE id = 'c-asha';`;
+
 // The family, with a row of each kind the iPhone's own pages show.
 await rufi.family(
   await readFile(
     join(import.meta.dirname, "../../server/tests/fixtures/record-pages.sql"),
     "utf8",
   ),
+  OPEN_CARD,
 );
 /** Each step of the stand-in, and what failed, in this script's output. */
 const said = Object.fromEntries(
