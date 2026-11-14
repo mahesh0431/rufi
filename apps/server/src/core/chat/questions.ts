@@ -27,7 +27,7 @@ export function cardText(card: QuestionCard): string {
 }
 
 /** A message's quote of a card: its key, linked to the card. */
-export const quoteOf = (id: string, key: string) =>
+const quoteOf = (id: string, key: string) =>
   `> [${literal(key)}](${questionLink(id)})`;
 
 /**

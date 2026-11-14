@@ -132,11 +132,8 @@ describe("ask", () => {
       openTranscripts(store, () => "2026-11-10T09:05:00.000Z"),
     );
     expect(again.body.result).toMatchObject({ id: first });
-    expect(cards()).toEqual([
-      expect.objectContaining({
-        id: first,
-        card: expect.stringContaining('"Save these 2'),
-      }),
+    expect(cards().map((row) => [row["id"], row["card"]])).toEqual([
+      [first, JSON.stringify({ kind: "choice", ...CARD })],
     ]);
   });
 
@@ -321,11 +318,10 @@ describe("Rufi AI reading the chat back", () => {
     });
 
     const read = await call("read_chat", {}, "call-read");
-    const said = Object.fromEntries(
-      read.body.result.entries.map((entry) => [
-        entry.id ?? entry.text.split("\n")[0],
-        entry,
-      ]),
+    const said = new Map(
+      read.body.result.entries.flatMap((entry) =>
+        entry.id === undefined ? [] : [[entry.id, entry.text] as const],
+      ),
     );
     expect(
       read.body.result.entries
@@ -335,21 +331,18 @@ describe("Rufi AI reading the chat back", () => {
       `> [Lipid panel, 12 Aug 2026](rufi:/chat/questions/${second})\n\nNot now`,
       `> [Lipid panel, 12 Aug 2026](rufi:/chat/questions/${first})\n\nSave`,
     ]);
-    expect(said[first]?.text).toContain(
+    expect(said.get(first)).toContain(
       "Answered by a click: Save (message m-1).",
     );
-    expect(said[second]?.text).toContain(
+    expect(said.get(second)).toContain(
       "Answered by a click: Not now (message m-2).",
     );
 
     const one = await call("read_chat", { question: second }, "call-read-card");
-    expect(one.body.result.entries).toEqual([
-      expect.objectContaining({
-        id: second,
-        kind: "question",
-        text: expect.stringContaining("LDL 133"),
-      }),
-    ]);
+    expect(
+      one.body.result.entries.map((entry) => [entry.id, entry.kind]),
+    ).toEqual([[second, "question"]]);
+    expect(one.body.result.entries[0]?.text).toContain("LDL 133");
     const ravi = (await transcripts.chat("ravi")) as ChatRow;
     const elsewhere = await call(
       "read_chat",
