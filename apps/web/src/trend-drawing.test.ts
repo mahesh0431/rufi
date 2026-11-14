@@ -47,11 +47,8 @@ const ferritin = [
 describe("a ring", () => {
   it("marks each value the lab flagged, and only those: Rufi reads nothing from the range", () => {
     const ringed = (more: Partial<ResultRow>, value = "8") =>
-      draw(
-        "Ferritin (µg/L)",
-        [result("a", "2026-01-01", value, more)],
-        LARGE,
-      )?.lines[0]?.points[0]?.flagged;
+      draw("Ferritin (µg/L)", [result("a", "2026-01-01", value, more)], LARGE)
+        ?.lines[0]?.points[0]?.flagged;
     // The lab's own flag, as printed.
     expect(ringed({ range: "30 - 400", flag: "L" }, "18")).toBe(true);
     expect(ringed({ range: "<5,5", flag: "High" }, "5.3")).toBe(true);

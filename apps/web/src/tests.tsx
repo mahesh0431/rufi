@@ -22,11 +22,7 @@ import {
   rowElementId,
 } from "./record.tsx";
 import { Trend } from "./trend.tsx";
-import {
-  lineOf,
-  lineTitle,
-  onTheLine,
-} from "@rufi/contracts/line";
+import { lineOf, lineTitle, onTheLine } from "@rufi/contracts/line";
 import {
   EmptyState,
   laterParts,

@@ -700,7 +700,11 @@ async function testPage(
           ? { issuer: row["report_issuer"] }
           : {},
   }));
-  return { test: shown(kindOf("test"), test), values, line: lineOfPage(values) };
+  return {
+    test: shown(kindOf("test"), test),
+    values,
+    line: lineOfPage(values),
+  };
 }
 
 /** A page's tile: its count and what it counts. */
