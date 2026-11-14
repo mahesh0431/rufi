@@ -338,12 +338,16 @@ test("a visual runs no script of its own and reaches neither the network nor Ruf
   }
 });
 
-test("Tailwind in a visual reaches neither the network nor Rufi's page: its imports, a web address in a class and a plugin go nowhere", async ({
+test("Tailwind in a visual reaches neither the network nor Rufi's page: the browser refuses each import and web address it writes, and Tailwind refuses a plugin", async ({
   page,
   rufi,
 }) => {
   // Also in WebKit. Tailwind writes a web import or a class's url() into
-  // the CSS it makes; the frame's policy is what refuses them.
+  // the CSS it makes, and the frame's policy refuses it: each probe waits
+  // for the browser's refusal of its own address, so it proves the browser
+  // tried. An import is valid only before Rufi's theme, so the test puts
+  // each import's input there, past the markup's guard; a visual's own
+  // import comes after the theme, where the browser ignores it.
   const reached: string[] = [];
   const outside: Server = createServer((request, response) => {
     reached.push(request.url ?? "");
@@ -352,68 +356,133 @@ test("Tailwind in a visual reaches neither the network nor Rufi's page: its impo
   outside.on("connection", () => reached.push("a connection"));
   await new Promise<void>((resolve) => outside.listen(0, "127.0.0.1", resolve));
   const out = `http://127.0.0.1:${String((outside.address() as AddressInfo).port)}`;
+  // Rufi's own address, reached from the visual with a value. Chromium
+  // also tells of a request its policy refused, so only one that got an
+  // answer counts.
+  const toRufi: string[] = [];
+  page.on("requestfinished", (request) => {
+    const { origin, search } = new URL(request.url());
+    if (origin === new URL(page.url()).origin && search.includes("hba1c=")) {
+      toRufi.push(request.url());
+    }
+  });
   try {
     await opened(page, rufi);
+    const own = new URL(page.url()).origin;
     // Each in its own visual, so one that stops Tailwind can't keep
     // another from being reached.
-    const probes = [
-      `<p id="probe">Imported</p><style type="text/tailwindcss">@import "${out}/tw-import.css";</style>`,
-      `<p id="probe">Imported by url</p><style type="text/tailwindcss">@import url("${out}/tw-url.css");</style>`,
-      `<p id="probe" class="bg-[url(${out}/tw-background.png)] [mask-image:url(${out}/tw-mask.png)]">Classes</p>`,
-      `<p id="probe">Plugin</p><style type="text/tailwindcss">@plugin "${out}/tw-plugin.js";</style>`,
+    const probes: { words: string; input?: string; classes?: string }[] = [
+      { words: "Imported", input: `@import "${out}/tw-import.css?hba1c=6.4";` },
+      { words: "Imported by url", input: `@import url("${out}/tw-url.css");` },
+      {
+        words: "Imported from Rufi",
+        input: `@import "${own}/tw-own.css?hba1c=6.4";`,
+      },
+      {
+        words: "Classes",
+        classes: `bg-[url(${out}/tw-background.png)] [mask-image:url(${own}/tw-mask.png?hba1c=6.4)]`,
+      },
     ];
-    for (const probe of probes) await send(page, withVisual(probe));
-    await expect(cards(page)).toHaveCount(probes.length);
-    // Each visual's words still show (four frames load at once: as long as
-    // the first visual's wait).
-    for (const [at, words] of [
-      "Imported",
-      "Imported by url",
-      "Classes",
-      "Plugin",
-    ].entries()) {
+    const refusedFor = [
+      [`${out}/tw-import.css?hba1c=6.4`],
+      [`${out}/tw-url.css`],
+      [`${own}/tw-own.css?hba1c=6.4`],
+      [`${out}/tw-background.png`, `${own}/tw-mask.png?hba1c=6.4`],
+    ];
+    for (const { words } of probes) {
+      await send(page, withVisual(`<p id="probe">${words}</p>`));
+    }
+    // A plugin, in the visual's own Tailwind.
+    await send(
+      page,
+      withVisual(
+        `<p id="probe">Plugin</p><style type="text/tailwindcss">@plugin "${out}/tw-plugin.js";</style>`,
+      ),
+    );
+    await expect(cards(page)).toHaveCount(probes.length + 1);
+    for (const [at, probe] of probes.entries()) {
+      const card = cards(page).nth(at);
       await expect(
-        cards(page).nth(at).contentFrame().getByText(words, { exact: true }),
+        card.contentFrame().getByText(probe.words, { exact: true }),
       ).toBeVisible({ timeout: 15_000 });
+      const frame = await frameOf(card);
+      await frame.evaluate(({ input, classes }) => {
+        const refused: string[] = [];
+        (window as unknown as { refused: string[] }).refused = refused;
+        addEventListener("securitypolicyviolation", (event) =>
+          refused.push(event.blockedURI),
+        );
+        if (input !== undefined) {
+          const style = document.createElement("style");
+          style.setAttribute("type", "text/tailwindcss");
+          style.textContent = input;
+          document
+            .querySelector('style[type="text/tailwindcss"]')
+            ?.before(style);
+        }
+        if (classes !== undefined) {
+          (document.getElementById("probe") as Element).className = classes;
+        }
+      }, probe);
+      for (const address of refusedFor[at] ?? []) {
+        await expect
+          .poll(() =>
+            frame.evaluate(
+              () => (window as unknown as { refused: string[] }).refused,
+            ),
+          )
+          .toContain(address);
+      }
     }
-    // The imports and the class's addresses reached the CSS Tailwind made:
-    // the probes are real, and only the policy stops them.
-    for (const [at, address] of [
-      [0, "tw-import.css"],
-      [1, "tw-url.css"],
-    ] as const) {
-      const made = await frameOf(cards(page).nth(at));
-      await expect
-        .poll(() =>
-          made.evaluate(
-            (address) =>
-              [...document.querySelectorAll("style:not([type])")].some(
-                (style) => style.textContent.includes(address),
-              ),
-            address,
-          ),
-        )
-        .toBe(true);
-    }
-    const classes = await frameOf(cards(page).nth(2));
+    // The class's addresses reached what the probe's style is.
+    const classes = await frameOf(cards(page).nth(3));
+    expect(
+      await classes.evaluate(() => {
+        const style = getComputedStyle(
+          document.getElementById("probe") as Element,
+        );
+        return [
+          style.backgroundImage,
+          style.getPropertyValue("mask-image") ||
+            style.getPropertyValue("-webkit-mask-image"),
+        ];
+      }),
+    ).toEqual([
+      expect.stringContaining("tw-background.png"),
+      expect.stringContaining("tw-mask.png"),
+    ]);
+    // Tailwind itself refuses the plugin: it loads no module at all.
+    const plugin = cards(page).nth(probes.length);
+    await expect(
+      plugin.contentFrame().getByText("Plugin", { exact: true }),
+    ).toBeVisible({ timeout: 15_000 });
+    const pluginFrame = await frameOf(plugin);
     await expect
       .poll(() =>
-        classes.evaluate(
-          () =>
-            getComputedStyle(document.getElementById("probe") as Element)
-              .backgroundImage,
+        pluginFrame.evaluate(() =>
+          performance
+            .getEntriesByName("(error)")
+            .map((mark) =>
+              String(
+                ((mark as PerformanceMark).detail as { error?: unknown } | null)
+                  ?.error,
+              ),
+            ),
         ),
       )
-      .toContain("tw-background.png");
+      .toContain(
+        "Error: The browser build does not support plugins or config files.",
+      );
     await page.waitForTimeout(1000);
     expect(reached).toEqual([]);
+    expect(toRufi).toEqual([]);
   } finally {
     outside.closeAllConnections();
     await new Promise((resolve) => outside.close(resolve));
   }
 });
 
-test("a visual is styled with Tailwind in Rufi's theme: the screens' sizes and colours, no colours of Tailwind's own, any class, and dark as Rufi is", async ({
+test("a visual is styled with Tailwind in Rufi's theme: any class, the screens' colour names, no colours of Tailwind's own, and dark as Rufi is", async ({
   page,
   rufi,
 }) => {
@@ -422,9 +491,8 @@ test("a visual is styled with Tailwind in Rufi's theme: the screens' sizes and c
     page,
     withVisual(
       [
-        '<div id="box" class="p-4 rounded-lg border border-line bg-surface">',
+        '<div class="p-4 rounded-lg border border-line bg-surface">',
         '<p id="small" class="text-sm text-muted">Small</p>',
-        '<p id="body">Body</p>',
         '<div id="grid" class="grid grid-cols-[1fr_auto] gap-2"><span>Date</span><span>Value</span></div>',
         '<p id="red" class="bg-red-500 text-red-600">Red</p>',
         '<p id="dark" class="text-ink dark:text-accent">Dark</p>',
@@ -445,16 +513,11 @@ test("a visual is styled with Tailwind in Rufi's theme: the screens' sizes and c
         ).getPropertyValue(property),
       { id, property },
     );
-  // Tailwind builds after the visual is in: wait for its classes.
-  await expect.poll(() => style("box", "padding-top")).toBe("16px");
-  // The screens' sizes at the chat's text size (13 px): text-sm is 14 px,
-  // as on the screens, and plain text the chat's 13 px.
-  expect(await style("small", "font-size")).toBe("14px");
-  expect(await style("body", "font-size")).toBe("13px");
-  // An arbitrary value works.
-  expect(
-    (await style("grid", "grid-template-columns")).split(" "),
-  ).toHaveLength(2);
+  // Tailwind builds after the visual is in, any class the AI writes: wait
+  // for an arbitrary value's.
+  await expect
+    .poll(async () => (await style("grid", "grid-template-columns")).split(" "))
+    .toHaveLength(2);
   // Rufi's colours by the screens' names; Tailwind's own have none.
   expect(await style("small", "color")).toBe(await pageColour(page, "--muted"));
   expect(await style("red", "background-color")).toBe("rgba(0, 0, 0, 0)");

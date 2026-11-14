@@ -60,6 +60,11 @@
         "entry": [
           "e2e/fakes.ts"
         ]
+      },
+      "apps/web": {
+        "entry": [
+          "src/frame/visual.ts"
+        ]
       }
     }
   }
