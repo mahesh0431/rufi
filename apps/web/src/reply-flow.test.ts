@@ -59,6 +59,20 @@ describe("wordsEnd", () => {
       "Drawn:\n\n```rufi-visual",
     );
   });
+
+  it("takes a line's marker with its first word, so a bullet never shows on the item above", () => {
+    const list = "- Fasting glucose: 5.4 mmol/L\n- LDL: 2.9 mmol/L";
+    expect(list.slice(0, wordsEnd(list, 31))).toBe(
+      "- Fasting glucose: 5.4 mmol/L",
+    );
+    expect(list.slice(0, wordsEnd(list, 36))).toBe(
+      "- Fasting glucose: 5.4 mmol/L\n- LDL:",
+    );
+    const numbered = "Two:\n\n1. HbA1c\n2. LDL";
+    expect(numbered.slice(0, wordsEnd(numbered, 17))).toBe("Two:\n\n1. HbA1c");
+    const heading = "Done.\n\n## What it means";
+    expect(heading.slice(0, wordsEnd(heading, 11))).toBe("Done.");
+  });
 });
 
 describe("paced", () => {

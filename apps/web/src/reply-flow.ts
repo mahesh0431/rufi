@@ -23,16 +23,22 @@ export function finishedBlocks(text: string): string {
 }
 
 const SPACE = /\s/;
+/** A line so far only a block's marks: a bullet, a number, a heading, a quote. */
+const MARK = String.raw`(?:[-*+>]|#{1,6}|\d{1,9}[.)])`;
+const ONLY_MARKS = new RegExp(String.raw`^[ \t]*(?:${MARK}[ \t]+)*${MARK}$`);
 
 /**
  * Where the last whole word up to `upTo` ends: just before a space that
  * follows it. 0 when none has. A word at the end waits for what follows
  * it, so a word, a bold mark or a fence's opening line shows only whole.
+ * A line's marks wait for its first word: a bullet alone would show on the
+ * item above.
  */
 export function wordsEnd(text: string, upTo: number): number {
   for (let at = Math.floor(Math.min(upTo, text.length - 1)); at > 0; at--) {
     if (SPACE.test(text[at] ?? "") && !SPACE.test(text[at - 1] ?? "")) {
-      return at;
+      const line = text.slice(text.lastIndexOf("\n", at - 1) + 1, at);
+      if (!ONLY_MARKS.test(line)) return at;
     }
   }
   return 0;
