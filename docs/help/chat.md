@@ -135,7 +135,7 @@ In [Settings › Chat](rufi:/settings/chat) › **Replies**, choose how Rufi AI'
 
 - **Visual** (the start): a visual wherever a chart, comparison or diagram makes the answer clearer.
 - **Balanced:** mostly text, with a table or a visual where it really helps.
-- **Simple:** short, plain text, and a visual only when you ask for one.
+- **Simple:** short, plain text, and a visual only when you ask for one. When the AI asks you something with a few clear answers, it still offers them as buttons (see [How a reply looks](#how-a-reply-looks)).
 
 Under **Your own words**, you can tell Rufi AI in your own words how you like replies, for example "Explain medical words simply. Use kg and cm." It saves when you leave the box, and Rufi AI reads it with every reply, whichever of the three you chose. Your words change how a reply looks and reads; Rufi's own rules still come first: your values exactly as your record keeps them, where they come from, and asking before it saves.
 
@@ -202,7 +202,7 @@ You change your health record by telling the AI in the chat. Nothing changes unt
    > - Changed medicine use **Creatine 5 g**: status _current_ → _stopped_
    > - Added symptom **Stomach upset**
 
-   A detail that had no value says _Not set_, as in your profile's history: "height _Not set_ → _162 cm_". When a detail is long, its line shows the part around the change. Rufi writes the receipt itself, from what it saved, not from the AI's words. If the receipt is different from what the AI told you, trust the receipt and tell the AI.
+   A detail that had no value says _Not set_, as in your profile's history: "height _Not set_ → _162 cm_". When a detail is long, its line shows the part around the change. Rufi writes the receipt itself, from what it saved, not from the AI's words. If the receipt is different from what the AI told you, trust the receipt and tell the AI. When one yes covers more than one save, such as marking a follow-up done and saving its result, each save shows its own receipt.
 
 The AI can save medicines you take, visits to a doctor (with what the doctor wrote or said), symptoms, conditions, allergies, lab results, measurements such as your weight or blood pressure, procedures and immunisations, "no known allergies", follow-ups, and your profile: your name, your birth date, sex for lab ranges, blood group and height (see [Your profile](record.md#your-profile)). When you mention one of these about yourself, the AI may offer to save it.
 

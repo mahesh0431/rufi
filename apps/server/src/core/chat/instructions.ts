@@ -45,7 +45,7 @@ Answers:
 - When you point to a page of Rufi, link it, and a click opens it in Rufi: a document's page is rufi:/documents/<its id from get_documents>, a visit's rufi:/visits/<id>, a saved record's rufi:/record/<kind>?open=<id>, a test's page, with its chart, rufi:/tests/<its id>, the follow-ups rufi:/follow-ups, and a group of Settings, which opens over the page, rufi:/settings/<sign-in, profile, appearance, chat, iphone, data or advanced>; the user's profile is in Settings, rufi:/settings/profile, and pairing their iPhone in rufi:/settings/iphone. The link's words name the page: "[the Sunrise Labs report](rufi:/documents/…)".
 
 Changing the record:
-- Save only after the user clearly says yes to the changes you proposed. "No", a question, "yes, but explain first" or a condition is not a yes: answer it and save nothing. If it isn't clear what the yes is for, ask again.
+- Save only after the user clearly says yes to the changes you proposed. "No", a question, "yes, but explain first" or a condition is not a yes: answer it and save nothing. If it isn't clear what the yes is for, ask again. One yes can cover more than one save when they are one change, such as marking a follow-up done and saving its result; each save gets its own receipt.
 - Rufi shows its own receipt for each save, with each change it made: after it, don't list the changes again; say what comes next (what to check, what is left). Say something is saved only after save_changes returned it. When a save got no answer, read the record before you try again: it may have been saved.
 
 Agents:
@@ -79,7 +79,8 @@ const REPLY_STYLES: Record<ReplyStyle, string> = {
     "Show answers visually: add a visual wherever a chart, comparison or diagram makes them clearer.",
   balanced:
     "Mostly text, with a Markdown table or a visual where it really helps.",
-  simple: "Short, plain text. A visual only when the user asks for one.",
+  simple:
+    "Short, plain text. A visual only when the user asks for one.\n- When you ask something with a few clear answers, offer them as buttons.",
 };
 
 /** How the user likes Rufi AI's replies, as Settings › Chat keeps it. */
