@@ -44,6 +44,11 @@ import {
 import type { ProviderSignIn } from "../../server/src/server/signin.ts";
 import type { Reach } from "../../server/src/server/remote.ts";
 import type { Tailscale } from "../../server/src/server/tailscale.ts";
+import { cloudflareFolder } from "../../server/src/server/cloudflare.ts";
+import {
+  cloudflareApi,
+  fakeCloudflared,
+} from "../../server/tests/cloudflare-standin.ts";
 
 const SERVER = join(import.meta.dirname, "../../server");
 const FAKE = join(SERVER, "tests/fake-codex.ts");
@@ -86,6 +91,11 @@ export class Rufi {
   readonly tailscale: string[] = [];
   /** While set, the check through Serve waits for it: a slow first certificate. */
   holdCheck: Promise<unknown> | undefined;
+  /**
+   * Cloudflare's API for a fictional account with example.com. No real
+   * Cloudflare is asked, and the cloudflared Rufi runs is a fake.
+   */
+  readonly cloudflare = cloudflareApi({ "example.com": "zone-example" });
   #scope: Scope.Closeable | undefined;
   #core: Core | undefined;
   #model: FakeModel | undefined;
@@ -130,6 +140,8 @@ export class Rufi {
       tailscale?: Tailscale;
       /** The door's check; when not given, as Serve would pass it on. */
       reach?: Reach;
+      /** Whether cloudflared is on this Mac; yes when not given. */
+      cloudflared?: boolean;
     } = {},
   ): Promise<Core> {
     const { port } = options;
@@ -170,6 +182,19 @@ export class Rufi {
           },
         },
         tailscale: options.tailscale ?? this.#tailscale(),
+        cloudflare: {
+          api: this.cloudflare.api,
+          places:
+            options.cloudflared === false
+              ? []
+              : [
+                  (
+                    await fakeCloudflared(
+                      await mkdtemp(join(tmpdir(), "rufi-cloudflared-")),
+                    )
+                  ).binary,
+                ],
+        },
         reach: options.reach ?? ((url, init) => this.#throughServe(url, init)),
         macName: () => Promise.resolve("Asha's MacBook Pro"),
         ...(port !== undefined && { port }),
@@ -231,11 +256,31 @@ export class Rufi {
     return this.#funnelled.get(at) ?? at;
   }
 
-  /** The door's check, as Serve or Funnel passes it on, with the address's Host. */
+  /**
+   * The door's port for a Cloudflare address: the service Rufi's own
+   * config names for it, as cloudflared reads it.
+   */
+  async cloudflarePort(hostname: string): Promise<number | undefined> {
+    const routing = await readFile(
+      join(cloudflareFolder(this.home), "config.yml"),
+      "utf8",
+    ).catch(() => "");
+    const service = new RegExp(
+      `hostname: ${hostname.replaceAll(".", "\\.")}\\n\\s+service: (\\S+)`,
+    ).exec(routing)?.[1];
+    return service === undefined ? undefined : Number(new URL(service).port);
+  }
+
+  /** The door's check, as Serve, Funnel or Cloudflare passes it on, with the address's Host. */
   async #throughServe(url: string, init: RequestInit) {
     await this.holdCheck;
-    const { host, port: at } = new URL(url);
-    const port = this.#funnelled.get(Number(at || 443)) ?? Number(at);
+    const { host, hostname, port: at } = new URL(url);
+    const port =
+      (hostname === TAILNET_NAME
+        ? undefined
+        : await this.cloudflarePort(hostname)) ??
+      this.#funnelled.get(Number(at || 443)) ??
+      Number(at);
     return new Promise<Response>((resolve, reject) => {
       const sent = request(
         {

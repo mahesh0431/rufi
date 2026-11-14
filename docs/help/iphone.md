@@ -1,6 +1,6 @@
 # iPhone
 
-Rufi on your iPhone opens your own record from Rufi on your Mac, through Tailscale or Tailscale Funnel, and sends your heart data from Apple Health to it. You pair it once in [Settings › iPhone](rufi:/settings/iphone). This page says how your iPhone reaches your Mac, what pairing needs, how to pair, what the iPhone shows and keeps, how its medicine reminders work, how Rufi and its testing build Rufi Dev keep apart, how to unpair, and what to do when something fails.
+Rufi on your iPhone opens your own record from Rufi on your Mac, through Tailscale, Tailscale Funnel or Cloudflare Tunnel, and sends your heart data from Apple Health to it. You pair it once in [Settings › iPhone](rufi:/settings/iphone). This page says how your iPhone reaches your Mac, how to set up Cloudflare Tunnel, what pairing needs, how to pair, what the iPhone shows and keeps, how its medicine reminders work, how Rufi and its testing build Rufi Dev keep apart, how to unpair, and what to do when something fails.
 
 ## Choose how your iPhone reaches your Mac
 
@@ -8,21 +8,39 @@ At the top of [Settings › iPhone](rufi:/settings/iphone), **How your iPhone re
 
 - **Tailscale** (the start): your tailnet only. Your iPhone needs Tailscale on, signed in to the same tailnet as your Mac. Nothing else on the internet or your network can reach Rufi.
 - **Tailscale Funnel**: public. Your iPhone needs no VPN, so it works where Tailscale can't be on, such as a work iPhone. Settings says so under it: **Public: anyone with the address can reach this Mac. Only a paired iPhone can open your data.** Without a pairing code or a paired iPhone's key, Rufi lets nobody in. Rufi uses one of the ports Funnel allows (8443, 10000 or 443) that nothing else on your Mac uses, and keeps it for every iPhone you pair.
+- **Cloudflare Tunnel**: public, at an address on your own domain on Cloudflare, such as `rufi.example.com`. Your iPhone needs no VPN. Cloudflare carries the traffic: HTTPS ends at Cloudflare, which passes it on to your Mac through a tunnel. Settings says so under it: **Public: anyone with the address can reach this Mac. Only a paired iPhone can open your data. Cloudflare can see what passes through it.** Without a pairing code or a paired iPhone's key, Rufi lets nobody in. Set it up first (below).
 
 You can change it only while no iPhone is paired and no code is waiting: **Unpair your iPhones to change this.** An iPhone keeps the address it paired at, so after you change it, pair your iPhones again.
 
+## Set up Cloudflare Tunnel
+
+You need a domain of your own on Cloudflare (its free plan is enough), and cloudflared on your Mac.
+
+1. In [Settings › iPhone](rufi:/settings/iphone), choose **Cloudflare Tunnel**.
+2. If Rufi says **Install cloudflared on this Mac**, click **Copy**, paste the line into Terminal and run it (it needs Homebrew, from brew.sh). Then open Settings › iPhone again.
+3. Type the **Address** your iPhone will use, such as `rufi.example.com`: a name in your domain that nothing else uses yet.
+4. Click **Create token**. Cloudflare's page for a new API token opens in your browser, filled in for Rufi: **Cloudflare Tunnel: Edit**, **Zone: Read** and **DNS: Edit**. Sign in, choose your account and your domain, create the token, and copy it. If Cloudflare's page is missing one of those three permissions, add it there.
+5. Paste it in **Token**, and click **Set up**.
+
+Rufi then makes a tunnel of its own in your Cloudflare account, and a record that points your address at it. It never changes or deletes a record you have: if your address already has one, Cloudflare says so, and Rufi shows its words; choose another address, or delete that record in Cloudflare first. When it's done, Settings shows your address, and **Pair an iPhone** works.
+
+- **Rufi doesn't keep the token.** It uses it for the setup only. The token stays valid in Cloudflare until you delete it: after setup, in the same Cloudflare account, open **Manage account › Account API tokens** and delete the token named **Rufi**.
+- **The tunnel's own secret** stays in your data folder's `cloudflare/` folder, which Rufi AI's commands can't read. It isn't in Rufi's backups.
+- **Change** next to the address sets Cloudflare up again with a new address (only while no iPhone is paired and no code is waiting). Rufi keeps its tunnel. Old addresses' records, and tunnels from an earlier setup, stay in your Cloudflare account: delete them in Cloudflare's dashboard (your domain's **DNS** page, and **Networks › Tunnels**).
+- **Uploads go through Cloudflare,** which limits how much one can send: 100 MB on its Free and Pro plans. Over that, the iPhone says **Too large to send to your Mac. Add fewer at a time.**, and keeps what you chose in the box.
+- cloudflared runs only while Rufi runs and an iPhone is paired or a code is waiting. It ends when Rufi ends.
+
 ## What pairing needs
 
-- **Tailscale** on your Mac, signed in. With **Tailscale**, also on your iPhone, signed in to the same tailnet.
-- **HTTPS turned on** for your tailnet: in the Tailscale admin console, on the DNS page.
-- With **Tailscale Funnel**, Funnel allowed for your tailnet: the first time, Tailscale gives a link to allow it (see [When a step fails](#when-a-step-fails)).
+- With **Tailscale** or **Tailscale Funnel**: Tailscale on your Mac, signed in, with **HTTPS turned on** for your tailnet (in the Tailscale admin console, on the DNS page). With **Tailscale**, also on your iPhone, signed in to the same tailnet. With **Tailscale Funnel**, Funnel allowed for your tailnet: the first time, Tailscale gives a link to allow it (see [When a step fails](#when-a-step-fails)).
+- With **Cloudflare Tunnel**: Cloudflare set up (see [Set up Cloudflare Tunnel](#set-up-cloudflare-tunnel)).
 - **Your Mac awake, with Rufi running**, whenever you use Rufi on the iPhone.
 
 ## Pair an iPhone
 
 1. Open [Settings › iPhone](rufi:/settings/iphone) and click **Pair an iPhone**.
 2. With more than one person in this data folder, choose whose record the iPhone opens. Pair a phone for your own record only for now: Rufi AI on the phone can read every person's files in this folder.
-3. Rufi sets up Tailscale or Tailscale Funnel for it, as chosen, and checks that it can reach itself through it. Then it shows a QR code and **Copy link**.
+3. Rufi sets up the way you chose (Tailscale, Tailscale Funnel, or starts its Cloudflare tunnel), and checks that it can reach itself through it. Then it shows a QR code and **Copy link**.
 4. On the iPhone, open Rufi and tap **Scan Code** to scan it, or copy the link on the Mac and tap **Paste**. The code works once, for 10 minutes. When the phone has paired, Settings says **Paired: Asha's iPhone, for Asha**.
 5. The iPhone says which Mac it paired with and whose record it opens. Tap **Continue**.
 6. It offers **Lock Rufi** (below), then **Turn On Reminders** (you can log each dose from a reminder), which asks iOS to let Rufi send notifications. **Not Now** skips either; both are in **This iPhone** later.
@@ -108,7 +126,7 @@ Testing builds of the iPhone app are named **Rufi Dev**. Rufi and Rufi Dev are s
 
 ## When your Mac can't be reached
 
-If your Mac is asleep or off, Rufi isn't running there, Tailscale is off on the Mac (or, with **Tailscale**, on the iPhone), or the iPhone has no network, a small pill just above the chat box says **Can't reach Rufi**, with a spinner: Rufi on the iPhone asks again by itself, at once when you open it or come back to it, then after a few seconds, then every 30 seconds while it is on screen. Tap it to ask at once. When Rufi answers, it says **Connected** for a moment and goes, and the page reads again.
+If your Mac is asleep or off, Rufi isn't running there, Tailscale is off on the Mac (or, with **Tailscale**, on the iPhone), Cloudflare can't reach your Mac's tunnel, or the iPhone has no network, a small pill just above the chat box says **Can't reach Rufi**, with a spinner: Rufi on the iPhone asks again by itself, at once when you open it or come back to it, then after a few seconds, then every 30 seconds while it is on screen. Tap it to ask at once. When Rufi answers, it says **Connected** for a moment and goes, and the page reads again.
 
 Meanwhile, everything that doesn't need your Mac works: the sidebar, **This iPhone**, and the reminders, which keep ringing. The page you were reading stays as it was. A page the iPhone draws shows what it last read since Rufi opened, also when you go back to it. A page that hasn't loaded shows only the dog, resting.
 
@@ -122,7 +140,7 @@ On the Mac: click **Unpair** on its line, then **Unpair** again. From then on it
 
 On the iPhone: in **This iPhone**, tap **Unpair This iPhone**, then confirm. A sync running stops first. The iPhone forgets its key and its Apple Health bookmarks, removes its reminders and any messages still waiting, and the Mac stops letting it in. Doses not on your Mac yet stay (see [Log a dose from a reminder](#log-a-dose-from-a-reminder)).
 
-When nothing is paired and no code is waiting, Rufi stops listening for phones and removes its Tailscale or Funnel route (only its own: what else Tailscale serves stays).
+When nothing is paired and no code is waiting, Rufi stops listening for phones and removes its Tailscale or Funnel route (only its own: what else Tailscale serves stays), or stops its Cloudflare tunnel (the tunnel and your address's record stay in Cloudflare, for the next pairing).
 
 ## When a step fails
 
@@ -135,11 +153,19 @@ Settings says what went wrong in one line, and shows no code:
 - **Tailscale couldn't open Funnel for Rufi: …** followed by Tailscale's own words. If it says Funnel isn't enabled on your tailnet, open the link it gives and allow it, then try again.
 - **Tailscale Funnel's ports (443, 8443 and 10000) are all in use on this Mac.** Something else on your Mac uses each of them through Tailscale. Free one in Tailscale, then try again.
 - **Tailscale Funnel's port … is in use by something else on this Mac.** With an iPhone paired, Rufi keeps its port, so your iPhones keep their address. Free that port in Tailscale, or unpair your iPhones and pair them again.
-- **Rufi couldn't reach itself through Tailscale** (or **Tailscale Funnel**). The first time can take a while, while Tailscale gets a certificate for your Mac. Try again in a minute.
-- **Unpair your iPhones first.** You changed how your iPhone reaches your Mac while one is paired or a code is waiting.
-- **Rufi couldn't turn off Tailscale Funnel. Try again.** (or Tailscale's own words, such as **Tailscale isn't connected on this Mac.**) You changed how your iPhone reaches your Mac, and Rufi couldn't remove its Funnel route first, so the choice stays as it was. Fix what it says, then choose again.
+- **Rufi couldn't reach itself through Tailscale** (or **Tailscale Funnel**, or **Cloudflare Tunnel**). The first time can take a while, while Tailscale gets a certificate for your Mac, or Cloudflare's new record and tunnel start working. Try again in a minute.
+- **Unpair your iPhones first.** You changed how your iPhone reaches your Mac, or set up Cloudflare, while one is paired or a code is waiting.
+- **Rufi couldn't turn off Tailscale Funnel. Try again.** (or **Cloudflare Tunnel**, or Tailscale's own words, such as **Tailscale isn't connected on this Mac.**) You changed how your iPhone reaches your Mac, and Rufi couldn't remove the route in use first, so the choice stays as it was. Fix what it says, then choose again.
+- **Set up Cloudflare first.** Cloudflare Tunnel is chosen but not set up on this Mac (see [Set up Cloudflare Tunnel](#set-up-cloudflare-tunnel)).
+- **Install cloudflared on this Mac first: brew install cloudflared.** Run that line in Terminal, then try again.
+- **Wait for Cloudflare's setup to finish.** You paired or changed the choice while Cloudflare was being set up.
+- **Type the address as a name, like rufi.example.com.** The address is a name only, without `https://` or a path.
+- **That address isn't in a domain this token can reach.** The address must be in a domain on your Cloudflare account, and the token must be allowed that domain.
+- **Cloudflare couldn't …** followed by Cloudflare's own words: for example, the address already has a record, or the token is wrong or lacks a permission. Make a new token with **Create token** if you need one.
+- **Rufi couldn't reach Cloudflare.** Check this Mac's internet connection and try again.
+- **Cloudflare Tunnel stopped. Restart Rufi to start it again.** cloudflared ended while Rufi was running.
 - **Rufi can't open its iPhone port (…): another app is using it.** Quit that app and restart Rufi.
 
 ## After a restore
 
-A restored copy of your data has no paired iPhones: each must pair again (see [Backups and export](backups-and-export.md#restore-a-backup)).
+A restored copy of your data has no paired iPhones: each must pair again (see [Backups and export](backups-and-export.md#restore-a-backup)). With Cloudflare Tunnel, set Cloudflare up again first: Rufi's backups don't hold its `cloudflare/` folder. That makes a new tunnel; if you use the same address, delete its old record in Cloudflare first.

@@ -1,15 +1,21 @@
 // Settings → iPhone: how the iPhone reaches the Mac, pairing a phone for one
 // person's record, as the phone uses the code, and unpairing it, which asks
-// first. Tailscale is stood in for (rufi.ts); the phone is a request to the
-// door, as Serve or Funnel passes it on.
+// first. Tailscale and Cloudflare are stood in for (rufi.ts); the phone is a
+// request to the door, as Serve, Funnel or Cloudflare passes it on.
 import { request } from "node:http";
+import type { Page } from "@playwright/test";
+import { TOKEN } from "../../server/tests/cloudflare-standin.ts";
 import { expect, openSettings, TAILNET_NAME, test } from "./rufi.ts";
 
 /**
  * The phone posting the code from the link, by the link's address, to the
  * door on `door` (Serve's port is the link's own).
  */
-function phonePairs(link: string, door?: number): Promise<number> {
+function phonePairs(
+  link: string,
+  door?: number,
+  host?: string,
+): Promise<number> {
   const url = new URL(link);
   const code = new URLSearchParams(url.hash.slice(1)).get("code");
   return new Promise((resolve, reject) => {
@@ -20,7 +26,7 @@ function phonePairs(link: string, door?: number): Promise<number> {
         method: "POST",
         path: "/api/pair",
         headers: {
-          host: `${TAILNET_NAME}:${url.port}`,
+          host: host ?? `${TAILNET_NAME}:${url.port}`,
           "content-type": "application/json",
         },
       },
@@ -212,4 +218,136 @@ test("chooses Tailscale Funnel while nothing is paired, pairs through Funnel's o
     routes.getByRole("radio", { name: "Tailscale", exact: true }),
   ).toBeDisabled();
   await expect(settings).toContainText("Unpair your iPhones to change this.");
+});
+
+/**
+ * Whether `text` is anywhere in the page's JavaScript memory, after a full
+ * collection: a heap snapshot, as Chromium's DevTools takes it.
+ */
+async function inMemory(page: Page, text: string): Promise<boolean> {
+  const devtools = await page.context().newCDPSession(page);
+  const chunks: string[] = [];
+  devtools.on("HeapProfiler.addHeapSnapshotChunk", ({ chunk }) => {
+    chunks.push(chunk);
+  });
+  await devtools.send("HeapProfiler.enable");
+  await devtools.send("HeapProfiler.collectGarbage");
+  await devtools.send("HeapProfiler.takeHeapSnapshot", {
+    reportProgress: false,
+  });
+  await devtools.detach();
+  return chunks.join("").includes(text);
+}
+
+/** Types the token as a person pastes it: through the page only. */
+async function pasteToken(page: Page, field: ReturnType<Page["getByLabel"]>) {
+  await field.focus();
+  await page.keyboard.insertText(TOKEN);
+}
+
+test("with Cloudflare Tunnel chosen and cloudflared missing, shows the line to install it, to copy", async ({
+  page,
+  context,
+  rufi,
+}) => {
+  await rufi.family();
+  await rufi.start({ cloudflared: false });
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto(rufi.link());
+  const settings = await openSettings(page, "iPhone");
+  await settings
+    .getByRole("radiogroup", { name: "How your iPhone reaches this Mac" })
+    .getByRole("radio", { name: "Cloudflare Tunnel" })
+    .check();
+
+  await expect(settings).toContainText("Install cloudflared on this Mac:");
+  await settings.getByRole("button", { name: "Copy", exact: true }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    "brew install cloudflared",
+  );
+  await expect(
+    settings.getByRole("button", { name: "Pair an iPhone" }),
+  ).toBeDisabled();
+});
+
+test("sets up Cloudflare Tunnel with an address and a token, keeping the address and forgetting the token when Cloudflare refuses or accepts, then pairs at the address", async ({
+  page,
+  context,
+  rufi,
+}) => {
+  await rufi.family();
+  // The person's own site, already at one address.
+  rufi.cloudflare.records.get("zone-example")?.push({
+    id: "the-persons-own",
+    type: "A",
+    name: "blog.example.com",
+    content: "192.0.2.10",
+    proxied: false,
+  });
+  await rufi.start();
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto(rufi.link());
+  const settings = await openSettings(page, "iPhone");
+  const routes = settings.getByRole("region", {
+    name: "How your iPhone reaches this Mac",
+  });
+  const section = settings.getByRole("region", { name: "Paired iPhones" });
+  await routes.getByRole("radio", { name: "Cloudflare Tunnel" }).check();
+
+  await expect(
+    section.getByRole("button", { name: "Pair an iPhone" }),
+  ).toBeDisabled();
+  await expect(section).toContainText("Set up Cloudflare first.");
+  await expect(
+    routes.getByRole("link", { name: "Create token" }),
+  ).toHaveAttribute("href", /^https:\/\/dash\.cloudflare\.com\/\?to=/);
+
+  const address = routes.getByLabel("Address");
+  const token = routes.getByLabel("Token");
+  await address.fill("blog.example.com");
+  await pasteToken(page, token);
+  // The page holds it until Set up; the check below would see it.
+  expect(await inMemory(page, TOKEN)).toBe(true);
+  await routes.getByRole("button", { name: "Set up" }).click();
+  await expect(routes.getByRole("alert")).toContainText(
+    "An A, AAAA, or CNAME record with that host already exists.",
+  );
+  await expect(address).toHaveValue("blog.example.com");
+  await expect(token).toHaveValue("");
+  expect(await inMemory(page, TOKEN)).toBe(false);
+
+  await address.fill("rufi.example.com");
+  await pasteToken(page, token);
+  await routes.getByRole("button", { name: "Set up" }).click();
+  await expect(routes).toContainText("rufi.example.com");
+  expect(await inMemory(page, TOKEN)).toBe(false);
+  await expect(routes).toContainText(
+    "You can delete the token in Cloudflare now.",
+  );
+  await expect(section).toContainText(
+    "Through Cloudflare Tunnel; the iPhone needs no VPN.",
+  );
+
+  await section.getByRole("button", { name: "Pair an iPhone" }).click();
+  await section
+    .getByRole("radiogroup", { name: "Whose record does this iPhone open?" })
+    .getByRole("radio", { name: "Asha Fictional" })
+    .check();
+  await section.getByRole("button", { name: "Pair" }).click();
+  const pairing = page.getByRole("dialog", {
+    name: "Pair an iPhone for Asha Fictional",
+  });
+  await pairing.getByRole("button", { name: "Copy link" }).click();
+  const link = await page.evaluate(() => navigator.clipboard.readText());
+  expect(link).toMatch(/^https:\/\/rufi\.example\.com\/pair#code=/);
+  expect(
+    await phonePairs(
+      link,
+      await rufi.cloudflarePort("rufi.example.com"),
+      "rufi.example.com",
+    ),
+  ).toBe(200);
+  await pairing.getByRole("button", { name: "Done" }).click();
+  await expect(routes.getByRole("button", { name: "Change" })).toHaveCount(0);
+  expect(rufi.tailscale).toEqual([]);
 });

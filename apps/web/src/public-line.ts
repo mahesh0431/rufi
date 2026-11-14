@@ -7,4 +7,6 @@ import type { RouteKind } from "@rufi/contracts/remote";
 export const PUBLIC_LINE = {
   funnel:
     "Public: anyone with the address can reach this Mac. Only a paired iPhone can open your data.",
+  cloudflare:
+    "Public: anyone with the address can reach this Mac. Only a paired iPhone can open your data. Cloudflare can see what passes through it.",
 } as const satisfies Partial<Record<Exclude<RouteKind, "tailscale">, string>>;
