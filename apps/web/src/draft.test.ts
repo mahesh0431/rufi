@@ -511,16 +511,41 @@ describe("a click on a question card's answer", () => {
     // Taken: the card waits for the chat to show it.
     expect(cardOf(box, "card-1")).toMatchObject({ status: "sent", index: 0 });
     expect(box.store.getState().text).toBe("And my ferritin");
-    box.shown("card-1");
+    box.settle((id) => id === "id-1");
     expect(cardOf(box, "card-1")).toBeUndefined();
   });
 
-  it("keeps an answer that was lost, and sends it again by the same id with the same answer; a refusal leaves the card open with the core's words", async () => {
+  it("settles an answer once the chat has its message, whatever its request does: a lost one isn't Not sent, a late end changes nothing, and once its row is gone the card is open", async () => {
     const { api, sends } = core(editable(""));
     const box = draftBox(api);
     await settle();
 
-    void box.choose("card-1", 0, "Save", "steer");
+    // The core took it and its queue row shows, but the answer is lost.
+    void box.choose("card-1", 0, "Save", "queue");
+    await settle();
+    box.settle((id) => id === "id-1");
+    sends()[0]?.fail(new Error("Rufi can't be reached."));
+    await settle();
+    expect(cardOf(box, "card-1")).toBeUndefined();
+
+    // Its row removed: a new click is a new message; the first request's
+    // late end, had it come now, wouldn't touch it.
+    void box.choose("card-1", 1, "Not now", "queue");
+    await settle();
+    expect(sends()[1]?.body).toMatchObject({ id: "id-2", text: "Not now" });
+    box.settle((id) => id === "id-2");
+    sends()[1]?.answer({ id: "id-2" });
+    await settle();
+    expect(cardOf(box, "card-1")).toBeUndefined();
+    expect(box.store.getState().accepted).toBeNull();
+  });
+
+  it("keeps an answer that was lost, and sends it again by the same id with the same answer and way; a refusal leaves the card open with the core's words", async () => {
+    const { api, sends } = core(editable(""));
+    const box = draftBox(api);
+    await settle();
+
+    void box.choose("card-1", 0, "Save", "queue");
     await settle();
     sends()[0]?.fail(new Error("Rufi can't be reached."));
     await settle();
@@ -530,9 +555,11 @@ describe("a click on a question card's answer", () => {
     await settle();
     expect(sends()).toHaveLength(1);
 
-    void box.retry("card-1", "steer");
+    // Settings say Steer by now: Retry still sends it as it went, queued.
+    void box.retry("card-1");
     await settle();
     expect(sends()[1]?.body).toEqual(sends()[0]?.body);
+    expect(sends()[1]?.body).toMatchObject({ kind: "queue" });
     sends()[1]?.fail(refusal("Sign in to Codex on your Mac."));
     await settle();
     expect(cardOf(box, "card-1")).toMatchObject({

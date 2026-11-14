@@ -100,13 +100,16 @@ const sameChips = (a: readonly BoxChip[], b: readonly BoxChip[]) =>
 /**
  * A click on a question card's answer on its way, by card: sending, no
  * answer yet; sent, the core took it, until the chat shows it; lost, no
- * answer came, so Retry sends it again by the same id; refused, the core's
- * words why, the card open again.
+ * answer came, so Retry sends it again by the same id and payload; refused,
+ * the core's words why, the card open again. Once the chat shows its
+ * message (`settle`), the card follows the chat, whatever the request did.
  */
 export interface CardSend {
   id: string;
   index: number;
   text: string;
+  /** As the click went while a reply ran: kept for Retry. */
+  kind: WhileReplying;
   status: "sending" | "sent" | "lost" | "refused";
   why?: string;
 }
@@ -263,14 +266,14 @@ export function draftBox(api: DraftApi) {
     store.setState((state) => ({ cards: { ...state.cards, [card]: send } }));
   };
 
-  /** Sends a card's click; the chat follows it once the core took it. */
-  async function go(
-    card: string,
-    send: CardSend,
-    kind: WhileReplying,
-  ): Promise<void> {
+  /**
+   * Sends a card's click; the chat follows it once the core took it. A
+   * send the chat already shows (settled) ignores its request's late end.
+   */
+  async function go(card: string, send: CardSend): Promise<void> {
     setCard(card, send);
-    const { id, index, text } = send;
+    const { id, index, text, kind } = send;
+    const current = () => store.getState().cards[card]?.id === id;
     try {
       await api.call("POST", "messages", {
         id,
@@ -279,15 +282,17 @@ export function draftBox(api: DraftApi) {
         kind,
         draft: "keep",
       });
-      setCard(card, { id, index, text, status: "sent" });
+      if (!current()) return;
+      setCard(card, { ...send, status: "sent" });
       store.setState({ accepted: id });
       counted();
     } catch (error) {
+      if (!current()) return;
       setCard(
         card,
         answered(error)
-          ? { id, index, text, status: "refused", why: messageOf(error) }
-          : { id, index, text, status: "lost" },
+          ? { ...send, status: "refused", why: messageOf(error) }
+          : { ...send, status: "lost" },
       );
     }
   }
@@ -386,23 +391,36 @@ export function draftBox(api: DraftApi) {
     ): Promise<void> {
       const was = store.getState().cards[card];
       if (was && was.status !== "refused") return Promise.resolve();
-      return go(card, { id: newId(), index, text, status: "sending" }, kind);
+      return go(card, { id: newId(), index, text, kind, status: "sending" });
     },
 
-    /** Sends a card's lost click again, by the same id with the same answer. */
-    retry(card: string, kind: WhileReplying): Promise<void> {
+    /**
+     * Sends a card's lost click again: the same id, answer and way it went
+     * while a reply ran, whatever Settings says now.
+     */
+    retry(card: string): Promise<void> {
       const was = store.getState().cards[card];
       if (was?.status !== "lost") return Promise.resolve();
-      return go(card, { ...was, status: "sending" }, kind);
+      return go(card, { ...was, status: "sending" });
     },
 
-    /** The chat shows a card's click (its waiting row or its answer). */
-    shown(card: string): void {
-      if (store.getState().cards[card]?.status !== "sent") return;
-      store.setState((state) => {
-        const { [card]: _, ...rest } = state.cards;
-        return { cards: rest };
+    /**
+     * The chat has these messages (`has`: its entries and queue rows, any
+     * state): a card's send among them is the core's now, whatever its
+     * request said or will say, and the card follows the chat.
+     */
+    settle(has: (id: string) => boolean): void {
+      const { cards } = store.getState();
+      const done = Object.keys(cards).filter((card) => {
+        const send = cards[card];
+        return send !== undefined && has(send.id);
       });
+      if (done.length === 0) return;
+      store.setState((state) => ({
+        cards: Object.fromEntries(
+          Object.entries(state.cards).filter(([card]) => !done.includes(card)),
+        ),
+      }));
     },
 
     /** Saves now what isn't saved yet: Retry, or the box leaves the screen. */

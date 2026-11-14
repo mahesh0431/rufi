@@ -24,7 +24,7 @@ import {
   Reply,
   RotateCw,
 } from "lucide-react";
-import { type ReactNode, useEffect, useId } from "react";
+import { type ReactNode, useId, useLayoutEffect } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
 import { boxFor } from "./boxes.ts";
@@ -45,6 +45,28 @@ export const cardOf = (entry: Entry): Card | undefined =>
   entry.kind === "question"
     ? Option.getOrUndefined(Schema.decodeUnknownOption(Card)(entry.card))
     : undefined;
+
+/**
+ * Keeps the box's card sends in step with the chat, while the chat shows:
+ * a send whose message the chat has (an entry, or a queue row in any state)
+ * is settled, and its card follows the chat from then on.
+ */
+export function useCardSends(live: StoreApi<Live>, personId: string) {
+  useLayoutEffect(() => {
+    const box = boxFor(personId);
+    const update = () => {
+      const { entries, queue } = live.getState();
+      box.settle(
+        (id) => id in entries || queue.items.some((item) => item.id === id),
+      );
+    };
+    update();
+    const stops = [live.subscribe(update), box.store.subscribe(update)];
+    return () => {
+      for (const stop of stops) stop();
+    };
+  }, [live, personId]);
+}
 
 export function QuestionCard({
   entry,
@@ -72,12 +94,6 @@ export function QuestionCard({
   const kind = useSettings().data?.whileReplying ?? "steer";
   const key = useId();
   const navigate = useNavigate();
-  // Once the chat shows the click, the card follows the chat.
-  useEffect(() => {
-    if (entry.answer !== undefined || waiting !== undefined) {
-      box.shown(entry.id);
-    }
-  }, [box, entry.id, entry.answer, waiting, send?.status]);
 
   const words = (index: number) => card.answers[index] ?? "";
   // The stored answer first, then the click on its way, else open.
@@ -147,7 +163,7 @@ export function QuestionCard({
           <Button
             icon={RotateCw}
             onClick={() => {
-              void box.retry(entry.id, kind);
+              void box.retry(entry.id);
             }}
           >
             Retry
