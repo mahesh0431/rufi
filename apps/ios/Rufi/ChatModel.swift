@@ -398,7 +398,8 @@ final class ChatModel {
             since = Words.instant(turn.startedAt) ?? .now
             // A reply that follows its own start keeps the start's time.
             if clock?.key == "starting", let started = clock?.since, started < since { since = started }
-        } else if !accepted.isEmpty || (!away && pending.messages.contains { !restoring.contains($0.id) })
+        } else if !accepted.isEmpty
+                    || (!away && pending.messages.contains { !restoring.contains($0.id) && $0.refused == nil })
                     || queue.contains(where: { $0.held == nil }) {
             key = "starting"
         } else {
@@ -418,7 +419,8 @@ final class ChatModel {
         let taken = accepted.filter { entries[$0.id] == nil && !queuedIds.contains($0.id) }.map {
             Outgoing(id: $0.id, text: $0.text, chips: $0.refs ?? [], state: .sent)
         }
-        let kept = pending.messages.filter { !restoring.contains($0.id) && !queuedIds.contains($0.id) }.map {
+        let kept = pending.messages.filter { !restoring.contains($0.id) && $0.refused == nil && !queuedIds.contains($0.id) }
+            .map {
             Outgoing(id: $0.id, text: $0.text, chips: $0.refs ?? [], state: .pending)
         }
         return queued + taken + kept
@@ -442,6 +444,10 @@ final class ChatModel {
                 chips = draft.refs.map(Self.boxed)
                 loaded = true
                 notice = nil
+                // Refused before a restart: back in the box, never sent by itself.
+                for message in pending.messages {
+                    if let refused = message.refused { giveBack(message, refused: refused) }
+                }
                 await deliver()
                 return
             } catch .unpaired {
@@ -563,6 +569,54 @@ final class ChatModel {
         Task { await deliver() }
     }
 
+    /// A question card's answer on its way, or the one Rufi AI has, by its place.
+    enum Click: Equatable {
+        /// Kept on the iPhone until the Mac takes it.
+        case pending(Int)
+        /// The Mac took it, or gives it to the AI now.
+        case sending(Int)
+        /// In the Mac's queue, until the reply ends.
+        case waiting(Int)
+        /// Rufi AI has it.
+        case answered(Int)
+    }
+
+    /// Where `card`'s answer is: the stored answer first, then a click on
+    /// its way (in the queue, taken, kept), else none and the card is open.
+    func click(on card: Entry) -> Click? {
+        if let answer = card.answer { return .answered(answer.index) }
+        func chosen(_ refs: [Chip]?) -> Int? {
+            refs?.first { $0.ref.type == "question" && $0.ref.id == card.id }?.ref.answer
+        }
+        if let index = queue.lazy.compactMap({ chosen($0.refs) }).first { return .waiting(index) }
+        if let index = accepted.lazy.compactMap({ chosen($0.refs) }).first { return .sending(index) }
+        if let index = pending.messages.lazy.filter({ !self.restoring.contains($0.id) }).compactMap({ chosen($0.refs) }).first {
+            return .pending(index)
+        }
+        return nil
+    }
+
+    /// An answer on a question card (docs/adr/0036): the person's message,
+    /// quoting the card with the answer's place, kept on the iPhone first as
+    /// a send from the box is, while the box keeps its words and chips. Once
+    /// per card while one is on its way; only for this chat's pairing.
+    func choose(_ index: Int, on card: Entry) {
+        guard !ended, pairing == pending.generation, let question = card.question,
+              question.answers.indices.contains(index), click(on: card) == nil else { return }
+        let quote = Chip(ref: Pointer(type: "question", id: card.id, answer: index), label: question.key,
+                         detail: "Rufi AI's question")
+        let kind = transcript.running == nil ? nil : whileReplying
+        do {
+            try pending.add(question.answers[index], refs: [quote], kind: kind)
+        } catch {
+            notice = "Rufi couldn't keep that. Try again."
+            return
+        }
+        sends += 1
+        settle()
+        Task { await deliver() }
+    }
+
     /// Sends what waits on the iPhone, in order. One the Mac took shows as
     /// sent until the chat has it; one it refused comes back into the box,
     /// with its words.
@@ -592,6 +646,7 @@ final class ChatModel {
     private func giveBack(_ message: PendingMessage, refused: String) {
         guard restoring.insert(message.id).inserted else { return }
         text = text.isEmpty ? message.text : text + "\n\n" + message.text
+        // Kept as refused, a card's quote has no answer: its words can change now.
         merge(message.refs ?? [])
         said = refused
         save(keepingNotice: true)

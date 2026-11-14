@@ -5,7 +5,8 @@ import Foundation
 // transcript the stream builds from them, as apps/web/src/transcript-state.ts
 // holds it. Only the fields the iPhone shows; a literal set decodes as a String.
 
-/// What a chip points at: a document, a draft item, a saved record or a report.
+/// What a chip points at: a document, a draft item, a saved record, a
+/// report or a question card.
 nonisolated struct Pointer: Codable, Equatable, Hashable, Sendable {
     let type: String
     let id: String
@@ -13,6 +14,9 @@ nonisolated struct Pointer: Codable, Equatable, Hashable, Sendable {
     var kind: String?
     /// Retry: Send reads again the pages its reading couldn't read.
     var readAgain: Bool?
+    /// A question card's answer a click chose, by its place: only an
+    /// unchanged click has one.
+    var answer: Int?
 
     /// One chip per thing: a record's kind is part of it.
     var key: String { type == "record" ? "record:\(kind ?? ""):\(id)" : "\(type):\(id)" }
@@ -57,6 +61,35 @@ nonisolated struct ChatInfo: Decodable, Equatable, Sendable {
     let context: Context?
 }
 
+/// A question card Rufi AI asked with (docs/adr/0036): the words Rufi draws it from.
+nonisolated struct QuestionCard: Decodable, Equatable, Sendable {
+    let kind: String
+    /// What it is about, a few words.
+    let key: String
+    /// What the person approves, in Markdown.
+    let details: String?
+    let question: String
+    let answers: [String]
+}
+
+/// An entry's card as it came: one of a kind the iPhone draws, else none,
+/// and the chat shows the card's text. A kind added later never stops the
+/// iPhone reading the chat.
+nonisolated struct CardWords: Decodable, Equatable, Sendable {
+    let drawn: QuestionCard?
+
+    init(from decoder: any Decoder) throws {
+        let card = try? QuestionCard(from: decoder)
+        drawn = card?.kind == "choice" ? card : nil
+    }
+}
+
+/// The first answer that reached Rufi AI: its message and the answer's place.
+nonisolated struct CardAnswer: Decodable, Equatable, Sendable {
+    let message: String
+    let index: Int
+}
+
 /// One item of the transcript, in order by `seq`.
 nonisolated struct Entry: Decodable, Equatable, Identifiable, Sendable {
     struct Link: Decodable, Equatable, Sendable {
@@ -73,7 +106,7 @@ nonisolated struct Entry: Decodable, Equatable, Identifiable, Sendable {
     let id: String
     let seq: Double
     let turnId: String?
-    /// message, steer, activity, reply, reasoning, receipt, event, brief or agent.
+    /// message, steer, activity, reply, reasoning, receipt, event, brief, agent or question.
     let kind: String
     let text: String
     let activity: String?
@@ -86,6 +119,13 @@ nonisolated struct Entry: Decodable, Equatable, Identifiable, Sendable {
     let link: Link?
     let agent: String?
     let from: From?
+    /// A question: its card as Rufi AI gave it.
+    var card: CardWords?
+    /// A question: the answer that reached Rufi AI first.
+    var answer: CardAnswer?
+
+    /// A question card the iPhone draws.
+    var question: QuestionCard? { kind == "question" ? card?.drawn : nil }
 
     /// Part of its reply's Activity: thinking, notes and steps; not a
     /// compaction, or a picture the reply shows.
