@@ -74,7 +74,7 @@ import { ChipView } from "./chips.tsx";
 import { fileIn, NativePicture, Picture } from "./files.tsx";
 import { rehypeVisuals, visualHtml } from "./visual-blocks.ts";
 import { finishedBlocks, useWordByWord } from "./reply-flow.ts";
-import { Answer, KeepPlace, Visual, VisualWaiting } from "./visual.tsx";
+import { KeepPlace, Visual, VisualWaiting } from "./visual.tsx";
 import { cardOf, QuestionCard, useCardSends } from "./question.tsx";
 import { loadOlder } from "./live.ts";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
@@ -468,12 +468,6 @@ export function TranscriptView({
     };
   }, [before, older, onOlder]);
 
-  // A visual's button sends its message into this chat, as Enter in the box
-  // would while a reply runs (ADR 0035).
-  const whileReplying = useSettings().data?.whileReplying ?? "steer";
-  const answer = (id: string, text: string) =>
-    boxFor(personId).answer(id, text, whileReplying);
-
   // A quote goes to its question card: earlier pages load until it is
   // there, then the chat shows it and it takes the focus.
   const goTo = async (id: string) => {
@@ -596,17 +590,15 @@ export function TranscriptView({
             )}
             <KeepPlace value={keepPlace}>
               <GoTo value={(id) => void goTo(id)}>
-                <Answer value={answer}>
-                  <Whose value={personId}>
-                    <Today value={now}>
-                      <WorkingClock value={clock}>
-                        {shown.map((line) => (
-                          <Line key={line} live={live} line={line} />
-                        ))}
-                      </WorkingClock>
-                    </Today>
-                  </Whose>
-                </Answer>
+                <Whose value={personId}>
+                  <Today value={now}>
+                    <WorkingClock value={clock}>
+                      {shown.map((line) => (
+                        <Line key={line} live={live} line={line} />
+                      ))}
+                    </WorkingClock>
+                  </Today>
+                </Whose>
               </GoTo>
             </KeepPlace>
             {/* Being given to the AI: sent, before the chat has it. */}
