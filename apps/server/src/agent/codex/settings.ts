@@ -46,6 +46,11 @@ const SETTINGS = {
      * (docs/adr/0026). On, it would bring their tools back regardless.
      */
     multi_agent_v2: false,
+    /**
+     * No Codex questions to the user: Rufi AI asks with Rufi's ask, as a
+     * question card (docs/adr/0036). Off in Codex 0.163.0 too.
+     */
+    default_mode_request_user_input: false,
   },
 } as const;
 

@@ -64,7 +64,7 @@ The screens draw each visual in a frame of `/visual-frame.html`, a page the core
 - **The iPhone app's web view** opens only the page's own web links in Safari; a frame's web navigation is cancelled (`Screens.route`).
 - **DNS prefetch**, which a link in HTML alone can start and CSP doesn't cover, is turned off by the header, and a page can't turn it on again.
 
-**Nothing of the app or its session.** The sandbox gives the visual an opaque origin: no cookies, no storage, and no reach into Rufi's page. The screen sends it only its HTML and the theme. It reads back only three messages, from that frame alone, and nothing else: the two below, and a button's message ([ADR 0035](0035-a-visuals-button-sends-its-words-as-the-persons-message.md)).
+**Nothing of the app or its session.** The sandbox gives the visual an opaque origin: no cookies, no storage, and no reach into Rufi's page. The screen sends it only its HTML and the theme. It reads back only two messages, from that frame alone, and nothing else.
 
 ## The theme
 
@@ -85,7 +85,7 @@ When the theme, colour or text size changes, the screen sends `{type: "rufi-visu
 
 ## The messages back
 
-Both are posted to the framing page (a third, a button's message, is in [ADR 0035](0035-a-visuals-button-sends-its-words-as-the-persons-message.md)):
+Both are posted to the framing page:
 
 - **`{type: "rufi-visual-height", height}`** gives the body's height in CSS pixels, when it is first known and each time it changes (a `ResizeObserver`). The screen draws the frame at that height, up to 800 px; a taller visual scrolls inside.
   - Until the first height comes, the frame keeps a 160 px quiet box.
@@ -97,7 +97,7 @@ Both are posted to the framing page (a third, a button's message, is in [ADR 003
 
 ## For a screen of its own, such as the iPhone's native chat
 
-It finds blocks by the same fence rule, sends the same theme names, and acts on the same three messages: the two above, and a button's message ([ADR 0035](0035-a-visuals-button-sends-its-words-as-the-persons-message.md)). It draws each visual in a frame of this same page, from the core it reaches (the remote door on the iPhone), so the guard and the policies are one implementation:
+It finds blocks by the same fence rule, sends the same theme names, and acts on the same two messages. It draws each visual in a frame of this same page, from the core it reaches (the remote door on the iPhone), so the guard and the policies are one implementation:
 
 - The page writes a visual in only when it is framed: as the top document it does nothing, and `frame-ancestors 'self'` lets only a page of the core's own origin frame it.
 - The headers must reach the web view as the core sends them. WebKit holds both comma-joined policies (the WebKit test above). A page loaded with `loadHTMLString` has no headers, so it can't be the visual's page.

@@ -45,7 +45,7 @@ import { remindersOf, saveReminders } from "../core/reminders/setting.ts";
 import { changeProfile, readProfile } from "../core/record/profile.ts";
 import { localTime } from "../core/record/dates.ts";
 import { pages } from "../core/documents/pages.ts";
-import { rufiCaller, forAgent } from "../core/tools/tools.ts";
+import { CHAT_TOOLS, forAgent, rufiCaller } from "../core/tools/tools.ts";
 import {
   coreInstructions,
   rulesVersion,
@@ -332,10 +332,7 @@ export const startCore = (options: CoreOptions) =>
           record: writer,
           transcripts,
           adapters: options.adapters,
-          tools: forAgent(
-            () => ({ store: reader, personId: undefined }),
-            log,
-          ).specs.map((spec) => spec.name),
+          tools: CHAT_TOOLS,
           cwd: aiSandbox(home).folder,
           model: DEFAULT_MODEL,
           documents: (personId) => {
@@ -355,7 +352,11 @@ export const startCore = (options: CoreOptions) =>
     // were cut when it stopped.
     const interrupted = yield* attempt(() => transcripts.interruptRunning());
 
-    const tools = forAgent(() => ({ store: reader, personId: undefined }), log);
+    const tools = forAgent(
+      () => ({ store: reader, personId: undefined }),
+      log,
+      CHAT_TOOLS,
+    );
     let port = 0;
     // Rufi's MCP server, with a key for each agent (server/mcp.ts).
     const chatKeys = mcpKeys();

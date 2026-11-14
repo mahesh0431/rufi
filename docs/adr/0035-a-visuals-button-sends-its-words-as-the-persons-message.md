@@ -1,6 +1,6 @@
 # 0035 · A visual's button sends its words as the person's message
 
-**Date:** 12 Nov 2026 · **Status:** accepted · Adds to [ADR 0034](0034-a-replys-visual-is-an-html-block-in-a-locked-frame.md)
+**Date:** 12 Nov 2026 · **Status:** superseded by [ADR 0036](0036-a-question-is-a-card-rufi-draws-from-rufi-ais-words.md) (15 Nov 2026): Rufi AI asks with a question card, and a visual has no buttons. Added to [ADR 0034](0034-a-replys-visual-is-an-html-block-in-a-locked-frame.md)
 
 When Rufi AI asks something with a few clear answers, such as a yes to a change it proposed, the person had to type the answer. Mahesh chose on 12 Nov 2026 that a visual can hold buttons for the answers. A click puts the button's message in the chat as the person's own, through the normal send, exactly as if they had typed it, and the AI reads it and acts as it would on typed words. It lives in the chat only: no button bar, no new record type, and no code that reads what an answer means.
 
