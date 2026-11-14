@@ -23,7 +23,7 @@ export default defineConfig({
       name: "screens-webkit",
       testDir: "apps/web/e2e",
       testMatch: "visual.spec.ts",
-      grep: /reaches neither the network|styled with Tailwind|chart is drawn by Rufi/,
+      grep: /reaches neither the network|styled with Tailwind|chart is drawn by Rufi|doesn't move on/,
       use: { browserName: "webkit" },
     },
     { name: "desktop", testDir: "apps/desktop/e2e", timeout: 60_000 },

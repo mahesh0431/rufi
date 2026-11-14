@@ -539,7 +539,7 @@ const chartBlock = (config: unknown, label?: string) =>
 
 /** What a canvas drew: its text and its round marks, where it drew them. */
 interface Drawn {
-  text: { text: string; x: number; y: number }[];
+  text: { text: string; x: number; y: number; colour: string }[];
   marks: { x: number; y: number; r: number }[];
 }
 
@@ -559,7 +559,12 @@ const keepDrawing = (page: Page) =>
     const fillText = own("fillText");
     const arc = own("arc");
     canvas.fillText = function (text, x, y, width) {
-      drawn.text.push({ text, x, y });
+      drawn.text.push({
+        text,
+        x,
+        y,
+        colour: typeof this.fillStyle === "string" ? this.fillStyle : "",
+      });
       fillText.call(this, text, x, y, width);
     };
     canvas.arc = function (x, y, r, ...rest) {
@@ -748,6 +753,12 @@ test("a visual's chart is drawn by Rufi from its JSON: spaced by date, a tooltip
   // drawn again in it, without reloading.
   const began = await frame.evaluate(() => performance.timeOrigin);
   await page.mouse.move(0, 0);
+  // The ruler's words before: a number on the y axis.
+  const ruler = async () =>
+    (await drawnIn(frame)).text.find(({ text }) => /^[\d.]+$/.test(text))
+      ?.colour;
+  const before = await ruler();
+  expect(before).toBeDefined();
   await drawnIn(frame, true);
   await page.evaluate(() => {
     document.documentElement.dataset["appearance"] = "dark";
@@ -755,10 +766,63 @@ test("a visual's chart is drawn by Rufi from its JSON: spaced by date, a tooltip
     document.documentElement.dataset["textSize"] = "larger";
   });
   await expect.poll(async () => (await pointsIn(frame)).length).toBe(4);
+  // The ruler too takes the new theme (its colours are in the screenshots).
+  expect(await ruler()).not.toBe(before);
   expect(await frame.evaluate(() => performance.timeOrigin)).toBe(began);
   await expect(
     log(page).getByText("Part of this visual didn't load"),
   ).toHaveCount(0);
+});
+
+test("a chart whose time step doesn't move on says part of it didn't load, and its visual still takes a new theme", async ({
+  page,
+  rufi,
+}) => {
+  // Half a day (date-fns adds days only whole) and an unknown unit both
+  // once made Chart.js add a step for ever: the test's own limit ends it.
+  test.setTimeout(30_000);
+  await opened(page, rufi);
+  const two = [
+    { x: "2025-03-01", y: 1, text: "1.0" },
+    { x: "2025-03-02", y: 2, text: "2.0" },
+  ];
+  const steps = [
+    { words: "Half a day", time: { unit: "day" }, ticks: { stepSize: 0.5 } },
+    { words: "Days", time: { unit: "days" }, ticks: {} },
+  ];
+  for (const { words, time, ticks } of steps) {
+    await send(
+      page,
+      withVisual(
+        `<p>${words}</p>${chartBlock({
+          type: "line",
+          data: { datasets: [{ label: "x", data: two }] },
+          options: { scales: { x: { type: "time", time, ticks } } },
+        })}`,
+      ),
+    );
+  }
+  for (const [at, { words }] of steps.entries()) {
+    const card = cards(page).nth(at);
+    await expect(
+      card.contentFrame().getByText(words, { exact: true }),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(
+      card.locator("..").getByText("Part of this visual didn't load"),
+    ).toBeVisible({ timeout: 15_000 });
+  }
+  // Each frame still answers: a new theme reaches it.
+  await page.evaluate(() => {
+    document.documentElement.dataset["appearance"] = "dark";
+  });
+  for (const at of steps.keys()) {
+    const frame = await frameOf(cards(page).nth(at));
+    await expect
+      .poll(() =>
+        frame.evaluate(() => document.documentElement.dataset["theme"]),
+      )
+      .toBe("dark");
+  }
 });
 
 test("a visual's chart JSON reaches neither the network nor Rufi's page: nothing in it runs, and a chart Rufi can't draw says part of it didn't load", async ({

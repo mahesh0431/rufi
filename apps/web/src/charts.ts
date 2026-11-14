@@ -44,28 +44,24 @@ Chart.register(
 Chart.defaults.scales.time.ticks.maxRotation = 0;
 Chart.defaults.scales.time.ticks.autoSkipPadding = 12;
 
-// A time axis's step always moves on. date-fns adds a day, week, month,
-// quarter or year only whole, and a clock unit only to the whole
-// millisecond: a step of half a day would add nothing, and Chart.js would
-// add it for ever. So a fraction becomes the next whole one, away from zero.
+// A time axis's step always moves on, or the chart fails. Chart.js adds
+// its step until the axis's end; date-fns adds a day or a month only whole,
+// and gives an unknown unit ("days") back unchanged, so half a day or a
+// "days" step would add nothing and Chart.js would add it for ever. A step
+// that doesn't move on throws instead, and the visual says part of it
+// didn't load, as for any chart that fails.
 const { add } = _adapters._date.prototype as {
   add: (time: number, amount: number, unit: TimeUnit) => number | Date;
 };
-const CLOCK: Record<string, number> = {
-  millisecond: 1,
-  second: 1_000,
-  minute: 60_000,
-  hour: 3_600_000,
-};
-const whole = (amount: number) =>
-  amount > 0 ? Math.ceil(amount) : Math.floor(amount);
 _adapters._date.override({
   add(time, amount, unit) {
-    if (Number.isInteger(amount)) return +add.call(this, time, amount, unit);
-    const ms = CLOCK[unit];
-    return ms === undefined
-      ? +add.call(this, time, whole(amount), unit)
-      : +add.call(this, time, whole(amount * ms), "millisecond");
+    const next = +add.call(this, time, amount, unit);
+    if (!(next > time)) {
+      throw new Error(
+        `A time step of ${String(amount)} ${unit} doesn't move on.`,
+      );
+    }
+    return next;
   },
 });
 
