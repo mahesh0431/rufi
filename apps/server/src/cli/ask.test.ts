@@ -8,7 +8,7 @@ import { expect, it } from "vitest";
 import { codexArgs, fakeModel } from "../../tests/fake-model.ts";
 import { codexBinary } from "../agent/codex/binary.ts";
 import { codexRuntime } from "../agent/codex/codex.ts";
-import { coreInstructions } from "../core/chat/instructions.ts";
+import { terminalInstructions } from "../core/chat/instructions.ts";
 import { forAgent } from "../core/tools/tools.ts";
 import { agentSetup } from "../server/core.ts";
 import { ask } from "./ask.ts";
@@ -30,7 +30,7 @@ it("answers a terminal ask once", async () => {
       Effect.scoped(
         ask("Hello", {
           model: "gpt-6.1-sol",
-          instructions: coreInstructions(undefined),
+          instructions: terminalInstructions(undefined),
           tools,
           agent: (host) =>
             codexRuntime({

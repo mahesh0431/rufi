@@ -26,7 +26,7 @@ import { codexRuntime } from "../agent/codex/codex.ts";
 import type { AgentEvent } from "../agent/runtime.ts";
 import { DEFAULT_MODEL } from "../core/chat/models.ts";
 import { pages } from "../core/documents/pages.ts";
-import { coreInstructions } from "../core/chat/instructions.ts";
+import { terminalInstructions } from "../core/chat/instructions.ts";
 import { devices, SYSTEMS, type System } from "../core/devices/devices.ts";
 import {
   databasePath,
@@ -551,7 +551,7 @@ const askCommand = (question: string, person: string | undefined) =>
     const started = Date.now();
     const end = yield* ask(question, {
       model: DEFAULT_MODEL,
-      instructions: coreInstructions(undefined),
+      instructions: terminalInstructions(undefined),
       tools,
       agent: (host) =>
         codexRuntime({

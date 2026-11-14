@@ -5,10 +5,23 @@ import {
   editSetting,
   instructionParts,
   REPLY_SETTINGS,
+  terminalInstructions,
   toldOf,
 } from "./instructions.ts";
 
 describe("Rufi AI's instructions", () => {
+  it("tell the chat's Rufi AI to ask with ask, and the terminal's AI, which has no card to draw, nothing of it", () => {
+    const tools = (told: string) =>
+      told.split("\n").find((line) => line.startsWith("- Rufi's tools are"));
+    const chat = coreInstructions(undefined);
+    const terminal = terminalInstructions(undefined);
+    expect(chat).toContain("Asking the user:");
+    expect(tools(chat)).toMatch(/\bask\b/);
+    expect(terminal).not.toContain("Asking the user:");
+    expect(tools(terminal)).toBeDefined();
+    expect(tools(terminal)).not.toMatch(/\bask\b/);
+  });
+
   it("end with the reply style the user chose, then their own words, after all of Rufi's rules; blank words add nothing", () => {
     const simple = coreInstructions("IN", { style: "simple", words: "" });
     expect(coreInstructions("IN", { style: "visual", words: "" })).not.toBe(
