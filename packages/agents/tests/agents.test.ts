@@ -7,6 +7,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createAgents,
+  moveAgent,
   type Agents,
   type Claim,
   type Host,
@@ -897,6 +898,153 @@ describe("Stop", () => {
         said: "",
       },
     ]);
+  });
+});
+
+describe("an agent's status", () => {
+  const reader: NewAgent = {
+    ...ASHA,
+    id: "agent-reader",
+    parent: ASHA.id,
+    title: "Reading report.pdf",
+    tools: ["get_records"],
+  };
+  const task = (id: string, words: string): Sent => ({
+    id,
+    sender: ASHA.id,
+    kind: "queue",
+    parts: [words],
+  });
+
+  it("waits for its parent once it asked, in its turn or by writing to it, and runs again with the answer", async () => {
+    asha();
+    agents.create(reader);
+    agents.admit(reader.id);
+    fake.script.question = {
+      title: "Which page first?",
+      options: ["Page 1", "Page 2"],
+    };
+    agents.send(reader.id, task("task", "Read report.pdf."));
+    await until(() => {
+      expect(agents.get(reader.id)).toMatchObject({
+        status: "waiting",
+        waiting: "asked",
+      });
+    });
+
+    delete fake.script.question;
+    fake.script.turn = "runs";
+    agents.send(reader.id, task("answer", "Page 2 first."));
+    await until(() => {
+      expect(agents.get(reader.id)).toMatchObject({
+        status: "running",
+        waiting: null,
+      });
+    });
+
+    // Asked as send_agent asks: a message to its parent, then its turn ends.
+    agents.send(ASHA.id, {
+      id: "ask",
+      sender: reader.id,
+      kind: "steer",
+      parts: ["Reading report.pdf (agent-reader) asks:\n\nIs page 3 yours?"],
+      about: "asked",
+      said: "Is page 3 yours?",
+    });
+    fake.end(
+      String(
+        rows(
+          "SELECT provider_ref AS ref FROM agents WHERE id = ?",
+          reader.id,
+        )[0]?.["ref"],
+      ),
+    );
+    await until(() => {
+      expect(agents.get(reader.id)).toMatchObject({
+        status: "waiting",
+        waiting: "asked",
+      });
+    });
+  });
+
+  it("stays stopped when its tree is stopped while it waits for a sign-in, also once signed in", async () => {
+    asha();
+    agents.create(reader);
+    agents.admit(reader.id);
+    fake.script.signedIn = false;
+    agents.send(reader.id, task("task", "Read report.pdf."));
+    await until(() => {
+      expect(agents.get(reader.id)?.waiting).toBe("signed_out");
+    });
+
+    await agents.stop(ASHA.id, "person", { children: true });
+    expect(agents.get(reader.id)?.status).toBe("stopped");
+
+    fake.script.signedIn = true;
+    agents.signedIn();
+    await sleep(50);
+    expect(agents.get(reader.id)?.status).toBe("stopped");
+    expect(rows("SELECT state, held FROM queue WHERE id = 'task'")).toEqual([
+      { state: "waiting", held: "stopped" },
+    ]);
+    expect(rows("SELECT id FROM turns WHERE agent_id = ?", reader.id)).toEqual(
+      [],
+    );
+  });
+
+  it("waits for a sign-in when its start is held, its parent hears so, and it runs once signed in", async () => {
+    asha();
+    agents.create(reader);
+    agents.admit(reader.id);
+    fake.script.signedIn = false;
+    agents.send(reader.id, task("task", "Read report.pdf."));
+    await until(() => {
+      expect(agents.get(reader.id)).toMatchObject({
+        status: "waiting",
+        waiting: "signed_out",
+      });
+    });
+    expect(
+      rows(
+        "SELECT sender, parts, about FROM queue WHERE agent_id = ?",
+        ASHA.id,
+      ),
+    ).toEqual([
+      {
+        sender: reader.id,
+        parts: JSON.stringify([
+          "Reading report.pdf (agent-reader) can't start: signed out.",
+        ]),
+        about: "signed_out",
+      },
+    ]);
+
+    fake.script.signedIn = true;
+    fake.script.turn = "runs";
+    agents.signedIn();
+    await until(() => {
+      expect(agents.get(reader.id)).toMatchObject({
+        status: "running",
+        waiting: null,
+      });
+    });
+  });
+
+  it("refuses a move its table doesn't have", () => {
+    asha();
+    expect(() =>
+      store.change((change) =>
+        moveAgent(
+          change,
+          ASHA.id,
+          "idle",
+          "done",
+          null,
+          "2026-11-11T10:00:00Z",
+        ),
+      ),
+    ).toThrow("An agent can't go from idle to done.");
+    expect(agents.get(ASHA.id)?.status).toBe("idle");
   });
 });
 

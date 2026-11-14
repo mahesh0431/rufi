@@ -146,7 +146,8 @@ export type Face = typeof Face.Type;
 /** One item of a chat's transcript, in order by `seq`. */
 /**
  * Why an agent's message to the agent that started it came: its turn ended
- * done, stopped or failed, it asked a question, or it wrote.
+ * done, stopped or failed, it asked a question, its start waits for a
+ * sign-in, or it wrote.
  */
 export const AgentAbout = Schema.Literals([
   "done",
@@ -154,6 +155,7 @@ export const AgentAbout = Schema.Literals([
   "wrote",
   "stopped",
   "failed",
+  "signed_out",
 ]);
 export type AgentAbout = typeof AgentAbout.Type;
 
@@ -543,10 +545,16 @@ export const SubAgent = Schema.Struct({
     "idle",
     "running",
     "continuing",
+    "waiting",
     "done",
     "stopped",
     "failed",
   ]),
+  /**
+   * What it waits for, while it waits: the answer to the question it asked
+   * the agent that started it, or a sign-in to start.
+   */
+  waiting: Schema.NullOr(Schema.Literals(["asked", "signed_out"])),
   /** Its latest result, its start: its last answer, or why it stopped or failed. */
   result: Schema.NullOr(Schema.String),
   /** The agent that started it: Rufi AI's own agents have none here. */

@@ -159,12 +159,13 @@ const refusal = (json: unknown) =>
     : "Rufi had a problem with that.";
 
 /**
- * Tailscale's own answer when nothing answers behind it (Rufi isn't running
- * on the Mac): a gateway error without Rufi's words. Rufi can't be reached.
+ * A gateway's own answer when nothing answers behind it, without Rufi's
+ * words: Tailscale's 502–504 when Rufi isn't running on the Mac, and
+ * Cloudflare's 520–530 (530 when its tunnel is down, as when the Mac
+ * sleeps). Rufi can't be reached.
  */
 const notRufi = (status: number, json: unknown) =>
-  status >= 502 &&
-  status <= 504 &&
+  ((status >= 502 && status <= 504) || (status >= 520 && status <= 530)) &&
   !(typeof json === "object" && json !== null && "error" in json);
 
 /** Asks the core now whether it can be reached: the iPhone app saw it come back. */

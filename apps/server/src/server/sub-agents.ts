@@ -48,16 +48,18 @@ export const lineOf = (agents: Agents, id: string): string[] => {
 
 /**
  * Whether the agent and every agent below it have stopped working: none
- * has a turn, is running or going on, or has a message waiting that isn't
- * held (it would start a turn).
+ * has a turn, is running or going on, waits for the answer to a question
+ * it asked, or has a message waiting that isn't held (it would start a
+ * turn).
  */
 export const atRest = (agents: Agents, id: string) =>
   [id, ...agents.below(id)].every((one) => {
-    const status = agents.get(one)?.status;
+    const found = agents.get(one);
     return (
       agents.current(one) === undefined &&
-      status !== "running" &&
-      status !== "continuing" &&
+      found?.status !== "running" &&
+      found?.status !== "continuing" &&
+      found?.waiting !== "asked" &&
       agents.waiting(one).every((input) => input.held !== null)
     );
   });
@@ -171,13 +173,14 @@ export function subAgents(deps: {
               model: found.model,
               effort: found.effort,
               status: found.status,
+              ...(found.waiting !== null && { waiting: found.waiting }),
               result: found.result,
             };
           }),
         };
       },
 
-      send: async ({ to, text, kind = "steer", documents }, callId) => {
+      send: async ({ to, text, kind = "steer", documents, asks }, callId) => {
         const self = agents.get(scope.agent);
         const target =
           to === "parent" ? (self?.parent ?? undefined) : reachable(to)?.id;
@@ -198,12 +201,16 @@ export function subAgents(deps: {
         const again = agents.input(callId) !== undefined;
         // The message waits first, so its agent isn't at rest when the job
         // opens (rufi-ai.ts ends a job whose agents all are).
+        // A question to its parent: it waits for the answer once its turn ends.
+        const asked = to === "parent" && asks === true;
         agents.send(target, {
           id: callId,
           sender: scope.agent,
           kind,
-          parts: [`${self.title} (${self.id}) writes:\n\n${text}`],
-          about: "wrote",
+          parts: [
+            `${self.title} (${self.id}) ${asked ? "asks" : "writes"}:\n\n${text}`,
+          ],
+          about: asked ? "asked" : "wrote",
           said: text,
         });
         if (given.length > 0 && !again) {

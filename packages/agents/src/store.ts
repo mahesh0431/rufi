@@ -26,6 +26,7 @@ const MIGRATIONS: readonly string[] = [
   read("migrations/0003-agents-talk-back.sql"),
   read("migrations/0004-turn-usage.sql"),
   read("migrations/0005-what-an-agent-said.sql"),
+  read("migrations/0006-an-agent-waits.sql"),
 ];
 
 /** An event as the log keeps it. */
@@ -109,10 +110,18 @@ export function openAgentStore(path: string): AgentStore {
   return store(db, version === 0);
 }
 
+/**
+ * Runs the pending migrations, with foreign keys off so a migration can
+ * make a table again (SQLite's steps for it), checked before they commit.
+ */
 function migrate(db: DatabaseSync, from: number): void {
+  db.exec("PRAGMA foreign_keys = OFF");
   db.exec("BEGIN IMMEDIATE");
   try {
     for (const migration of MIGRATIONS.slice(from)) db.exec(migration);
+    if (db.prepare("PRAGMA foreign_key_check").all().length > 0) {
+      throw new Error("A migration left a reference to nothing.");
+    }
     db.exec(`PRAGMA user_version = ${String(MIGRATIONS.length)}`);
     db.exec("COMMIT");
   } catch (error) {
