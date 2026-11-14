@@ -14,7 +14,7 @@ import {
   openWritable,
   type Store,
 } from "../store/database.ts";
-import { rufiCaller, type TurnScope } from "../tools/tools.ts";
+import { forAgent, rufiCaller, type TurnScope } from "../tools/tools.ts";
 import { turnScope } from "../../../tests/scope.ts";
 import { drafts as openDrafts } from "./drafts.ts";
 import { chatQueue, QueueRefusal, type ChatQueue } from "./queue.ts";
@@ -107,6 +107,15 @@ const cards = () =>
     .map((row) => ({ ...row }));
 
 describe("ask", () => {
+  it("is offered to no agent, and not to the terminal, until both screens draw its card", () => {
+    const names = forAgent(
+      () => ({ store: reader, personId: undefined }),
+      () => undefined,
+    ).specs.map((spec) => spec.name);
+    expect(names).toContain("read_chat");
+    expect(names).not.toContain("ask");
+  });
+
   it("puts Rufi AI's card in the chat as it gave it, with its words as Markdown for a screen that can't draw it, and answers its id and link", async () => {
     const asked = await call("ask", CARD, "call-ask");
     expect(asked.ok).toBe(true);
@@ -271,20 +280,29 @@ describe("a message that quotes a card", () => {
     ).not.toHaveProperty("answer");
   });
 
-  it("stays in the box as a quote, never with a click's answer", async () => {
+  it("stays in the box as a quote, never with a click's answer: as the save answers, as it reads, and sent from there it answers nothing", async () => {
     const id = await ask();
     const box = openDrafts(store);
-    await box.save(chat, "Save, but", [{ type: "question", id, answer: 0 }]);
-    expect(await box.read(chat)).toEqual({
-      text: "Save, but",
-      refs: [
-        {
-          ref: { type: "question", id },
-          label: "Lipid panel, 12 Aug 2026",
-          detail: "Rufi AI's question",
-        },
-      ],
-    });
+    const saved = await box.save(chat, "Save, but", [
+      { type: "question", id, answer: 0 },
+    ]);
+    const quote = {
+      ref: { type: "question", id },
+      label: "Lipid panel, 12 Aug 2026",
+      detail: "Rufi AI's question",
+    };
+    expect(saved).toEqual({ text: "Save, but", refs: [quote] });
+    expect(await box.read(chat)).toEqual({ text: "Save, but", refs: [quote] });
+
+    await queue.accept(
+      chat,
+      "m-1",
+      saved.text,
+      saved.refs.map(({ ref }) => ref),
+      "queue",
+    );
+    await nextTurn("m-1");
+    expect(cards()).toEqual([expect.objectContaining({ answer: null })]);
   });
 });
 
