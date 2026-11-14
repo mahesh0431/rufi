@@ -7,9 +7,9 @@
   "dependencies": {
     "@rufi/brand": "workspace:*",
     "@rufi/contracts": "workspace:*",
-    "effect": "4.0.7"
+    "effect": "4.1.3"
   },
   "devDependencies": {
-    "electron": "45.1.0"
+    "electron": "45.3.0"
   }
 }
