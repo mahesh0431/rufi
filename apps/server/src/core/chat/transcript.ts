@@ -1535,6 +1535,11 @@ export function transcripts(
           })
           .where("id", "=", input)
           .where("state", "in", ["waiting", "handing_over"])
+          // A row Rufi holds keeps its own hold, as the person sees it; a
+          // Stop's replaces it.
+          .$if(outcome.held !== "stopped", (query) =>
+            query.where("held", "is", null),
+          )
           .execute();
         return undefined;
       }),
