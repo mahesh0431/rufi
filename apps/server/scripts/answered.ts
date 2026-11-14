@@ -1,6 +1,7 @@
 // What every smoke case needs, whatever its own checks: each reply the AI
-// ran completed and wrote something. A send the core took can still end
-// failed (a usage limit, a lost connection) or stopped, with no reply.
+// ran completed and wrote something, words or a question card it ended
+// with. A send the core took can still end failed (a usage limit, a lost
+// connection) or stopped, with no reply.
 import type { Entry, Turn } from "@rufi/contracts";
 
 export const everyTurnAnswered = (snapshot: {
@@ -12,6 +13,9 @@ export const everyTurnAnswered = (snapshot: {
     (turn) =>
       turn.status === "completed" &&
       snapshot.entries.some(
-        (e) => e.kind === "reply" && e.turnId === turn.id && e.text.trim(),
+        (e) =>
+          (e.kind === "reply" || e.kind === "question") &&
+          e.turnId === turn.id &&
+          e.text.trim(),
       ),
   );

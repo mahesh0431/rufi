@@ -70,6 +70,12 @@ describe("a smoke case's replies", () => {
       [asked("a"), replied("a"), asked("b")],
       false,
     ],
+    [
+      "ended with a question card",
+      [turn("a", "completed")],
+      [asked("a"), entry("question", "a", "**Add magnesium**")],
+      true,
+    ],
     ["nothing ran", [], [asked("a")], false],
   ])("%s", (_, turns, entries, ok) => {
     expect(everyTurnAnswered({ turns, entries })).toBe(ok);

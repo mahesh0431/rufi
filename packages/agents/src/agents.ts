@@ -111,6 +111,11 @@ export interface Opening {
 export type Claim =
   /** It waited: its words. */
   | { status: "claimed"; parts: readonly string[] }
+  /**
+   * It waits, held by the host: the input waits held the same way, and
+   * goes once the host releases it.
+   */
+  | { status: "held"; held: Hold; text: string }
   /** It doesn't wait any more: it doesn't go. */
   | { status: "gone" };
 
@@ -1594,12 +1599,17 @@ export function createAgents(options: {
       return undefined;
     }
     if (answer?.status === "claimed") return answer.parts;
-    // Gone: removed or sent meanwhile. Nothing: the host is closing.
+    // Held: it waits for the host's release. Gone: removed or sent
+    // meanwhile. Nothing: the host is closing.
     move(
       live,
       input.id,
       "handing_over",
-      answer?.status === "gone" ? { state: "removed" } : { state: "waiting" },
+      answer?.status === "held"
+        ? { state: "held", held: answer.held, text: answer.text }
+        : answer?.status === "gone"
+          ? { state: "removed" }
+          : { state: "waiting" },
       start,
     );
     live.asks += 1;
