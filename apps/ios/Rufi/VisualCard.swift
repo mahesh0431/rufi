@@ -7,8 +7,7 @@ import WebKit
 /// come as the chat keeps them (VisualPages), with the door's policies. That
 /// page is the one guard for what the AI wrote; the app adds only what is its own:
 /// nothing navigates, the card is the height the visual says (kept, so a
-/// card drawn again doesn't jump), a button's message goes into the chat as
-/// the person's own (ADR 0035), and when WebKit ends its process the card
+/// card drawn again doesn't jump), and when WebKit ends its process the card
 /// loads once more, then says it can't show the visual. A card whose pages
 /// didn't come says so too, and loads again when Rufi is reached.
 struct VisualCard: View {
@@ -50,8 +49,6 @@ struct VisualCard: View {
                     chat.heights[key] = drawn
                 } broke: {
                     broken = true
-                } answered: {
-                    chat.answer($0)
                 } ended: {
                     failed = true
                 }
@@ -95,7 +92,6 @@ struct CardView: UIViewRepresentable {
     let pages: VisualPages
     let measured: (Double) -> Void
     let broke: () -> Void
-    let answered: (String) -> Void
     let ended: () -> Void
 
     private static let store = WKWebsiteDataStore.nonPersistent()
@@ -105,10 +101,12 @@ struct CardView: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> WKWebView {
-        Self.made(context.coordinator)
+        let view = Self.made(context.coordinator)
+        view.load(URLRequest(url: VisualPages.card))
+        return view
     }
 
-    /// The card's web view for `coordinator`, loading the card page.
+    /// The card's web view for `coordinator`, before it loads the card page.
     static func made(_ coordinator: Coordinator) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = Self.store
@@ -124,7 +122,6 @@ struct CardView: UIViewRepresentable {
         view.navigationDelegate = coordinator
         view.uiDelegate = coordinator
         coordinator.view = view
-        view.load(URLRequest(url: VisualPages.card))
         return view
     }
 
@@ -194,7 +191,7 @@ struct CardView: UIViewRepresentable {
             }
         }
 
-        /// The card page's three messages, from the card page alone.
+        /// The card page's two messages, from the card page alone.
         func received(_ message: WKScriptMessage) {
             let from = message.frameInfo.securityOrigin
             guard message.frameInfo.isMainFrame, from.protocol == VisualPages.scheme,
@@ -203,7 +200,6 @@ struct CardView: UIViewRepresentable {
             switch type {
             case "rufi-visual-height": card.measured((body["height"] as? NSNumber)?.doubleValue ?? 0)
             case "rufi-visual-broken": card.broke()
-            case "rufi-visual-send": if let text = body["text"] as? String { card.answered(text) }
             default: break
             }
         }

@@ -88,7 +88,7 @@ When you delete a document (see [Documents](documents.md#delete-a-document)), it
 
 Activity shows what the AI did for a reply, as the AI's agent reported it. Rufi doesn't put it in other words.
 
-- **The AI's notes**, in full, such as "I'll check your fasting glucose and HbA1c first." The AI writes these while it works. They are part of Activity, not answers.
+- **The AI's notes**, in full, such as "I'll check your fasting glucose and HbA1c first." The AI writes these while it works. They are part of Activity, not answers. When the AI then asks you with a question card, the notes it wrote just before asking are its answer: they show above the card, not in Activity.
 - **The AI's thinking**, as the headings the AI service sends, such as "Comparing the reports", in their place among the steps. Click a heading to read the AI's whole summary, also when the line is cut on a narrow screen. On Codex and on Claude, the summary shows as the AI writes it, and once it's whole it shows as the AI finished it. If you stop the reply while the AI thinks, what showed stays. When the AI service sends nothing, there is no line.
 - **The steps**, each as it was reported: a command the AI ran, with its exit code; one of Rufi's tools, such as `rufi.get_records`, with what the AI asked for; the files the AI changed; a web search. A long step is cut in the middle, so the start and the file name show. A tick means it was done. Other signs mean it is running, it failed, or it stopped.
 
@@ -116,16 +116,15 @@ The AI's reply shows while it writes it, as you chose (see [While Rufi writes](#
 
 - **Text** can be **bold**, have lists, tables and links. A link to a web page opens in your browser, outside Rufi; a link to a page of Rufi, such as a document, opens it in Rufi.
 - **Visuals** show a chart, a comparison or a process as a card in the reply, in Rufi's colours, light or dark, such as one test over time. The AI labels each value as your record keeps it, with its unit and date; a value a chart can't place, such as "<5", is in the text. While the AI writes one, it shows once it's whole; word by word, a quiet grey box holds its place until then. A visual can't load anything from the internet, send anything out, or reach your record or Rufi itself: it shows only what the AI wrote in it. A visual runs no program of its own and has no links: its sources are links in the reply's text. If it tried to, or to load something, such as a chart library from the web, it says "Part of this visual didn't load" under it, and may be blank. Ask the AI to draw it again. A test's own chart, spaced by date with the lab's range, is on its page in your [health record](record.md#a-test), which the AI can link.
-- **Answers as buttons:** when the AI asks you something with a few clear answers, such as whether to save a change, its visual can show a button for each, such as **Save** and **Not now**. A click sends the button's message into the chat as your own, as if you had typed it, and the AI answers it as it would your words; a save still shows Rufi's receipt. The buttons stay as they are, so you can click one later, and you can always type your answer instead. Your half-typed words in the box stay. While the AI is still replying, a click goes as Enter in the box would (see [While the AI replies](#while-the-ai-replies)). If a click can't reach Rufi, a line under the visual says so; click again.
 - Check the values against your record, as with anything the AI says.
 
 ### A question card
 
-When Rufi AI asks you something with a few clear answers, such as whether to save results, it asks last in its reply, with a small card Rufi draws the same way every time: what it is about, such as "Lipid panel, 12 Aug 2026", a short line or list of exactly what you approve, the question, and a button for each answer, such as **Save** and **Not now**.
+When Rufi AI asks you to decide or answer something, such as whether to save results or which of two clinics to book, it asks last in its reply, with a small card Rufi draws the same way every time: what it is about, such as "Lipid panel, 12 Aug 2026", a short line or list of exactly what you decide on, the question, and a button for each answer, such as **Save** and **Not now**.
 
 - **Click an answer**, or go to it with Tab and press Enter. It is your message, starting with the card's quote, and the AI answers it as it would your words; a save still shows Rufi's receipt. The words you were typing in the box stay. While the AI is still replying, a click goes as Enter in the box would (see [While the AI replies](#while-the-ai-replies)).
 - The card then shows your answer on its way, and once the AI has it, the answer you chose, with a tick and no buttons. While your answer waits until the reply ends, the card says **Waiting**; remove it from the [waiting messages](#waiting-messages) and the card's buttons are back. If your answer couldn't reach Rufi, the card says **Not sent**: click **Retry**. If Rufi can't take it, the card says **Can't send**; signed out, it says so, with **Sign in**.
-- **Reply** puts the card's quote in the box, for an answer in your own words. It doesn't answer the card: its buttons stay.
+- **Reply** puts the card's quote in the box, for an answer in your own words, such as a date the card doesn't offer. It doesn't answer the card: its buttons stay.
 - To change your mind once you answered, type it. The card keeps your first answer, and the AI sees each of your messages.
 - The quote at the top of your answer goes back to its card, also when the card is further up the chat.
 
@@ -145,7 +144,7 @@ In [Settings › Chat](rufi:/settings/chat) › **Replies**, choose how Rufi AI'
 
 - **Visual** (the start): a visual wherever a chart, comparison or diagram makes the answer clearer.
 - **Balanced:** mostly text, with a table or a visual where it really helps.
-- **Simple:** short, plain text, and a visual only when you ask for one. When the AI asks you something with a few clear answers, it still offers them as buttons (see [How a reply looks](#how-a-reply-looks)).
+- **Simple:** short, plain text, and a visual only when you ask for one. When the AI asks you something with a few clear answers, it asks with a question card (see [A question card](#a-question-card)).
 
 Under **Your own words**, you can tell Rufi AI in your own words how you like replies, for example "Explain medical words simply. Use kg and cm." It saves when you leave the box, and Rufi AI reads it with every reply, whichever of the three you chose. Your words change how a reply looks and reads; Rufi's own rules still come first: your values exactly as your record keeps them, where they come from, and asking before it saves.
 

@@ -185,6 +185,8 @@ private final class Card: NSObject {
         view.configuration.userContentController.addUserScript(WKUserScript(
             source: "window.webkit.messageHandlers.gate.postMessage('here')",
             injectionTime: .atDocumentEnd, forMainFrameOnly: false, in: world))
+        // Only now the card loads, so its frame's first document has the script.
+        view.load(URLRequest(url: VisualPages.card))
         let scene = try #require(UIApplication.shared.connectedScenes.first as? UIWindowScene)
         window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 390, height: 600)
@@ -203,7 +205,6 @@ private final class Card: NSObject {
             self?.heights.append($0)
         } broke: { [weak self] in
             self?.broken = true
-        } answered: { _ in
         } ended: { [weak self] in
             self?.ended = true
         }

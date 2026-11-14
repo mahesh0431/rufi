@@ -13,9 +13,11 @@
 // Every case also checks that each reply completed with words. Anything but
 // passed or a person's verdict makes the exit code nonzero. A case's data
 // folder goes once it has passed or waits only for a person's verdict; any
-// other case's stays, and its line names it.
+// other case's stays, and its line names it. Every chat runs on the model a
+// new chat gets, or on --model's: a Claude model runs on RUFI_HOME's Claude
+// sign-in (its `claude/` folder), which every case then shares.
 //
-//   RUFI_HOME=<test sign-in folder> pnpm smoke --out <empty folder> [--only a,b] [--jobs n]
+//   RUFI_HOME=<test sign-in folder> pnpm smoke --out <empty folder> [--only a,b] [--jobs n] [--model id]
 import { randomUUID } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { readFile, writeFile } from "node:fs/promises";
@@ -25,9 +27,9 @@ import { parseArgs } from "node:util";
 import { DatabaseSync } from "node:sqlite";
 import { monitorEventLoopDelay } from "node:perf_hooks";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { Entry, Turn } from "@rufi/contracts";
+import { modelOf, QuestionCard, type Entry, type Turn } from "@rufi/contracts";
 import type { Brief } from "@rufi/contracts/briefs";
-import { Effect, Exit, Scope } from "effect";
+import { Effect, Exit, Option, Schema, Scope } from "effect";
 import { everyTurnAnswered } from "./answered.ts";
 import {
   HarnessTimeout,
@@ -40,9 +42,17 @@ import {
   testSignIn,
   type Status,
 } from "./live-run.ts";
+import { claudeAdapter } from "../src/agent/claude/adapter.ts";
+import {
+  claudeEnvironment,
+  claudeFolder,
+  findClaude,
+} from "../src/agent/claude/executable.ts";
+import { prepareClaudePlugin } from "../src/agent/claude/session.ts";
 import { codexBinary } from "../src/agent/codex/binary.ts";
 import { codexAdapter } from "../src/agent/codex/adapter.ts";
 import { DEFAULT_MODEL } from "../src/core/chat/models.ts";
+import { cardText } from "../src/core/chat/questions.ts";
 import {
   databasePath,
   openReadOnly,
@@ -53,7 +63,7 @@ import { childEnvironment, rufiHome } from "../src/platform/config.ts";
 import { diagnostics } from "../src/platform/logs.ts";
 import { PROOF_HEADER } from "../src/server/api.ts";
 import { agentSetup, startCore, type Core } from "../src/server/core.ts";
-import { codexSignIn } from "../src/server/signin.ts";
+import { claudeSignIn, codexSignIn } from "../src/server/signin.ts";
 import { FAMILY, familyFiles } from "../tests/fixtures/golden.ts";
 import { textPdf } from "../tests/pack/pdf.ts";
 import { layout, PRESCRIPTION, REPORTS } from "../tests/pack/reports.ts";
@@ -69,8 +79,16 @@ const { values } = parseArgs({
     only: { type: "string" },
     jobs: { type: "string" },
     out: { type: "string" },
+    model: { type: "string" },
   },
 });
+/** The model every case's chat runs on. */
+const model =
+  modelOf(values.model ?? DEFAULT_MODEL) ??
+  (() => {
+    console.error(`No model ${String(values.model)}.`);
+    return process.exit(2);
+  })();
 /**
  * How many cases run at the same time by default. With 40 or more at once,
  * ChatGPT dropped the connection of several (INFRA); 16 at once ran the
@@ -231,6 +249,25 @@ function chat(api: Api) {
     await api("PUT", draft, { text });
     await api("POST", `${path}/messages`, { id: randomUUID(), text });
   };
+  /** Waits until nothing runs or waits: the number of turns then. */
+  const idle = async () => {
+    for (let i = 0; i < 600; i++) {
+      const { turns } = await read();
+      const waiting = (await api("GET", `${path}/queue`)) as {
+        items: { origin: string; held: string | null }[];
+      };
+      // Rufi's notes that ride with the next message wait for it.
+      if (
+        turns.every((t) => t.status !== "running") &&
+        waiting.items.every(
+          (item) => item.origin === "rufi" && item.held === "paused",
+        )
+      )
+        return turns.length;
+      await sleep(500);
+    }
+    throw new HarnessTimeout("the chat didn't settle within five minutes");
+  };
   let sent = 0;
   return {
     path,
@@ -247,31 +284,86 @@ function chat(api: Api) {
      * waits for its reply to end.
      */
     say: async (text: string, refs: unknown[] = []) => {
-      const idle = async () => {
-        for (let i = 0; i < 600; i++) {
-          const { turns } = await read();
-          const waiting = (await api("GET", `${path}/queue`)) as {
-            items: { origin: string; held: string | null }[];
-          };
-          // Rufi's notes that ride with the next message wait for it.
-          if (
-            turns.every((t) => t.status !== "running") &&
-            waiting.items.every(
-              (item) => item.origin === "rufi" && item.held === "paused",
-            )
-          )
-            return turns.length;
-          await sleep(500);
-        }
-        throw new HarnessTimeout("the chat didn't settle within five minutes");
-      };
       const before = await idle();
       await api("PUT", draft, { text, refs });
       await api("POST", `${path}/messages`, { id: randomUUID(), text, refs });
       await ended(before + 1);
     },
+    /**
+     * A click on a card's answer once nothing runs, as the screens send it:
+     * the answer's words, quoting the card with the answer's place; the box
+     * keeps its words. Waits for its reply to end.
+     */
+    click: async ({ entry, card }: Asked, answer: number) => {
+      const before = await idle();
+      await api("POST", `${path}/messages`, {
+        id: randomUUID(),
+        text: card.answers[answer],
+        refs: [{ type: "question", id: entry.id, answer }],
+      });
+      await ended(before + 1);
+    },
   };
 }
+
+/** A question card Rufi AI asked with, and its entry. */
+interface Asked {
+  entry: Entry;
+  card: QuestionCard;
+}
+
+/** Rufi AI's question cards in the chat, oldest first. */
+const cardsOf = (snapshot: Snapshot): Asked[] =>
+  snapshot.entries.flatMap((entry) => {
+    const card =
+      entry.kind === "question"
+        ? Option.getOrUndefined(
+            Schema.decodeUnknownOption(QuestionCard)(entry.card),
+          )
+        : undefined;
+    return card ? [{ entry, card }] : [];
+  });
+
+/**
+ * The card's answer the harness clicks, as a person would pick it: the
+ * first whose words `match`. A case it can't tell for fails, naming the
+ * card, and clicks nothing. A person checks the click in the transcript.
+ */
+function answerTo(card: QuestionCard, match: RegExp): number {
+  const index = card.answers.findIndex((answer) => match.test(answer.trim()));
+  if (index < 0)
+    throw new Error(
+      `couldn't tell which answer of "${card.key}" to click: ${card.answers.join(" | ")}`,
+    );
+  return index;
+}
+
+/** The card's yes: an answer that starts with yes, save or add. */
+const yesOf = (card: QuestionCard) => answerTo(card, /^(yes|save|add)\b/i);
+
+/**
+ * What Rufi AI said after the person's last message: its replies and the
+ * cards it asked with, in order.
+ */
+const saidSince = (snapshot: Snapshot) => {
+  const asked = snapshot.entries.findLast((e) => e.kind === "message");
+  return snapshot.entries
+    .filter(
+      (e) =>
+        (e.kind === "reply" || e.kind === "question") &&
+        e.seq > (asked?.seq ?? 0),
+    )
+    .map((e) => e.text)
+    .join("\n\n");
+};
+
+/** The answer a click gave the card, as the chat shows it now. */
+const answerOf = (snapshot: Snapshot, asked: Asked | undefined) =>
+  snapshot.entries.find((entry) => entry.id === asked?.entry.id)?.answer?.index;
+
+/** A card's words, for a person to judge. */
+const cardWords = (asked: Asked | undefined) =>
+  asked ? cardText(asked.card) : "(no card)";
 
 /**
  * The answer to the person's last message: the replies after it, also in a
@@ -1214,6 +1306,146 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     return {
       checks: { nothing_saved: nothingSaved(home, snapshot) },
       snapshot,
+    };
+  },
+  /**
+   * Told something, Rufi AI asks with a question card; a click on its yes
+   * saves it once, with a receipt, from the message with the facts, and the
+   * card shows the answer.
+   */
+  card_yes: async (api, home) => {
+    const c = chat(api);
+    await c.say(MAGNESIUM);
+    const offered = await c.read();
+    const asked_first = nothingSaved(home, offered);
+    const asked = cardsOf(offered).at(-1);
+    const yes = asked && yesOf(asked.card);
+    if (asked && yes !== undefined) await c.click(asked, yes);
+    const snapshot = await c.read();
+    return {
+      checks: {
+        asked_with_a_card: asked !== undefined,
+        asked_first,
+        saved_once: record(home).saves === 1 && receipts(snapshot) === 1,
+        magnesium_current:
+          medicine(home, "Magnesium")?.["status"] === "current",
+        card_answered: yes !== undefined && answerOf(snapshot, asked) === yes,
+        rests_on_the_facts_message: restsOn(home, snapshot, MAGNESIUM),
+      },
+      verdicts: [
+        {
+          check: "card_names_what_is_saved",
+          criterion:
+            "The card's details name what a yes saves: magnesium 200 mg at night. Its answers include a yes and a way to decline or wait, and the reply doesn't repeat the question after the card.",
+          evidence: cardWords(asked),
+        },
+      ],
+      snapshot,
+      notes: sourcesNote(home),
+    };
+  },
+  /**
+   * A yes on an old card, after a correction made Rufi AI ask again: it saves
+   * nothing, sees the correction and the newer card, and asks.
+   */
+  card_old: async (api, home) => {
+    const c = chat(api);
+    await c.say(MAGNESIUM);
+    const first = cardsOf(await c.read()).at(-1);
+    await c.say(
+      "Sorry, I got that wrong: it's magnesium 400 mg at night, not 200 mg.",
+    );
+    const corrected = await c.read();
+    const second = cardsOf(corrected).at(-1);
+    if (first) await c.click(first, yesOf(first.card));
+    const snapshot = await c.read();
+    return {
+      checks: {
+        asked_with_a_card: first !== undefined,
+        asked_again_with_a_card:
+          second !== undefined && second.entry.id !== first?.entry.id,
+        nothing_saved: nothingSaved(home, snapshot),
+      },
+      verdicts: [
+        {
+          check: "sees_the_newer_card",
+          criterion:
+            "After the click on the old card (200 mg), Rufi AI saves nothing, says it sees the correction to 400 mg and the newer card, and asks again or points to the newer card.",
+          evidence: saidSince(snapshot),
+        },
+      ],
+      snapshot,
+      notes: `The two cards' keys: ${JSON.stringify(first?.card.key)} and ${JSON.stringify(second?.card.key)}.\n\nThe old card:\n\n${cardWords(first)}\n\nThe newer card:\n\n${cardWords(second)}`,
+    };
+  },
+  /**
+   * The same yes twice, as from the Mac and the iPhone: the first saves, and
+   * the second saves nothing more.
+   */
+  card_repeated: async (api, home) => {
+    const c = chat(api);
+    await c.say(MAGNESIUM);
+    const asked = cardsOf(await c.read()).at(-1);
+    const yes = asked && yesOf(asked.card);
+    if (asked && yes !== undefined) await c.click(asked, yes);
+    const once = record(home).saves;
+    if (asked && yes !== undefined) await c.click(asked, yes);
+    const snapshot = await c.read();
+    return {
+      checks: {
+        asked_with_a_card: asked !== undefined,
+        saved_on_the_first: once === 1,
+        nothing_more: record(home).saves === 1 && receipts(snapshot) === 1,
+      },
+      verdicts: [
+        {
+          check: "says_it_is_saved",
+          criterion:
+            "The reply to the second click says magnesium is already saved and saves nothing more.",
+          evidence: lastReply(snapshot),
+        },
+      ],
+      snapshot,
+    };
+  },
+  /**
+   * A question that isn't about saving: Rufi AI asks which clinic with a
+   * card, the click answers it, and Rufi AI goes on with that clinic.
+   */
+  card_clinics: async (api, home) => {
+    const c = chat(api);
+    await c.say(
+      "Add my abdominal ultrasound to my follow-ups. I can book City Clinic on Tuesday at 10:00 or Lakeside Clinic on Thursday at 16:00.",
+    );
+    const offered = await c.read();
+    const before = nothingSaved(home, offered);
+    const asked = cardsOf(offered).at(-1);
+    const lakeside = asked && answerTo(asked.card, /lakeside/i);
+    if (asked && lakeside !== undefined) await c.click(asked, lakeside);
+    const snapshot = await c.read();
+    return {
+      checks: {
+        asked_with_a_card: asked !== undefined,
+        nothing_saved_before_the_choice: before,
+        card_answered:
+          lakeside !== undefined && answerOf(snapshot, asked) === lakeside,
+      },
+      verdicts: [
+        {
+          check: "asks_which_clinic",
+          criterion:
+            "The card asks which clinic, with City Clinic and Lakeside Clinic among its answers.",
+          evidence: cardWords(asked),
+        },
+        {
+          check: "goes_on_with_lakeside",
+          criterion:
+            "After the click on Lakeside Clinic, Rufi AI goes on with Lakeside Clinic on Thursday at 16:00: it proposes the follow-up and asks with a card before saving, or saves it with a receipt.",
+          evidence: saidSince(snapshot),
+        },
+      ],
+      snapshot,
+      notes: `Follow-ups now: ${JSON.stringify(followUps(home))}`,
     };
   },
   /** A "do not" is not a change. */
@@ -2666,6 +2898,7 @@ function transcriptText(snapshot: Snapshot): string {
         text = `· ${e.text}${e.detail ? `: ${e.detail}` : ""} (${e.status ?? ""})`;
       else if (e.kind === "reasoning")
         text = `AI thinking (${e.status ?? ""}): ${e.text}`;
+      else if (e.kind === "question") text = `AI (question card): ${e.text}`;
       else if (e.kind === "receipt" || e.kind === "event" || e.kind === "brief")
         text = `Rufi: ${e.text}`;
       else
@@ -2699,6 +2932,25 @@ const signIn = await testSignIn(rufiHome(), {
 });
 /** Every sign-in of the run, which no case's AI may read. */
 const signIns = signIn.signIns(names.map((name) => caseFolder(out, name)));
+/**
+ * Claude, on the test sign-in's folder, for a Claude model: Rufi's own
+ * process finds that folder here, as the app does with its own.
+ */
+const claude = model.provider === "claude" ? await testClaude() : undefined;
+async function testClaude() {
+  const env = claudeEnvironment(rufiHome(), childEnvironment());
+  process.env["CLAUDE_CONFIG_DIR"] = claudeFolder(rufiHome());
+  const signedIn = claudeSignIn(env);
+  const { state } = await signedIn.status(AbortSignal.timeout(CALL_MS));
+  if (state !== "signed_in") {
+    console.error(
+      `Claude isn't signed in in ${rufiHome()}. Sign in: RUFI_HOME=${rufiHome()} pnpm rufi signin claude`,
+    );
+    process.exit(2);
+  }
+  const installed = findClaude();
+  return { env, signedIn, installed: () => installed };
+}
 const { version } = createRequire(import.meta.url)("../package.json") as {
   version: string;
 };
@@ -2766,12 +3018,33 @@ async function playCase(name: string, home: string) {
     const core = await Effect.runPromise(
       startCore({
         home,
-        adapters: [codex],
+        adapters: [
+          codex,
+          ...(claude
+            ? [
+                claudeAdapter({
+                  claude: claude.installed,
+                  sandbox: caseSandbox(home, signIns),
+                  env: claude.env,
+                  plugin: await prepareClaudePlugin(
+                    home,
+                    agentSetup(home).skills,
+                  ),
+                }),
+              ]
+            : []),
+        ],
         log: diagnostics(home).log,
-        signIns: { codex: codexSignIn(codex, () => undefined) },
+        signIns: {
+          codex: codexSignIn(codex, () => undefined),
+          ...(claude && { claude: claude.signedIn }),
+        },
       }).pipe(Scope.provide(scope)),
     );
-    outcome = await check(await page(core), home);
+    const api = await page(core);
+    if (model.id !== DEFAULT_MODEL)
+      await api("PUT", "/api/people/asha/chat/model", { model: model.id });
+    outcome = await check(api, home);
   } catch (caught) {
     error = caught;
   } finally {
@@ -2782,8 +3055,8 @@ async function playCase(name: string, home: string) {
   const failed = outcome
     ? Object.entries({
         every_turn_answered: everyTurnAnswered(outcome.snapshot),
-        // The set tests the model a new chat gets by default.
-        on_default_model: outcome.snapshot.turns[0]?.model === DEFAULT_MODEL,
+        // The set tests the model a new chat gets, or --model's.
+        on_its_model: outcome.snapshot.turns[0]?.model === model.id,
         ...outcome.checks,
       })
         .filter(([, ok]) => !ok)

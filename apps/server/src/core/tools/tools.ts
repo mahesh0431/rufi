@@ -79,12 +79,15 @@ export const TOOLS: readonly Tool[] = [
 ];
 
 /**
- * Rufi's tools no agent is given yet, and the terminal's AI neither (the
- * default list leaves them out): ask, until both screens draw its card.
- * TODO: give ask to Rufi AI with its instructions (the question card's last
- * step), then drop this.
+ * Rufi's tools for the chat alone: ask draws a card in Rufi's chat, so the
+ * default list, the terminal's AI's, leaves it out.
  */
-export const HELD: readonly string[] = [ask.name];
+const CHAT_ONLY: readonly string[] = [ask.name];
+
+/** Every tool the chat's agents can be given, by name (sub-agents.ts drops ask). */
+export const CHAT_TOOLS = TOOLS.filter((tool) => tool.callers !== "ui").map(
+  (tool) => tool.name,
+);
 
 /**
  * The name the agent knows Rufi's MCP server by: on a code-mode model the AI
@@ -96,14 +99,14 @@ const SERVER = "rufi";
 export function forAgent(
   context: () => ToolContext,
   log: Log,
-  /** The agent's own tools, by name; when not given, all but the held ones. */
+  /** The agent's own tools, by name; when not given, all but the chat's own. */
   names?: readonly string[],
 ) {
   const tools = TOOLS.filter(
     (tool) =>
       tool.callers !== "ui" &&
       (names === undefined
-        ? !HELD.includes(tool.name)
+        ? !CHAT_ONLY.includes(tool.name)
         : names.includes(tool.name)),
   );
   return {
