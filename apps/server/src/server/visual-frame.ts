@@ -186,7 +186,7 @@ const NO_SCRIPT_FILES = "script-src 'unsafe-inline'";
 
 /**
  * The visual's own script, as the screens' build made it
- * (apps/web/vite.frame.config.ts): read once, when the core starts. With no
+ * (apps/web/vite.config.ts): read once, when the core starts. With no
  * screens (tests that only use the API), none.
  */
 export function visualKit(screens: string | undefined): string {
