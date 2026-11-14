@@ -273,13 +273,20 @@ private final class Card: NSObject {
     func until(_ what: String, _ done: () async throws -> Bool) async throws {
         let end = ContinuousClock.now + .seconds(30)
         while try await !done() {
-            guard ContinuousClock.now < end else { throw Waited(what: what) }
+            guard ContinuousClock.now < end else {
+                throw Waited(what: what, heights: heights, frame: frame != nil, broken: broken, ended: ended)
+            }
             try await Task.sleep(for: .milliseconds(50))
         }
     }
 
+    /// What the card had when a wait ran out.
     struct Waited: Error {
         let what: String
+        let heights: [Double]
+        let frame: Bool
+        let broken: Bool
+        let ended: Bool
     }
 }
 
