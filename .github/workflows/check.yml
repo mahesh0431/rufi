@@ -87,7 +87,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo xcode-select -s /Applications/Xcode_27.0.app && xcodebuild -version
-      - run: xcodebuild test -project apps/ios/Rufi.xcodeproj -scheme Rufi -destination "platform=iOS Simulator,OS=27.0,name=iPhone 17" CODE_SIGNING_ALLOWED=NO
+      - run: xcodebuild test -project apps/ios/Rufi.xcodeproj -scheme Rufi -destination "platform=iOS Simulator,OS=27.0,name=iPhone 17" -resultBundlePath ios-tests.xcresult CODE_SIGNING_ALLOWED=NO
+      # A failing test's issues, which the log of a parallel run leaves out.
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-tests
+          path: ios-tests.xcresult
       - run: xcodebuild build -project apps/ios/Rufi.xcodeproj -scheme "Rufi Seed" -destination "platform=iOS Simulator,OS=27.0,name=iPhone 17" CODE_SIGNING_ALLOWED=NO
 
   # The gate branch protection asks for. It always runs, so it is never

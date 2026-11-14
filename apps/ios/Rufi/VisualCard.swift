@@ -3,18 +3,18 @@ import WebKit
 
 /// A visual in a reply, drawn as the Mac's chat draws it (ADR 0034, "For a
 /// screen of its own"): a web view loads the door's card page, which frames
-/// the visual's own page and gives it the block and the theme. That page is
-/// the one guard for what the AI wrote; the app adds only what is its own:
+/// the visual's own page and gives it the block and the theme; both pages
+/// come as the chat keeps them (VisualPages), with the door's policies. That
+/// page is the one guard for what the AI wrote; the app adds only what is its own:
 /// nothing navigates, the card is the height the visual says (kept, so a
 /// card drawn again doesn't jump), and when WebKit ends its process the card
-/// loads once more, then says it can't show the visual. A card whose page
-/// didn't load says so too, and loads again when Rufi is reached.
+/// loads once more, then says it can't show the visual. A card whose pages
+/// didn't come says so too, and loads again when Rufi is reached.
 struct VisualCard: View {
     let html: String
     /// Its entry and place in the reply: where its height is kept.
     let key: String
     let chat: ChatModel
-    let origin: URL
     @Environment(Theme.self) private var theme
     @Environment(\.colorScheme) private var scheme
     @ScaledMetric(relativeTo: .body) private var fontSize: CGFloat = 17
@@ -43,7 +43,7 @@ struct VisualCard: View {
                 .background(theme.side, in: .rect(cornerRadius: 8))
             } else {
                 let shown = height ?? chat.heights[key] ?? Self.waiting
-                CardView(html: html, theme: theme.visual(dark: scheme == .dark, fontSize: fontSize), origin: origin) {
+                CardView(html: html, theme: theme.visual(dark: scheme == .dark, fontSize: fontSize), pages: chat.pages) {
                     let drawn = Self.height($0)
                     height = drawn
                     chat.heights[key] = drawn
@@ -77,22 +77,19 @@ struct VisualCard: View {
     }
 
     /// Whether a navigation in a card loads: the card page itself, and in
-    /// its frame the visual's page, both from the door; nothing else.
-    static func loads(_ url: URL?, door: URL, mainFrame: Bool) -> Bool {
+    /// its frame the visual's page, both kept; nothing else.
+    static func loads(_ url: URL?, mainFrame: Bool) -> Bool {
         guard let url else { return false }
         if !mainFrame, url.absoluteString == "about:blank" { return true }
-        guard url.scheme == door.scheme, url.host() == door.host(), url.port == door.port, url.query == nil else {
-            return false
-        }
-        return url.path() == (mainFrame ? "/visual-card.html" : "/visual-frame.html")
+        return url == (mainFrame ? VisualPages.card : VisualPages.frame)
     }
 }
 
 /// The card's web view. All cards keep nothing: their data store is in memory.
-private struct CardView: UIViewRepresentable {
+struct CardView: UIViewRepresentable {
     let html: String
     let theme: [String: Any]
-    let origin: URL
+    let pages: VisualPages
     let measured: (Double) -> Void
     let broke: () -> Void
     let ended: () -> Void
@@ -104,20 +101,27 @@ private struct CardView: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> WKWebView {
+        let view = Self.made(context.coordinator)
+        view.load(URLRequest(url: VisualPages.card))
+        return view
+    }
+
+    /// The card's web view for `coordinator`, before it loads the card page.
+    static func made(_ coordinator: Coordinator) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = Self.store
         configuration.dataDetectorTypes = []
-        configuration.userContentController.add(Relay(context.coordinator), contentWorld: .page, name: "card")
+        configuration.setURLSchemeHandler(coordinator.card.pages, forURLScheme: VisualPages.scheme)
+        configuration.userContentController.add(Relay(coordinator), contentWorld: .page, name: "card")
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.isOpaque = false
         view.backgroundColor = .clear
         view.scrollView.isScrollEnabled = false
         view.scrollView.contentInsetAdjustmentBehavior = .never
         view.allowsLinkPreview = false
-        view.navigationDelegate = context.coordinator
-        view.uiDelegate = context.coordinator
-        context.coordinator.view = view
-        view.load(URLRequest(url: origin.appending(path: "/visual-card.html")))
+        view.navigationDelegate = coordinator
+        view.uiDelegate = coordinator
+        coordinator.view = view
         return view
     }
 
@@ -161,7 +165,7 @@ private struct CardView: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
             guard let frame = action.targetFrame else { return .cancel }
-            return VisualCard.loads(action.request.url, door: card.origin, mainFrame: frame.isMainFrame) ? .allow : .cancel
+            return VisualCard.loads(action.request.url, mainFrame: frame.isMainFrame) ? .allow : .cancel
         }
 
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
@@ -169,7 +173,8 @@ private struct CardView: UIViewRepresentable {
             nil
         }
 
-        /// The card's page didn't load (Rufi out of reach): it can't show the visual.
+        /// The card's pages didn't come (Rufi out of reach, not kept yet):
+        /// it can't show the visual.
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
             ready = false
             card.ended()
@@ -182,15 +187,15 @@ private struct CardView: UIViewRepresentable {
                 card.ended()
             } else {
                 restarted = true
-                webView.load(URLRequest(url: card.origin.appending(path: "/visual-card.html")))
+                webView.load(URLRequest(url: VisualPages.card))
             }
         }
 
-        /// The card page's two messages, from the door's card page alone.
+        /// The card page's two messages, from the card page alone.
         func received(_ message: WKScriptMessage) {
             let from = message.frameInfo.securityOrigin
-            guard message.frameInfo.isMainFrame, from.protocol == card.origin.scheme, from.host == card.origin.host(),
-                  from.port == (card.origin.port ?? 443),
+            guard message.frameInfo.isMainFrame, from.protocol == VisualPages.scheme,
+                  from.host == VisualPages.card.host(), from.port == 0,
                   let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
             switch type {
             case "rufi-visual-height": card.measured((body["height"] as? NSNumber)?.doubleValue ?? 0)
