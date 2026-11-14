@@ -794,6 +794,39 @@ export function transcripts(
     return id;
   }
 
+  /**
+   * The text Rufi AI wrote just before asking with a card, in `trx`: its
+   * reply's, above the card, also where its agent gave it as progress notes
+   * (Codex's commentary). These are the turn's notes since its last step
+   * that ended; the ask's own step still runs. Gives the entries it moved
+   * out of Activity.
+   */
+  async function textBefore(
+    trx: Transaction<Tables>,
+    turnId: string,
+    revision: number,
+  ): Promise<string[]> {
+    const steps = await trx
+      .selectFrom("transcript_entries")
+      .select(["id", "activity", "status"])
+      .where("turn_id", "=", turnId)
+      .where("kind", "=", "activity")
+      .orderBy("seq", "desc")
+      .execute();
+    const notes: string[] = [];
+    for (const step of steps) {
+      if (step.activity === "note") notes.push(step.id);
+      else if (step.status !== "running") break;
+    }
+    if (notes.length === 0) return [];
+    await trx
+      .updateTable("transcript_entries")
+      .set({ kind: "reply", activity: null, revision, updated_at: now() })
+      .where("id", "in", notes)
+      .execute();
+    return notes;
+  }
+
   /** The queue's rows among `inputs` the AI got that aren't marked sent. */
   const handedOver = (trx: Db, chat: ChatRow, inputs: readonly string[]) =>
     trx
@@ -1924,6 +1957,7 @@ export function transcripts(
           await keepCall(trx, chat, turn, call, answer(asked));
           return undefined;
         }
+        const shown = turn ? await textBefore(trx, turn.id, revision) : [];
         const id = await insertEntry(trx, chat, revision, {
           turnId: turn?.id ?? null,
           kind: "question",
@@ -1932,7 +1966,7 @@ export function transcripts(
         });
         asked = { id, fresh: true };
         await keepCall(trx, chat, turn, call, answer(asked));
-        return { entries: [id], turns: [] };
+        return { entries: [...shown, id], turns: [] };
       });
       return asked as Asked;
     },

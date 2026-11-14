@@ -117,7 +117,7 @@ const cards = () =>
     .map((row) => ({ ...row }));
 
 describe("ask", () => {
-  it("is offered to no agent, and not to the terminal, until both screens draw its card", () => {
+  it("is not offered to the terminal's AI", () => {
     const names = forAgent(
       () => ({ store: reader, personId: undefined }),
       () => undefined,
@@ -139,6 +139,69 @@ describe("ask", () => {
       card: { kind: "choice", ...CARD },
       text: "**Lipid panel, 12 Aug 2026**\n\n- LDL 138 mg/dL\n- HDL 41 mg/dL\n\nSave these 2 results to your health record?\n\n- Save\n- Not now",
     });
+  });
+
+  it("keeps the text Rufi AI wrote just before the card as its reply, above the card, also given as progress notes; notes before an ended step stay in Activity", async () => {
+    const turn = `t-${String(turns)}`;
+    await transcripts.appendNote(
+      chat,
+      turn,
+      "n-1",
+      "Checking your record first.",
+      true,
+    );
+    await transcripts.setActivity(chat, turn, "s-1", {
+      activity: "tool",
+      title: "rufi.get_overview",
+      status: "done",
+    });
+    await transcripts.appendNote(
+      chat,
+      turn,
+      "n-2",
+      "Your LDL is 138 mg/dL,",
+      true,
+    );
+    await transcripts.appendNote(
+      chat,
+      turn,
+      "n-3",
+      " above the lab's range.",
+      true,
+    );
+    await transcripts.setActivity(chat, turn, "call-ask", {
+      activity: "tool",
+      title: "rufi.ask",
+      status: "running",
+    });
+    const changes: Change[] = [];
+    transcripts.subscribe(chat.id, (change) => changes.push(change));
+    const id = await ask();
+
+    expect(
+      (await entries()).map((entry) => [
+        entry.kind,
+        entry.activity,
+        entry.text,
+      ]),
+    ).toEqual([
+      ["activity", "note", "Checking your record first."],
+      ["activity", "tool", "rufi.get_overview"],
+      ["reply", null, "Your LDL is 138 mg/dL,"],
+      ["reply", null, " above the lab's range."],
+      ["activity", "tool", "rufi.ask"],
+      ["question", null, expect.stringContaining("Lipid panel")],
+    ]);
+    // The screens get the notes as replies with the card, at once.
+    expect(
+      changes.at(-1)?.entries.map((entry) => [entry.kind, entry.id === id]),
+    ).toEqual(
+      expect.arrayContaining([
+        ["reply", false],
+        ["reply", false],
+        ["question", true],
+      ]),
+    );
   });
 
   it("makes one card for the same call, also with other words and from a Rufi started again", async () => {
