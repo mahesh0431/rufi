@@ -62,8 +62,8 @@ const BUILT_IN_PLUGINS_OFF = [
 ];
 
 /**
- * The one built-in plugin kept on: it keeps the person's email address out
- * of the requests Claude sends to websites.
+ * The one built-in plugin kept on: it refuses a shell command that contains
+ * the signed-in account's email address and sets a User-Agent.
  */
 const PRIVACY_PLUGIN = "cc-plugin-privacy";
 
