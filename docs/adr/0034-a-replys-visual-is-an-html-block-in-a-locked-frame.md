@@ -101,6 +101,7 @@ It finds blocks by the same fence rule, sends the same theme names, and acts on 
 
 - The page writes a visual in only when it is framed: as the top document it does nothing, and `frame-ancestors 'self'` lets only a page of the core's own origin frame it.
 - The headers must reach the web view as the core sends them. WebKit holds both comma-joined policies (the WebKit test above). A page loaded with `loadHTMLString` has no headers, so it can't be the visual's page.
+- The iPhone fetches the card page and the visual's page from the door once, when a card first needs them, keeps each with its headers for the pairing's chat in that app run, and serves them to its cards through a `WKURLSchemeHandler` on Rufi's own scheme (`VisualPages`). So a visual draws again without asking the Mac, also while it can't be reached. WebKit enforces a scheme handler's policies as it does the door's: the iPhone's `VisualPagesTests` puts probes into the visual past the markup guard and shows the kept policies alone stop them, and that the same probes run and connect without them.
 - Its web view stops any navigation that leaves, as the iPhone's does (`Screens.route`).
 
 ## Considered

@@ -214,13 +214,13 @@ private struct EntryView: View {
         case "agent":
             AgentBubble(entry: entry, chat: chat)
         case "reply":
-            ReplyView(entry: entry, streaming: chat.transcript.streaming(entry), chat: chat, origin: shell.pairing.origin)
+            ReplyView(entry: entry, streaming: chat.transcript.streaming(entry), chat: chat)
         case "question":
             if let card = entry.question {
                 QuestionCardView(entry: entry, card: card, chat: chat, shell: shell)
             } else {
                 // A card of a kind the iPhone doesn't draw: its words.
-                ReplyView(entry: entry, streaming: false, chat: chat, origin: shell.pairing.origin)
+                ReplyView(entry: entry, streaming: false, chat: chat)
             }
         default:
             // A picture the AI made: its file is on the Mac only.
