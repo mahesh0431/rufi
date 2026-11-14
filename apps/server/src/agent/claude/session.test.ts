@@ -4,13 +4,18 @@
 import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { query, SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
+import type {
+  query,
+  SDKSystemMessage,
+  SpawnedProcess,
+} from "@anthropic-ai/claude-agent-sdk";
 import { describe, expect, it } from "vitest";
 import { isRunning, killGroup } from "../codex/processes.ts";
 import {
   openClaudeSession,
   prepareClaudePlugin,
   spawnClaude,
+  unexpectedAtStart,
 } from "./session.ts";
 
 const skill = (name: string) => ({
@@ -34,6 +39,43 @@ describe("Rufi's skills as Claude's plugin", () => {
         await readFile(join(plugin.path, ".claude-plugin/plugin.json"), "utf8"),
       ),
     ).toMatchObject({ name: "rufi" });
+  });
+});
+
+describe("Claude Code's own plugins", () => {
+  it("keep only the privacy plugin on: Rufi starts Claude so, and refuses any other at a turn's start", () => {
+    let settings: unknown;
+    const recording = (({ options }: Parameters<typeof query>[0]) => {
+      settings = options?.settings;
+      return { close: () => undefined };
+    }) as unknown as typeof query;
+    void openClaudeSession({
+      claude: { path: "/fictional/claude", version: "2.1.322" },
+      sandbox: { folder: tmpdir(), unreadable: [] },
+      env: {},
+      instructions: "",
+      model: "claude-fictional",
+      conversation: { start: crypto.randomUUID() },
+      plugin: { path: tmpdir(), skills: [] },
+      query: recording,
+    }).close();
+    expect(settings).toMatchObject({
+      enabledPlugins: {
+        "cc-plugin-privacy@builtin": true,
+        "cc-plugin-telemetry@builtin": false,
+        "cc-plugin-agents-md@builtin": false,
+        "cc-plugin-plugin-authoring@builtin": false,
+      },
+    });
+
+    const start = {
+      tools: [],
+      mcp_servers: [],
+      plugins: ["rufi", "cc-plugin-privacy", "cc-plugin-telemetry"].map(
+        (name) => ({ name, path: `/fictional/${name}` }),
+      ),
+    } as unknown as SDKSystemMessage;
+    expect(unexpectedAtStart(start)).toEqual(["plugin cc-plugin-telemetry"]);
   });
 });
 
