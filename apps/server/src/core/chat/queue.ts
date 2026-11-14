@@ -47,7 +47,13 @@ export interface HandOver {
 export type Claimed =
   /** It was waiting: its words. */
   | { status: "claimed"; handOver: HandOver }
-  /** It doesn't wait any more, or is held: it doesn't go. */
+  /** It waits, held: it doesn't go now, and why, as stored. */
+  | {
+      status: "held";
+      held: NonNullable<QueueItem["held"]>;
+      text: string | null;
+    }
+  /** It doesn't wait any more: it doesn't go. */
   | { status: "gone" };
 
 /** A waiting row, in order, as the hand-over to the agent queue sees it. */
@@ -527,7 +533,8 @@ export function chatQueue(
     /**
      * Rufi's claim of a row the agent system hands over to an agent's
      * conversation (`sentAs`), in one transaction: a waiting row is handing
-     * over to it, and its words go. Any other is gone.
+     * over to it, and its words go. A held one stays held. Any other is
+     * gone.
      */
     claim: (chat: ChatOf, id: string, sentAs: string): Promise<Claimed> =>
       write(chat, async (trx) => {
@@ -535,8 +542,13 @@ export function chatQueue(
           .selectAll()
           .where("id", "=", id)
           .executeTakeFirst();
-        if (row?.state !== "waiting" || row.held !== null) {
-          return { status: "gone" };
+        if (row?.state !== "waiting") return { status: "gone" };
+        if (row.held !== null) {
+          return {
+            status: "held",
+            held: row.held as NonNullable<QueueItem["held"]>,
+            text: row.held_text,
+          };
         }
         await trx
           .updateTable("chat_queue")
