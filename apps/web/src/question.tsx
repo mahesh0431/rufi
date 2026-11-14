@@ -3,19 +3,23 @@
 // and Reply. A click on an answer is your message, quoting the card, sent as
 // Enter in the box would while a reply runs; the box's words stay. The card
 // then shows the answer on its way (Sending, Waiting in the queue, Not sent
-// with Retry when its answer was lost) and, once it went to Rufi AI, the
+// with Retry when its answer was lost, Can't send when refused) and, once it went to Rufi AI, the
 // answer it chose, with no buttons. Reply puts the card's quote in the box,
 // for your own words; it answers nothing. To change your mind, you type.
 import {
+  CLAUDE_SIGNED_OUT,
   type Entry,
   QuestionCard as Card,
   type QueueItem,
+  SIGNED_OUT,
 } from "@rufi/contracts";
+import { useNavigate } from "@tanstack/react-router";
 import { Option, Schema } from "effect";
 import {
   Check,
   Hourglass,
   LoaderCircle,
+  LogIn,
   MessageCircleQuestionMark,
   Reply,
   RotateCw,
@@ -67,6 +71,7 @@ export function QuestionCard({
   });
   const kind = useSettings().data?.whileReplying ?? "steer";
   const key = useId();
+  const navigate = useNavigate();
   // Once the chat shows the click, the card follows the chat.
   useEffect(() => {
     if (entry.answer !== undefined || waiting !== undefined) {
@@ -165,11 +170,25 @@ export function QuestionCard({
           Reply
         </Button>
       </div>
-      {send?.status === "refused" && entry.answer === undefined && (
-        <p role="alert" className="text-muted">
-          {send.why}
-        </p>
-      )}
+      {send?.status === "refused" &&
+        entry.answer === undefined &&
+        // Signed out, the box's own line and Sign in; else a few words.
+        (send.why === SIGNED_OUT || send.why === CLAUDE_SIGNED_OUT ? (
+          <p role="alert" className="flex items-center gap-1.5 text-muted">
+            {send.why}
+            <Button
+              look="quiet"
+              icon={LogIn}
+              onClick={() => void navigate({ to: "/sign-in" })}
+            >
+              Sign in
+            </Button>
+          </p>
+        ) : (
+          <p role="alert" className="text-muted">
+            Can't send
+          </p>
+        ))}
     </section>
   );
 }

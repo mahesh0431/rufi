@@ -7,7 +7,8 @@
 // and a card of a kind Rufi doesn't draw shows its text.
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page, Request } from "@playwright/test";
-import { expect, openSettings, test, type Rufi } from "./rufi.ts";
+import { SIGNED_OUT as SIGNED_OUT_WORDS } from "@rufi/contracts";
+import { expect, openSettings, SIGNED_OUT, test, type Rufi } from "./rufi.ts";
 
 const TIME = "2026-10-10T09:00:00Z";
 
@@ -180,7 +181,7 @@ test("while a reply runs, a click with Queue chosen waits, and its card says so;
   await expect(visit.getByRole("button", { name: "Book" })).toBeVisible();
 });
 
-test("a click whose answer is lost says Not sent and keeps the box; Retry sends it by the same id; a refused one says the core's words and stays open", async ({
+test("a click whose answer is lost says Not sent and keeps the box; Retry sends it by the same id; a refused one says Can't send and stays open", async ({
   page,
   rufi,
 }) => {
@@ -208,9 +209,27 @@ test("a click whose answer is lost says Not sent and keeps the box; Retry sends 
   );
   const lipids = cardOf(page, "Lipid panel, 12 Aug 2026");
   await lipids.getByRole("button", { name: "Save" }).click();
-  await expect(lipids.getByRole("alert")).toHaveText(refusal);
+  await expect(lipids.getByRole("alert")).toHaveText("Can't send");
   await expect(lipids.getByRole("button", { name: "Save" })).toBeVisible();
   await expect(box(page)).toHaveValue("Keep this");
+});
+
+test("signed out, a click says so on the card, with Sign in; the box keeps its words", async ({
+  page,
+  rufi,
+}) => {
+  rufi.codex = SIGNED_OUT;
+  await openChat(page, rufi, ASKED);
+  await box(page).fill("Keep this");
+  const lipids = cardOf(page, "Lipid panel, 12 Aug 2026");
+  await lipids.getByRole("button", { name: "Save" }).click();
+  await expect(lipids.getByRole("alert")).toHaveText(
+    `${SIGNED_OUT_WORDS}Sign in`,
+  );
+  await expect(lipids.getByRole("button", { name: "Save" })).toBeVisible();
+  await expect(box(page)).toHaveValue("Keep this");
+  await lipids.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/sign-in/);
 });
 
 test("a quote goes back to its card, loading earlier pages until it is there; a card of a kind Rufi doesn't draw shows its text", async ({
