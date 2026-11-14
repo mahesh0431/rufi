@@ -75,7 +75,7 @@ import { fileIn, NativePicture, Picture } from "./files.tsx";
 import { rehypeVisuals, visualHtml } from "./visual-blocks.ts";
 import { finishedBlocks, useWordByWord } from "./reply-flow.ts";
 import { Answer, KeepPlace, Visual, VisualWaiting } from "./visual.tsx";
-import { cardOf, QuestionCard } from "./question.tsx";
+import { cardOf, QuestionCard, useCardSends } from "./question.tsx";
 import { loadOlder } from "./live.ts";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
 import {
@@ -395,6 +395,7 @@ export function TranscriptView({
   const before = useStore(live, (state) => state.before);
   const older = useStore(live, (state) => state.older);
   const clock = useWorkingClock(live, personId);
+  useCardSends(live, personId);
   const going = useStore(live, useShallow(goingNow));
   const opening = useStore(live, (state) => state.window);
   const now = useToday();
