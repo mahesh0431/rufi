@@ -1,7 +1,9 @@
+import Charts
 import SwiftUI
 
 // Lab results, a test's page and a visit's page, drawn here (NativePage).
-// No chart: each value is a row, newest first, as the Mac lists them.
+// Each value is a row, newest first, as the Mac lists them; a test's page
+// also draws its line, as the Mac does (Swift Charts).
 
 /// Lab results: each test once, by section, with its latest value as printed.
 struct LabResultsView: View {
@@ -75,6 +77,9 @@ struct TestView: View {
             } else {
                 List {
                     Section {
+                        if let line = page.line, !line.isEmpty {
+                            TestChart(line: line, unit: page.test.unit, surface: shell.theme.surface)
+                        }
                         if page.values.isEmpty {
                             Text("No values in your health record now.").foregroundStyle(.secondary)
                         }
@@ -91,6 +96,84 @@ struct TestView: View {
                 .onAppear { shell.titled(screen, page.test.name ?? "") }
             }
         }
+    }
+}
+
+/// A test's line, as the Mac draws it: each value at its number in the
+/// test's unit and at its date, oldest on the left; the newest filled, one
+/// the lab flagged with a ring, a blood pressure's second number dashed; the
+/// newest value's range above it, as printed. No colour says anything about
+/// a value. VoiceOver reads each value as printed, with its date.
+private struct TestChart: View {
+    let line: [LineValue]
+    let unit: String?
+    let surface: Color
+
+    private struct Point {
+        let value: LineValue
+        let at: Date
+        let newest: Bool
+    }
+
+    var body: some View {
+        let placed = line.compactMap { value in Words.placed(value.measured.date).map { (value, $0) } }
+        let points = placed.enumerated().map { index, pair in
+            Point(value: pair.0, at: pair.1, newest: index == placed.count - 1)
+        }
+        VStack(alignment: .leading, spacing: 6) {
+            if let range = line.last?.range {
+                Text("Lab range \(range)").font(.footnote).foregroundStyle(.secondary)
+            }
+            Chart {
+                ForEach(Array(points.enumerated()), id: \.offset) { _, point in
+                    LineMark(x: .value("Date", point.at), y: .value("Value", point.value.number),
+                             series: .value("Line", "first"))
+                        .foregroundStyle(Color.primary)
+                        .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                        .accessibilityHidden(true)
+                    PointMark(x: .value("Date", point.at), y: .value("Value", point.value.number))
+                        .symbol { Dot(filled: point.newest, ringed: point.value.flag != nil, surface: surface) }
+                        .accessibilityLabel(Words.printed(point.value.measured.date))
+                        .accessibilityValue(said(point.value))
+                    if let second = point.value.second_number {
+                        LineMark(x: .value("Date", point.at), y: .value("Value", second),
+                                 series: .value("Line", "second"))
+                            .foregroundStyle(Color.primary)
+                            .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round, dash: [4, 3]))
+                            .accessibilityHidden(true)
+                        PointMark(x: .value("Date", point.at), y: .value("Value", second))
+                            .symbol { Dot(filled: point.newest, ringed: false, surface: surface) }
+                            .accessibilityHidden(true)
+                    }
+                }
+            }
+            .chartYScale(domain: .automatic(includesZero: false))
+            .frame(height: 150)
+        }
+        .padding(.vertical, 4)
+    }
+
+    /// "4.6 mIU/L, High": the value as printed, its unit, the lab's flag.
+    private func said(_ value: LineValue) -> String {
+        [[value.value, unit].compactMap { $0 }.joined(separator: " "), value.flag].compactMap { $0 }
+            .joined(separator: ", ")
+    }
+}
+
+/// A value's dot: filled when it is the newest, with a ring when the lab
+/// flagged it.
+private struct Dot: View {
+    let filled: Bool
+    let ringed: Bool
+    let surface: Color
+
+    var body: some View {
+        ZStack {
+            if ringed { Circle().stroke(Color.primary.opacity(0.55), lineWidth: 1).frame(width: 14, height: 14) }
+            Circle().fill(filled ? Color.primary : surface).frame(width: 6, height: 6)
+                .overlay(Circle().stroke(Color.primary, lineWidth: 1.5))
+        }
+        .frame(width: 14, height: 14)
     }
 }
 

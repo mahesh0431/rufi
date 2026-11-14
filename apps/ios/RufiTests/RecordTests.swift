@@ -105,6 +105,22 @@ struct RecordTests {
         #expect(Words.converted(value.row, unit: page.test.unit) == nil)
         #expect(Words.address(of: value.row, person: "asha") == "/people/asha/record/lab_result?open=res-a5&kind=result")
         #expect(try read("detail-test-tsh", as: RecordDetail.self).row.name == "TSH")
+        // Its line, as the Mac works it out: the value as printed, the range with its unit and lab.
+        #expect(page.line == [LineValue(value: "4.6", number: 4.6, second_number: nil, flag: "High",
+                                        range: "0.4 - 4.0 mIU/L · Sunrise Labs", measured: Dated(date: "2026-08-12", words: nil))])
+    }
+
+    @Test func aChartPlacesARecordsDateAtTheStartOfItsPeriodInThisIPhonesTimeZone() throws {
+        var india = Calendar(identifier: .gregorian)
+        india.timeZone = TimeZone(identifier: "Asia/Kolkata")!
+        let at = { (year: Int, month: Int, day: Int, hour: Int, minute: Int) in
+            india.date(from: DateComponents(year: year, month: month, day: day, hour: hour, minute: minute))
+        }
+        #expect(Words.placed("2025", calendar: india) == at(2025, 1, 1, 0, 0))
+        #expect(Words.placed("2025-03", calendar: india) == at(2025, 3, 1, 0, 0))
+        #expect(Words.placed("2025-03-04T08:30", calendar: india) == at(2025, 3, 4, 8, 30))
+        #expect(Words.placed("2025-13", calendar: india) == nil)
+        #expect(Words.placed("2026 (date unclear)", calendar: india) == nil)
     }
 
     @Test func measurementsComeByDayAndARowSaysItsDateOnlyWhereItsDayDoesnt() throws {
