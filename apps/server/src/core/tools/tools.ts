@@ -79,7 +79,8 @@ export const TOOLS: readonly Tool[] = [
 ];
 
 /**
- * Rufi's tools no agent is given yet: ask, until both screens draw its card.
+ * Rufi's tools no agent is given yet, and the terminal's AI neither (the
+ * default list leaves them out): ask, until both screens draw its card.
  * TODO: give ask to Rufi AI with its instructions (the question card's last
  * step), then drop this.
  */
@@ -95,13 +96,15 @@ const SERVER = "rufi";
 export function forAgent(
   context: () => ToolContext,
   log: Log,
-  /** The agent's own tools, by name; all of them when not given. */
+  /** The agent's own tools, by name; when not given, all but the held ones. */
   names?: readonly string[],
 ) {
   const tools = TOOLS.filter(
     (tool) =>
       tool.callers !== "ui" &&
-      (names === undefined || names.includes(tool.name)),
+      (names === undefined
+        ? !HELD.includes(tool.name)
+        : names.includes(tool.name)),
   );
   return {
     server: SERVER,

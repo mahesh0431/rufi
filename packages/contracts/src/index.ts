@@ -257,8 +257,11 @@ export const Entry = Schema.Struct({
   from: Schema.optionalKey(
     Schema.Struct({ title: Schema.String, about: AgentAbout }),
   ),
-  /** A question: its card. */
-  card: Schema.optionalKey(QuestionCard),
+  /**
+   * A question: its card as Rufi AI gave it. A screen draws a card whose
+   * kind it knows (QuestionCard), and shows the text of any other.
+   */
+  card: Schema.optionalKey(Schema.Unknown),
   /**
    * A question's answer, once a click on it went to Rufi AI: that message,
    * and the answer it chose.

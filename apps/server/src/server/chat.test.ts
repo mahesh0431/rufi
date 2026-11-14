@@ -54,7 +54,7 @@ import {
   openWritable,
   type Store,
 } from "../core/store/database.ts";
-import { forAgent, rufiCaller } from "../core/tools/tools.ts";
+import { forAgent, rufiCaller, TOOLS } from "../core/tools/tools.ts";
 import { v7 as uuid } from "uuid";
 import { chatQueue, type ChatQueue } from "../core/chat/queue.ts";
 import { chatAgents } from "../core/chat/agents.ts";
@@ -150,7 +150,12 @@ async function startChat(
   }
   const reader = openReadOnly(databasePath(home));
   const log = () => undefined;
-  const tools = forAgent(() => ({ store: reader, personId: undefined }), log);
+  // Every tool, the held ones too: an agent's own list says which it gets.
+  const tools = forAgent(
+    () => ({ store: reader, personId: undefined }),
+    log,
+    TOOLS.map((tool) => tool.name),
+  );
   const keys = mcpKeys();
   let port = 0;
   served = await serveMcp(

@@ -14,7 +14,7 @@ import {
   openWritable,
   type Store,
 } from "../store/database.ts";
-import { rufiCaller, type TurnScope } from "../tools/tools.ts";
+import { forAgent, rufiCaller, type TurnScope } from "../tools/tools.ts";
 import { turnScope } from "../../../tests/scope.ts";
 import { drafts as openDrafts } from "./drafts.ts";
 import { chatQueue, QueueRefusal, type ChatQueue } from "./queue.ts";
@@ -98,6 +98,16 @@ async function ask(card: unknown = CARD, callId = "call-ask") {
 
 const entries = async () => (await transcripts.page(chat)).entries;
 
+const revision = () =>
+  store.db.prepare("SELECT revision FROM chats WHERE id = ?").get(chat.id);
+
+/** The store refuses a write from here on, as a full disk would. */
+const full = (on: string) => {
+  store.db.exec(
+    `CREATE TEMP TRIGGER full ${on} BEGIN SELECT RAISE(ABORT, 'database or disk is full'); END`,
+  );
+};
+
 const cards = () =>
   store.db
     .prepare(
@@ -107,6 +117,15 @@ const cards = () =>
     .map((row) => ({ ...row }));
 
 describe("ask", () => {
+  it("is offered to no agent, and not to the terminal, until both screens draw its card", () => {
+    const names = forAgent(
+      () => ({ store: reader, personId: undefined }),
+      () => undefined,
+    ).specs.map((spec) => spec.name);
+    expect(names).toContain("read_chat");
+    expect(names).not.toContain("ask");
+  });
+
   it("puts Rufi AI's card in the chat as it gave it, with its words as Markdown for a screen that can't draw it, and answers its id and link", async () => {
     const asked = await call("ask", CARD, "call-ask");
     expect(asked.ok).toBe(true);
@@ -135,6 +154,23 @@ describe("ask", () => {
     expect(cards().map((row) => [row["id"], row["card"]])).toEqual([
       [first, JSON.stringify({ kind: "choice", ...CARD })],
     ]);
+  });
+
+  it("writes nothing when its kept call can't be written: no card, no call, the chat as it was; the same call later makes one card", async () => {
+    const before = revision();
+    const changes: Change[] = [];
+    transcripts.subscribe(chat.id, (change) => changes.push(change));
+    full("BEFORE INSERT ON tool_calls WHEN NEW.tool = 'ask'");
+    const failed = await call("ask", CARD, "call-ask").catch(() => undefined);
+    expect(failed?.ok).not.toBe(true);
+    expect(cards()).toEqual([]);
+    expect(store.db.prepare("SELECT id FROM tool_calls").all()).toEqual([]);
+    expect(revision()).toEqual(before);
+    expect(changes).toEqual([]);
+
+    store.db.exec("DROP TRIGGER full");
+    await ask();
+    expect(cards()).toHaveLength(1);
   });
 
   it("is Rufi AI's alone: a sub-agent of the chat is refused and writes nothing, while its other tools answer it", async () => {
@@ -237,6 +273,41 @@ describe("a message that quotes a card", () => {
     ]);
   });
 
+  it("hands nothing over when the card's answer can't be written: the click waits, the card stays open, the chat as it was", async () => {
+    const id = await ask();
+    await queue.accept(
+      chat,
+      "m-1",
+      "Save",
+      [{ type: "question", id, answer: 0 }],
+      "queue",
+    );
+    const before = revision();
+    const changes: Change[] = [];
+    transcripts.subscribe(chat.id, (change) => changes.push(change));
+    full("BEFORE UPDATE OF answer ON transcript_entries");
+    await expect(nextTurn("m-1")).rejects.toThrow("database or disk is full");
+    expect(
+      store.db
+        .prepare("SELECT id FROM transcript_entries WHERE id = 'm-1'")
+        .all(),
+    ).toEqual([]);
+    expect(
+      store.db.prepare("SELECT state FROM chat_queue WHERE id = 'm-1'").get(),
+    ).toEqual({ state: "waiting" });
+    expect(cards()).toEqual([expect.objectContaining({ answer: null })]);
+    expect(revision()).toEqual(before);
+    expect(changes).toEqual([]);
+
+    store.db.exec("DROP TRIGGER full");
+    await nextTurn("m-1");
+    expect(cards()).toEqual([
+      expect.objectContaining({
+        answer: JSON.stringify({ message: "m-1", index: 0 }),
+      }),
+    ]);
+  });
+
   it("answers nothing once removed from the queue, or once edited: an edit keeps the quote, not the answer", async () => {
     const id = await ask();
     await queue.accept(
@@ -271,20 +342,29 @@ describe("a message that quotes a card", () => {
     ).not.toHaveProperty("answer");
   });
 
-  it("stays in the box as a quote, never with a click's answer", async () => {
+  it("stays in the box as a quote, never with a click's answer: as the save answers, as it reads, and sent from there it answers nothing", async () => {
     const id = await ask();
     const box = openDrafts(store);
-    await box.save(chat, "Save, but", [{ type: "question", id, answer: 0 }]);
-    expect(await box.read(chat)).toEqual({
-      text: "Save, but",
-      refs: [
-        {
-          ref: { type: "question", id },
-          label: "Lipid panel, 12 Aug 2026",
-          detail: "Rufi AI's question",
-        },
-      ],
-    });
+    const saved = await box.save(chat, "Save, but", [
+      { type: "question", id, answer: 0 },
+    ]);
+    const quote = {
+      ref: { type: "question", id },
+      label: "Lipid panel, 12 Aug 2026",
+      detail: "Rufi AI's question",
+    };
+    expect(saved).toEqual({ text: "Save, but", refs: [quote] });
+    expect(await box.read(chat)).toEqual({ text: "Save, but", refs: [quote] });
+
+    await queue.accept(
+      chat,
+      "m-1",
+      saved.text,
+      saved.refs.map(({ ref }) => ref),
+      "queue",
+    );
+    await nextTurn("m-1");
+    expect(cards()).toEqual([expect.objectContaining({ answer: null })]);
   });
 });
 

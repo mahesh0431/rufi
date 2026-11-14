@@ -295,7 +295,7 @@ const toEntry = (
   ...(row.kind === "event" && linkOf(row.details)),
   ...(row.activity === "reading" && linkOf(row.details, true)),
   ...(row.kind === "agent" && senderOf(row.details)),
-  ...(row.card !== null && { card: JSON.parse(row.card) as QuestionCard }),
+  ...(row.card !== null && { card: JSON.parse(row.card) as unknown }),
   ...(row.answer !== null && {
     answer: JSON.parse(row.answer) as CardAnswer,
   }),
