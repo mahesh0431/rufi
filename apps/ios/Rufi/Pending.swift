@@ -11,6 +11,22 @@ nonisolated struct PendingMessage: Codable, Equatable, Identifiable, Sendable {
     var refs: [Chip]?
     /// While a reply runs: steer (into it) or queue (after it); none: the Mac's choice.
     var kind: String?
+    /// Rufi refused it, with these words: its words are the box's now, and
+    /// it is never sent again by itself, also after a restart.
+    var refused: String?
+
+    /// Back for the box, as Rufi refused it: its words can change now, so a
+    /// question card's quote keeps no answer (docs/adr/0036).
+    func back(refused words: String) -> PendingMessage {
+        var back = self
+        back.refs = refs?.map { chip in
+            var ref = chip.ref
+            ref.answer = nil
+            return Chip(ref: ref, label: chip.label, detail: chip.detail, deleted: chip.deleted)
+        }
+        back.refused = words
+        return back
+    }
 }
 
 /// The messages waiting to go, and the one file they are kept in, beside the
@@ -53,10 +69,11 @@ final class Pending {
     }
 
     /// Sends them in order, one at a time, each under its own id, but those
-    /// in `back` (put back in the box). Out of reach: the rest waits for the
-    /// next time. One Rufi refused comes back with Rufi's words, for the box,
-    /// and stays here until the box has its words (`remove`), so it isn't
-    /// lost meanwhile. Throws `unpaired` as the Mac says it, unless this
+    /// in `back` (put back in the box) and those Rufi refused. Out of reach:
+    /// the rest waits for the next time. One Rufi refused is kept as refused
+    /// first, in the file, and then comes back with Rufi's words, for the
+    /// box; it stays here until the box has its words (`remove`), so it isn't
+    /// lost meanwhile. Kept as refused, it is never sent again by itself. Throws `unpaired` as the Mac says it, unless this
     /// iPhone was unpaired meanwhile: then the send just stops. Only the
     /// pairing they were kept under (`pairing`, its generation) sends them.
     @discardableResult
@@ -69,7 +86,7 @@ final class Pending {
         defer { if generation == run { sending = false } }
         var refusals: [(message: PendingMessage, refused: String)] = []
         var skipped = back
-        while let message = messages.first(where: { !skipped.contains($0.id) }) {
+        while let message = messages.first(where: { !skipped.contains($0.id) && $0.refused == nil }) {
             var refused: String?
             do {
                 try await deliver(message)
@@ -84,8 +101,13 @@ final class Pending {
             // Unpaired meanwhile: the rest isn't this run's.
             guard generation == run else { return [] }
             if let refused {
-                refusals.append((message, refused))
-                skipped.insert(message.id)
+                // Refused in the file before its words can change: if it
+                // can't be kept so, it stays as it was, and goes again later.
+                let back = message.back(refused: refused)
+                let now = messages.map { $0.id == message.id ? back : $0 }
+                guard (try? write(now)) != nil else { return refusals }
+                messages = now
+                refusals.append((back, refused))
                 continue
             }
             let now = messages.filter { $0.id != message.id }

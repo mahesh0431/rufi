@@ -288,6 +288,44 @@ struct ChatTests {
         chat.end()
     }
 
+    /// A refused tap is kept as refused on the iPhone, without the answer's
+    /// place, before its words come back: edited while the Mac can't keep
+    /// the draft, then after a restart, it waits in the box and is never
+    /// sent by itself; sent, it is a reply, with no answer.
+    @Test func aRefusedAnswerEditedThenRestartedGoesAsAReply() async throws {
+        let file = PendingTests.file()
+        let door = Door(origin: URL(string: "https://chat.test")!, key: "a-key")
+        let chat = ChatModel(door: door, person: "asha", pending: Pending(file: file))
+        chat.open()
+        try await Self.until { chat.loaded }
+        let card = try Self.card(Self.visit)
+        chat.take(.update(revision: 1, entries: [card], turns: [], chat: nil))
+        ChatDoor.refusing = true
+        ChatDoor.savesAway = true
+        chat.choose(0, on: card)
+        try await Self.until { chat.text == "Book" }
+        chat.typed("Book, but not on Tuesday")
+        let kept = Pending(file: file).messages
+        #expect(kept.first?.refs?.map(\.ref) == [Pointer(type: "question", id: "q-visit")])
+        #expect(kept.first?.refused == "Sign in to Claude on your Mac.")
+        chat.end()
+
+        // Rufi restarts with the Mac back and signed in.
+        (ChatDoor.refusing, ChatDoor.savesAway) = (false, false)
+        let again = ChatModel(door: door, person: "asha", pending: Pending(file: file))
+        again.open()
+        try await Self.until { again.loaded && again.text == "Book" }
+        await again.deliver()
+        #expect(ChatDoor.sent.isEmpty)
+        again.typed("Book, but not on Tuesday")
+        again.send()
+        try await Self.until { ChatDoor.sent.count == 1 }
+        #expect(ChatDoor.sent.first?.text == "Book, but not on Tuesday")
+        #expect(ChatDoor.sent.first?.refs == ["q-visit"])
+        #expect(ChatDoor.sent.first?.answers == [nil])
+        again.end()
+    }
+
     /// A card's answer is the pairing's own: a tap after its pairing ended
     /// keeps nothing.
     @Test func aCardsLateTapNeverGoesToTheNextPairing() async throws {

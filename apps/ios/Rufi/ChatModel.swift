@@ -398,7 +398,8 @@ final class ChatModel {
             since = Words.instant(turn.startedAt) ?? .now
             // A reply that follows its own start keeps the start's time.
             if clock?.key == "starting", let started = clock?.since, started < since { since = started }
-        } else if !accepted.isEmpty || (!away && pending.messages.contains { !restoring.contains($0.id) })
+        } else if !accepted.isEmpty
+                    || (!away && pending.messages.contains { !restoring.contains($0.id) && $0.refused == nil })
                     || queue.contains(where: { $0.held == nil }) {
             key = "starting"
         } else {
@@ -418,7 +419,8 @@ final class ChatModel {
         let taken = accepted.filter { entries[$0.id] == nil && !queuedIds.contains($0.id) }.map {
             Outgoing(id: $0.id, text: $0.text, chips: $0.refs ?? [], state: .sent)
         }
-        let kept = pending.messages.filter { !restoring.contains($0.id) && !queuedIds.contains($0.id) }.map {
+        let kept = pending.messages.filter { !restoring.contains($0.id) && $0.refused == nil && !queuedIds.contains($0.id) }
+            .map {
             Outgoing(id: $0.id, text: $0.text, chips: $0.refs ?? [], state: .pending)
         }
         return queued + taken + kept
@@ -442,6 +444,10 @@ final class ChatModel {
                 chips = draft.refs.map(Self.boxed)
                 loaded = true
                 notice = nil
+                // Refused before a restart: back in the box, never sent by itself.
+                for message in pending.messages {
+                    if let refused = message.refused { giveBack(message, refused: refused) }
+                }
                 await deliver()
                 return
             } catch .unpaired {
@@ -640,12 +646,8 @@ final class ChatModel {
     private func giveBack(_ message: PendingMessage, refused: String) {
         guard restoring.insert(message.id).inserted else { return }
         text = text.isEmpty ? message.text : text + "\n\n" + message.text
-        // Its words can change now: a card's quote stays, without the click's answer.
-        merge((message.refs ?? []).map { chip in
-            var ref = chip.ref
-            ref.answer = nil
-            return Chip(ref: ref, label: chip.label, detail: chip.detail, deleted: chip.deleted)
-        })
+        // Kept as refused, a card's quote has no answer: its words can change now.
+        merge(message.refs ?? [])
         said = refused
         save(keepingNotice: true)
     }
