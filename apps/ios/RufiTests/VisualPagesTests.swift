@@ -268,9 +268,10 @@ private final class Card: NSObject {
             """, ["probes": probes.map(\.rawValue), "out": outside.address, "own": own]) as? [String: String]
     }
 
-    /// Waits up to 10 seconds for `done`.
+    /// Waits up to 30 seconds for `done`: a first web view on a cold
+    /// Simulator starts WebKit's processes.
     func until(_ what: String, _ done: () async throws -> Bool) async throws {
-        let end = ContinuousClock.now + .seconds(10)
+        let end = ContinuousClock.now + .seconds(30)
         while try await !done() {
             guard ContinuousClock.now < end else { throw Waited(what: what) }
             try await Task.sleep(for: .milliseconds(50))
