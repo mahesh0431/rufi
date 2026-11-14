@@ -220,6 +220,24 @@ nonisolated struct TestPage: Decodable, Equatable, Sendable {
 
     let test: RecordRow
     let values: [Value]
+    /// Its line, oldest first; none from a Mac before charts.
+    let line: [LineValue]?
+}
+
+/// One value on a test's line, as the Mac works it out: where it goes (its
+/// numbers in the test's unit, its date) and what a chart says of it (its
+/// label and its date as kept).
+nonisolated struct LineValue: Decodable, Equatable, Sendable {
+    /// As printed, or the comparator with the test's numbers: "<0.5".
+    let value: String
+    let number: Double
+    /// A blood pressure's second number, in the test's unit.
+    let second_number: Double?
+    /// The lab's flag, as printed.
+    let flag: String?
+    /// As printed, with its printed unit and its lab.
+    let range: String?
+    let measured: Dated
 }
 
 /// Who logged a dose, and how it stands.

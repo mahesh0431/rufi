@@ -47,6 +47,22 @@ nonisolated enum Words {
         return match.4.map { "\(date) \($0)" } ?? date
     }
 
+    /// A record's date as a time on a chart: the start of its period, in
+    /// this iPhone's time zone, as the Mac's charts place it ("2025-03" at
+    /// 1 March 2025, 00:00). Its numbers are always Gregorian: the phone's
+    /// own calendar, Buddhist or any other, gives only its time zone. Nil
+    /// for other words.
+    static func placed(_ value: String, calendar phone: Calendar = .current) -> Date? {
+        let calendar = Calendar.phone(in: phone.timeZone)
+        let pattern = /^(\d{4})(?:-(\d{2})(?:-(\d{2})(?:T(\d{2}):(\d{2}))?)?)?$/
+        guard let match = value.wholeMatch(of: pattern) else { return nil }
+        let part = { (digits: Substring?, start: Int) in digits.flatMap { Int($0) } ?? start }
+        let month = part(match.2, 1)
+        guard (1...12).contains(month) else { return nil }
+        return calendar.date(from: DateComponents(year: Int(match.1), month: month, day: part(match.3, 1),
+                                                  hour: part(match.4, 0), minute: part(match.5, 0)))
+    }
+
     static func printed(_ when: Dated?) -> String? {
         when.map { printed($0.date) }
     }
