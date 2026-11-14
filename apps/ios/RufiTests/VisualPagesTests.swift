@@ -46,6 +46,8 @@ struct VisualPagesTests {
         let card = try await Card(pages: Self.pages { $0 })
         try await card.until("its height") { card.heights.last == 120 }
         #expect(try await card.inFrame("document.getElementById('drawn')?.textContent") as? String == "Drawn")
+        // Rufi's own script for visuals ran, allowed by its hash.
+        #expect(try await card.inFrame("document.documentElement.dataset.kit") as? String == "ran")
 
         card.theme(Card.dark)
         try await card.until("the new theme") {

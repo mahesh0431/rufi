@@ -159,7 +159,9 @@ describe("the iPhone's fixtures", () => {
 describe("the iPhone's fixture of the visual's pages", () => {
   it("is what the door serves: each page with its headers", async () => {
     const door: App = new Hono();
-    visualFrameRoute(door);
+    // A stand-in for the visual's own script (built with the screens):
+    // the iPhone's test sees it ran under the kept policy.
+    visualFrameRoute(door, "document.documentElement.dataset.kit = 'ran';");
     visualCardRoute(door);
     const pages: Record<string, unknown> = {};
     for (const path of ["/visual-card.html", "/visual-frame.html"]) {
