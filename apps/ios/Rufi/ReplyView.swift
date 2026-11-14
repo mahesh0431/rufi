@@ -9,7 +9,6 @@ struct ReplyView: View {
     let entry: Entry
     let streaming: Bool
     let chat: ChatModel
-    let origin: URL
     /// Word by word: its pace, and the words shown, in UTF-16. Until it
     /// starts, the words the reply holds show at once.
     @State private var pace = WordPace()
@@ -26,7 +25,7 @@ struct ReplyView: View {
         // One view in every way, so a card drawn while the reply is written
         // stays as it is when the reply ends.
         if !text.isEmpty {
-            ReplyText(text: text, streaming: flow == .words, id: entry.id, chat: chat, origin: origin)
+            ReplyText(text: text, streaming: flow == .words, id: entry.id, chat: chat)
                 .task(id: flow == .words ? entry.text : nil) {
                     if flow == .words { await flowWords() }
                 }
@@ -54,7 +53,6 @@ private struct ReplyText: View {
     let streaming: Bool
     let id: String
     let chat: ChatModel
-    let origin: URL
 
     var body: some View {
         let visuals = Visuals.scan(text)
@@ -67,7 +65,7 @@ private struct ReplyText: View {
                         .frame(height: VisualCard.waiting)
                         .padding(.bottom, 8)
                 } else {
-                    VisualCard(html: html, key: "\(id):\(place ?? 0)", chat: chat, origin: origin)
+                    VisualCard(html: html, key: "\(id):\(place ?? 0)", chat: chat)
                 }
             } else {
                 CodeBlock(configuration: configuration)

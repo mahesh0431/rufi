@@ -387,6 +387,27 @@ nonisolated struct Door: Sendable {
         let _: Nothing = try await Self.call(origin: origin, key: key, method: "POST", path: "/api/unpair", body: [String: String]())
     }
 
+    /// One of the door's two pages a visual draws in, with its headers; it
+    /// needs no key, so none goes. URLSession hands over the body already
+    /// decoded, so the headers that described its transfer go too.
+    func page(_ path: String) async throws(Problem) -> VisualPages.Page {
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await Self.session.data(from: origin.appending(path: path))
+        } catch {
+            throw .unreachable
+        }
+        let body = try Self.taken(data, response)
+        let transfer: Set<String> = ["content-encoding", "content-length", "transfer-encoding"]
+        var headers: [String: String] = [:]
+        for case let (name as String, value as String) in (response as? HTTPURLResponse)?.allHeaderFields ?? [:]
+        where !transfer.contains(name.lowercased()) {
+            headers[name] = value
+        }
+        return VisualPages.Page(headers: headers, body: body)
+    }
+
     private static let people = "/api/people"
     /// How long an original or an upload may take, as the screens give a file.
     static let fileSeconds: TimeInterval = 5 * 60
