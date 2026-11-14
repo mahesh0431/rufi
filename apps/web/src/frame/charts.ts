@@ -27,9 +27,6 @@ const isObject = (value: unknown): value is Json =>
 const textOf = (raw: unknown) =>
   isObject(raw) && typeof raw["text"] === "string" ? raw["text"] : undefined;
 
-/** The series Rufi gave its look, with their place and type. */
-const styled = new WeakMap<object, { index: number; type: string }>();
-
 /** One chart, from its canvas's JSON. */
 function chartOn(canvas: HTMLCanvasElement, theme: ChartTheme): void {
   const given: unknown = JSON.parse(
@@ -84,12 +81,8 @@ function chartOn(canvas: HTMLCanvasElement, theme: ChartTheme): void {
     ) {
       return;
     }
-    const look = {
-      index,
-      type: typeof dataset["type"] === "string" ? dataset["type"] : type,
-    };
-    styled.set(dataset, look);
-    Object.assign(dataset, seriesLook(look.index, look.type, theme));
+    const look = typeof dataset["type"] === "string" ? dataset["type"] : type;
+    Object.assign(dataset, seriesLook(index, look, theme));
   });
   if (!canvas.hasAttribute("aria-label")) {
     const names = datasets.flatMap((dataset: unknown) =>
@@ -103,8 +96,8 @@ function chartOn(canvas: HTMLCanvasElement, theme: ChartTheme): void {
 }
 
 /**
- * Draws every chart in the visual, once it is in the body; the frame's page
- * calls it.
+ * Draws every chart in the visual, in the theme as it is now: once it is in
+ * the body (the frame's page calls it), and again on a new theme.
  */
 export function draw(): void {
   const theme = themeAt(document.body);
@@ -113,6 +106,7 @@ export function draw(): void {
     "canvas[data-rufi-chart]",
   )) {
     try {
+      Chart.getChart(canvas)?.destroy();
       chartOn(canvas, theme);
     } catch (error) {
       reportError(error);
@@ -121,7 +115,9 @@ export function draw(): void {
 }
 
 // A new theme: the card script has painted it (its listener came first), so
-// every chart takes the new colours and size, and draws again.
+// every chart is drawn again from its JSON. Chart.js copies a theme's
+// colours into a chart's scales when it first draws it, so an update alone
+// would keep the old ones there.
 addEventListener("message", (event: MessageEvent<unknown>) => {
   const message = event.data;
   if (
@@ -131,16 +127,7 @@ addEventListener("message", (event: MessageEvent<unknown>) => {
   ) {
     return;
   }
-  const theme = themeAt(document.body);
-  themeCharts(theme);
-  for (const chart of Object.values(Chart.instances)) {
-    for (const dataset of chart.data.datasets) {
-      const look = styled.get(dataset);
-      if (look)
-        Object.assign(dataset, seriesLook(look.index, look.type, theme));
-    }
-    chart.update();
-  }
+  draw();
 });
 
 export { Chart };

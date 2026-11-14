@@ -546,6 +546,7 @@ interface Drawn {
   colours: unknown[];
   shapes: unknown[];
   textColour: unknown;
+  gridColour: unknown;
   fontSize: unknown;
   label: string | null;
 }
@@ -558,27 +559,38 @@ const drawnIn = (frame: Frame) =>
             getChart: (canvas: HTMLCanvasElement) =>
               | {
                   config: { type: string };
+                  options: { font: { size: unknown } };
+                  scales: Record<
+                    string,
+                    {
+                      options: {
+                        ticks: { color: unknown };
+                        grid: { color: unknown };
+                      };
+                    }
+                  >;
                   data: { datasets: Record<string, unknown>[] };
                   getDatasetMeta: (index: number) => {
                     data: { x: number }[];
                   };
                 }
               | undefined;
-            defaults: { color: unknown; font: { size: unknown } };
           };
         };
       }
     ).rufiVisual;
     const canvas = document.querySelector("canvas");
     const chart = canvas ? visual?.Chart.getChart(canvas) : undefined;
-    if (!visual || !canvas || !chart) return undefined;
+    const y = chart?.scales["y"];
+    if (!visual || !canvas || !chart || !y) return undefined;
     return {
       type: chart.config.type,
       xs: chart.getDatasetMeta(0).data.map((point) => point.x),
       colours: chart.data.datasets.map((dataset) => dataset["borderColor"]),
       shapes: chart.data.datasets.map((dataset) => dataset["pointStyle"]),
-      textColour: visual.Chart.defaults.color,
-      fontSize: visual.Chart.defaults.font.size,
+      textColour: y.options.ticks.color,
+      gridColour: y.options.grid.color,
+      fontSize: chart.options.font.size,
       label: canvas.getAttribute("aria-label"),
     };
   });
@@ -648,6 +660,7 @@ test("a visual's chart is drawn by Rufi from its JSON: spaced by date, a tooltip
   ]);
   expect(drawn?.shapes).toEqual(["circle", "triangle"]);
   expect(drawn?.textColour).toBe(await variableIn(frame, "--muted"));
+  expect(drawn?.gridColour).toBe(await variableIn(frame, "--line"));
 
   // The tooltip, as a pointer brings it: the date as written, at its
   // precision, and the value as printed; none for a point with no value.
@@ -728,6 +741,9 @@ test("a visual's chart is drawn by Rufi from its JSON: spaced by date, a tooltip
     ]);
   expect((await drawnIn(frame))?.textColour).toBe(
     await variableIn(frame, "--muted"),
+  );
+  expect((await drawnIn(frame))?.gridColour).toBe(
+    await variableIn(frame, "--line"),
   );
   expect(Number((await drawnIn(frame))?.fontSize)).toBeGreaterThan(
     Number(before?.fontSize),
