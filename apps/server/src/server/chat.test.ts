@@ -1573,28 +1573,33 @@ describe("the chat, on the scripted Codex", () => {
     expect(await waiting()).toEqual([]);
   });
 
-  it("sends a message queued behind a reply once, after the sign-in was lost and came back", async () => {
-    await startChat("fake");
-    const c = await newChat();
+  /**
+   * "B", queued behind a reply and in Rufi AI's queue too, then held in
+   * Rufi's alone (`hold`); the reply ends, and Rufi AI asks for it.
+   */
+  async function heldBehindReply(
+    c: ChatRow,
+    hold: (id: string) => Promise<void> | void,
+    held: string,
+  ): Promise<string> {
     await rufiReply(c);
     const { id } = await say(c, "B", "queue");
-    // Rufi AI's queue has it too.
     await until(() =>
       Promise.resolve(
         agentRows(`SELECT 1 FROM queue WHERE id = '${id}'`).length === 1,
       ),
     );
-    signIns["codex"] = { state: "signed_out", account: null, text: null };
-    await chat?.carryAll();
-    await until(async () => (await waiting())[0]?.[2] === "signed_out");
-    // The reply ends while the message is held: Rufi AI asks for it.
+    await hold(id);
+    await until(async () => (await waiting())[0]?.[2] === held);
     await chat?.stop(c);
     await ended(c.id);
     await settled(c.id);
-    expect(await waiting()).toEqual([["B", "waiting", "signed_out"]]);
+    expect(await waiting()).toEqual([["B", "waiting", held]]);
+    return id;
+  }
 
-    delete signIns["codex"];
-    await chat?.carryAll();
+  /** "B" went once, in a reply of its own. */
+  async function wentOnce(c: ChatRow): Promise<void> {
     await ended(c.id, 2);
     await settled(c.id);
     expect(await waiting()).toEqual([]);
@@ -1606,6 +1611,38 @@ describe("the chat, on the scripted Codex", () => {
       ["message", "B"],
       ["reply", "ok:B"],
     ]);
+  }
+
+  it("sends a message queued behind a reply once, after the sign-in was lost and came back", async () => {
+    await startChat("fake");
+    const c = await newChat();
+    await heldBehindReply(
+      c,
+      async () => {
+        signIns["codex"] = { state: "signed_out", account: null, text: null };
+        await chat?.carryAll();
+      },
+      "signed_out",
+    );
+    delete signIns["codex"];
+    await chat?.carryAll();
+    await wentOnce(c);
+  });
+
+  it("keeps a message from a backup held as it was while Rufi AI asks for it, and sends it once when the person sends it", async () => {
+    await startChat("fake");
+    const c = await newChat();
+    const id = await heldBehindReply(
+      c,
+      (id) => {
+        store.db
+          .prepare("UPDATE chat_queue SET held = 'restored' WHERE id = ?")
+          .run(id);
+      },
+      "restored",
+    );
+    await chat?.queue.send(await chatRow(c.id), id);
+    await wentOnce(c);
   });
 
   it("starts a new chat on GPT-6-Astra", async () => {
