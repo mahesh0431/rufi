@@ -40,9 +40,12 @@ const BUTTON =
  * `dark:` follows Rufi's theme, not the system's (the card script's
  * data-theme). Tailwind's base (Preflight) comes with it, as Tailwind always
  * has it; the card script's base and the visual's own style come after it.
+ * Preflight takes a table cell's room away, so a table with no style of its
+ * own runs its values together ("Aug 20266.4 %"): Rufi's base gives cells
+ * a little, under any class or style of the visual's.
  */
 const TAILWIND =
-  '@import "tailwindcss";@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));@theme inline{--color-*:initial;--shadow-*:initial;--inset-shadow-*:initial;--drop-shadow-*:initial;--text-shadow-*:initial;--color-page:var(--page);--color-side:var(--side);--color-surface:var(--surface);--color-line:var(--line);--color-ink:var(--ink);--color-muted:var(--muted);--color-accent:var(--accent);--color-accent-soft:var(--accent-soft);--color-accent-ink:var(--accent-ink);--color-on-accent:var(--on-accent);--font-sans:var(--font-ui)}';
+  '@import "tailwindcss";@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));@theme inline{--color-*:initial;--shadow-*:initial;--inset-shadow-*:initial;--drop-shadow-*:initial;--text-shadow-*:initial;--color-page:var(--page);--color-side:var(--side);--color-surface:var(--surface);--color-line:var(--line);--color-ink:var(--ink);--color-muted:var(--muted);--color-accent:var(--accent);--color-accent-soft:var(--accent-soft);--color-accent-ink:var(--accent-ink);--color-on-accent:var(--on-accent);--font-sans:var(--font-ui)}@layer base{th,td{padding:0.25rem 0.5rem}}';
 
 /**
  * The visual's own document runs this first. Rufi's theme as CSS variables,

@@ -372,7 +372,25 @@ test("Tailwind in a visual reaches neither the network nor Rufi's page: its impo
         .nth(["Imported", "Imported by url", "Classes", "Plugin"].indexOf(words));
       await expect(card.getByText(words, { exact: true })).toBeVisible();
     }
-    // The class's addresses reached the CSS Tailwind made: the probe is real.
+    // The imports and the class's addresses reached the CSS Tailwind made:
+    // the probes are real, and only the policy stops them.
+    for (const [at, address] of [
+      [0, "tw-import.css"],
+      [1, "tw-url.css"],
+    ] as const) {
+      const made = await frameOf(cards(page).nth(at));
+      await expect
+        .poll(() =>
+          made.evaluate(
+            (address) =>
+              [...document.querySelectorAll("style:not([type])")].some(
+                (style) => style.textContent.includes(address),
+              ),
+            address,
+          ),
+        )
+        .toBe(true);
+    }
     const classes = await frameOf(cards(page).nth(2));
     await expect
       .poll(() =>
