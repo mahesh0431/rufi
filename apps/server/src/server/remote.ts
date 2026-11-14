@@ -43,7 +43,11 @@ import {
   type Routes,
 } from "./remote-route.ts";
 import { appSessions } from "./session.ts";
-import { visualCardRoute, visualFrameRoute } from "./visual-frame.ts";
+import {
+  visualCardRoute,
+  visualFrameRoute,
+  visualKit,
+} from "./visual-frame.ts";
 
 /** How long a pairing code works. */
 const CODE_MS = 10 * 60 * 1000;
@@ -448,7 +452,7 @@ export function remote(deps: RemoteDeps): Remote {
 
   // What a person does here is their paired app's.
   personRoutes(door, deps.person, adds, (c) => `app:${asker(c).app.id}`);
-  visualFrameRoute(door);
+  visualFrameRoute(door, visualKit(deps.screens));
   visualCardRoute(door);
   screensRoute(door, deps.screens, deps.read);
 

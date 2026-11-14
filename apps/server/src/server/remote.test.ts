@@ -1020,6 +1020,9 @@ describe("the app's sessions", () => {
       join(screens, "index.html"),
       '<!doctype html><html lang="en"><p>Rufi',
     );
+    // The visual's own script, as the screens' build makes it.
+    await mkdir(join(screens, "frame"));
+    await writeFile(join(screens, "frame", "visual.js"), "void 0;");
   });
 
   it("serves the page a reply's visual draws in under its own policy alone: sandboxed, only its own scripts, and nothing in or out", async () => {
@@ -1029,8 +1032,9 @@ describe("the app's sessions", () => {
     expect(visual.status).toBe(200);
     const policy = visual.headers["content-security-policy"];
     expect(policy).toMatch(/^sandbox allow-scripts; default-src 'none';/);
-    // Only its own scripts, by their hashes.
-    expect(policy).toMatch(/script-src 'sha256-[^']+' 'sha256-[^']+';/);
+    // Only Rufi's own scripts, by their hashes: the page's, the card
+    // script and the visual's own.
+    expect(policy).toMatch(/script-src( 'sha256-[^']+'){3};/);
     expect(policy).not.toContain("connect-src");
     expect(policy).toContain("frame-ancestors 'self'");
     expect(policy).not.toContain("default-src 'self'");
