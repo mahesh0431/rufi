@@ -40,6 +40,38 @@ struct ChatTests {
         #expect(!transcript.streaming(reply))
     }
 
+    /// The words Rufi AI wrote just before a card: a progress note in the
+    /// reply's Activity while it runs, then, with the card, a reply by the
+    /// same id, shown above the card and gone from Activity.
+    @Test func theWordsBeforeACardShowAboveIt() throws {
+        let entry = { (id: String, seq: Double, kind: String, activity: String?, text: String, card: String?) throws -> Entry in
+            let fields: [String: Any?] = [
+                "id": id, "seq": seq, "turnId": Self.running.id, "kind": kind, "text": text,
+                "activity": activity, "detail": nil, "status": "done",
+                "createdAt": "2026-10-05T08:00:00Z", "updatedAt": "2026-10-05T08:00:00Z",
+                "card": try card.map { try JSONSerialization.jsonObject(with: Data($0.utf8)) },
+            ]
+            let json = try JSONSerialization.data(withJSONObject: fields.compactMapValues { $0 })
+            return try JSONDecoder().decode(Entry.self, from: json)
+        }
+        let card = try entry("q-visit", 4, "question", nil, "**Next visit**", Self.visit)
+        var transcript = Transcript()
+        transcript.apply(.update(revision: 1, entries: [
+            try entry("m-1", 1, "message", nil, "Where can I book my visit?", nil),
+            try entry("n-1", 1.000001, "activity", "note", "Dr Rao has two slots.", nil),
+        ], turns: [Self.running], chat: nil))
+        #expect(transcript.steps(of: Self.running.id).map(\.id) == ["n-1"])
+
+        transcript.apply(.update(revision: 2, entries: [
+            try entry("n-1", 3, "reply", nil, "Dr Rao has two slots.", nil), card,
+        ], turns: [], chat: nil))
+        #expect(transcript.steps(of: Self.running.id).isEmpty)
+        let lines = transcript.lines(calendar: Self.berlin)
+        let above = try #require(lines.firstIndex(of: .entry("n-1")))
+        let below = try #require(lines.firstIndex(of: .entry(card.id)))
+        #expect(above < below)
+    }
+
     /// A card of a kind the iPhone doesn't draw reads as its words: the
     /// chat around it still reads.
     @Test func aCardOfAKindTheIPhoneDoesntDrawShowsItsWords() throws {
@@ -176,64 +208,6 @@ struct ChatTests {
         chat.close()
     }
 
-    /// A visual's button: its message goes through Pending as the person's
-    /// own, as Enter would while a reply runs, and the box keeps its words.
-    @Test func aCardsAnswerGoesAsTheirMessageAndTheBoxKeepsItsWords() async throws {
-        let pending = Pending(file: PendingTests.file())
-        let chat = ChatModel(door: Door(origin: URL(string: "https://chat.test")!, key: "a-key"), person: "asha",
-                             pending: pending)
-        ChatDoor.whileReplying = "queue"
-        chat.open()
-        try await Self.until { chat.loaded && chat.whileReplying == "queue" }
-        chat.typed("And my ferritin")
-        #expect(chat.append("", [Chip(type: "document", id: "doc-asha-aug", label: "")]))
-
-        chat.answer("Yes, save metformin 500 mg, twice a day")
-        try await Self.until { ChatDoor.sent.count == 1 }
-        // A reply runs: the next goes as the Mac's setting says (Queue here).
-        chat.take(.update(revision: 1, entries: [], turns: [Self.running], chat: nil))
-        chat.answer("  Not now, don't save metformin  ")
-        chat.answer("   ")
-        try await Self.until { ChatDoor.sent.count == 2 }
-        try await Task.sleep(for: .milliseconds(100))
-
-        #expect(ChatDoor.sent.map(\.text) == ["Yes, save metformin 500 mg, twice a day", "Not now, don't save metformin"])
-        #expect(ChatDoor.sent.map(\.kind) == [nil, "queue"])
-        #expect(ChatDoor.sent.map(\.refs) == [[], []])
-        #expect(chat.text == "And my ferritin")
-        #expect(chat.chips.map(\.ref.id) == ["doc-asha-aug"])
-        #expect(pending.messages.isEmpty)
-        chat.end()
-    }
-
-    /// A card's answer is the pairing's own: one that comes after its
-    /// pairing ended is never kept, so the next pairing never sends it,
-    /// also when the chat hadn't yet heard that its pairing ended.
-    @Test func aCardsLateAnswerNeverGoesToTheNextPairing() async throws {
-        let pending = Pending(file: PendingTests.file())
-        let door = Door(origin: URL(string: "https://chat.test")!, key: "a-key")
-        // Unpaired, as AppModel does it: the chat ends, the messages go.
-        let ended = ChatModel(door: door, person: "asha", pending: pending)
-        ended.end()
-        pending.clear()
-        ended.answer("Yes, save metformin 500 mg, twice a day")
-        #expect(pending.messages.isEmpty)
-        // Unpaired again before this chat heard of it.
-        let unaware = ChatModel(door: door, person: "asha", pending: pending)
-        pending.clear()
-        unaware.answer("Not now, don't save metformin")
-        #expect(pending.messages.isEmpty)
-
-        // The pairing now: it sends its own answer, and only that.
-        let current = ChatModel(door: door, person: "asha", pending: pending)
-        current.open()
-        try await Self.until { current.loaded }
-        current.answer("Yes, add a follow-up for my HbA1c")
-        try await Self.until { pending.messages.isEmpty && !ChatDoor.sent.isEmpty }
-        #expect(ChatDoor.sent.map(\.text) == ["Yes, add a follow-up for my HbA1c"])
-        current.end()
-    }
-
     /// A tap on a card's answer: kept on the iPhone with the card's quote and
     /// the answer's place, through a reload of its file, once however often
     /// it is tapped, and sent with them; the box keeps its words.
@@ -266,6 +240,22 @@ struct ChatTests {
         #expect(ChatDoor.sent.first?.answers == [0])
         #expect(chat.click(on: card) == .sending(0))
         #expect(chat.text == "And my ferritin")
+        chat.end()
+    }
+
+    /// A tap while a reply runs goes as the Mac's setting says (Queue here),
+    /// as Enter in the box would.
+    @Test func aCardsTapWhileAReplyRunsGoesAsTheMacsSettingSays() async throws {
+        let chat = ChatModel(door: Door(origin: URL(string: "https://chat.test")!, key: "a-key"), person: "asha",
+                             pending: Pending(file: PendingTests.file()))
+        ChatDoor.whileReplying = "queue"
+        chat.open()
+        try await Self.until { chat.loaded && chat.whileReplying == "queue" }
+        let card = try Self.card(Self.visit)
+        chat.take(.update(revision: 1, entries: [card], turns: [Self.running], chat: nil))
+        chat.choose(0, on: card)
+        try await Self.until { ChatDoor.sent.count == 1 }
+        #expect(ChatDoor.sent.map(\.kind) == ["queue"])
         chat.end()
     }
 

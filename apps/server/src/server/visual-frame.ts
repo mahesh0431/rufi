@@ -21,13 +21,6 @@ const VISUAL_FRAME_PATH = "/visual-frame.html";
 const THEME_ID = "rufi-theme";
 
 /**
- * A button that sends its message (ADR 0035): Rufi's plain button, the same
- * in every visual, in the theme's colours; the AI leaves it unstyled.
- */
-const BUTTON =
-  "button[data-rufi-send]{font:inherit;font-size:0.8125rem;font-weight:500;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;min-height:36px;padding:0 14px;margin:4px 8px 0 0;cursor:pointer}button[data-rufi-send]:hover{background:var(--page)}button[data-rufi-send]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}@media (pointer:coarse){button[data-rufi-send]{min-height:44px}}";
-
-/**
  * The visual's own document runs this first. Rufi's theme as CSS variables,
  * under its own names (tokens.css), and the base look: no background,
  * Rufi's text and font at the chat's size. Then the height, each time it
@@ -37,7 +30,7 @@ const CARD = `(() => {
   const parent = window.parent;
   const style = document.createElement("style");
   document.head.append(style);
-  const BASE = "html{background:transparent;color:var(--ink);font-family:var(--font-ui);line-height:1.5;-webkit-text-size-adjust:100%}body{margin:0;display:flow-root}${BUTTON}";
+  const BASE = "html{background:transparent;color:var(--ink);font-family:var(--font-ui);line-height:1.5;-webkit-text-size-adjust:100%}body{margin:0;display:flow-root}";
   const paint = (t) => {
     if (!t || typeof t !== "object") return;
     let css = ":root{color-scheme:" + (t.scheme === "dark" ? "dark" : "light") + ";";
@@ -66,15 +59,6 @@ const CARD = `(() => {
     broken = true;
     parent.postMessage({ type: "rufi-visual-broken" }, "*");
   };
-  // A button's message (ADR 0035): on a person's click or key, its words
-  // go to the screen, which sends them as their message. A double click's
-  // second click sends nothing more.
-  document.addEventListener("click", (event) => {
-    if (event.detail > 1 || !(event.target instanceof Element)) return;
-    const button = event.target.closest("button[data-rufi-send]");
-    const text = button ? button.getAttribute("data-rufi-send").trim() : "";
-    if (text !== "") parent.postMessage({ type: "rufi-visual-send", text }, "*");
-  });
   document.addEventListener("securitypolicyviolation", broke);
   addEventListener("error", broke, true);
   // The root's size follows the body's; it is there from the start.
@@ -172,9 +156,9 @@ const VISUAL_CARD_PATH = "/visual-card.html";
  * The card's own script, on the iPhone (ADR 0034, "For a screen of its
  * own"): the app gives it a visual and the theme (`rufiCard.show`), and it
  * sends them to the frame of the visual's page on every load of the frame,
- * and a new theme as it comes (`rufiCard.theme`). It passes the frame's
- * three messages, the height, that part didn't load and a button's message
- * (ADR 0035), to the app, from that frame alone.
+ * and a new theme as it comes (`rufiCard.theme`). It passes the frame's two
+ * messages, the height and that part didn't load, to the app, from that
+ * frame alone.
  */
 const CARD_HOST = `(() => {
   const frame = document.querySelector("iframe");
@@ -199,8 +183,6 @@ const CARD_HOST = `(() => {
     if (event.source !== frame.contentWindow || !data) return;
     if (data.type === "rufi-visual-height" || data.type === "rufi-visual-broken") {
       window.webkit?.messageHandlers?.card?.postMessage({ type: data.type, height: Number(data.height) || 0 });
-    } else if (data.type === "rufi-visual-send" && typeof data.text === "string") {
-      window.webkit?.messageHandlers?.card?.postMessage({ type: data.type, text: data.text });
     }
   });
 })();`;

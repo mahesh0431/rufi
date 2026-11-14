@@ -2,13 +2,10 @@
 // page (apps/server/src/server/visual-frame.ts, ADR 0034), which loads and
 // sends nothing and can't reach Rufi's page or session. The screen sends it
 // the HTML when the frame loads, and Rufi's theme then and on each change;
-// it reads back only the visual's height, that part of it didn't load, and
-// a button's message, from that frame alone. Until its height comes, and
-// while its block is written, a quiet box holds its place; a change of
-// height above what you read keeps your place (KeepPlace, from the
-// transcript). A button's message goes into the chat as the person's own
-// (Answer, from the transcript; ADR 0035); one whose answer was lost keeps
-// its id, so the next click of it can't make a second message.
+// it reads back only the visual's height and that part of it didn't load,
+// from that frame alone. Until its height comes, and while its block is
+// written, a quiet box holds its place; a change of height above what you
+// read keeps your place (KeepPlace, from the transcript).
 import {
   createContext,
   use,
@@ -17,7 +14,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { answered } from "./draft.ts";
 
 const FRAME = "/visual-frame.html";
 /** The tallest a visual is drawn; a taller one scrolls inside. */
@@ -43,14 +39,6 @@ const TOKENS = [
 export const KeepPlace = createContext<(node: Element, change: number) => void>(
   () => undefined,
 );
-
-/**
- * Sends a button's message, under its id, into the chat the visual is in;
- * none where visuals aren't in a chat.
- */
-export const Answer = createContext<
-  ((id: string, text: string) => Promise<void>) | undefined
->(undefined);
 
 /** Rufi's theme where the visual is: its colours, font and text size. */
 function themeAt(element: Element) {
@@ -83,12 +71,6 @@ export function Visual({ html }: { html: string }) {
   const [height, setHeight] = useState<number>();
   const [broken, setBroken] = useState(false);
   const keepPlace = use(KeepPlace);
-  const answer = use(Answer);
-  /** A send on its way: a click meanwhile does nothing. */
-  const sending = useRef(false);
-  /** A send whose answer was lost: the same message again keeps its id. */
-  const unanswered = useRef<{ id: string; text: string }>(undefined);
-  const [problem, setProblem] = useState<string | null>(null);
 
   useEffect(() => {
     const heard = (event: MessageEvent) => {
@@ -129,48 +111,6 @@ export function Visual({ html }: { html: string }) {
     };
   }, []);
 
-  // A button's message, from this frame alone, goes into the chat. One send
-  // at a time: a click while one is on its way does nothing.
-  useEffect(() => {
-    if (!answer) return;
-    const send = async (text: string) => {
-      if (sending.current) return;
-      sending.current = true;
-      const id =
-        unanswered.current?.text === text
-          ? unanswered.current.id
-          : crypto.randomUUID();
-      unanswered.current = { id, text };
-      try {
-        await answer(id, text);
-        unanswered.current = undefined;
-        setProblem(null);
-      } catch (error) {
-        if (answered(error)) unanswered.current = undefined;
-        setProblem(
-          error instanceof Error
-            ? error.message
-            : "Rufi had a problem with that.",
-        );
-      } finally {
-        sending.current = false;
-      }
-    };
-    const heard = (event: MessageEvent) => {
-      const own = frame.current?.contentWindow;
-      if (!own || event.source !== own) return;
-      const data: unknown = event.data;
-      if (typeof data !== "object" || data === null) return;
-      const { type, text } = data as { type?: unknown; text?: unknown };
-      if (type !== "rufi-visual-send" || typeof text !== "string") return;
-      if (text.trim() !== "") void send(text.trim());
-    };
-    addEventListener("message", heard);
-    return () => {
-      removeEventListener("message", heard);
-    };
-  }, [answer]);
-
   const shown = height ?? WAITING;
   const before = useRef(shown);
   useLayoutEffect(() => {
@@ -205,11 +145,6 @@ export function Visual({ html }: { html: string }) {
       {/* A drawn visual of no height is blank: it says so too. */}
       {(broken || height === 0) && (
         <p className="mt-1 text-muted">Part of this visual didn't load</p>
-      )}
-      {problem !== null && (
-        <p role="alert" className="mt-1 text-muted">
-          {problem}
-        </p>
       )}
     </div>
   );
