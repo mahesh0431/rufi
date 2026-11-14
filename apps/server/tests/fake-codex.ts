@@ -18,7 +18,7 @@
 // reasoning summary (fake-model.ts's THINKING) before it answers, "commentary"
 // writes a progress note (fake-model.ts's NOTE) before it answers ("whole
 // commentary": only when it completes; "cut commentary": half of it, and
-// the turn never ends), "seeded" gives the first words of the note and the
+// the turn never ends), "note first" writes it whole before its calls, "seeded" gives the first words of the note and the
 // answer as each starts, before their deltas, "crash" ends the fake as the
 // turn starts, and anything else answers "ok:<text>". A scenario's
 // `words` count as part of every message.
@@ -496,6 +496,17 @@ async function runTurn(thread: Thread, turnId: string, entry: Queued) {
   const named = documents[0];
   // An agent a message names, "(agent <id>)", as a test writes it.
   const agent = /\(agent ([^)\s]+)\)/.exec(input)?.[1];
+  if (text.includes("note first")) {
+    // As Codex does before its calls: a progress note, whole.
+    const note = {
+      id: "item-note-first",
+      type: "agentMessage",
+      phase: "commentary",
+      questions: null,
+    };
+    event("item/started", { item: { ...note, text: "" } });
+    event("item/completed", { item: { ...note, text: NOTE } });
+  }
   /** The agent this turn's last start_agent started, as its answer gives it. */
   let started: string | undefined;
   for (const [i, { id, ...scripted }] of calls.entries()) {

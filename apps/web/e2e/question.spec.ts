@@ -126,7 +126,7 @@ test("Rufi AI asks with ask: the card it gives shows in the chat below the text 
     .getByRole("complementary")
     .getByRole("link", { name: "Chat with Rufi" })
     .click();
-  await box(page).fill("Where can I get my scan? commentary");
+  await box(page).fill("Where can I get my scan? note first");
   await box(page).press("Enter");
 
   const asked = cardOf(page, "Ultrasound clinic");
