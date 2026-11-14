@@ -5,7 +5,8 @@
 // neither the network nor Rufi's page; one that tries says part of it didn't
 // load; and one that starts above what you read and grows keeps your place.
 import { AxeBuilder } from "@axe-core/playwright";
-import { createServer, type Server } from "node:http";
+import { subscribe, unsubscribe } from "node:diagnostics_channel";
+import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { Frame, Locator, Page } from "@playwright/test";
 import { expect, openSettings, test, type Rufi } from "./rufi.ts";
@@ -356,16 +357,8 @@ test("Tailwind in a visual reaches neither the network nor Rufi's page: the brow
   outside.on("connection", () => reached.push("a connection"));
   await new Promise<void>((resolve) => outside.listen(0, "127.0.0.1", resolve));
   const out = `http://127.0.0.1:${String((outside.address() as AddressInfo).port)}`;
-  // Rufi's own address, reached from the visual with a value. Chromium
-  // also tells of a request its policy refused, so only one that got an
-  // answer counts.
-  const toRufi: string[] = [];
-  page.on("requestfinished", (request) => {
-    const { origin, search } = new URL(request.url());
-    if (origin === new URL(page.url()).origin && search.includes("hba1c=")) {
-      toRufi.push(request.url());
-    }
-  });
+  // Rufi's own address, reached from the visual with a value.
+  const toRufi = arrivalsAtRufi(() => new URL(page.url()).host);
   try {
     await opened(page, rufi);
     const own = new URL(page.url()).origin;
@@ -475,8 +468,10 @@ test("Tailwind in a visual reaches neither the network nor Rufi's page: the brow
       );
     await page.waitForTimeout(1000);
     expect(reached).toEqual([]);
-    expect(toRufi).toEqual([]);
+    expect(toRufi.arrived).toEqual([]);
+    await counterWorks(page, toRufi.arrived);
   } finally {
+    toRufi.stop();
     outside.closeAllConnections();
     await new Promise((resolve) => outside.close(resolve));
   }
@@ -533,6 +528,490 @@ test("a visual is styled with Tailwind in Rufi's theme: any class, the screens' 
   await expect(
     log(page).getByText("Part of this visual didn't load"),
   ).toHaveCount(0);
+});
+
+/**
+ * A chart's JSON block, as the AI writes it where the chart goes: a "<" in
+ * its JSON escaped, as JSON may, so no closing tag ends it early.
+ */
+const chartBlock = (config: unknown, label?: string) =>
+  `<script type="application/json" data-rufi-chart${label === undefined ? "" : ` aria-label="${label}"`}>${JSON.stringify(config).replace(/</g, "\\u003c")}</script>`;
+
+/** What a canvas drew: its text and its round marks, where it drew them. */
+interface Drawn {
+  text: { text: string; x: number; y: number; colour: string }[];
+  marks: { x: number; y: number; r: number }[];
+}
+
+/**
+ * Keeps what every canvas draws, as it draws it, in each frame of the
+ * page: a chart is read where the browser draws it, not through Chart.js.
+ */
+const keepDrawing = (page: Page) =>
+  page.addInitScript(() => {
+    const drawn: Drawn = { text: [], marks: [] };
+    Object.assign(globalThis, { drawn });
+    const canvas = CanvasRenderingContext2D.prototype;
+    const own = (name: "fillText" | "arc") =>
+      Object.getOwnPropertyDescriptor(canvas, name)?.value as (
+        ...args: unknown[]
+      ) => void;
+    const fillText = own("fillText");
+    const arc = own("arc");
+    canvas.fillText = function (text, x, y, width) {
+      drawn.text.push({
+        text,
+        x,
+        y,
+        colour: typeof this.fillStyle === "string" ? this.fillStyle : "",
+      });
+      fillText.call(this, text, x, y, width);
+    };
+    canvas.arc = function (x, y, r, ...rest) {
+      drawn.marks.push({ x, y, r });
+      arc.call(this, x, y, r, ...rest);
+    };
+  });
+
+/** What the visual's canvas has drawn so far; `clear` forgets it. */
+const drawnIn = (frame: Frame, clear = false) =>
+  frame.evaluate((clear) => {
+    const drawn = (globalThis as unknown as { drawn: Drawn }).drawn;
+    const now = structuredClone(drawn);
+    if (clear) Object.assign(drawn, { text: [], marks: [] });
+    return now;
+  }, clear);
+
+/**
+ * A chart's points, as drawn when not under the pointer: Rufi's are 3.5 px
+ * round, Chart.js's own 3 px (a series the AI gave its colours).
+ */
+const pointsIn = async (frame: Frame) =>
+  (await drawnIn(frame)).marks.filter((mark) => [3, 3.5].includes(mark.r));
+
+/** Moves the pointer to `at` on the visual's canvas, and clicks if asked. */
+async function pointAt(
+  page: Page,
+  card: Locator,
+  at: { x: number; y: number },
+  click = false,
+) {
+  await card.scrollIntoViewIfNeeded();
+  const frame = await frameOf(card);
+  const canvas = await frame.evaluate(() => {
+    const box = (
+      document.querySelector("canvas") as HTMLCanvasElement
+    ).getBoundingClientRect();
+    return { x: box.left, y: box.top };
+  });
+  const box = await card.boundingBox();
+  const x = (box?.x ?? 0) + canvas.x + at.x;
+  const y = (box?.y ?? 0) + canvas.y + at.y;
+  await (click ? page.mouse.click(x, y) : page.mouse.move(x, y));
+}
+
+/**
+ * Every request that arrives at Rufi's core (it runs in this process) with
+ * a value in its address, counted as it arrives, before any answer.
+ */
+function arrivalsAtRufi(host: () => string) {
+  const arrived: string[] = [];
+  const listener = (message: unknown) => {
+    const { request } = message as { request: IncomingMessage };
+    if (request.headers.host === host() && request.url?.includes("hba1c=")) {
+      arrived.push(request.url);
+    }
+  };
+  subscribe("http.server.request.start", listener);
+  return {
+    arrived,
+    stop: () => unsubscribe("http.server.request.start", listener),
+  };
+}
+
+/** The counter sees a request that does arrive (a page of Rufi's that isn't one). */
+async function counterWorks(page: Page, arrived: string[]) {
+  const before = arrived.length;
+  await page.evaluate(() => fetch("/api/nothing-here?hba1c=check"));
+  expect(arrived.slice(before)).toEqual(["/api/nothing-here?hba1c=check"]);
+}
+
+test("a visual's chart is drawn by Rufi from its JSON: spaced by date, a tooltip of the record's own words, and a new theme without reloading", async ({
+  page,
+  rufi,
+}) => {
+  await keepDrawing(page);
+  await opened(page, rufi);
+  const tsh = [
+    { x: "2025-03", y: 2.1, text: "2.1 mIU/L" },
+    { x: "2025-09-14", y: 0.5, text: "<0.5 mIU/L" },
+    { x: "2026-01-20", y: 3, text: "3.0 mIU/L" },
+    // No value as printed: no tooltip.
+    { x: "2026-08-12", y: 4.6 },
+  ];
+  await send(
+    page,
+    withVisual(
+      [
+        '<p id="words">TSH over time</p>',
+        chartBlock(
+          {
+            type: "line",
+            data: {
+              datasets: [
+                {
+                  label: "TSH",
+                  data: tsh,
+                  // A series' own callbacks: Rufi's tooltip still.
+                  tooltip: {
+                    callbacks: { title: "return 'x'", label: "return 'x'" },
+                  },
+                },
+              ],
+            },
+            options: { scales: { x: { type: "time" } } },
+          },
+          "TSH over time",
+        ),
+      ].join(""),
+    ),
+  );
+  // A horizontal bar of a month: its date is on y.
+  await send(
+    page,
+    withVisual(
+      chartBlock({
+        type: "bar",
+        data: {
+          datasets: [
+            {
+              label: "Ferritin",
+              data: [{ x: 0.5, y: "2025-03", text: "<0.5 mg/dL" }],
+            },
+          ],
+        },
+        options: {
+          indexAxis: "y",
+          scales: { y: { type: "time" } },
+          interaction: { intersect: false },
+        },
+      }),
+    ),
+  );
+  const card = cards(page).first();
+  await expect(
+    card.contentFrame().getByRole("img", { name: "TSH over time" }),
+  ).toBeVisible({ timeout: 15_000 });
+  const frame = await frameOf(card);
+  await expect.poll(async () => (await pointsIn(frame)).length).toBe(4);
+
+  // Spaced by date: 1 Mar to 14 Sep 2025 is 197 days, to 20 Jan 2026 128.
+  const [a, b, c, textless] = await pointsIn(frame);
+  if (!a || !b || !c || !textless) throw new Error("No points.");
+  expect((b.x - a.x) / (c.x - b.x)).toBeCloseTo(197 / 128, 1);
+
+  // The tooltip, as the pointer brings it: the date as written, at its
+  // precision, and the value as printed.
+  const tooltip = async (at: { x: number; y: number }) => {
+    await drawnIn(frame, true);
+    await pointAt(page, card, at);
+  };
+  const texts = async () => (await drawnIn(frame)).text.map((t) => t.text);
+  await tooltip(b);
+  await expect
+    .poll(texts)
+    .toEqual(expect.arrayContaining(["14 Sep 2025", "TSH: <0.5 mIU/L"]));
+  await tooltip(a);
+  await expect
+    .poll(texts)
+    .toEqual(expect.arrayContaining(["Mar 2025", "TSH: 2.1 mIU/L"]));
+  // None for a point with no value as printed.
+  await tooltip(textless);
+  await expect.poll(async () => (await texts()).length).toBeGreaterThan(0);
+  await page.waitForTimeout(300);
+  expect((await texts()).filter((text) => text.startsWith("TSH:"))).toEqual([]);
+
+  // A horizontal bar's tooltip takes its month from y.
+  const bar = cards(page).nth(1);
+  const barFrame = await frameOf(bar);
+  await expect
+    .poll(async () => (await drawnIn(barFrame)).text.length)
+    .toBeGreaterThan(0);
+  const size = await barFrame.evaluate(() => {
+    const box = (
+      document.querySelector("canvas") as HTMLCanvasElement
+    ).getBoundingClientRect();
+    return { x: box.width / 2, y: box.height / 2 };
+  });
+  await drawnIn(barFrame, true);
+  await pointAt(page, bar, size);
+  await expect
+    .poll(async () => (await drawnIn(barFrame)).text.map((t) => t.text))
+    .toEqual(expect.arrayContaining(["Mar 2025", "Ferritin: <0.5 mg/dL"]));
+
+  // A new theme: dark, another colour, a bigger text size. The chart is
+  // drawn again in it, without reloading.
+  const began = await frame.evaluate(() => performance.timeOrigin);
+  await page.mouse.move(0, 0);
+  // The ruler's words before: a number on the y axis.
+  const ruler = async () =>
+    (await drawnIn(frame)).text.find(({ text }) => /^[\d.]+$/.test(text))
+      ?.colour;
+  const before = await ruler();
+  expect(before).toBeDefined();
+  await drawnIn(frame, true);
+  await page.evaluate(() => {
+    document.documentElement.dataset["appearance"] = "dark";
+    document.documentElement.dataset["colour"] = "plum";
+    document.documentElement.dataset["textSize"] = "larger";
+  });
+  await expect.poll(async () => (await pointsIn(frame)).length).toBe(4);
+  // The ruler too takes the new theme (its colours are in the screenshots).
+  expect(await ruler()).not.toBe(before);
+  expect(await frame.evaluate(() => performance.timeOrigin)).toBe(began);
+  await expect(
+    log(page).getByText("Part of this visual didn't load"),
+  ).toHaveCount(0);
+});
+
+test("a chart whose time step doesn't move on says part of it didn't load, and its visual still takes a new theme", async ({
+  page,
+  rufi,
+}) => {
+  // Half a day (date-fns adds days only whole) and an unknown unit both
+  // once made Chart.js add a step for ever: the test's own limit ends it.
+  test.setTimeout(30_000);
+  await opened(page, rufi);
+  const two = [
+    { x: "2025-03-01", y: 1, text: "1.0" },
+    { x: "2025-03-02", y: 2, text: "2.0" },
+  ];
+  const steps = [
+    { words: "Half a day", time: { unit: "day" }, ticks: { stepSize: 0.5 } },
+    { words: "Days", time: { unit: "days" }, ticks: {} },
+  ];
+  for (const { words, time, ticks } of steps) {
+    await send(
+      page,
+      withVisual(
+        `<p>${words}</p>${chartBlock({
+          type: "line",
+          data: { datasets: [{ label: "x", data: two }] },
+          options: { scales: { x: { type: "time", time, ticks } } },
+        })}`,
+      ),
+    );
+  }
+  for (const [at, { words }] of steps.entries()) {
+    const card = cards(page).nth(at);
+    await expect(
+      card.contentFrame().getByText(words, { exact: true }),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(
+      card.locator("..").getByText("Part of this visual didn't load"),
+    ).toBeVisible({ timeout: 15_000 });
+  }
+  // Each frame still answers: a new theme reaches it.
+  await page.evaluate(() => {
+    document.documentElement.dataset["appearance"] = "dark";
+  });
+  for (const at of steps.keys()) {
+    const frame = await frameOf(cards(page).nth(at));
+    await expect
+      .poll(() =>
+        frame.evaluate(() => document.documentElement.dataset["theme"]),
+      )
+      .toBe("dark");
+  }
+});
+
+test("a visual's chart JSON reaches neither the network nor Rufi's page: nothing in it runs, and a chart Rufi can't draw says part of it didn't load", async ({
+  page,
+  rufi,
+}) => {
+  // Also in WebKit. Each in its own visual, so one that fails can't keep
+  // another from being reached.
+  const reached: string[] = [];
+  const outside: Server = createServer((request, response) => {
+    reached.push(request.url ?? "");
+    response.end("out");
+  });
+  outside.on("connection", () => reached.push("a connection"));
+  await new Promise<void>((resolve) => outside.listen(0, "127.0.0.1", resolve));
+  const out = `http://127.0.0.1:${String((outside.address() as AddressInfo).port)}`;
+  const toRufi = arrivalsAtRufi(() => new URL(page.url()).host);
+  const ran = "document.body.dataset.ran = 'yes'";
+  const point = { x: "2026-01-01", y: 1, text: "1" };
+  const hostile = `<img src=x onerror="${ran}"></script><b>`;
+  try {
+    await keepDrawing(page);
+    await opened(page, rufi);
+    const own = new URL(page.url()).origin;
+    // Each: its words, its block, and whether Rufi draws it.
+    const probes: { words: string; block: string; draws: boolean }[] = [
+      {
+        words: "Not JSON",
+        block:
+          '<script type="application/json" data-rufi-chart>{"type": "line",</script>',
+        draws: false,
+      },
+      {
+        words: "A pie",
+        block: chartBlock({
+          type: "pie",
+          data: { datasets: [{ data: [1, 2] }] },
+        }),
+        draws: false,
+      },
+      {
+        // A closing tag cuts the block short: it is no longer JSON.
+        words: "Cut short",
+        block: `<script type="application/json" data-rufi-chart>{"type":"bar","data":{"labels":["</script><img src="${out}/after.png" alt="">"],"datasets":[{"data":[1]}]}}</script>`,
+        draws: false,
+      },
+      {
+        // Markup as text in valid JSON: Chart.js draws it as words.
+        words: "Markup",
+        block: chartBlock({
+          type: "line",
+          data: {
+            datasets: [{ label: hostile, data: [{ ...point, text: hostile }] }],
+          },
+          options: { scales: { x: { type: "time" } } },
+        }),
+        draws: true,
+      },
+      {
+        words: "Callbacks",
+        block: chartBlock({
+          type: "line",
+          data: { datasets: [{ label: "x", data: [point] }] },
+          options: {
+            plugins: {
+              tooltip: { callbacks: { label: ran, title: ran } },
+              legend: { onClick: ran },
+            },
+            scales: { x: { type: "time" }, y: { ticks: { callback: ran } } },
+            onHover: ran,
+          },
+        }),
+        draws: true,
+      },
+      {
+        words: "Prototype",
+        block: `<script type="application/json" data-rufi-chart>{"type":"line","data":{"datasets":[{"label":"p","data":[{"x":1,"y":1,"text":"1"}],"__proto__":{"polluted":"yes"}}]},"options":{"__proto__":{"polluted":"yes"},"plugins":{"constructor":{"prototype":{"polluted":"yes"}},"tooltip":{"__proto__":{"polluted":"yes"}}}}}</script>`,
+        draws: true,
+      },
+      {
+        words: "Plugins",
+        block: chartBlock({
+          type: "line",
+          data: { datasets: [{ label: "x", data: [point] }] },
+          options: { scales: { x: { type: "time" } } },
+          plugins: [{ id: "mine", beforeDraw: ran, afterDraw: ran }],
+        }),
+        draws: true,
+      },
+      {
+        words: "Addresses",
+        block: chartBlock({
+          type: "line",
+          data: {
+            datasets: [
+              {
+                label: `${out}/label`,
+                data: [point],
+                backgroundColor: `url(${out}/fill.png)`,
+              },
+            ],
+          },
+          options: {
+            scales: { x: { type: "time" } },
+            plugins: {
+              title: { display: true, text: `${out}/title` },
+              legend: {
+                labels: { font: { family: `url(${own}/font.woff?hba1c=6.4)` } },
+              },
+            },
+            font: { family: `url(${out}/font.woff)` },
+          },
+        }),
+        draws: true,
+      },
+    ];
+    for (const { words, block } of probes) {
+      await send(page, withVisual(`<p id="words">${words}</p>${block}`));
+    }
+    await expect(cards(page)).toHaveCount(probes.length);
+    for (const [at, { words, draws }] of probes.entries()) {
+      const card = cards(page).nth(at);
+      const broken = card
+        .locator("..")
+        .getByText("Part of this visual didn't load");
+      // Its words still show.
+      await expect(
+        card.contentFrame().getByText(words, { exact: true }),
+      ).toBeVisible({ timeout: 15_000 });
+      if (!draws) {
+        // This visual's own: part of it didn't load.
+        await expect(broken).toBeVisible({ timeout: 15_000 });
+        continue;
+      }
+      // It drew, with its point; the pointer on the point brings Rufi's
+      // tooltip, whatever callbacks the JSON had.
+      const frame = await frameOf(card);
+      await card.scrollIntoViewIfNeeded();
+      await expect
+        .poll(async () => (await pointsIn(frame)).length, { message: words })
+        .toBe(1);
+      const [spot] = await pointsIn(frame);
+      if (!spot) throw new Error("No point.");
+      await drawnIn(frame, true);
+      await pointAt(page, card, spot);
+      await expect
+        .poll(async () => (await drawnIn(frame)).text.map((t) => t.text))
+        .toEqual(
+          expect.arrayContaining([expect.stringMatching(/: (1|<img.*)$/)]),
+        );
+      // A tap on the point, and on its legend's words.
+      await pointAt(page, card, spot, true);
+      const legend = (await drawnIn(frame)).text.find(({ text }) =>
+        [hostile, "x", "p", `${out}/label`].includes(text),
+      );
+      if (!legend) throw new Error("No legend.");
+      await drawnIn(frame, true);
+      await pointAt(page, card, { x: legend.x + 4, y: legend.y }, true);
+      if (words === "Markup") {
+        // Its legend's markup is its words, and a tap there hides the
+        // series, as Chart.js does: the legend was reached.
+        await expect
+          .poll(async () => (await drawnIn(frame)).text.length)
+          .toBeGreaterThan(0);
+        expect(await pointsIn(frame)).toEqual([]);
+      }
+      await expect(broken).toHaveCount(0);
+    }
+    // Nothing of the JSON ran, and nothing was polluted.
+    for (const at of probes.keys()) {
+      const frame = await frameOf(cards(page).nth(at));
+      expect(
+        await frame.evaluate(() => ({
+          ran: document.body.dataset["ran"] ?? "no",
+          polluted: "polluted" in {},
+          images: document.querySelectorAll("img[onerror]").length,
+        })),
+      ).toEqual({ ran: "no", polluted: false, images: 0 });
+    }
+    await page.waitForTimeout(1000);
+    expect(reached).toEqual([]);
+    expect(toRufi.arrived).toEqual([]);
+    await counterWorks(page, toRufi.arrived);
+    expect(page.context().pages()).toHaveLength(1);
+  } finally {
+    toRufi.stop();
+    outside.closeAllConnections();
+    await new Promise((resolve) => outside.close(resolve));
+  }
 });
 
 test("a visual that starts above what you read and grows keeps your place", async ({
