@@ -300,7 +300,7 @@ The line above them says what happens next:
 - **Waiting · these go in order after the reply**: they go by themselves.
 - **Waiting**: no reply runs yet; they go in order after the message Rufi is giving to the AI now. That message shows in the chat as sent, with "Thinking" under it.
 - **Not sent · Rufi sends these only when you say**: some messages are held, as below.
-- **Waiting until you sign in**: you're signed out; they go the next time Rufi gives the AI something after you sign in again (see [Rufi's lines](#rufis-lines)).
+- **Waiting until you sign in**: you're signed out; they go after you sign in again, each once, at the latest the next time Rufi gives the AI something (see [Rufi's lines](#rufis-lines)).
 
 A message with files waits like any other. Removing it doesn't remove its files: they stay sent, and the Documents page shows **Not read yet** with **Retry**.
 
@@ -321,7 +321,7 @@ When the AI should know too, Rufi gives it a note:
 
 - **When nothing runs**, the AI gets the note at once, in a short reply of its own. In that reply the AI explains or asks. It carries on with work you already asked for, and asks you first before any new change: every save rests on a message of yours.
 - **When a reply runs**, the note waits among the waiting messages above the box, as "Rufi's note", and goes in its turn after the reply, in a short reply of its own. Each note gets its own reply. **Remove** it if the AI doesn't need it.
-- **When you're signed out**, it waits with the line on how to sign in, such as "You're signed out. Sign in with ChatGPT to chat.", and goes the next time Rufi gives the AI something after you sign in again.
+- **When you're signed out**, it waits with the line on how to sign in, such as "You're signed out. Sign in with ChatGPT to chat.", and goes after you sign in again, at the latest the next time Rufi gives the AI something.
 
 ## The model and effort
 
