@@ -472,6 +472,335 @@ test("a visual is styled with Tailwind in Rufi's theme: the screens' sizes and c
   ).toHaveCount(0);
 });
 
+/** A chart's JSON block, as the AI writes it where the chart goes. */
+const chartBlock = (config: unknown, label?: string) =>
+  `<script type="application/json" data-rufi-chart${label === undefined ? "" : ` aria-label="${label}"`}>${JSON.stringify(config)}</script>`;
+
+/** What a visual's chart is, read in its frame through Rufi's Chart.js. */
+interface Drawn {
+  type: string;
+  xs: number[];
+  colours: unknown[];
+  shapes: unknown[];
+  textColour: unknown;
+  fontSize: unknown;
+  label: string | null;
+}
+const drawnIn = (frame: Frame) =>
+  frame.evaluate((): Drawn | undefined => {
+    const visual = (
+      window as unknown as {
+        rufiVisual?: {
+          Chart: {
+            getChart: (canvas: HTMLCanvasElement) =>
+              | {
+                  config: { type: string };
+                  data: { datasets: Record<string, unknown>[] };
+                  getDatasetMeta: (index: number) => {
+                    data: { x: number }[];
+                  };
+                }
+              | undefined;
+            defaults: { color: unknown; font: { size: unknown } };
+          };
+        };
+      }
+    ).rufiVisual;
+    const canvas = document.querySelector("canvas");
+    const chart = canvas ? visual?.Chart.getChart(canvas) : undefined;
+    if (!visual || !canvas || !chart) return undefined;
+    return {
+      type: chart.config.type,
+      xs: chart.getDatasetMeta(0).data.map((point) => point.x),
+      colours: chart.data.datasets.map((dataset) => dataset["borderColor"]),
+      shapes: chart.data.datasets.map((dataset) => dataset["pointStyle"]),
+      textColour: visual.Chart.defaults.color,
+      fontSize: visual.Chart.defaults.font.size,
+      label: canvas.getAttribute("aria-label"),
+    };
+  });
+
+/** The theme's variable in the visual, as its CSS has it. */
+const variableIn = (frame: Frame, name: string) =>
+  frame.evaluate(
+    (name) =>
+      getComputedStyle(document.documentElement).getPropertyValue(name).trim(),
+    name,
+  );
+
+test("a visual's chart is drawn by Rufi from its JSON: spaced by date, a tooltip of the record's own words, series told apart, and a new theme without reloading", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi);
+  const tsh = [
+    { x: "2025-03", y: 2.1, text: "2.1 mIU/L" },
+    { x: "2025-09-14", y: 0.5, text: "<0.5 mIU/L" },
+    { x: "2026-01-20", y: 3, text: "3.0 mIU/L" },
+    // No value as printed: no tooltip.
+    { x: "2026-08-12", y: 4.6 },
+  ];
+  await send(
+    page,
+    withVisual(
+      [
+        '<p id="words">TSH over time</p>',
+        chartBlock(
+          {
+            type: "line",
+            data: {
+              datasets: [
+                { label: "TSH", data: tsh },
+                {
+                  label: "Free T4",
+                  data: [{ x: "2025-03", y: 1.1, text: "1.1 ng/dL" }],
+                },
+              ],
+            },
+            options: { scales: { x: { type: "time" } } },
+          },
+          "TSH over time",
+        ),
+      ].join(""),
+    ),
+  );
+  const card = cards(page);
+  await expect(
+    page
+      .frameLocator(".reply iframe[title='Visual']")
+      .getByText("TSH over time"),
+  ).toBeVisible({ timeout: 15_000 });
+  const frame = await frameOf(card);
+  await expect.poll(async () => (await drawnIn(frame))?.type).toBe("line");
+  const drawn = await drawnIn(frame);
+  // Spaced by date: 1 Mar to 14 Sep 2025 is 197 days, to 20 Jan 2026 128.
+  const [a = 0, b = 0, c = 0] = drawn?.xs ?? [];
+  expect((b - a) / (c - b)).toBeCloseTo(197 / 128, 1);
+  // Its words for a screen reader are the AI's.
+  expect(drawn?.label).toBe("TSH over time");
+  // In Rufi's colours, each series its own colour and shape.
+  expect(drawn?.colours).toEqual([
+    await variableIn(frame, "--ink"),
+    await variableIn(frame, "--accent"),
+  ]);
+  expect(drawn?.shapes).toEqual(["circle", "triangle"]);
+  expect(drawn?.textColour).toBe(await variableIn(frame, "--muted"));
+
+  // The tooltip, as a pointer brings it: the date as written, at its
+  // precision, and the value as printed; none for a point with no value.
+  const tooltipAt = async (point: number) => {
+    const at = await frame.evaluate((point) => {
+      const visual = (
+        window as unknown as {
+          rufiVisual: {
+            Chart: {
+              getChart: (canvas: HTMLCanvasElement) => {
+                getDatasetMeta: (index: number) => {
+                  data: { x: number; y: number }[];
+                };
+              };
+            };
+          };
+        }
+      ).rufiVisual;
+      const canvas = document.querySelector("canvas") as HTMLCanvasElement;
+      const spot = visual.Chart.getChart(canvas).getDatasetMeta(0).data[point];
+      const box = canvas.getBoundingClientRect();
+      return { x: box.left + (spot?.x ?? 0), y: box.top + (spot?.y ?? 0) };
+    }, point);
+    const frameBox = await card.boundingBox();
+    await page.mouse.move((frameBox?.x ?? 0) + at.x, (frameBox?.y ?? 0) + at.y);
+    return frame.evaluate(() => {
+      const visual = (
+        window as unknown as {
+          rufiVisual: {
+            Chart: {
+              getChart: (canvas: HTMLCanvasElement) => {
+                tooltip: {
+                  title: string[];
+                  body: { lines: string[] }[];
+                  dataPoints: unknown[];
+                };
+              };
+            };
+          };
+        }
+      ).rufiVisual;
+      const tooltip = visual.Chart.getChart(
+        document.querySelector("canvas") as HTMLCanvasElement,
+      ).tooltip;
+      return tooltip.dataPoints.length === 0
+        ? null
+        : {
+            title: tooltip.title,
+            body: tooltip.body.flatMap((part) => part.lines),
+          };
+    });
+  };
+  await expect
+    .poll(() => tooltipAt(1))
+    .toEqual({
+      title: ["14 Sep 2025"],
+      body: ["TSH: <0.5 mIU/L"],
+    });
+  await expect.poll(() => tooltipAt(3)).toBeNull();
+
+  // A new theme: dark, another colour, a bigger text size; the chart takes
+  // it without reloading.
+  const began = await frame.evaluate(() => performance.timeOrigin);
+  const before = await drawnIn(frame);
+  await page.evaluate(() => {
+    document.documentElement.dataset["appearance"] = "dark";
+    document.documentElement.dataset["colour"] = "plum";
+    document.documentElement.dataset["textSize"] = "larger";
+  });
+  await expect
+    .poll(async () => (await drawnIn(frame))?.colours)
+    .not.toEqual(before?.colours);
+  await expect
+    .poll(async () => (await drawnIn(frame))?.colours)
+    .toEqual([
+      await variableIn(frame, "--ink"),
+      await variableIn(frame, "--accent"),
+    ]);
+  expect((await drawnIn(frame))?.textColour).toBe(
+    await variableIn(frame, "--muted"),
+  );
+  expect(Number((await drawnIn(frame))?.fontSize)).toBeGreaterThan(
+    Number(before?.fontSize),
+  );
+  expect(await frame.evaluate(() => performance.timeOrigin)).toBe(began);
+  await expect(
+    log(page).getByText("Part of this visual didn't load"),
+  ).toHaveCount(0);
+});
+
+test("a visual's chart JSON reaches neither the network nor Rufi's page: nothing in it runs, and a chart Rufi can't draw says part of it didn't load", async ({
+  page,
+  rufi,
+}) => {
+  // Also in WebKit. Each in its own visual, so one that fails can't keep
+  // another from being reached.
+  const reached: string[] = [];
+  const outside: Server = createServer((request, response) => {
+    reached.push(request.url ?? "");
+    response.end("out");
+  });
+  outside.on("connection", () => reached.push("a connection"));
+  await new Promise<void>((resolve) => outside.listen(0, "127.0.0.1", resolve));
+  const out = `http://127.0.0.1:${String((outside.address() as AddressInfo).port)}`;
+  const ran = "document.body.dataset.ran = 'yes'";
+  const point = { x: "2026-01-01", y: 1, text: "1" };
+  try {
+    await opened(page, rufi);
+    const probes: [string, string][] = [
+      [
+        "Not JSON",
+        '<script type="application/json" data-rufi-chart>{"type": "line",</script>',
+      ],
+      [
+        "A pie",
+        chartBlock({ type: "pie", data: { datasets: [{ data: [1, 2] }] } }),
+      ],
+      [
+        "Markup",
+        `<script type="application/json" data-rufi-chart>{"type":"bar","data":{"labels":["<img src=x onerror=\\"${ran}\\">","</script><img src="${out}/after.png" alt="">"],"datasets":[{"label":"<b>bold</b>","data":[1,2]}]}}</script>`,
+      ],
+      [
+        "Callbacks",
+        chartBlock({
+          type: "line",
+          data: { datasets: [{ label: "x", data: [point] }] },
+          options: {
+            plugins: {
+              tooltip: { callbacks: { label: ran, title: ran } },
+              legend: { onClick: ran },
+            },
+            scales: { x: { type: "time" }, y: { ticks: { callback: ran } } },
+            onHover: ran,
+          },
+        }),
+      ],
+      [
+        "Prototype",
+        `<script type="application/json" data-rufi-chart>{"type":"line","data":{"datasets":[{"label":"p","data":[{"x":1,"y":1,"text":"1"}],"__proto__":{"polluted":"yes"}}]},"options":{"__proto__":{"polluted":"yes"},"plugins":{"constructor":{"prototype":{"polluted":"yes"}},"tooltip":{"__proto__":{"polluted":"yes"}}}}}</script>`,
+      ],
+      [
+        "Plugins",
+        chartBlock({
+          type: "line",
+          data: { datasets: [{ label: "x", data: [point] }] },
+          options: { scales: { x: { type: "time" } } },
+          plugins: [{ id: "mine", beforeDraw: ran, afterDraw: ran }],
+        }),
+      ],
+      [
+        "Addresses",
+        chartBlock({
+          type: "line",
+          data: {
+            datasets: [
+              {
+                label: `${out}/label`,
+                data: [point],
+                backgroundColor: `url(${out}/fill.png)`,
+              },
+            ],
+          },
+          options: {
+            scales: { x: { type: "time" } },
+            plugins: { title: { display: true, text: `${out}/title` } },
+            font: { family: `url(${out}/font.woff)` },
+          },
+        }),
+      ],
+    ];
+    for (const [words, block] of probes) {
+      await send(page, withVisual(`<p id="words">${words}</p>${block}`));
+    }
+    await expect(cards(page)).toHaveCount(probes.length);
+    for (const [at, [words]] of probes.entries()) {
+      const card = cards(page).nth(at);
+      // Its words still show.
+      await expect(
+        card.contentFrame().getByText(words, { exact: true }),
+      ).toBeVisible({ timeout: 15_000 });
+      // A pointer over it and a tap: whatever its tooltip and legend call
+      // runs now.
+      await card.scrollIntoViewIfNeeded();
+      const box = await card.boundingBox();
+      if (box) {
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.click(box.x + 40, box.y + box.height / 2);
+      }
+    }
+    // Nothing of the JSON ran, and nothing was polluted.
+    for (const at of probes.keys()) {
+      const frame = await frameOf(cards(page).nth(at));
+      expect(
+        await frame.evaluate(() => ({
+          ran: document.body.dataset["ran"] ?? "no",
+          polluted: String(({} as Record<string, unknown>)["polluted"] ?? "no"),
+          images: document.querySelectorAll("img[onerror]").length,
+        })),
+      ).toEqual({ ran: "no", polluted: "no", images: 0 });
+    }
+    // Not JSON, a type Rufi doesn't draw, and JSON cut short by a closing
+    // tag each say so under the visual.
+    await expect
+      .poll(() =>
+        log(page).getByText("Part of this visual didn't load").count(),
+      )
+      .toBeGreaterThanOrEqual(3);
+    await page.waitForTimeout(1000);
+    expect(reached).toEqual([]);
+    expect(page.context().pages()).toHaveLength(1);
+  } finally {
+    outside.closeAllConnections();
+    await new Promise((resolve) => outside.close(resolve));
+  }
+});
+
 test("a visual that starts above what you read and grows keeps your place", async ({
   page,
   rufi,
