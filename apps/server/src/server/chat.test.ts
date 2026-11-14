@@ -1573,6 +1573,41 @@ describe("the chat, on the scripted Codex", () => {
     expect(await waiting()).toEqual([]);
   });
 
+  it("sends a message queued behind a reply once, after the sign-in was lost and came back", async () => {
+    await startChat("fake");
+    const c = await newChat();
+    await rufiReply(c);
+    const { id } = await say(c, "B", "queue");
+    // Rufi AI's queue has it too.
+    await until(() =>
+      Promise.resolve(
+        agentRows(`SELECT 1 FROM queue WHERE id = '${id}'`).length === 1,
+      ),
+    );
+    signIns["codex"] = { state: "signed_out", account: null, text: null };
+    await chat?.carryAll();
+    await until(async () => (await waiting())[0]?.[2] === "signed_out");
+    // The reply ends while the message is held: Rufi AI asks for it.
+    await chat?.stop(c);
+    await ended(c.id);
+    await settled(c.id);
+    expect(await waiting()).toEqual([["B", "waiting", "signed_out"]]);
+
+    delete signIns["codex"];
+    await chat?.carryAll();
+    await ended(c.id, 2);
+    await settled(c.id);
+    expect(await waiting()).toEqual([]);
+    expect(
+      (await transcript(c.id)).entries.filter(
+        ([kind]) => kind === "message" || kind === "reply",
+      ),
+    ).toEqual([
+      ["message", "B"],
+      ["reply", "ok:B"],
+    ]);
+  });
+
   it("starts a new chat on GPT-6-Astra", async () => {
     await startChat("fake");
     const c = await newChat();
