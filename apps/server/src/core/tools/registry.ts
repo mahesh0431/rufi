@@ -3,6 +3,7 @@
 import { Result, Schema, SchemaIssue } from "effect";
 import { errorCode, type Log } from "../../platform/logs.ts";
 import type { BriefInput, Made } from "../briefs/briefs.ts";
+import type { Asked } from "../chat/transcript.ts";
 import type { Pages } from "../documents/pages.ts";
 import type {
   SaveReadingAnswer,
@@ -12,6 +13,7 @@ import type { SortAnswer, SortInput } from "../documents/sorting.ts";
 import type { DismissInput, Dismissed } from "../record/items.ts";
 import type { SaveRequest, Saved } from "../record/save.ts";
 import type { Store } from "../store/database.ts";
+import type { AskInput } from "./ask.ts";
 import type { LogDoseInput } from "./doses.ts";
 import type {
   AgentStatusInput,
@@ -66,6 +68,11 @@ export interface ToolContext {
   logDose?:
     | ((input: LogDoseInput, callId: string) => Promise<unknown>)
     | undefined;
+  /**
+   * Asks the person with a question card (ask): only Rufi AI, the chat's
+   * own agent, in its chat; never a sub-agent.
+   */
+  ask?: ((input: AskInput, callId: string) => Promise<Asked>) | undefined;
   /** What the calling agent does with agents: only in Rufi's own chat. */
   agents?: AgentTools | undefined;
 }

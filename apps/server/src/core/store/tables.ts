@@ -458,6 +458,8 @@ export interface Tables {
     created_at: string;
     updated_at: string;
     questions: string | null;
+    card: string | null;
+    answer: string | null;
   };
   turns: {
     id: string;

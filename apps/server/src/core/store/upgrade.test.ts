@@ -567,7 +567,14 @@ it("upgrades a record of version 5 so a generated picture can be a line of the c
   (await openRecord(home)).close();
 
   // Kept as they were; no reply has questions of its own yet (0019).
-  expect(lines()).toEqual(before.map((line) => ({ ...line, questions: null })));
+  expect(lines()).toEqual(
+    before.map((line) => ({
+      ...line,
+      questions: null,
+      card: null,
+      answer: null,
+    })),
+  );
   const db = new DatabaseSync(path);
   try {
     const turn = db
@@ -616,7 +623,14 @@ it("upgrades a record of version 6 so the AI's notes can be steps of its Activit
   (await openRecord(home)).close();
 
   // Kept as they were; no reply has questions of its own yet (0019).
-  expect(lines()).toEqual(before.map((line) => ({ ...line, questions: null })));
+  expect(lines()).toEqual(
+    before.map((line) => ({
+      ...line,
+      questions: null,
+      card: null,
+      answer: null,
+    })),
+  );
   const db = new DatabaseSync(path);
   try {
     const turn = db
@@ -1185,7 +1199,12 @@ it("upgrades a record of version 15 so files start on Send: every document sent 
     before.turns.map((turn) => ({ ...turn, effort: null })),
   );
   expect(after.entries).toEqual(
-    before.entries.map((line) => ({ ...line, questions: null })),
+    before.entries.map((line) => ({
+      ...line,
+      questions: null,
+      card: null,
+      answer: null,
+    })),
   );
   expect(after.queue).toEqual(
     before.queue.map((row) => ({
@@ -1692,4 +1711,53 @@ it("upgrades a record of version 29 so medicines keep their directions: each sch
   } finally {
     store.close();
   }
+});
+
+it("upgrades a record of version 35 so Rufi AI can ask with a question card: every line of the chat kept as it was, in order", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 35));
+  const old = new DatabaseSync(path);
+  try {
+    old.exec(`
+      INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, refs, revision, created_at, updated_at)
+        SELECT 'line-message', person_id, id, 1000, 'message', 'Save my August results', '[{"ref":{"type":"document","id":"doc-asha-aug","version":1},"label":"sunrise-labs-august.pdf","detail":"Lab report"}]', 0, '2026-11-10T09:00:00Z', '2026-11-10T09:00:00Z'
+        FROM chats WHERE person_id = 'asha';
+      INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, questions, revision, created_at, updated_at)
+        SELECT 'line-reply', person_id, id, 1001, 'reply', 'I read 6 results.', '[{"title":"Save them?","options":["Save","Not now"]}]', 0, '2026-11-10T09:01:00Z', '2026-11-10T09:01:00Z'
+        FROM chats WHERE person_id = 'asha';
+    `);
+  } finally {
+    old.close();
+  }
+  const lines = () => {
+    const db = new DatabaseSync(path, { readOnly: true });
+    try {
+      return db
+        .prepare("SELECT * FROM transcript_entries ORDER BY seq")
+        .all()
+        .map((row) => ({ ...row }));
+    } finally {
+      db.close();
+    }
+  };
+  const before = lines();
+  expect(before.length).toBeGreaterThan(2);
+
+  (await openRecord(home)).close();
+
+  expect(lines()).toEqual(
+    before.map((line) => ({ ...line, card: null, answer: null })),
+  );
+  // A question card is a line of the chat now.
+  const db = new DatabaseSync(path);
+  try {
+    db.exec(`
+      INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, card, revision, created_at, updated_at)
+        SELECT 'line-card', person_id, id, 1002, 'question', '**August results**', '{"kind":"choice","key":"August results","question":"Save these 6 results?","answers":["Save","Not now"]}', 0, '2026-11-10T09:02:00Z', '2026-11-10T09:02:00Z'
+        FROM chats WHERE person_id = 'asha';
+    `);
+  } finally {
+    db.close();
+  }
+  expect(lines().at(-1)).toMatchObject({ kind: "question", answer: null });
 });

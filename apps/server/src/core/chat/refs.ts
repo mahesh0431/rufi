@@ -1,12 +1,13 @@
 // References in the chat (docs/help/chat.md): a message's chips, each an
 // exact pointer to the person's health data: a document, a draft item, a
-// saved record or a report (its results). They are checked against the
-// chat's person when added (the draft) and when sent, and named and
-// versioned from what is stored, never from what the screen sent: a sent
-// message keeps each one's version then.
+// saved record or a report (its results); or a quote of one of the chat's
+// question cards (docs/adr/0036). They are checked against the chat's
+// person (a card, against the chat) when added (the draft) and when sent,
+// and named and versioned from what is stored, never from what the screen
+// sent: a sent message keeps each one's version then.
 // The AI gets them as a short list after the message and reads them with
-// its tools.
-import type { Chip, Pointer } from "@rufi/contracts";
+// its tools; a card's quote it gets before the message (questions.ts).
+import type { Chip, Pointer, QuestionCard } from "@rufi/contracts";
 import { sql, type Kysely } from "kysely";
 import { DELETED_DOCUMENT } from "../documents/naming.ts";
 import { shownDate } from "../record/dates.ts";
@@ -42,14 +43,15 @@ function documentName(files: readonly string[]): string {
 
 /**
  * The chips of `refs`, named and versioned from what is stored now, each
- * the person's; a pointer that isn't the person's is refused, or with
- * `drop` left out. The same one twice is kept once.
+ * the person's (a card, of the chat `chatId`); a pointer that isn't is
+ * refused, or with `drop` left out. The same one twice is kept once.
  */
 export async function chipsOf(
   db: Kysely<Tables>,
   personId: string,
   refs: readonly Pointer[],
   drop = false,
+  chatId?: string,
 ): Promise<Chip[]> {
   const chips: Chip[] = [];
   const seen = new Set<string>();
@@ -57,7 +59,7 @@ export async function chipsOf(
     const key = `${ref.type}:${ref.type === "record" ? `${ref.kind}:` : ""}${ref.id}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    const chip = await chipOf(db, personId, ref);
+    const chip = await chipOf(db, personId, ref, chatId);
     if (!chip) {
       if (drop) continue;
       if (ref.type === "document" && (await deleted(db, personId, ref.id))) {
@@ -88,6 +90,7 @@ async function chipOf(
   db: Kysely<Tables>,
   personId: string,
   ref: Pointer,
+  chatId: string | undefined,
 ): Promise<Chip | undefined> {
   const files = async (documentId: string) =>
     (
@@ -232,6 +235,32 @@ async function chipOf(
         detail: "Report in your health record",
       };
     }
+    case "question": {
+      // A card of this chat, and an answer it has: named by its key.
+      if (chatId === undefined) return undefined;
+      const entry = await db
+        .selectFrom("transcript_entries")
+        .select("card")
+        .where("person_id", "=", personId)
+        .where("chat_id", "=", chatId)
+        .where("id", "=", ref.id)
+        .where("kind", "=", "question")
+        .executeTakeFirst();
+      if (!entry?.card) return undefined;
+      const card = JSON.parse(entry.card) as QuestionCard;
+      if (ref.answer !== undefined && ref.answer >= card.answers.length) {
+        return undefined;
+      }
+      return {
+        ref: {
+          type: "question",
+          id: ref.id,
+          ...(ref.answer !== undefined && { answer: ref.answer }),
+        },
+        label: card.key,
+        detail: "Rufi AI's question",
+      };
+    }
   }
 }
 
@@ -248,8 +277,10 @@ function nounOf(kind: Kind, row: Row): string {
  * id and version, and its name, so it reads exactly those with its tools.
  */
 export function refsForAi(chips: readonly Chip[]): string | undefined {
-  if (chips.length === 0) return undefined;
-  const lines = chips.map(({ ref, label, deleted }) => {
+  // A card's quote goes before the message (questions.ts).
+  const listed = chips.filter(({ ref }) => ref.type !== "question");
+  if (listed.length === 0) return undefined;
+  const lines = listed.flatMap(({ ref, label, deleted }) => {
     if (deleted) {
       return `- ${ref.type === "document" ? "document" : "draft item"} ${ref.id}: ${label} (its document was deleted. ${DELETED_DOCUMENT})`;
     }
@@ -262,6 +293,8 @@ export function refsForAi(chips: readonly Chip[]): string | undefined {
         return `- ${kindNamed(ref.kind)?.noun ?? ref.kind} ${ref.id} (kind ${ref.kind}), version ${ref.version === null ? "null" : ref.version}: ${label}`;
       case "report":
         return `- report ${ref.id}, version ${ref.version === null ? "null" : ref.version}: ${label}`;
+      case "question":
+        return [];
     }
   });
   return `References the user added to this message (Rufi's, exact: read them with your tools):\n${lines.join("\n")}`;

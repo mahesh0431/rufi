@@ -54,7 +54,7 @@ import {
   openWritable,
   type Store,
 } from "../core/store/database.ts";
-import { forAgent, rufiCaller } from "../core/tools/tools.ts";
+import { forAgent, rufiCaller, TOOLS } from "../core/tools/tools.ts";
 import { v7 as uuid } from "uuid";
 import { chatQueue, type ChatQueue } from "../core/chat/queue.ts";
 import { chatAgents } from "../core/chat/agents.ts";
@@ -150,7 +150,12 @@ async function startChat(
   }
   const reader = openReadOnly(databasePath(home));
   const log = () => undefined;
-  const tools = forAgent(() => ({ store: reader, personId: undefined }), log);
+  // Every tool, the held ones too: an agent's own list says which it gets.
+  const tools = forAgent(
+    () => ({ store: reader, personId: undefined }),
+    log,
+    TOOLS.map((tool) => tool.name),
+  );
   const keys = mcpKeys();
   let port = 0;
   served = await serveMcp(
@@ -1172,6 +1177,30 @@ describe("the chat, on the scripted Codex", () => {
       facts: { line },
       ask: `Note: ${line}`,
     });
+
+  it("gives the AI a click on a question card as the card's quote, then the answer, and answers the card as the message goes", async () => {
+    await startChat("fake");
+    const c = await newChat();
+    store.db.exec(`
+      INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, card, revision, created_at, updated_at)
+        SELECT 'q-1', 'asha', '${c.id}', COALESCE(MAX(seq), 0) + 1, 'question', '**Lipid panel, 12 Aug 2026**',
+          '{"kind":"choice","key":"Lipid panel, 12 Aug 2026","question":"Save these 2 results?","answers":["Save","Not now"]}',
+          0, '2026-11-10T09:00:00Z', '2026-11-10T09:00:00Z'
+        FROM transcript_entries WHERE chat_id = '${c.id}';
+    `);
+    const id = uuid();
+    await chat?.send(c, id, "Save", [
+      { type: "question", id: "q-1", answer: 0 },
+    ]);
+    await ended(c.id);
+    // A new thread: its history shows the card first.
+    expect((await inputs()).at(-1)?.at(-1)).toBe(
+      "> [Lipid panel, 12 Aug 2026](rufi:/chat/questions/q-1)\n\nSave",
+    );
+    expect(
+      (await transcript(c.id)).all.find((entry) => entry.id === "q-1")?.answer,
+    ).toEqual({ message: id, index: 0 });
+  });
 
   it("sends a message's chips with it: the AI gets them after the words, and the message keeps them with their versions then; a report's chip counts its current results", async () => {
     store.db.exec(`
@@ -3979,7 +4008,7 @@ describe("the chat, on the scripted Codex", () => {
     expect(claude.opened).toHaveLength(1);
   });
 
-  it("gives a sub-agent all of its parent's tools, and its own sub-agent too", async () => {
+  it("gives a sub-agent all of its parent's tools but ask, and its own sub-agent too", async () => {
     await startChat("fake", {
       scenario: {
         callsByText: {
@@ -4031,7 +4060,14 @@ describe("the chat, on the scripted Codex", () => {
       "Reader",
       "Helper",
     ]);
-    expect(new Set(agents.map((row) => row["tools"])).size).toBe(1);
+    // Only Rufi AI asks the person.
+    const [own, ...below] = agents.map(
+      (row) => JSON.parse(row["tools"] as string) as string[],
+    );
+    expect(own).toContain("ask");
+    for (const tools of below) {
+      expect(tools).toEqual(own?.filter((name) => name !== "ask"));
+    }
   });
 
   it("saves the calls of two agents of the chat that have the same id from their provider, each with its receipt", async () => {

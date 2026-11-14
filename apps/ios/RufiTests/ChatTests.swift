@@ -25,10 +25,14 @@ struct ChatTests {
         transcript.apply(.snapshot(try read("chat")))
         _ = try read("chat-draft", as: Draft.self)
         _ = try read("chat-queue", as: Queue.self)
-        // The reply's thought and step fold into its Activity, under the answer.
+        // The reply's thought and step fold into its Activity, under the
+        // answer; its question card and the click that quotes it follow.
         #expect(transcript.lines(calendar: Self.berlin) == [
             .day("ent-a1"), .entry("ent-a1"), .entry("ent-a4"), .activity("turn-a1"),
+            .entry("ent-a5"), .entry("ent-a6"),
         ])
+        #expect(transcript.entries["ent-a5"]?.kind == "question")
+        #expect(transcript.entries["ent-a6"]?.refs?.map(\.ref) == [Pointer(type: "question", id: "ent-a5")])
         #expect(transcript.steps(of: "turn-a1").map(\.id) == ["ent-a2", "ent-a3"])
         let reply = try #require(transcript.entries["ent-a4"])
         #expect(Visuals.scan(reply.text) == [Visuals.Block(html: "<p>6.8 %</p>", whole: true)])

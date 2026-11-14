@@ -27,6 +27,7 @@ import {
   type ChatQueue,
   type HandOver,
 } from "../core/chat/queue.ts";
+import { quoted } from "../core/chat/questions.ts";
 import { refsForAi } from "../core/chat/refs.ts";
 import type { ChatRow, Step, Transcripts } from "../core/chat/transcript.ts";
 import type { Readings } from "../core/documents/reading.ts";
@@ -809,11 +810,15 @@ function inputOf(handOver: HandOver): string[] {
   ];
 }
 
-/** A message as the AI gets it: the person's words, then their references. */
+/**
+ * A message as the AI gets it: the quote of each question card it answers,
+ * the person's words, then their references.
+ */
 function withRefs(text: string, chips: readonly Chip[]): string {
+  const said = quoted(text, chips);
   const list = refsForAi(chips);
-  if (list === undefined) return text;
-  return text === "" ? list : `${text}\n\n${list}`;
+  if (list === undefined) return said;
+  return said === "" ? list : `${said}\n\n${list}`;
 }
 
 const WHO = {

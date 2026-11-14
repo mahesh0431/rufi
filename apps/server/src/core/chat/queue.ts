@@ -15,6 +15,7 @@ import type { Chip, Pointer, Queue, QueueItem } from "@rufi/contracts";
 import type { Kysely, Transaction } from "kysely";
 import type { Store } from "../store/database.ts";
 import type { Tables } from "../store/tables.ts";
+import { asTyped } from "./questions.ts";
 import { chipsOf, RefRefusal } from "./refs.ts";
 
 /** Whose queue: the person and their chat. */
@@ -319,7 +320,7 @@ export function chatQueue(
         }
         let chips: Chip[];
         try {
-          chips = await chipsOf(trx, chat.personId, refs);
+          chips = await chipsOf(trx, chat.personId, refs, false, chat.id);
         } catch (error) {
           if (error instanceof RefRefusal) {
             throw new QueueRefusal(error.message, { cause: error });
@@ -367,7 +368,11 @@ export function chatQueue(
         return { id, fresh: true };
       }),
 
-    /** A waiting message of the person's, edited. */
+    /**
+     * A waiting message of the person's, edited. A click on a question
+     * card's answer becomes their own words: it keeps the card's quote,
+     * not the answer it chose (docs/adr/0036).
+     */
     edit: (chat: ChatOf, id: string, text: string) =>
       write(chat, async (trx) => {
         const row = await waitingRow(trx, chat, id);
@@ -376,7 +381,11 @@ export function chatQueue(
         }
         await trx
           .updateTable("chat_queue")
-          .set({ text, updated_at: now() })
+          .set({
+            text,
+            refs: JSON.stringify(asTyped(JSON.parse(row.refs) as Chip[])),
+            updated_at: now(),
+          })
           .where("id", "=", id)
           .execute();
       }),

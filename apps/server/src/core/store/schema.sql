@@ -525,15 +525,16 @@ CREATE TABLE turns (
 -- line per thing the agent did with everything it sent and got back, the
 -- agent's reasoning and its replies, Rufi's receipts, Rufi's events
 -- (its own factual lines, never the person's words), the line of each
--- visit brief, and the messages of the agents Rufi AI started, where Rufi
--- AI took them. Stored before anyone is shown it.
+-- visit brief, the messages of the agents Rufi AI started, where Rufi
+-- AI took them, and the question cards Rufi AI asked with. Stored before
+-- anyone is shown it.
 CREATE TABLE transcript_entries (
   id TEXT PRIMARY KEY,         -- UUIDv7; a message keeps the id the agent got with it
   person_id TEXT NOT NULL,
   chat_id TEXT NOT NULL,
   seq INTEGER NOT NULL,        -- 1, 2, 3... in the chat
   turn_id TEXT,                -- the reply it belongs to
-  kind TEXT NOT NULL CHECK (kind IN ('message', 'steer', 'activity', 'reply', 'reasoning', 'receipt', 'event', 'brief', 'agent')),
+  kind TEXT NOT NULL CHECK (kind IN ('message', 'steer', 'activity', 'reply', 'reasoning', 'receipt', 'event', 'brief', 'agent', 'question')),
   text TEXT NOT NULL,          -- the message or the reply as it came; an activity's text as the agent reported it (the command, the tool, a note's words); the reasoning's summary; a receipt's, an event's or a brief's line; an agent's message in its own words, as it sent it (empty when it stopped)
   activity TEXT CHECK (activity IN ('tool', 'command', 'web_search', 'file_change', 'sub_agent', 'compaction', 'picture', 'note', 'reading', 'other')), -- reading: Rufi's reader copying one document, in Rufi's part of a reply
   detail TEXT,                 -- an activity's second reported part: a tool's arguments, a command's exit code; a picture's path, whole; a reading's progress
@@ -545,6 +546,8 @@ CREATE TABLE transcript_entries (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   questions TEXT CHECK (questions IS NULL OR kind = 'reply'), -- a reply's questions, as the AI gave them (JSON), kept apart from its answer; null: none
+  card TEXT,                   -- a question card as Rufi AI gave it with ask: {"kind": "choice", "key", "details"?, "question", "answers"} (JSON); only a question has one, and always
+  answer TEXT,                 -- a question card's answer: the message whose click went to Rufi AI first and the answer it chose, {"message", "index"} (JSON); null: none yet
   UNIQUE (person_id, id),
   UNIQUE (chat_id, seq),
   FOREIGN KEY (person_id, chat_id) REFERENCES chats (person_id, id),
@@ -558,7 +561,9 @@ CREATE TABLE transcript_entries (
   CHECK (status IS NULL OR kind IN ('activity', 'reply')),
   CHECK (details IS NULL OR kind IN ('activity', 'reasoning', 'event', 'agent')),
   CHECK (kind != 'agent' OR details IS NOT NULL),
-  CHECK (refs IS NULL OR kind IN ('message', 'steer'))
+  CHECK (refs IS NULL OR kind IN ('message', 'steer')),
+  CHECK ((kind = 'question') = (card IS NOT NULL)),
+  CHECK (answer IS NULL OR kind = 'question')
 ) STRICT;
 
 -- Each call an agent made to one of Rufi's own tools, kept by Rufi as it
@@ -882,4 +887,4 @@ CREATE TABLE agent_cursor (
 ) STRICT;
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 35;
+PRAGMA user_version = 36;

@@ -16,6 +16,7 @@ import {
   type Entry,
   type Page,
   type Pointer,
+  type QuestionCard,
   type Ref,
   type Turn,
 } from "@rufi/contracts";
@@ -27,6 +28,7 @@ import type { Saved } from "../record/save.ts";
 import { changeProfile } from "../record/profile.ts";
 import type { AddPerson } from "@rufi/contracts";
 import { addRow } from "./queue.ts";
+import { cardForAi, cardText, quoted } from "./questions.ts";
 import { chipsOf } from "./refs.ts";
 import { CLOSED_WHILE_READING } from "../documents/reading.ts";
 import type { Store } from "../store/database.ts";
@@ -150,6 +152,18 @@ const labelled = (receipt: string, label: string | undefined) => {
 export interface Answered {
   ok: boolean;
   text: string;
+}
+
+/** A question card Rufi AI asked with: its entry's id; false: asked before. */
+export interface Asked {
+  id: string;
+  fresh: boolean;
+}
+
+/** A card's answer, as its entry keeps it. */
+interface CardAnswer {
+  message: string;
+  index: number;
 }
 
 type Db = Kysely<Tables> | Transaction<Tables>;
@@ -281,6 +295,10 @@ const toEntry = (
   ...(row.kind === "event" && linkOf(row.details)),
   ...(row.activity === "reading" && linkOf(row.details, true)),
   ...(row.kind === "agent" && senderOf(row.details)),
+  ...(row.card !== null && { card: JSON.parse(row.card) as unknown }),
+  ...(row.answer !== null && {
+    answer: JSON.parse(row.answer) as CardAnswer,
+  }),
 });
 
 /**
@@ -741,6 +759,8 @@ export function transcripts(
       questions?: string;
       /** A message's chips. */
       refs?: readonly Chip[];
+      /** A question's card. */
+      card?: QuestionCard;
     },
   ): Promise<string> {
     const id = entry.id ?? uuid();
@@ -765,6 +785,7 @@ export function transcripts(
             : JSON.stringify(entry.refs),
         status: entry.status ?? null,
         agent_item_id: entry.agentItemId ?? null,
+        card: entry.card === undefined ? null : JSON.stringify(entry.card),
         revision,
         created_at: at,
         updated_at: at,
@@ -871,7 +892,11 @@ export function transcripts(
     });
   }
 
-  /** Marks handed-over rows sent; the person's message enters the transcript. */
+  /**
+   * Marks handed-over rows sent; the person's message enters the transcript.
+   * A click on a question card's answer answers the card, when none did
+   * before (docs/adr/0036): both lines change together.
+   */
   async function sent(
     trx: Transaction<Tables>,
     chat: ChatRow,
@@ -908,15 +933,30 @@ export function transcripts(
       ) {
         continue;
       }
+      const chips = JSON.parse(row.refs) as Chip[];
       entries.push(
         await insertEntry(trx, chat, revision, {
           id: row.id,
           turnId,
           kind,
           text: row.text,
-          refs: JSON.parse(row.refs) as Chip[],
+          refs: chips,
         }),
       );
+      for (const { ref } of chips) {
+        if (ref.type !== "question" || ref.answer === undefined) continue;
+        const answer: CardAnswer = { message: row.id, index: ref.answer };
+        const { numUpdatedRows } = await trx
+          .updateTable("transcript_entries")
+          .set({ answer: JSON.stringify(answer), revision, updated_at: now() })
+          .where("person_id", "=", chat.personId)
+          .where("chat_id", "=", chat.id)
+          .where("id", "=", ref.id)
+          .where("kind", "=", "question")
+          .where("answer", "is", null)
+          .executeTakeFirst();
+        if (numUpdatedRows === 1n) entries.push(ref.id);
+      }
     }
     return entries;
   }
@@ -1851,6 +1891,53 @@ export function transcripts(
     },
 
     /**
+     * A question card Rufi AI asks with (ask), and the call with the answer
+     * the AI gets (`answer`), in one transaction. Rufi's id for the call is
+     * the replay key: the same call made before returns the card it made and
+     * adds none, also with other words, so the card stays as it was asked.
+     */
+    askWithCard: async (
+      chat: ChatRow,
+      call: ToolCall,
+      card: QuestionCard,
+      answer: (asked: Asked) => Answered,
+    ): Promise<Asked> => {
+      let asked: Asked | undefined;
+      await change(chat.id, async (trx, revision) => {
+        const turn = await turnOf(trx, chat.id, call.ref);
+        const earlier = await trx
+          .selectFrom("tool_calls")
+          .select("answer")
+          .where("person_id", "=", chat.personId)
+          .where("chat_id", "=", chat.id)
+          .where("call_id", "=", call.callId)
+          .where("tool", "=", call.tool)
+          .where("ok", "=", 1)
+          .orderBy("started_at")
+          .executeTakeFirst();
+        const was =
+          earlier &&
+          (JSON.parse(earlier.answer) as { result?: { id?: string } }).result
+            ?.id;
+        if (was !== undefined) {
+          asked = { id: was, fresh: false };
+          await keepCall(trx, chat, turn, call, answer(asked));
+          return undefined;
+        }
+        const id = await insertEntry(trx, chat, revision, {
+          turnId: turn?.id ?? null,
+          kind: "question",
+          text: cardText(card),
+          card,
+        });
+        asked = { id, fresh: true };
+        await keepCall(trx, chat, turn, call, answer(asked));
+        return { entries: [id], turns: [] };
+      });
+      return asked as Asked;
+    },
+
+    /**
      * One thing the agent did: added when it starts, updated when it ends.
      * `details`, everything the agent gave about it, replaces what it gave
      * before.
@@ -2064,8 +2151,9 @@ export function transcripts(
     },
 
     /**
-     * The last `count` messages (the user's, the AI's replies and progress
-     * notes, Rufi's receipts, events and brief lines) from replies that
+     * The last `count` messages (the user's, each with the quote of a card
+     * it answers; the AI's replies, progress notes and question cards;
+     * Rufi's receipts, events and brief lines) from replies that
      * reached the AI and have ended, oldest first: what a new thread starts
      * with. A reply an older Rufi ended while it read the files never had
      * the AI. The user's message is there once it went, in a reply that has
@@ -2094,11 +2182,15 @@ export function transcripts(
             .onRef("d.id", "=", "q.turn_id"),
         )
         .select([
+          "e.id",
           "e.kind",
           "e.text",
           "e.activity",
           "e.details",
           "e.questions",
+          "e.refs",
+          "e.card",
+          "e.answer",
           "e.status as entryStatus",
           "t.status",
         ])
@@ -2114,6 +2206,7 @@ export function transcripts(
               "event",
               "brief",
               "agent",
+              "question",
             ]),
             eb.and([
               eb("e.kind", "=", "activity"),
@@ -2160,15 +2253,34 @@ export function transcripts(
             text: agentLine(row.details, row.text),
           };
         }
-        if (row.kind !== "reply") {
+        // Its own card, by its link, and the answer a click chose.
+        if (row.kind === "question" && row.card !== null) {
           return {
-            from:
-              row.kind === "receipt" ||
-              row.kind === "event" ||
-              row.kind === "brief"
-                ? ("rufi" as const)
-                : ("user" as const),
-            text: row.text,
+            from: "ai" as const,
+            text: cardForAi(
+              row.id,
+              JSON.parse(row.card) as QuestionCard,
+              row.answer === null
+                ? undefined
+                : (JSON.parse(row.answer) as CardAnswer),
+            ),
+          };
+        }
+        if (
+          row.kind === "receipt" ||
+          row.kind === "event" ||
+          row.kind === "brief"
+        ) {
+          return { from: "rufi" as const, text: row.text };
+        }
+        if (row.kind !== "reply") {
+          // The user's: with the quote of each card it answers.
+          return {
+            from: "user" as const,
+            text: quoted(
+              row.text,
+              row.refs === null ? undefined : (JSON.parse(row.refs) as Chip[]),
+            ),
           };
         }
         return {

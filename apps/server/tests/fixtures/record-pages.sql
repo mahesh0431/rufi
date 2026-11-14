@@ -128,7 +128,20 @@ Asha''s HbA1c results, newest first.', NULL, NULL, '{"type":"reasoning"}', NULL,
 ```
 
 [See your HbA1c results](rufi:/tests/tst-hba1c)', NULL, NULL, NULL, 'done', 4, '2026-10-05T08:00:05Z', '2026-10-05T08:00:13Z');
-UPDATE chats SET revision = 4 WHERE id = 'c-asha';
+-- Its question card (docs/adr/0036), and Asha's click on Save, which
+-- quotes it and answered it.
+INSERT INTO transcript_entries (id, person_id, chat_id, seq, turn_id, kind, text, card, answer, revision, created_at, updated_at) VALUES
+  ('ent-a5', 'asha', 'c-asha', 5, 'turn-a1', 'question', '**HbA1c, 12 Aug 2026**
+
+HbA1c 6.8 %
+
+Save this result to your health record?
+
+- Save
+- Not now', '{"kind":"choice","key":"HbA1c, 12 Aug 2026","details":"HbA1c 6.8 %","question":"Save this result to your health record?","answers":["Save","Not now"]}', '{"message":"ent-a6","index":0}', 6, '2026-10-05T08:00:12Z', '2026-10-05T08:00:20Z');
+INSERT INTO transcript_entries (id, person_id, chat_id, seq, turn_id, kind, text, refs, revision, created_at, updated_at) VALUES
+  ('ent-a6', 'asha', 'c-asha', 6, NULL, 'message', 'Save', '[{"ref":{"type":"question","id":"ent-a5","answer":0},"label":"HbA1c, 12 Aug 2026","detail":"Rufi AI''s question"}]', 6, '2026-10-05T08:00:20Z', '2026-10-05T08:00:20Z');
+UPDATE chats SET revision = 6 WHERE id = 'c-asha';
 
 -- An older Rufi's reading of the September photo that failed partway: its
 -- reader's entry for the page (no copy), with an issue it noted, and Rufi's

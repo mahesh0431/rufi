@@ -10,6 +10,7 @@ import {
   usage,
   waitingMessages,
 } from "./agents.ts";
+import { ask, askedResult } from "./ask.ts";
 import { briefResult, createBrief } from "./brief.ts";
 import { readChat } from "./chat.ts";
 import { getDocuments, saveReading, sortDocuments } from "./documents.ts";
@@ -63,6 +64,7 @@ export const TOOLS: readonly Tool[] = [
   sortDocuments,
   saveReading,
   createBrief,
+  ask,
   readDoses,
   logDose,
   showFace,
@@ -77,6 +79,14 @@ export const TOOLS: readonly Tool[] = [
 ];
 
 /**
+ * Rufi's tools no agent is given yet, and the terminal's AI neither (the
+ * default list leaves them out): ask, until both screens draw its card.
+ * TODO: give ask to Rufi AI with its instructions (the question card's last
+ * step), then drop this.
+ */
+export const HELD: readonly string[] = [ask.name];
+
+/**
  * The name the agent knows Rufi's MCP server by: on a code-mode model the AI
  * calls `tools.mcp__rufi__get_overview`. tools.json names them rufi.<tool>.
  */
@@ -86,13 +96,15 @@ const SERVER = "rufi";
 export function forAgent(
   context: () => ToolContext,
   log: Log,
-  /** The agent's own tools, by name; all of them when not given. */
+  /** The agent's own tools, by name; when not given, all but the held ones. */
   names?: readonly string[],
 ) {
   const tools = TOOLS.filter(
     (tool) =>
       tool.callers !== "ui" &&
-      (names === undefined || names.includes(tool.name)),
+      (names === undefined
+        ? !HELD.includes(tool.name)
+        : names.includes(tool.name)),
   );
   return {
     server: SERVER,
@@ -307,6 +319,19 @@ export function rufiCaller(
           kept();
           return written;
         },
+        // Rufi AI's alone: the door names a sub-agent by its title.
+        ...(scope.label === undefined && {
+          ask: async (input) => {
+            const asked = await transcripts.askWithCard(
+              chat,
+              made,
+              { kind: "choice", ...input },
+              (done) => answerOf(askedResult(done)),
+            );
+            kept();
+            return asked;
+          },
+        }),
       };
     };
     return async (

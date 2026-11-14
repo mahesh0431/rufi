@@ -198,6 +198,9 @@ private struct EntryView: View {
             AgentBubble(entry: entry, chat: chat)
         case "reply":
             ReplyView(entry: entry, streaming: chat.transcript.streaming(entry), chat: chat, origin: shell.pairing.origin)
+        case "question":
+            // A question card, as its words until the iPhone draws the card.
+            ReplyView(entry: entry, streaming: false, chat: chat, origin: shell.pairing.origin)
         default:
             // A picture the AI made: its file is on the Mac only.
             if !(entry.activity == "picture" && entry.status == "done" && entry.detail != nil) {

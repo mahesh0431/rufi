@@ -180,7 +180,7 @@
     },
     {
       "name": "rufi.read_chat",
-      "description": "Earlier parts of this chat, newest first. Each entry's kind is \"message\" (the user's), \"steer\" (the user's, sent while you were replying), \"reply\" (yours), \"activity\" (one thing you did: a title and one short detail, never its output), \"receipt\" (Rufi's line for a save to the record: what was saved), \"event\" (Rufi's own line about something that happened, never the user's words), \"brief\" (Rufi's line for a visit brief made with create_brief) or \"agent\" (a message to you from an agent you started, in its own words, with its agent's id, its name then and why it came: done, asked, wrote, stopped, failed or signed_out (its start waits for a sign-in); never the user's words). \"at\" is when it was written. At most 50 entries a page; pass the page's next_before to read further back. Rufi chooses the chat, not you.",
+      "description": "Earlier parts of this chat, newest first. Each entry's kind is \"message\" (the user's), \"steer\" (the user's, sent while you were replying), \"reply\" (yours), \"activity\" (one thing you did: a title and one short detail, never its output), \"receipt\" (Rufi's line for a save to the record: what was saved), \"event\" (Rufi's own line about something that happened, never the user's words), \"brief\" (Rufi's line for a visit brief made with create_brief), \"agent\" (a message to you from an agent you started, in its own words, with its agent's id, its name then and why it came: done, asked, wrote, stopped, failed or signed_out (its start waits for a sign-in); never the user's words) or \"question\" (a question card you asked with ask, with its id and the answer a click chose, if one did). A user's message that answers a card starts with its quote, a link rufi:/chat/questions/<id>; pass that id as question to read the card alone. \"at\" is when it was written. At most 50 entries a page; pass the page's next_before to read further back. Rufi chooses the chat, not you.",
       "callers": "model",
       "readOnly": true,
       "destructive": false,
@@ -198,6 +198,10 @@
             "minimum": 1,
             "maximum": 50,
             "description": "How many entries, 1 to 50; 20 when left out."
+          },
+          "question": {
+            "type": "string",
+            "description": "A question card's id, from its link rufi:/chat/questions/<id>: that card alone."
           }
         },
         "additionalProperties": false
@@ -207,6 +211,9 @@
         {
           "before": 41,
           "limit": 20
+        },
+        {
+          "question": "019a6c2e-5b1f-7c3d-8e4a-2f6b9d1c7e05"
         }
       ]
     },
@@ -2680,6 +2687,58 @@
               "kind": "result",
               "id": "0199a0f2-8a41-7b2c-8e0d-6c4b1f9a2e3d"
             }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "rufi.ask",
+      "description": "Asks the user a question with a few clear answers, as a card in this chat: a key, details naming exactly what they approve, the question and its answers, in plain words. Rufi draws it; the user clicks an answer or replies in their own words. It returns at once with the card's id and link; the user's answer comes later as their message, quoting the card by that link. A card is not the user's yes: judge their answer as any message. Put your analysis (text, visuals) in your reply before asking, keep the card small and text only, and ask last. Only you, in Rufi's own chat, ask the user; a sub-agent sends its question to its parent with send_agent. The same call again returns the same card.",
+      "callers": "model",
+      "readOnly": false,
+      "destructive": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The card's title: a few words naming what it is about."
+          },
+          "details": {
+            "type": "string",
+            "description": "What the user approves, as a short line or list in Markdown: the values themselves when they are few, each as printed in its source, or a short summary of a long list (what, how many, from where, when). Leave it out for a question that needs none."
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The question, in plain text."
+          },
+          "answers": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1,
+            "description": "Each answer the user can choose, in a few words: every answer they would reasonably give, including a way to decline or wait."
+          }
+        },
+        "required": [
+          "key",
+          "question",
+          "answers"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "key": "Lipid panel, 12 Aug 2026",
+          "details": "- Total cholesterol 212 mg/dL\n- LDL 138 mg/dL\n- HDL 41 mg/dL",
+          "question": "Save these 3 results to your health record?",
+          "answers": [
+            "Save",
+            "Not now"
           ]
         }
       ]

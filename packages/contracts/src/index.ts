@@ -32,10 +32,13 @@ const Id = Line(100);
 /** The most references one message or draft holds. */
 export const MAX_REFS = 100;
 
+/** Which of a question card's answers a click chose: its place, from 0. */
+const AnswerIndex = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+
 /**
  * What the box points at: a document, a draft item, a saved record or a
- * report (its results) of the chat's person. Checked against the person when
- * added and when sent.
+ * report (its results) of the chat's person, or a question card of the
+ * chat's (its quote). Checked against the person when added and when sent.
  */
 export const Pointer = Schema.Union([
   Schema.Struct({
@@ -47,6 +50,12 @@ export const Pointer = Schema.Union([
   Schema.Struct({ type: Schema.Literal("draft_item"), id: Id }),
   Schema.Struct({ type: Schema.Literal("record"), kind: Line(40), id: Id }),
   Schema.Struct({ type: Schema.Literal("report"), id: Id }),
+  Schema.Struct({
+    type: Schema.Literal("question"),
+    id: Id,
+    /** A click on one of its answers sent it: which one. */
+    answer: Schema.optionalKey(AnswerIndex),
+  }),
 ]);
 export type Pointer = typeof Pointer.Type;
 
@@ -83,6 +92,12 @@ export const Ref = Schema.Union([
     type: Schema.Literal("report"),
     id: Id,
     version: Schema.NullOr(Id),
+  }),
+  /** A question card: the quote of a message that answers it. */
+  Schema.Struct({
+    type: Schema.Literal("question"),
+    id: Id,
+    answer: Schema.optionalKey(AnswerIndex),
   }),
 ]);
 export type Ref = typeof Ref.Type;
@@ -159,6 +174,19 @@ export const AgentAbout = Schema.Literals([
 ]);
 export type AgentAbout = typeof AgentAbout.Type;
 
+/**
+ * A question card as Rufi AI gave it with ask: words only, which Rufi draws
+ * (docs/adr/0036). The details name what the person approves.
+ */
+export const QuestionCard = Schema.Struct({
+  kind: Schema.Literal("choice"),
+  key: Schema.String,
+  details: Schema.optionalKey(Schema.String),
+  question: Schema.String,
+  answers: Schema.Array(Schema.String),
+});
+export type QuestionCard = typeof QuestionCard.Type;
+
 export const Entry = Schema.Struct({
   id: Schema.String,
   /**
@@ -175,7 +203,9 @@ export const Entry = Schema.Struct({
    * when its turn ends before the summary is whole); event:
    * Rufi's own factual line about something that happened, never the
    * person's words; brief: the line of a visit brief, whose id is the brief's;
-   * agent: a message to Rufi AI from an agent it started, where Rufi AI took it.
+   * agent: a message to Rufi AI from an agent it started, where Rufi AI took it;
+   * question: a question card Rufi AI asked with, its text the card as
+   * Markdown for a screen that can't draw it.
    */
   kind: Schema.Literals([
     "message",
@@ -187,6 +217,7 @@ export const Entry = Schema.Struct({
     "event",
     "brief",
     "agent",
+    "question",
   ]),
   /**
    * The message; the reply as it came; an activity's text as the agent reported it (the
@@ -225,6 +256,18 @@ export const Entry = Schema.Struct({
   /** An agent's message: the agent's name when it sent it, and why it came. */
   from: Schema.optionalKey(
     Schema.Struct({ title: Schema.String, about: AgentAbout }),
+  ),
+  /**
+   * A question: its card as Rufi AI gave it. A screen draws a card whose
+   * kind it knows (QuestionCard), and shows the text of any other.
+   */
+  card: Schema.optionalKey(Schema.Unknown),
+  /**
+   * A question's answer, once a click on it went to Rufi AI: that message,
+   * and the answer it chose.
+   */
+  answer: Schema.optionalKey(
+    Schema.Struct({ message: Schema.String, index: AnswerIndex }),
   ),
 });
 export type Entry = typeof Entry.Type;

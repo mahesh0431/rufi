@@ -1,5 +1,5 @@
 {
-  "revision": 4,
+  "revision": 6,
   "chat": { "model": null, "effort": "medium", "context": null },
   "entries": [
     {
@@ -49,6 +49,45 @@
       "status": "done",
       "createdAt": "2026-10-05T08:00:05Z",
       "updatedAt": "2026-10-05T08:00:13Z"
+    },
+    {
+      "id": "ent-a5",
+      "seq": 5,
+      "turnId": "turn-a1",
+      "kind": "question",
+      "text": "**HbA1c, 12 Aug 2026**\n\nHbA1c 6.8 %\n\nSave this result to your health record?\n\n- Save\n- Not now",
+      "activity": null,
+      "detail": null,
+      "status": null,
+      "createdAt": "2026-10-05T08:00:12Z",
+      "updatedAt": "2026-10-05T08:00:20Z",
+      "card": {
+        "kind": "choice",
+        "key": "HbA1c, 12 Aug 2026",
+        "details": "HbA1c 6.8 %",
+        "question": "Save this result to your health record?",
+        "answers": ["Save", "Not now"]
+      },
+      "answer": { "message": "ent-a6", "index": 0 }
+    },
+    {
+      "id": "ent-a6",
+      "seq": 6,
+      "turnId": null,
+      "kind": "message",
+      "text": "Save",
+      "activity": null,
+      "detail": null,
+      "status": null,
+      "createdAt": "2026-10-05T08:00:20Z",
+      "updatedAt": "2026-10-05T08:00:20Z",
+      "refs": [
+        {
+          "ref": { "type": "question", "id": "ent-a5", "answer": 0 },
+          "label": "HbA1c, 12 Aug 2026",
+          "detail": "Rufi AI's question"
+        }
+      ]
     }
   ],
   "turns": [

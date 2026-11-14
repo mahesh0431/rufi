@@ -5,6 +5,7 @@
 // one transaction (core/chat/queue.ts), so nothing here sends a message.
 import type { Draft, Pointer } from "@rufi/contracts";
 import type { Store } from "../store/database.ts";
+import { asTyped } from "./questions.ts";
 import { chipsOf } from "./refs.ts";
 
 /** Whose draft: the person and their chat. */
@@ -35,6 +36,7 @@ export function drafts(
           personId,
           JSON.parse(row?.refs ?? "[]") as Pointer[],
           true,
+          id,
         ),
       };
     },
@@ -48,7 +50,8 @@ export function drafts(
       text: string,
       refs: readonly Pointer[] = [],
     ): Promise<Draft> => {
-      const chips = await chipsOf(db, personId, refs);
+      // A click's answer never stays in the box: only the card's quote.
+      const chips = asTyped(await chipsOf(db, personId, refs, false, id));
       const values = {
         text,
         // Pointers only: a chip's version and name are read when shown.
