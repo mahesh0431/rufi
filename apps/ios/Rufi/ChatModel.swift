@@ -98,6 +98,8 @@ final class ChatModel {
     /// A visual's height as last drawn, by its entry and place, so a card
     /// drawn again is its height at once.
     @ObservationIgnored var heights: [String: Double] = [:]
+    /// The two pages its visuals draw in, kept for this chat.
+    @ObservationIgnored let pages: VisualPages
 
     // The box.
     private(set) var text = ""
@@ -141,6 +143,7 @@ final class ChatModel {
         self.person = person
         self.pending = pending
         pairing = pending.generation
+        pages = VisualPages(door: door)
     }
 
     // MARK: - The stream

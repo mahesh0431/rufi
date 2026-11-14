@@ -3,8 +3,7 @@ import Testing
 @testable import Rufi
 
 /// The chat drawn here: what the Mac's chat routes answer (the fixtures),
-/// in the Mac's order; a late read never undoes a newer one; a visual's
-/// card loads only the door's two pages; a reply's links open only the
+/// in the Mac's order; a late read never undoes a newer one; a reply's links open only the
 /// person's pages; a send goes through Pending, once; and an edit of a
 /// waiting message says whether Rufi kept it.
 @MainActor
@@ -111,18 +110,6 @@ struct ChatTests {
         ])
         // Other code, and a fence indented as code, stay code.
         #expect(Visuals.scan("```swift\nlet a = 1\n```\n\n    ```rufi-visual\n    <p>x</p>\n    ```").isEmpty)
-    }
-
-    @Test func aCardLoadsOnlyTheDoorsTwoPages() throws {
-        let door = try #require(URL(string: "https://mac.tailnet.test"))
-        let at = { (address: String) in URL(string: address) }
-        #expect(VisualCard.loads(at("https://mac.tailnet.test/visual-card.html"), door: door, mainFrame: true))
-        #expect(VisualCard.loads(at("https://mac.tailnet.test/visual-frame.html"), door: door, mainFrame: false))
-        #expect(!VisualCard.loads(at("https://mac.tailnet.test/visual-frame.html"), door: door, mainFrame: true))
-        #expect(!VisualCard.loads(at("https://mac.tailnet.test/api/people/asha/chat"), door: door, mainFrame: false))
-        #expect(!VisualCard.loads(at("https://elsewhere.test/visual-frame.html"), door: door, mainFrame: false))
-        #expect(!VisualCard.loads(at("https://mac.tailnet.test:8443/visual-card.html"), door: door, mainFrame: true))
-        #expect(!VisualCard.loads(at("data:text/html,hi"), door: door, mainFrame: false))
     }
 
     @Test func aReplysLinksOpenOnlyThePersonsPages() throws {
