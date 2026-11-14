@@ -143,10 +143,19 @@ export function chat(deps: ChatDeps) {
     opening: (chat, agent) => openingOf(chat, agent),
     version: async (agent) => rulesOf(await toldNow(), agent).version,
     // Rufi's queue decides: the row's words as they are now, or that it
-    // doesn't go. Its files not read yet are named as they go.
+    // doesn't go. Its files not read yet are named as they go. A held row
+    // waits held in Rufi AI's queue too, until Rufi lifts the hold (carry);
+    // one from a backup waits there as one that failed.
     claim: async (chat, input, sentAs) => {
       const claimed = await queue.claim(chat, input, sentAs);
       if (claimed.status === "gone") return claimed;
+      if (claimed.status === "held") {
+        return {
+          status: "held",
+          held: claimed.held === "restored" ? "failed" : claimed.held,
+          text: claimed.text ?? "",
+        };
+      }
       const { handOver } = claimed;
       const files = await deps.readings?.toRead(chat.personId, handOver.refs);
       return {
