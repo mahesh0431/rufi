@@ -1173,6 +1173,30 @@ describe("the chat, on the scripted Codex", () => {
       ask: `Note: ${line}`,
     });
 
+  it("gives the AI a click on a question card as the card's quote, then the answer, and answers the card as the message goes", async () => {
+    await startChat("fake");
+    const c = await newChat();
+    store.db.exec(`
+      INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, card, revision, created_at, updated_at)
+        SELECT 'q-1', 'asha', '${c.id}', COALESCE(MAX(seq), 0) + 1, 'question', '**Lipid panel, 12 Aug 2026**',
+          '{"kind":"choice","key":"Lipid panel, 12 Aug 2026","question":"Save these 2 results?","answers":["Save","Not now"]}',
+          0, '2026-11-10T09:00:00Z', '2026-11-10T09:00:00Z'
+        FROM transcript_entries WHERE chat_id = '${c.id}';
+    `);
+    const id = uuid();
+    await chat?.send(c, id, "Save", [
+      { type: "question", id: "q-1", answer: 0 },
+    ]);
+    await ended(c.id);
+    // A new thread: its history shows the card first.
+    expect((await inputs()).at(-1)?.at(-1)).toBe(
+      "> [Lipid panel, 12 Aug 2026](rufi:/chat/questions/q-1)\n\nSave",
+    );
+    expect(
+      (await transcript(c.id)).all.find((entry) => entry.id === "q-1")?.answer,
+    ).toEqual({ message: id, index: 0 });
+  });
+
   it("sends a message's chips with it: the AI gets them after the words, and the message keeps them with their versions then; a report's chip counts its current results", async () => {
     store.db.exec(`
       INSERT INTO people (id, display_name) VALUES ('ravi', 'Ravi Fictional');
