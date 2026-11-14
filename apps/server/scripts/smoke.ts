@@ -1297,6 +1297,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     const c = chat(api);
     await c.say(MAGNESIUM);
     const offered = await c.read();
+    const asked_first = nothingSaved(home, offered);
     const asked = cardsOf(offered).at(-1);
     const yes = asked && yesOf(asked.card);
     if (asked && yes !== undefined) await c.click(asked, yes);
@@ -1304,7 +1305,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     return {
       checks: {
         asked_with_a_card: asked !== undefined,
-        asked_first: nothingSaved(home, offered),
+        asked_first,
         saved_once: record(home).saves === 1 && receipts(snapshot) === 1,
         magnesium_current:
           medicine(home, "Magnesium")?.["status"] === "current",
@@ -1397,6 +1398,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
       "Add my abdominal ultrasound to my follow-ups. I can book City Clinic on Tuesday at 10:00 or Lakeside Clinic on Thursday at 16:00.",
     );
     const offered = await c.read();
+    const before = nothingSaved(home, offered);
     const asked = cardsOf(offered).at(-1);
     const lakeside =
       asked &&
@@ -1409,7 +1411,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     return {
       checks: {
         asked_with_a_card: asked !== undefined,
-        nothing_saved_before_the_choice: nothingSaved(home, offered),
+        nothing_saved_before_the_choice: before,
         card_answered:
           lakeside !== undefined && answerOf(snapshot, asked) === lakeside,
       },
@@ -2881,6 +2883,7 @@ function transcriptText(snapshot: Snapshot): string {
         text = `· ${e.text}${e.detail ? `: ${e.detail}` : ""} (${e.status ?? ""})`;
       else if (e.kind === "reasoning")
         text = `AI thinking (${e.status ?? ""}): ${e.text}`;
+      else if (e.kind === "question") text = `AI (question card): ${e.text}`;
       else if (e.kind === "receipt" || e.kind === "event" || e.kind === "brief")
         text = `Rufi: ${e.text}`;
       else
