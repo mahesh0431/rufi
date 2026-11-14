@@ -2376,6 +2376,9 @@ describe("the screens", () => {
       '<!doctype html><html lang="en"><p>Rufi',
     );
     await writeFile(join(screens, "assets", "app-1a2b.js"), "export {};");
+    // The visual's own script, as the screens' build makes it.
+    await mkdir(join(screens, "frame"));
+    await writeFile(join(screens, "frame", "visual.js"), "void 0;");
     // Next to the screens, not in them: never served.
     await writeFile(join(folder, "secret.txt"), "not a screen");
     // Links in the build that lead outside it.
@@ -2464,6 +2467,11 @@ describe("the screens", () => {
     for (const path of ["/", "/help/glossary", "/index.html"]) {
       expect((await call(core.port, "GET", path)).status).toBe(404);
     }
+  });
+
+  it("won't start with screens built without the visual's own script", async () => {
+    await rm(join(screens, "frame"), { recursive: true });
+    await expect(start({ screens })).rejects.toThrow(/no script for visuals/);
   });
 
   it("serves the API only, when it has no screens", async () => {

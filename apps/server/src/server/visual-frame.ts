@@ -6,12 +6,17 @@
 // runs, and takes out the elements that have no job in a drawing and can
 // reach out (REFUSED), before any of it is live. Then its policy, in place of
 // the screens' own, makes it an opaque origin (no cookies, storage or reach
-// into Rufi's page) that loads and sends nothing, and runs only this page's
-// two scripts, by their hashes. The screens' frame-src keeps the frame from
-// moving itself to another origin. The card script sets the theme and tells
-// the screen the visual's height and whether part of it didn't load. Every
-// screen that draws a visual uses this page (ADR 0034).
+// into Rufi's page) that loads and sends nothing, and runs only Rufi's own
+// scripts, by their hashes: this page's, the card script and the visual's
+// own script (the screens' build of apps/web src/frame/visual.ts), which
+// styles the AI's Tailwind classes with Rufi's theme (ADR 0037). The
+// screens' frame-src keeps the frame from moving itself to another origin.
+// The card script sets the theme and tells the screen the visual's height
+// and whether part of it didn't load. Every screen that draws a visual uses
+// this page (ADR 0034).
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { App } from "./http.ts";
 
 /** Where the page is, on either listener. */
@@ -21,20 +26,40 @@ const VISUAL_FRAME_PATH = "/visual-frame.html";
 const THEME_ID = "rufi-theme";
 
 /**
+ * Rufi's theme for Tailwind in a visual, as the screens name it
+ * (apps/web/src/themes.css): Tailwind's own colours and shadows are off, and
+ * the colours are the theme's variables under the screens' names (bg-surface,
+ * text-ink, …), so a class means in a visual what it means on a screen.
+ * `dark:` follows Rufi's theme, not the system's (the card script's
+ * data-theme). Tailwind's base (Preflight) comes with it, as Tailwind always
+ * has it; the card script's base and the visual's own style come after it.
+ * Preflight takes a table cell's room away, so a table with no style of its
+ * own runs its values together ("Aug 20266.4 %"): Rufi's base gives cells
+ * a little, under any class or style of the visual's.
+ */
+const TAILWIND =
+  '@import "tailwindcss";@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));@theme inline{--color-*:initial;--shadow-*:initial;--inset-shadow-*:initial;--drop-shadow-*:initial;--text-shadow-*:initial;--color-page:var(--page);--color-side:var(--side);--color-surface:var(--surface);--color-line:var(--line);--color-ink:var(--ink);--color-muted:var(--muted);--color-accent:var(--accent);--color-accent-soft:var(--accent-soft);--color-accent-ink:var(--accent-ink);--color-on-accent:var(--on-accent);--font-sans:var(--font-ui)}@layer base{th,td{padding:0.25rem 0.5rem}}';
+
+/**
  * The visual's own document runs this first. Rufi's theme as CSS variables,
  * under its own names (tokens.css), and the base look: no background,
- * Rufi's text and font at the chat's size. Then the height, each time it
+ * Rufi's text and font at the chat's size. As on the screens
+ * (apps/web/src/styles.css), the root is the text size × 16 / 13 and the
+ * body's text 0.8125rem, so a Tailwind size in a visual is the screens'. Then the height, each time it
  * changes, and once, that something was refused or didn't load.
  */
 const CARD = `(() => {
   const parent = window.parent;
   const style = document.createElement("style");
   document.head.append(style);
-  const BASE = "html{background:transparent;color:var(--ink);font-family:var(--font-ui);line-height:1.5;-webkit-text-size-adjust:100%}body{margin:0;display:flow-root}";
+  const BASE = "html{background:transparent;color:var(--ink);font-family:var(--font-ui);line-height:1.5;-webkit-text-size-adjust:100%}body{margin:0;display:flow-root;font-size:0.8125rem}";
   const paint = (t) => {
     if (!t || typeof t !== "object") return;
-    let css = ":root{color-scheme:" + (t.scheme === "dark" ? "dark" : "light") + ";";
-    if (typeof t.fontSize === "string") css += "font-size:" + t.fontSize.replace(/[;{}<>]/g, "") + ";";
+    const scheme = t.scheme === "dark" ? "dark" : "light";
+    document.documentElement.dataset.theme = scheme;
+    let css = ":root{color-scheme:" + scheme + ";";
+    const size = typeof t.fontSize === "string" ? parseFloat(t.fontSize) : NaN;
+    if (Number.isFinite(size) && size > 0) css += "font-size:" + (size * 16) / 13 + "px;";
     const variables = t.variables && typeof t.variables === "object" ? t.variables : {};
     for (const [name, value] of Object.entries(variables)) {
       if (/^--[a-z0-9-]+$/.test(name)) css += name + ":" + String(value).replace(/[;{}<>]/g, "") + ";";
@@ -85,14 +110,16 @@ const inScript = (value: unknown) =>
 /**
  * The page's own script: it takes the visual once, from the screen that
  * framed it. It parses the HTML in a template, which loads and runs nothing,
- * takes out what REFUSED names, and unwraps every link. It writes in a document with the theme
- * as data and the card script, which keeps this page's policy, and then puts
- * the visual in its body as parsed, never parsing it a second time.
+ * takes out what REFUSED names, and unwraps every link. It writes in a
+ * document with the theme as data, the card script, Rufi's Tailwind theme
+ * and the visual's own script (`kit`), which keep this page's policy, and
+ * then puts the visual in its body as parsed, never parsing it a second time.
  */
-const HOST = `(() => {
+const hostOf = (kit: string) => `(() => {
   const parent = window.parent;
   if (parent === window) return;
   const card = ${inScript(CARD)};
+  const kit = ${inScript(kit)};
   const take = (event) => {
     const data = event.data;
     if (event.source !== parent || !data || data.type !== "rufi-visual" || typeof data.html !== "string") return;
@@ -103,49 +130,81 @@ const HOST = `(() => {
     for (const link of inert.content.querySelectorAll("a")) link.replaceWith(...link.childNodes);
     const theme = JSON.stringify(data.theme ?? null).replace(/</g, "\\\\u003c");
     document.open();
-    document.write('<!doctype html><html><head><meta charset="utf-8"><script type="application/json" id="${THEME_ID}">' + theme + '</' + 'script><script>' + card + '</' + 'script></head><body></body></html>');
+    document.write('<!doctype html><html><head><meta charset="utf-8"><script type="application/json" id="${THEME_ID}">' + theme + '</' + 'script><script>' + card + '</' + 'script><style type="text/tailwindcss">${TAILWIND}</style><script>' + kit + '</' + 'script></head><body></body></html>');
     document.close();
     document.body.append(inert.content);
   };
   addEventListener("message", take);
 })();`;
 
-const PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Visual</title></head><body><script>${HOST}</script></body></html>`;
+const pageOf = (host: string) =>
+  `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Visual</title></head><body><script>${host}</script></body></html>`;
 
 const hash = (script: string) =>
   `'sha256-${createHash("sha256").update(script).digest("base64")}'`;
 
 /**
- * Its own policy, in place of the screens', not beside it: only the two
- * scripts above, inline styles, and pictures and fonts in the visual itself.
+ * Its own policy, in place of the screens', not beside it: only Rufi's
+ * scripts (the page's, the card script and the visual's own), inline
+ * styles, and pictures and fonts in the visual itself.
  * Connections, frames and workers fall back to none. A second policy, which
  * the browser enforces as well, allows no script from a file: a hash alone
  * allows a script file whose `integrity` names it, and its request leaves
  * before the file is checked.
  */
-const VISUAL_CSP = [
-  "sandbox allow-scripts",
-  "default-src 'none'",
-  `script-src ${hash(HOST)} ${hash(CARD)}`,
-  "style-src 'unsafe-inline'",
-  "img-src data:",
-  "font-src data:",
-  "form-action 'none'",
-  "base-uri 'none'",
-  "frame-ancestors 'self'",
-].join("; ");
+const policyOf = (host: string, kit: string) =>
+  [
+    "sandbox allow-scripts",
+    "default-src 'none'",
+    `script-src ${hash(host)} ${hash(CARD)} ${hash(kit)}`,
+    "style-src 'unsafe-inline'",
+    "img-src data:",
+    "font-src data:",
+    "form-action 'none'",
+    "base-uri 'none'",
+    "frame-ancestors 'self'",
+  ].join("; ");
 const NO_SCRIPT_FILES = "script-src 'unsafe-inline'";
 
-/** Serves the page a visual draws in, with its own policy. */
-export function visualFrameRoute(app: App): void {
+/**
+ * The visual's own script, as the screens' build made it
+ * (apps/web/vite.config.ts): read once, when the core starts. With no
+ * screens (tests that only use the API), none.
+ */
+export function visualKit(screens: string | undefined): string {
+  if (screens === undefined) return "";
+  const path = join(screens, "frame", "visual.js");
+  let kit: string;
+  try {
+    kit = readFileSync(path, "utf8");
+  } catch (cause) {
+    throw new Error(
+      `The screens have no script for visuals (${path}): build them with pnpm --filter @rufi/web build.`,
+      { cause },
+    );
+  }
+  // It is written into the visual's document as a script element's text.
+  if (/<\/script/i.test(kit)) {
+    throw new Error(
+      `The script for visuals can't end its own element (${path}).`,
+    );
+  }
+  return kit;
+}
+
+/** Serves the page a visual draws in, with its own policy and `kit`. */
+export function visualFrameRoute(app: App, kit: string): void {
+  const host = hostOf(kit);
+  const page = pageOf(host);
+  const policy = policyOf(host, kit);
   app.get(VISUAL_FRAME_PATH, (c) => {
     // Two policies, by a comma: each holds on its own.
-    c.header("Content-Security-Policy", `${VISUAL_CSP}, ${NO_SCRIPT_FILES}`);
+    c.header("Content-Security-Policy", `${policy}, ${NO_SCRIPT_FILES}`);
     // A link's DNS lookup is no request a policy sees.
     c.header("X-DNS-Prefetch-Control", "off");
     c.header("Cache-Control", "no-store");
     c.header("Content-Type", "text/html; charset=utf-8");
-    return c.body(PAGE);
+    return c.body(page);
   });
 }
 

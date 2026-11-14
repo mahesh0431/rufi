@@ -207,14 +207,18 @@ test("a visual runs no script of its own and reaches neither the network nor Ruf
   const out = `http://127.0.0.1:${String((outside.address() as AddressInfo).port)}`;
   try {
     await opened(page, rufi);
-    // The page's own script, whose hash the policy allows.
+    // Rufi's own scripts, whose hashes the policy allows: the page's, the
+    // card script and the visual's own.
     const response = await page.request.get(
       new URL("/visual-frame.html", page.url()).href,
     );
-    const own = /'(sha256-[^']+)'/.exec(
-      response.headers()["content-security-policy"] ?? "",
-    )?.[1];
-    expect(own).toBeDefined();
+    const allowed = [
+      ...(response.headers()["content-security-policy"] ?? "").matchAll(
+        /'(sha256-[^']+)'/g,
+      ),
+    ].map((match) => match[1] ?? "");
+    expect(allowed).toHaveLength(3);
+    const own = allowed[0];
     const hostile = [
       '<p id="drawn">Drawn</p>',
       // As a model writes a chart: a library from a CDN, then its script.
@@ -302,17 +306,19 @@ test("a visual runs no script of its own and reaches neither the network nor Ruf
       await inside.locator(words).click();
     }
 
-    // The second policy on its own: a script file named by a hash the first
-    // allows, put in past the markup's guard, still never loads.
+    // The second policy on its own: a script file named by any hash the
+    // first allows, put in past the markup's guard, still never loads.
     await frame.evaluate(
-      ({ out, own }) => {
-        const file = document.createElement("script");
-        file.src = `${out}/active.js?hba1c=6.4`;
-        file.integrity = own;
-        file.crossOrigin = "anonymous";
-        document.body.append(file);
+      ({ out, allowed }) => {
+        allowed.forEach((hash, i) => {
+          const file = document.createElement("script");
+          file.src = `${out}/active-${String(i)}.js?hba1c=6.4`;
+          file.integrity = hash;
+          file.crossOrigin = "anonymous";
+          document.body.append(file);
+        });
       },
-      { out, own: own ?? "" },
+      { out, allowed },
     );
     await page.waitForTimeout(1000);
 
@@ -330,6 +336,203 @@ test("a visual runs no script of its own and reaches neither the network nor Ruf
     outside.closeAllConnections();
     await new Promise((resolve) => outside.close(resolve));
   }
+});
+
+test("Tailwind in a visual reaches neither the network nor Rufi's page: the browser refuses each import and web address it writes, and Tailwind refuses a plugin", async ({
+  page,
+  rufi,
+}) => {
+  // Also in WebKit. Tailwind writes a web import or a class's url() into
+  // the CSS it makes, and the frame's policy refuses it: each probe waits
+  // for the browser's refusal of its own address, so it proves the browser
+  // tried. An import is valid only before Rufi's theme, so the test puts
+  // each import's input there, past the markup's guard; a visual's own
+  // import comes after the theme, where the browser ignores it.
+  const reached: string[] = [];
+  const outside: Server = createServer((request, response) => {
+    reached.push(request.url ?? "");
+    response.end("out");
+  });
+  outside.on("connection", () => reached.push("a connection"));
+  await new Promise<void>((resolve) => outside.listen(0, "127.0.0.1", resolve));
+  const out = `http://127.0.0.1:${String((outside.address() as AddressInfo).port)}`;
+  // Rufi's own address, reached from the visual with a value. Chromium
+  // also tells of a request its policy refused, so only one that got an
+  // answer counts.
+  const toRufi: string[] = [];
+  page.on("requestfinished", (request) => {
+    const { origin, search } = new URL(request.url());
+    if (origin === new URL(page.url()).origin && search.includes("hba1c=")) {
+      toRufi.push(request.url());
+    }
+  });
+  try {
+    await opened(page, rufi);
+    const own = new URL(page.url()).origin;
+    // Each in its own visual, so one that stops Tailwind can't keep
+    // another from being reached.
+    const probes: { words: string; input?: string; classes?: string }[] = [
+      { words: "Imported", input: `@import "${out}/tw-import.css?hba1c=6.4";` },
+      { words: "Imported by url", input: `@import url("${out}/tw-url.css");` },
+      {
+        words: "Imported from Rufi",
+        input: `@import "${own}/tw-own.css?hba1c=6.4";`,
+      },
+      {
+        words: "Classes",
+        classes: `bg-[url(${out}/tw-background.png)] [mask-image:url(${own}/tw-mask.png?hba1c=6.4)]`,
+      },
+    ];
+    const refusedFor = [
+      [`${out}/tw-import.css?hba1c=6.4`],
+      [`${out}/tw-url.css`],
+      [`${own}/tw-own.css?hba1c=6.4`],
+      [`${out}/tw-background.png`, `${own}/tw-mask.png?hba1c=6.4`],
+    ];
+    for (const { words } of probes) {
+      await send(page, withVisual(`<p id="probe">${words}</p>`));
+    }
+    // A plugin, in the visual's own Tailwind.
+    await send(
+      page,
+      withVisual(
+        `<p id="probe">Plugin</p><style type="text/tailwindcss">@plugin "${out}/tw-plugin.js";</style>`,
+      ),
+    );
+    await expect(cards(page)).toHaveCount(probes.length + 1);
+    for (const [at, probe] of probes.entries()) {
+      const card = cards(page).nth(at);
+      await expect(
+        card.contentFrame().getByText(probe.words, { exact: true }),
+      ).toBeVisible({ timeout: 15_000 });
+      const frame = await frameOf(card);
+      await frame.evaluate(({ input, classes }) => {
+        const refused: string[] = [];
+        (window as unknown as { refused: string[] }).refused = refused;
+        addEventListener("securitypolicyviolation", (event) =>
+          refused.push(event.blockedURI),
+        );
+        if (input !== undefined) {
+          const style = document.createElement("style");
+          style.setAttribute("type", "text/tailwindcss");
+          style.textContent = input;
+          document
+            .querySelector('style[type="text/tailwindcss"]')
+            ?.before(style);
+        }
+        if (classes !== undefined) {
+          (document.getElementById("probe") as Element).className = classes;
+        }
+      }, probe);
+      for (const address of refusedFor[at] ?? []) {
+        await expect
+          .poll(() =>
+            frame.evaluate(
+              () => (window as unknown as { refused: string[] }).refused,
+            ),
+          )
+          .toContain(address);
+      }
+    }
+    // The class's addresses reached what the probe's style is.
+    const classes = await frameOf(cards(page).nth(3));
+    expect(
+      await classes.evaluate(() => {
+        const style = getComputedStyle(
+          document.getElementById("probe") as Element,
+        );
+        return [
+          style.backgroundImage,
+          style.getPropertyValue("mask-image") ||
+            style.getPropertyValue("-webkit-mask-image"),
+        ];
+      }),
+    ).toEqual([
+      expect.stringContaining("tw-background.png"),
+      expect.stringContaining("tw-mask.png"),
+    ]);
+    // Tailwind itself refuses the plugin: it loads no module at all.
+    const plugin = cards(page).nth(probes.length);
+    await expect(
+      plugin.contentFrame().getByText("Plugin", { exact: true }),
+    ).toBeVisible({ timeout: 15_000 });
+    const pluginFrame = await frameOf(plugin);
+    await expect
+      .poll(() =>
+        pluginFrame.evaluate(() =>
+          performance
+            .getEntriesByName("(error)")
+            .map((mark) =>
+              String(
+                ((mark as PerformanceMark).detail as { error?: unknown } | null)
+                  ?.error,
+              ),
+            ),
+        ),
+      )
+      .toContain(
+        "Error: The browser build does not support plugins or config files.",
+      );
+    await page.waitForTimeout(1000);
+    expect(reached).toEqual([]);
+    expect(toRufi).toEqual([]);
+  } finally {
+    outside.closeAllConnections();
+    await new Promise((resolve) => outside.close(resolve));
+  }
+});
+
+test("a visual is styled with Tailwind in Rufi's theme: any class, the screens' colour names, no colours of Tailwind's own, and dark as Rufi is", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi);
+  await send(
+    page,
+    withVisual(
+      [
+        '<div class="p-4 rounded-lg border border-line bg-surface">',
+        '<p id="small" class="text-sm text-muted">Small</p>',
+        '<div id="grid" class="grid grid-cols-[1fr_auto] gap-2"><span>Date</span><span>Value</span></div>',
+        '<p id="red" class="bg-red-500 text-red-600">Red</p>',
+        '<p id="dark" class="text-ink dark:text-accent">Dark</p>',
+        "</div>",
+      ].join(""),
+    ),
+  );
+  const card = cards(page);
+  await expect(
+    page.frameLocator(".reply iframe[title='Visual']").getByText("Dark"),
+  ).toBeVisible({ timeout: 15_000 });
+  const frame = await frameOf(card);
+  const style = (id: string, property: string) =>
+    frame.evaluate(
+      ({ id, property }) =>
+        getComputedStyle(
+          document.getElementById(id) as Element,
+        ).getPropertyValue(property),
+      { id, property },
+    );
+  // Tailwind builds after the visual is in, any class the AI writes: wait
+  // for an arbitrary value's.
+  await expect
+    .poll(async () => (await style("grid", "grid-template-columns")).split(" "))
+    .toHaveLength(2);
+  // Rufi's colours by the screens' names; Tailwind's own have none.
+  expect(await style("small", "color")).toBe(await pageColour(page, "--muted"));
+  expect(await style("red", "background-color")).toBe("rgba(0, 0, 0, 0)");
+  expect(await style("red", "color")).toBe(await pageColour(page, "--ink"));
+  expect(await style("dark", "color")).toBe(await pageColour(page, "--ink"));
+  // Dark is Rufi's, not the system's.
+  await page.evaluate(() => {
+    document.documentElement.dataset["appearance"] = "dark";
+  });
+  await expect
+    .poll(() => style("dark", "color"))
+    .toBe(await pageColour(page, "--accent"));
+  await expect(
+    log(page).getByText("Part of this visual didn't load"),
+  ).toHaveCount(0);
 });
 
 test("a visual that starts above what you read and grows keeps your place", async ({

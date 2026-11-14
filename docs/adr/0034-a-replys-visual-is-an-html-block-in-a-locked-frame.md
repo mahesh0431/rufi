@@ -1,6 +1,6 @@
 # 0034 · A reply's visual is an HTML block in a locked frame
 
-**Date:** 8 Nov 2026 · **Status:** accepted · Supersedes [ADR 0030](0030-rufi-ais-reply-is-openui-lang.md)
+**Date:** 8 Nov 2026 · **Status:** accepted · Supersedes [ADR 0030](0030-rufi-ais-reply-is-openui-lang.md) · Its look is Tailwind's, in Rufi's theme: [ADR 0037](0037-a-visual-is-styled-with-tailwind-in-rufis-theme.md)
 
 Rufi AI's reply is Markdown, no longer OpenUI Lang. Where a chart, a comparison, many values side by side or a process shows better than words, the AI writes a small visual in HTML and CSS, with inline SVG for a chart, as a block in its reply, in the place it belongs. Rufi shows the block as a card. Mahesh chose this on 7 Nov 2026: "HTML, CSS sort of thing", with no chart library or framework, drawn with Rufi's theme. Two rules hold in code, not only in the AI's instructions: a visual can't reach the network, so it never sends health data out, and it can't touch the app or its session. So a visual runs no script of its own (8 Nov 2026).
 
