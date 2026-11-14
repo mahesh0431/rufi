@@ -203,6 +203,14 @@ _Avoid_: answer card, widget, generated UI
 A chart, comparison or process the AI draws in HTML and CSS, as a `rufi-visual` block in its reply's Markdown, in its place. Rufi shows it as a card in a locked frame, in Rufi's theme, that can't load or send anything or reach Rufi, except a button's message, which goes into the chat as the person's own (ADR 0035). A picture is a file the AI made; a visual is part of the reply's text.
 _Avoid_: artifact, widget, embed, chart block
 
+**Question card**:
+A small card Rufi draws in the chat when Rufi AI asks the person something with a few clear answers, from Rufi AI's words: a key naming what it is about, optional details naming exactly what the person approves, the question and its answers. A click on an answer is the person's message, quoting the card; the card keeps the first answer that reached Rufi AI. Reply quotes the card in the box without answering it (ADR 0036).
+_Avoid_: prompt, form, poll, choice widget
+
+**Quote (of a question card)**:
+The line at the top of a message that answers a question card, naming the card by its key and linking to it (`rufi:/chat/questions/<id>`); Rufi AI reads it as `> [key](link)`.
+_Avoid_: reply-to, reference
+
 **Picture (in a reply)**:
 A picture the AI made because the person asked for one, or one it generated, shown in a reply. Pictures are files in the AI's folder (or where it keeps the pictures it generates), shown as they are now: Rufi keeps no copy, and a file that is gone shows as such.
 _Avoid_: artifact, attachment, image

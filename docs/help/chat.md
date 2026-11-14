@@ -119,6 +119,16 @@ The AI's reply shows while it writes it, as you chose (see [While Rufi writes](#
 - **Answers as buttons:** when the AI asks you something with a few clear answers, such as whether to save a change, its visual can show a button for each, such as **Save** and **Not now**. A click sends the button's message into the chat as your own, as if you had typed it, and the AI answers it as it would your words; a save still shows Rufi's receipt. The buttons stay as they are, so you can click one later, and you can always type your answer instead. Your half-typed words in the box stay. While the AI is still replying, a click goes as Enter in the box would (see [While the AI replies](#while-the-ai-replies)). If a click can't reach Rufi, a line under the visual says so; click again.
 - Check the values against your record, as with anything the AI says.
 
+### A question card
+
+When Rufi AI asks you something with a few clear answers, such as whether to save results, it asks last in its reply, with a small card Rufi draws the same way every time: what it is about, such as "Lipid panel, 12 Aug 2026", a short line or list of exactly what you approve, the question, and a button for each answer, such as **Save** and **Not now**.
+
+- **Click an answer**, or go to it with Tab and press Enter. It is your message, starting with the card's quote, and the AI answers it as it would your words; a save still shows Rufi's receipt. The words you were typing in the box stay. While the AI is still replying, a click goes as Enter in the box would (see [While the AI replies](#while-the-ai-replies)).
+- The card then shows your answer on its way, and once the AI has it, the answer you chose, with a tick and no buttons. While your answer waits until the reply ends, the card says **Waiting**; remove it from the [waiting messages](#waiting-messages) and the card's buttons are back. If your answer couldn't reach Rufi, the card says **Not sent**: click **Retry**. If Rufi refused it, the card says why.
+- **Reply** puts the card's quote in the box, for an answer in your own words. It doesn't answer the card: its buttons stay.
+- To change your mind once you answered, type it. The card keeps your first answer, and the AI sees each of your messages.
+- The quote at the top of your answer goes back to its card, also when the card is further up the chat.
+
 ### While Rufi writes
 
 Choose how a reply shows while the AI writes it in [Settings › Chat](rufi:/settings/chat) › **While Rufi writes**:
