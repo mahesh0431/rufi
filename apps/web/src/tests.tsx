@@ -22,7 +22,11 @@ import {
   rowElementId,
 } from "./record.tsx";
 import { Trend } from "./trend.tsx";
-import { lineOf, lineOfPage, lineTitle, onTheLine } from "./trend-drawing.ts";
+import {
+  lineOf,
+  lineTitle,
+  onTheLine,
+} from "@rufi/contracts/line";
 import {
   EmptyState,
   laterParts,
@@ -206,7 +210,7 @@ export function TestPage({
     );
   }
   const { test } = page.data;
-  const line = lineOfPage(page.data.values);
+  const line = page.data.line;
   if ("problem" in test || test.kind !== "test") {
     return (
       <div className="mx-auto max-w-[790px] px-6 py-8 text-muted italic">

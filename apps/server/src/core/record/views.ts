@@ -29,6 +29,7 @@ import type {
   WaitingDocument,
 } from "@rufi/contracts/record";
 import type { DocumentSummary } from "@rufi/contracts/documents";
+import { lineOfPage } from "@rufi/contracts/line";
 import { RecordRow } from "@rufi/contracts/record";
 import { Schema } from "effect";
 import { sql, type Kysely, type RawBuilder } from "kysely";
@@ -674,7 +675,8 @@ async function labResults(db: Db, personId: string): Promise<LabResults> {
 
 /**
  * A test's page: the test, and its current values newest first, each with
- * its report's lab; undefined when the person has no such test.
+ * its report's lab, and its line; undefined when the person has no such
+ * test.
  */
 async function testPage(
   db: Db,
@@ -689,18 +691,16 @@ async function testPage(
     LEFT JOIN reports p ON p.person_id = r.person_id AND p.id = r.report_id
     WHERE r.person_id = ${personId} AND r.test_id = ${testId} AND ${isCurrent(result, "r")}
     ORDER BY ${NEWEST}`.execute(db);
-  return {
-    test: shown(kindOf("test"), test),
-    values: rows.map((row) => ({
-      row: shown(result, row),
-      report:
-        row["report_id"] === null
-          ? null
-          : typeof row["report_issuer"] === "string"
-            ? { issuer: row["report_issuer"] }
-            : {},
-    })),
-  };
+  const values = rows.map((row) => ({
+    row: shown(result, row),
+    report:
+      row["report_id"] === null
+        ? null
+        : typeof row["report_issuer"] === "string"
+          ? { issuer: row["report_issuer"] }
+          : {},
+  }));
+  return { test: shown(kindOf("test"), test), values, line: lineOfPage(values) };
 }
 
 /** A page's tile: its count and what it counts. */

@@ -26,7 +26,7 @@ import type { BoxChip } from "./draft.ts";
 import { askRufi } from "./panel.ts";
 import { useRecordDetail, useRecordPages, useTestPage } from "./reads.ts";
 import { Trend } from "./trend.tsx";
-import { lineOf, lineOfPage, lineTitle } from "./trend-drawing.ts";
+import { lineOf, lineOfPage, lineTitle } from "@rufi/contracts/line";
 import { MedicineDoses } from "./doses.tsx";
 import { MedicinesToday, Reminders, untilWords } from "./today.tsx";
 import {

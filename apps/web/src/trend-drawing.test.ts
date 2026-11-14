@@ -1,6 +1,7 @@
+import { lineOf } from "@rufi/contracts/line";
 import type { ResultRow } from "@rufi/contracts/record";
 import { describe, expect, it } from "vitest";
-import { drawTrend, lineOf } from "./trend-drawing.ts";
+import { drawTrend } from "./trend-drawing.ts";
 
 const LARGE = { width: 640, height: 150 };
 
@@ -21,7 +22,21 @@ const result = (
   ...(date !== undefined && { measured: { date } }),
   in_test: "tst-ferritin",
   ...more,
+  // In its test's unit, as printed.
+  ...(more.number !== undefined || Number.isFinite(Number(value))
+    ? { test_number: more.number ?? Number(value) }
+    : {}),
+  ...(more.second_number !== undefined && {
+    test_second_number: more.second_number,
+  }),
 });
+
+/** A trend of results, drawn from their test's line. */
+const draw = (
+  title: string,
+  rows: readonly ResultRow[],
+  size: { width: number; height: number },
+) => drawTrend(title, lineOf(rows), size);
 
 const ferritin = [
   result("f1", "2025-10-12", "31", { range: "30 - 400" }),
@@ -32,7 +47,7 @@ const ferritin = [
 describe("a ring", () => {
   it("marks each value the lab flagged, and only those: Rufi reads nothing from the range", () => {
     const ringed = (more: Partial<ResultRow>, value = "8") =>
-      drawTrend(
+      draw(
         "Ferritin (µg/L)",
         [result("a", "2026-01-01", value, more)],
         LARGE,
@@ -51,7 +66,7 @@ describe("a ring", () => {
   });
 
   it("is drawn on each flagged value of a series, and the newest is filled", () => {
-    const drawing = drawTrend("Ferritin (µg/L)", ferritin, LARGE);
+    const drawing = draw("Ferritin (µg/L)", ferritin, LARGE);
     expect(drawing?.lines[0]?.points.map((point) => point.flagged)).toEqual([
       false,
       true,
@@ -67,23 +82,23 @@ describe("a ring", () => {
 
 describe("the scale", () => {
   it("fits the values, so a wide range can't flatten the line; the range is written as printed", () => {
-    const drawing = drawTrend("Ferritin (µg/L)", ferritin, LARGE);
+    const drawing = draw("Ferritin (µg/L)", ferritin, LARGE);
     const ys = drawing?.lines[0]?.points.map((point) => point.y) ?? [];
     // The values use most of the plot's height (22 to 128), not a sliver of it.
     expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(50);
-    expect(drawing?.range).toBe("Lab range 30 - 400");
+    expect(drawing?.range).toBe("Lab range 30 - 400 µg/L");
     // A range in words is written as it came too.
     expect(
-      drawTrend(
+      draw(
         "Ferritin (µg/L)",
         [result("f1", "2026-01-01", "31", { range: "see note" })],
         LARGE,
       )?.range,
-    ).toBe("Lab range see note");
+    ).toBe("Lab range see note µg/L");
   });
 
   it("spaces time by date, oldest at the left", () => {
-    const drawing = drawTrend("Ferritin (µg/L)", ferritin, LARGE);
+    const drawing = draw("Ferritin (µg/L)", ferritin, LARGE);
     const xs = drawing?.lines[0]?.points.map((point) => point.x) ?? [];
     expect(xs[0]).toBe(44);
     expect(xs[2]).toBe(616);
@@ -92,7 +107,7 @@ describe("the scale", () => {
   });
 
   it("shows one value as a dot in the middle", () => {
-    const drawing = drawTrend(
+    const drawing = draw(
       "Vitamin D (ng/mL)",
       [result("v1", "2026-05", "22", { range: "30 - 100" })],
       LARGE,
@@ -105,7 +120,7 @@ describe("the scale", () => {
   });
 
   it("leaves out values with no date or no number, and draws nothing without any", () => {
-    const drawing = drawTrend(
+    const drawing = draw(
       "Ferritin (µg/L)",
       [
         ...ferritin,
@@ -116,7 +131,7 @@ describe("the scale", () => {
     );
     expect(drawing?.lines[0]?.points).toHaveLength(3);
     expect(
-      drawTrend("Ferritin (µg/L)", [result("f4", undefined, "40")], LARGE),
+      draw("Ferritin (µg/L)", [result("f4", undefined, "40")], LARGE),
     ).toBeUndefined();
   });
 
@@ -129,7 +144,7 @@ describe("the scale", () => {
         number: high,
         second_number: low,
       });
-    const drawing = drawTrend(
+    const drawing = draw(
       "Blood pressure (mmHg)",
       [bp("b1", "2026-06-01", 126, 82), bp("b2", "2026-09-20", 118, 78)],
       LARGE,
@@ -147,59 +162,8 @@ describe("the scale", () => {
 
 describe("for a screen reader", () => {
   it("says every value with its date, and the range as printed", () => {
-    expect(drawTrend("Ferritin (µg/L)", ferritin, LARGE)?.said).toBe(
-      "Ferritin (µg/L) over time: 31 on 12 Oct 2025, 18 on 4 Mar 2026, 26 on 1 Sep 2026. Lab range 30 - 400",
+    expect(draw("Ferritin (µg/L)", ferritin, LARGE)?.said).toBe(
+      "Ferritin (µg/L) over time: 31 on 12 Oct 2025, 18 on 4 Mar 2026, 26 on 1 Sep 2026. Lab range 30 - 400 µg/L",
     );
-  });
-});
-
-describe("a test's line", () => {
-  it("puts each result at its numbers in the test's unit, as printed when they are the printed ones, and leaves out one with none", () => {
-    const crea = (
-      id: string,
-      date: string,
-      value: string,
-      more: Partial<ResultRow>,
-    ) =>
-      result(id, date, value, { test: "Creatinine", unit: "mg/dL", ...more });
-    const line = lineOf(
-      [
-        crea("c1", "2026-03-01", "1.0", {
-          number: 1,
-          test_number: 1,
-          range: "0.6 - 1.1",
-        }),
-        // Another lab's unit, converted; and one the AI couldn't compare.
-        crea("c2", "2026-06-01", "<45", {
-          comparator: "<",
-          number: 45,
-          unit: "µmol/L",
-          test_number: 0.5,
-          range: "45 - 90",
-        }),
-        crea("c3", "2026-07-01", "8", { number: 8, unit: "mmol/L" }),
-      ],
-      (id) => (id === "c2" ? "Northgate Labs" : undefined),
-    );
-    expect(drawTrend("Creatinine (mg/dL)", line, LARGE)?.said).toBe(
-      "Creatinine (mg/dL) over time: 1.0 on 1 Mar 2026, <0.5 on 1 Jun 2026. Lab range 45 - 90 µmol/L · Northgate Labs",
-    );
-  });
-
-  it("draws a blood pressure's second number in the test's unit as its second line", () => {
-    const [bp] = lineOf([
-      result("b1", "2026-09-20", "16.8/10.9", {
-        number: 16.8,
-        second_number: 10.9,
-        unit: "kPa",
-        test_number: 126,
-        test_second_number: 82,
-      }),
-    ]);
-    expect(bp).toMatchObject({
-      value: "126/82",
-      number: 126,
-      second_number: 82,
-    });
   });
 });
