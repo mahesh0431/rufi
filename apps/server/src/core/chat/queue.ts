@@ -544,7 +544,11 @@ export function chatQueue(
           .executeTakeFirst();
         if (row?.state !== "waiting") return { status: "gone" };
         if (row.held !== null) {
-          return { status: "held", held: row.held, text: row.held_text };
+          return {
+            status: "held",
+            held: row.held as NonNullable<QueueItem["held"]>,
+            text: row.held_text,
+          };
         }
         await trx
           .updateTable("chat_queue")
