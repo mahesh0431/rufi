@@ -208,14 +208,18 @@ test("a visual runs no script of its own and reaches neither the network nor Ruf
   const out = `http://127.0.0.1:${String((outside.address() as AddressInfo).port)}`;
   try {
     await opened(page, rufi);
-    // The page's own script, whose hash the policy allows.
+    // Rufi's own scripts, whose hashes the policy allows: the page's, the
+    // card script and the visual's own.
     const response = await page.request.get(
       new URL("/visual-frame.html", page.url()).href,
     );
-    const own = /'(sha256-[^']+)'/.exec(
-      response.headers()["content-security-policy"] ?? "",
-    )?.[1];
-    expect(own).toBeDefined();
+    const allowed = [
+      ...(response.headers()["content-security-policy"] ?? "").matchAll(
+        /'(sha256-[^']+)'/g,
+      ),
+    ].map((match) => match[1] ?? "");
+    expect(allowed).toHaveLength(3);
+    const own = allowed[0];
     const hostile = [
       '<p id="drawn">Drawn</p>',
       // As a model writes a chart: a library from a CDN, then its script.
@@ -303,17 +307,19 @@ test("a visual runs no script of its own and reaches neither the network nor Ruf
       await inside.locator(words).click();
     }
 
-    // The second policy on its own: a script file named by a hash the first
-    // allows, put in past the markup's guard, still never loads.
+    // The second policy on its own: a script file named by any hash the
+    // first allows, put in past the markup's guard, still never loads.
     await frame.evaluate(
-      ({ out, own }) => {
-        const file = document.createElement("script");
-        file.src = `${out}/active.js?hba1c=6.4`;
-        file.integrity = own;
-        file.crossOrigin = "anonymous";
-        document.body.append(file);
+      ({ out, allowed }) => {
+        allowed.forEach((hash, i) => {
+          const file = document.createElement("script");
+          file.src = `${out}/active-${String(i)}.js?hba1c=6.4`;
+          file.integrity = hash;
+          file.crossOrigin = "anonymous";
+          document.body.append(file);
+        });
       },
-      { out, own: own ?? "" },
+      { out, allowed },
     );
     await page.waitForTimeout(1000);
 
@@ -331,6 +337,116 @@ test("a visual runs no script of its own and reaches neither the network nor Ruf
     outside.closeAllConnections();
     await new Promise((resolve) => outside.close(resolve));
   }
+});
+
+test("Tailwind in a visual reaches neither the network nor Rufi's page: its imports, a web address in a class and a plugin go nowhere", async ({
+  page,
+  rufi,
+}) => {
+  // Also in WebKit. Tailwind writes a web import or a class's url() into
+  // the CSS it makes; the frame's policy is what refuses them.
+  const reached: string[] = [];
+  const outside: Server = createServer((request, response) => {
+    reached.push(request.url ?? "");
+    response.end("out");
+  });
+  outside.on("connection", () => reached.push("a connection"));
+  await new Promise<void>((resolve) => outside.listen(0, "127.0.0.1", resolve));
+  const out = `http://127.0.0.1:${String((outside.address() as AddressInfo).port)}`;
+  try {
+    await opened(page, rufi);
+    // Each in its own visual, so one that stops Tailwind can't keep
+    // another from being reached.
+    const probes = [
+      `<p id="probe">Imported</p><style type="text/tailwindcss">@import "${out}/tw-import.css";</style>`,
+      `<p id="probe">Imported by url</p><style type="text/tailwindcss">@import url("${out}/tw-url.css");</style>`,
+      `<p id="probe" class="bg-[url(${out}/tw-background.png)] [mask-image:url(${out}/tw-mask.png)]">Classes</p>`,
+      `<p id="probe">Plugin</p><style type="text/tailwindcss">@plugin "${out}/tw-plugin.js";</style>`,
+    ];
+    for (const probe of probes) await send(page, withVisual(probe));
+    await expect(cards(page)).toHaveCount(probes.length);
+    // Each visual's words still show.
+    for (const words of ["Imported", "Imported by url", "Classes", "Plugin"]) {
+      const card = page
+        .frameLocator(".reply iframe[title='Visual']")
+        .nth(["Imported", "Imported by url", "Classes", "Plugin"].indexOf(words));
+      await expect(card.getByText(words, { exact: true })).toBeVisible();
+    }
+    // The class's addresses reached the CSS Tailwind made: the probe is real.
+    const classes = await frameOf(cards(page).nth(2));
+    await expect
+      .poll(() =>
+        classes.evaluate(
+          () =>
+            getComputedStyle(document.getElementById("probe") as Element)
+              .backgroundImage,
+        ),
+      )
+      .toContain("tw-background.png");
+    await page.waitForTimeout(1000);
+    expect(reached).toEqual([]);
+  } finally {
+    outside.closeAllConnections();
+    await new Promise((resolve) => outside.close(resolve));
+  }
+});
+
+test("a visual is styled with Tailwind in Rufi's theme: the screens' sizes and colours, no colours of Tailwind's own, any class, and dark as Rufi is", async ({
+  page,
+  rufi,
+}) => {
+  await opened(page, rufi);
+  await send(
+    page,
+    withVisual(
+      [
+        '<div id="box" class="p-4 rounded-lg border border-line bg-surface">',
+        '<p id="small" class="text-sm text-muted">Small</p>',
+        '<p id="body">Body</p>',
+        '<div id="grid" class="grid grid-cols-[1fr_auto] gap-2"><span>Date</span><span>Value</span></div>',
+        '<p id="red" class="bg-red-500 text-red-600">Red</p>',
+        '<p id="dark" class="text-ink dark:text-accent">Dark</p>',
+        "</div>",
+      ].join(""),
+    ),
+  );
+  const card = cards(page);
+  await expect(
+    page.frameLocator(".reply iframe[title='Visual']").getByText("Dark"),
+  ).toBeVisible({ timeout: 15_000 });
+  const frame = await frameOf(card);
+  const style = (id: string, property: string) =>
+    frame.evaluate(
+      ({ id, property }) =>
+        getComputedStyle(document.getElementById(id) as Element)
+          .getPropertyValue(property),
+      { id, property },
+    );
+  // Tailwind builds after the visual is in: wait for its classes.
+  await expect.poll(() => style("box", "padding-top")).toBe("16px");
+  // The screens' sizes at the chat's text size (13 px): text-sm is 14 px,
+  // as on the screens, and plain text the chat's 13 px.
+  expect(await style("small", "font-size")).toBe("14px");
+  expect(await style("body", "font-size")).toBe("13px");
+  // An arbitrary value works.
+  expect((await style("grid", "grid-template-columns")).split(" ")).toHaveLength(
+    2,
+  );
+  // Rufi's colours by the screens' names; Tailwind's own have none.
+  expect(await style("small", "color")).toBe(await pageColour(page, "--muted"));
+  expect(await style("red", "background-color")).toBe("rgba(0, 0, 0, 0)");
+  expect(await style("red", "color")).toBe(await pageColour(page, "--ink"));
+  expect(await style("dark", "color")).toBe(await pageColour(page, "--ink"));
+  // Dark is Rufi's, not the system's.
+  await page.evaluate(() => {
+    document.documentElement.dataset["appearance"] = "dark";
+  });
+  await expect
+    .poll(() => style("dark", "color"))
+    .toBe(await pageColour(page, "--accent"));
+  await expect(
+    log(page).getByText("Part of this visual didn't load"),
+  ).toHaveCount(0);
 });
 
 test("a visual that starts above what you read and grows keeps your place", async ({
