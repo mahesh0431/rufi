@@ -54,13 +54,18 @@ const TOOLS = [
 /** The name Claude knows Rufi's plugin by: its skills are `rufi:<name>`. */
 const PLUGIN = "rufi";
 
-/** Claude Code's own plugins (2.1.322), off like everything not Rufi's. */
-const BUILT_IN_PLUGINS = [
+/** Claude Code's own plugins (2.1.322) that stay off, like everything not Rufi's. */
+const BUILT_IN_PLUGINS_OFF = [
   "cc-plugin-agents-md",
   "cc-plugin-telemetry",
-  "cc-plugin-privacy",
   "cc-plugin-plugin-authoring",
 ];
+
+/**
+ * The one built-in plugin kept on: it keeps the person's email address out
+ * of the requests Claude sends to websites.
+ */
+const PRIVACY_PLUGIN = "cc-plugin-privacy";
 
 /** Rufi's choices on top of Claude's defaults, as its flag settings. */
 const SETTINGS = {
@@ -79,9 +84,12 @@ const SETTINGS = {
   crossSessionInbound: "refuse",
   /** Rufi's skills only: none of Claude Code's own skills and workflows. */
   disableBundledSkills: true,
-  enabledPlugins: Object.fromEntries(
-    BUILT_IN_PLUGINS.map((name) => [`${name}@builtin`, false]),
-  ),
+  enabledPlugins: {
+    ...Object.fromEntries(
+      BUILT_IN_PLUGINS_OFF.map((name) => [`${name}@builtin`, false]),
+    ),
+    [`${PRIVACY_PLUGIN}@builtin`]: true,
+  },
 } satisfies Settings;
 
 /**
@@ -299,7 +307,7 @@ export function openClaudeSession(
 /**
  * What Claude has at a turn's start beyond what Rufi gave it: a tool, an MCP
  * server or a plugin not Rufi's, as one line each. Rufi's own MCP server
- * and its tools are Rufi's.
+ * and its tools are Rufi's, and so is Claude's privacy plugin, kept on.
  */
 export function unexpectedAtStart(init: SDKSystemMessage): string[] {
   return [
@@ -312,7 +320,9 @@ export function unexpectedAtStart(init: SDKSystemMessage): string[] {
       .filter((server) => server.name !== PLUGIN)
       .map((server) => `MCP server ${server.name}`),
     ...init.plugins
-      .filter((plugin) => plugin.name !== PLUGIN)
+      .filter(
+        (plugin) => plugin.name !== PLUGIN && plugin.name !== PRIVACY_PLUGIN,
+      )
       .map((plugin) => `plugin ${plugin.name}`),
   ];
 }
