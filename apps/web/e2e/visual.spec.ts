@@ -752,10 +752,19 @@ test("a visual's chart JSON reaches neither the network nor Rufi's page: nothing
   outside.on("connection", () => reached.push("a connection"));
   await new Promise<void>((resolve) => outside.listen(0, "127.0.0.1", resolve));
   const out = `http://127.0.0.1:${String((outside.address() as AddressInfo).port)}`;
+  // Rufi's own address, answered for the visual with a value.
+  const toRufi: string[] = [];
+  page.on("requestfinished", (request) => {
+    const { origin, search } = new URL(request.url());
+    if (origin === new URL(page.url()).origin && search.includes("hba1c=")) {
+      toRufi.push(request.url());
+    }
+  });
   const ran = "document.body.dataset.ran = 'yes'";
   const point = { x: "2026-01-01", y: 1, text: "1" };
   try {
     await opened(page, rufi);
+    const own = new URL(page.url()).origin;
     const probes: [string, string][] = [
       [
         "Not JSON",
@@ -812,7 +821,12 @@ test("a visual's chart JSON reaches neither the network nor Rufi's page: nothing
           },
           options: {
             scales: { x: { type: "time" } },
-            plugins: { title: { display: true, text: `${out}/title` } },
+            plugins: {
+              title: { display: true, text: `${out}/title` },
+              legend: {
+                labels: { font: { family: `url(${own}/font.woff?hba1c=6.4)` } },
+              },
+            },
             font: { family: `url(${out}/font.woff)` },
           },
         }),
@@ -857,6 +871,7 @@ test("a visual's chart JSON reaches neither the network nor Rufi's page: nothing
       .toBeGreaterThanOrEqual(3);
     await page.waitForTimeout(1000);
     expect(reached).toEqual([]);
+    expect(toRufi).toEqual([]);
     expect(page.context().pages()).toHaveLength(1);
   } finally {
     outside.closeAllConnections();
