@@ -25,5 +25,14 @@
       },
       "report": { "issuer": "Sunrise Labs" }
     }
+  ],
+  "line": [
+    {
+      "value": "4.6",
+      "number": 4.6,
+      "flag": "High",
+      "range": "0.4 - 4.0 mIU/L · Sunrise Labs",
+      "measured": { "date": "2026-08-12" }
+    }
   ]
 }
