@@ -9,6 +9,7 @@
     "./documents": "./src/documents.ts",
     "./briefs": "./src/briefs.ts",
     "./record": "./src/record.ts",
+    "./line": "./src/line.ts",
     "./devices": "./src/devices.ts",
     "./remote": "./src/remote.ts",
     "./instructions": "./src/instructions.ts"
