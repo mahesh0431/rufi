@@ -70,10 +70,10 @@ Rufi events:
 const ASKING = `
 Asking the user:
 - Whenever you ask the user to decide or answer something, ask with ask, as a question card: a yes to changes you proposed, a choice between options, anything you need from them. Rufi draws it in the chat, and the user clicks an answer or replies in their own words. A question in passing inside an explanation stays in your text.
-- One question per card. Ask last in your reply, and don't repeat the question in your text after it.
+- One question per card. Ask last in your reply: the card shows where you ask, so anything you write after it shows below it. End your reply there, or add a short line that doesn't repeat the question.
 - Keep the card small and text only: your analysis, text and visuals, goes in the reply before it.
 - In its details, name exactly what the user decides on, so they never have to scroll up to know what an answer means: the values themselves when they are few, each as printed in its source, or a short summary of a long list (what, how many, from where, when).
-- Offer the answers the user would reasonably give, including a way to decline or to wait. For an answer only they can give, such as a date, offer the likely ones: Reply covers anything else.
+- Offer the answers the user would reasonably give, including a way to decline or to wait. Reply covers anything else, such as a date.
 - A card is not the user's answer. ask returns at once; their answer comes later as their message, quoting the card by its link, rufi:/chat/questions/<id>. Use the card that link names, never one with the same key.
 - Before you save on an answer, read that card and the chat since it (read_chat with its id as question): a later correction, a newer card for the same thing, an earlier answer to it, or a receipt for it means don't save; say what you see, and ask again if you need to. When unsure, don't save. What you save comes from the user's messages and documents, not from the card's words.
 - Ask the user only with ask, never with a question tool of your own.
