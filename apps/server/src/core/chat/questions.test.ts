@@ -6,7 +6,8 @@
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Change } from "./transcript.ts";
+import type { Entry } from "@rufi/contracts";
+import type { Change, Step } from "./transcript.ts";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   databasePath,
@@ -142,66 +143,75 @@ describe("ask", () => {
   });
 
   it("keeps the text Rufi AI wrote just before the card as its reply, above the card, also given as progress notes; notes before an ended step stay in Activity", async () => {
-    const turn = `t-${String(turns)}`;
-    await transcripts.appendNote(
-      chat,
-      turn,
-      "n-1",
-      "Checking your record first.",
-      true,
-    );
-    await transcripts.setActivity(chat, turn, "s-1", {
-      activity: "tool",
-      title: "rufi.get_overview",
-      status: "done",
+    store.db
+      .prepare(
+        "INSERT INTO agent_owners (agent_id, person_id, chat_id, root, created_at) VALUES ('rufi-ai', 'asha', ?, 1, '2026-11-10T09:00:00Z')",
+      )
+      .run(chat.id);
+    const step = (
+      id: string,
+      position: number,
+      type: Step["type"],
+      status: string,
+      text: string,
+    ): Step => ({
+      id,
+      position,
+      type,
+      kind: type === "step" ? "tool" : null,
+      title: type === "step" ? text : null,
+      detail: null,
+      status,
+      text: type === "step" ? null : text,
+      createdAt: "2026-11-10T09:00:00.000Z",
+      updatedAt: "2026-11-10T09:00:00.000Z",
     });
-    await transcripts.appendNote(
-      chat,
-      turn,
-      "n-2",
-      "Your LDL is 138 mg/dL,",
-      true,
-    );
-    await transcripts.appendNote(
-      chat,
-      turn,
-      "n-3",
-      " above the lab's range.",
-      true,
-    );
-    await transcripts.setActivity(chat, turn, "call-ask", {
-      activity: "tool",
-      title: "rufi.ask",
-      status: "running",
+    const reported = [
+      step("n-1", 1, "note", "done", "Checking your record first."),
+      step("s-1", 2, "step", "completed", "rufi.get_overview"),
+      step("n-2", 3, "note", "done", "Your LDL is 138 mg/dL,"),
+      step("n-3", 4, "note", "done", " above the lab's range."),
+      step("call-ask", 5, "step", "running", "rufi.ask"),
+    ];
+    transcripts.readSteps({
+      of: () => new Map([[`t-${String(turns)}`, reported]]),
+      details: () => undefined,
     });
     const changes: Change[] = [];
     transcripts.subscribe(chat.id, (change) => changes.push(change));
     const id = await ask();
 
-    expect(
-      (await entries()).map((entry) => [
-        entry.kind,
-        entry.activity,
-        entry.text,
-      ]),
-    ).toEqual([
-      ["activity", "note", "Checking your record first."],
-      ["activity", "tool", "rufi.get_overview"],
-      ["reply", null, "Your LDL is 138 mg/dL,"],
-      ["reply", null, " above the lab's range."],
-      ["activity", "tool", "rufi.ask"],
-      ["question", null, expect.stringContaining("Lipid panel")],
+    const said = (list: readonly Entry[]) =>
+      list.map((entry) => [entry.kind, entry.text]);
+    // Activity sits under the reply on the screens, wherever its steps are.
+    const page = await entries();
+    expect(said(page.filter((entry) => entry.kind !== "activity"))).toEqual([
+      ["reply", "Your LDL is 138 mg/dL,"],
+      ["reply", " above the lab's range."],
+      ["question", expect.stringContaining("Lipid panel")],
     ]);
-    // The screens get the notes as replies with the card, at once.
-    expect(
-      changes.at(-1)?.entries.map((entry) => [entry.kind, entry.id === id]),
-    ).toEqual(
-      expect.arrayContaining([
-        ["reply", false],
-        ["reply", false],
-        ["question", true],
-      ]),
-    );
+    expect(said(page.filter((entry) => entry.kind === "activity"))).toEqual([
+      ["activity", "Checking your record first."],
+      ["activity", "rufi.get_overview"],
+      ["activity", "rufi.ask"],
+    ]);
+    // The screens get the notes as replies by their steps' ids with the
+    // card, at once, and the steps the reply shows later leave them out.
+    const asked = changes.at(-1)?.entries ?? [];
+    expect(said(asked)).toEqual([
+      ["reply", "Your LDL is 138 mg/dL,"],
+      ["reply", " above the lab's range."],
+      ["question", expect.stringContaining("Lipid panel")],
+    ]);
+    expect(asked[2]?.id).toBe(id);
+    await transcripts.show(chat, `t-${String(turns)}`);
+    const later = changes.at(-1)?.entries ?? [];
+    expect(said(later)).toEqual([
+      ["activity", "Checking your record first."],
+      ["activity", "rufi.get_overview"],
+      ["activity", "rufi.ask"],
+    ]);
+    expect(later.map((entry) => entry.id)).not.toContain(asked[0]?.id);
   });
 
   it("makes one card for the same call, also with other words and from a Rufi started again", async () => {

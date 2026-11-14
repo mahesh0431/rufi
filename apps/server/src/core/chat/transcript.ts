@@ -733,7 +733,10 @@ export function transcripts(
     for (const turn of fresh) {
       const reported = kept.get(turn.agent_turn_id);
       if (!reported) gone.add(turn.id);
-      const shown = (reported ?? []).filter(isStep);
+      const replies = await repliesOf(trx, turn);
+      const shown = (reported ?? []).filter(
+        (step) => isStep(step) && !replies.has(stepId(turn.id, step.id)),
+      );
       if (shown.length === 0) continue;
       const anchor = await anchorOf(trx, turn);
       out.push(...shown.map((step) => stepEntry(turn, step, anchor)));
@@ -797,35 +800,57 @@ export function transcripts(
   /**
    * The text Rufi AI wrote just before asking with a card, in `trx`: its
    * reply's, above the card, also where its agent gave it as progress notes
-   * (Codex's commentary). These are the turn's notes since its last step
-   * that ended; the ask's own step still runs. Gives the entries it moved
-   * out of Activity.
+   * (Codex's commentary). These are the reply's whole notes since its last
+   * step that ended (the ask's own still runs); each becomes a reply by its
+   * step's id, so the screens draw it in its place, and leaves Activity.
+   * Gives their ids.
    */
   async function textBefore(
     trx: Transaction<Tables>,
-    turnId: string,
+    chat: ChatRow,
+    turn: TurnRow,
     revision: number,
   ): Promise<string[]> {
-    const steps = await trx
-      .selectFrom("transcript_entries")
-      .select(["id", "activity", "status"])
-      .where("turn_id", "=", turnId)
-      .where("kind", "=", "activity")
-      .orderBy("seq", "desc")
-      .execute();
-    const notes: string[] = [];
-    for (const step of steps) {
-      if (step.activity === "note") notes.push(step.id);
-      else if (step.status !== "running") break;
+    const agent = await rootOf(trx, chat);
+    if (!steps || agent === undefined || turn.agent_turn_id === null) return [];
+    const reported =
+      steps.of(agent, [turn.agent_turn_id]).get(turn.agent_turn_id) ?? [];
+    const notes: Step[] = [];
+    for (const step of reported.toSorted((a, b) => b.position - a.position)) {
+      if (step.type === "note") {
+        if (step.status !== "done" || !step.text) break;
+        notes.unshift(step);
+      } else if (step.type === "step" && step.status !== "running") break;
     }
-    if (notes.length === 0) return [];
-    await trx
-      .updateTable("transcript_entries")
-      .set({ kind: "reply", activity: null, revision, updated_at: now() })
-      .where("id", "in", notes)
-      .execute();
-    return notes;
+    const ids: string[] = [];
+    for (const note of notes) {
+      ids.push(
+        await insertEntry(trx, chat, revision, {
+          id: stepId(turn.id, note.id),
+          turnId: turn.id,
+          kind: "reply",
+          text: note.text ?? "",
+          status: "done",
+          agentItemId: note.id,
+        }),
+      );
+    }
+    return ids;
   }
+
+  /** A reply's notes that became its text before a card (textBefore). */
+  const repliesOf = async (trx: Db, turn: TurnRow) =>
+    new Set(
+      (
+        await trx
+          .selectFrom("transcript_entries")
+          .select("id")
+          .where("person_id", "=", turn.person_id)
+          .where("turn_id", "=", turn.id)
+          .where("kind", "=", "reply")
+          .execute()
+      ).map((row) => row.id),
+    );
 
   /** The queue's rows among `inputs` the AI got that aren't marked sent. */
   const handedOver = (trx: Db, chat: ChatRow, inputs: readonly string[]) =>
@@ -1319,8 +1344,11 @@ export function transcripts(
           entries = (await stepsOf(trx, chat, [turn])).entries;
         } else {
           const anchor = await anchorOf(trx, turn);
+          const replies = await repliesOf(trx, turn);
           entries = shown
-            .filter(isStep)
+            .filter(
+              (step) => isStep(step) && !replies.has(stepId(turn.id, step.id)),
+            )
             .map((step) => stepEntry(turn, step, anchor));
         }
         if (entries.length === 0) return undefined;
@@ -1957,7 +1985,7 @@ export function transcripts(
           await keepCall(trx, chat, turn, call, answer(asked));
           return undefined;
         }
-        const shown = turn ? await textBefore(trx, turn.id, revision) : [];
+        const shown = turn ? await textBefore(trx, chat, turn, revision) : [];
         const id = await insertEntry(trx, chat, revision, {
           turnId: turn?.id ?? null,
           kind: "question",

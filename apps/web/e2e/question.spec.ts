@@ -8,6 +8,7 @@
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page, Request } from "@playwright/test";
 import { SIGNED_OUT as SIGNED_OUT_WORDS } from "@rufi/contracts";
+import { NOTE } from "../../server/tests/fake-model.ts";
 import { expect, openSettings, SIGNED_OUT, test, type Rufi } from "./rufi.ts";
 
 const TIME = "2026-10-10T09:00:00Z";
@@ -96,7 +97,7 @@ const clicks = (page: Page) => {
   return ids;
 };
 
-test("Rufi AI asks with ask: the card it gives shows in the chat, and a click answers it, quoting the card", async ({
+test("Rufi AI asks with ask: the card it gives shows in the chat below the text it wrote first, also given as Codex's progress note, and a click answers it, quoting the card", async ({
   page,
   rufi,
 }) => {
@@ -125,11 +126,21 @@ test("Rufi AI asks with ask: the card it gives shows in the chat, and a click an
     .getByRole("complementary")
     .getByRole("link", { name: "Chat with Rufi" })
     .click();
-  await box(page).fill("Where can I get my scan?");
+  await box(page).fill("Where can I get my scan? commentary");
   await box(page).press("Enter");
 
   const asked = cardOf(page, "Ultrasound clinic");
   await expect(asked).toContainText("Which clinic suits you?");
+  // Once the reply ended and its Activity folded, the words before the card
+  // are still shown, above it.
+  await expect(page.locator(".reply").last()).toContainText("ok:");
+  const before = page.locator(".reply", { hasText: NOTE });
+  await expect(before).toBeVisible();
+  const [above, card] = await Promise.all([
+    before.boundingBox(),
+    asked.boundingBox(),
+  ]);
+  expect((above?.y ?? Infinity) < (card?.y ?? 0)).toBe(true);
   await asked.getByRole("button", { name: "Lakeside Clinic" }).click();
   await expect(asked).toMatchAriaSnapshot(
     `- paragraph: "Answered: Lakeside Clinic"`,
