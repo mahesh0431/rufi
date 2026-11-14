@@ -365,7 +365,8 @@ test("Tailwind in a visual reaches neither the network nor Rufi's page: its impo
     ];
     for (const probe of probes) await send(page, withVisual(probe));
     await expect(cards(page)).toHaveCount(probes.length);
-    // Each visual's words still show.
+    // Each visual's words still show (four frames load at once: as long as
+    // the first visual's wait).
     for (const [at, words] of [
       "Imported",
       "Imported by url",
@@ -374,7 +375,7 @@ test("Tailwind in a visual reaches neither the network nor Rufi's page: its impo
     ].entries()) {
       await expect(
         cards(page).nth(at).contentFrame().getByText(words, { exact: true }),
-      ).toBeVisible();
+      ).toBeVisible({ timeout: 15_000 });
     }
     // The imports and the class's addresses reached the CSS Tailwind made:
     // the probes are real, and only the policy stops them.
