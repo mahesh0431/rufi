@@ -1630,6 +1630,27 @@ describe("the chat, on the scripted Codex", () => {
     await wentOnce(c);
   });
 
+  it("sends a message queued behind a reply once, when the sign-in was lost and came back before the reply ended", async () => {
+    await startChat("fake");
+    const c = await newChat();
+    await rufiReply(c);
+    const { id } = await say(c, "B", "queue");
+    await until(() =>
+      Promise.resolve(
+        agentRows(`SELECT 1 FROM queue WHERE id = '${id}'`).length === 1,
+      ),
+    );
+    signIns["codex"] = { state: "signed_out", account: null, text: null };
+    await chat?.carryAll();
+    await until(async () => (await waiting())[0]?.[2] === "signed_out");
+    // Signed in again while the reply runs: Rufi AI's queue holds nothing.
+    delete signIns["codex"];
+    ai?.agents.signedIn();
+    await chat?.stop(c);
+    await ended(c.id);
+    await wentOnce(c);
+  });
+
   it("keeps a message from a backup held as it was while Rufi AI asks for it, and sends it once when the person sends it", async () => {
     await startChat("fake");
     const c = await newChat();
