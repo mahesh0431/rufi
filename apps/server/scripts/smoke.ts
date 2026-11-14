@@ -325,17 +325,37 @@ const cardsOf = (snapshot: Snapshot): Asked[] =>
   });
 
 /**
- * The card's answer the harness clicks for a yes: the first that starts
- * with yes, save or add, else the first. A person checks the click in the
- * transcript.
+ * The card's answer the harness clicks, as a person would pick it: the
+ * first whose words `match`. A case it can't tell for fails, naming the
+ * card, and clicks nothing. A person checks the click in the transcript.
  */
-const yesOf = (card: QuestionCard) =>
-  Math.max(
-    0,
-    card.answers.findIndex((answer) =>
-      /^(yes|save|add)\b/i.test(answer.trim()),
-    ),
-  );
+function answerTo(card: QuestionCard, match: RegExp): number {
+  const index = card.answers.findIndex((answer) => match.test(answer.trim()));
+  if (index < 0)
+    throw new Error(
+      `couldn't tell which answer of "${card.key}" to click: ${card.answers.join(" | ")}`,
+    );
+  return index;
+}
+
+/** The card's yes: an answer that starts with yes, save or add. */
+const yesOf = (card: QuestionCard) => answerTo(card, /^(yes|save|add)\b/i);
+
+/**
+ * What Rufi AI said after the person's last message: its replies and the
+ * cards it asked with, in order.
+ */
+const saidSince = (snapshot: Snapshot) => {
+  const asked = snapshot.entries.findLast((e) => e.kind === "message");
+  return snapshot.entries
+    .filter(
+      (e) =>
+        (e.kind === "reply" || e.kind === "question") &&
+        e.seq > (asked?.seq ?? 0),
+    )
+    .map((e) => e.text)
+    .join("\n\n");
+};
 
 /** The answer a click gave the card, as the chat shows it now. */
 const answerOf = (snapshot: Snapshot, asked: Asked | undefined) =>
@@ -1351,7 +1371,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
           check: "sees_the_newer_card",
           criterion:
             "After the click on the old card (200 mg), Rufi AI saves nothing, says it sees the correction to 400 mg and the newer card, and asks again or points to the newer card.",
-          evidence: lastReply(snapshot),
+          evidence: saidSince(snapshot),
         },
       ],
       snapshot,
@@ -1400,12 +1420,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
     const offered = await c.read();
     const before = nothingSaved(home, offered);
     const asked = cardsOf(offered).at(-1);
-    const lakeside =
-      asked &&
-      Math.max(
-        0,
-        asked.card.answers.findIndex((answer) => /lakeside/i.test(answer)),
-      );
+    const lakeside = asked && answerTo(asked.card, /lakeside/i);
     if (asked && lakeside !== undefined) await c.click(asked, lakeside);
     const snapshot = await c.read();
     return {
@@ -1426,7 +1441,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
           check: "goes_on_with_lakeside",
           criterion:
             "After the click on Lakeside Clinic, Rufi AI goes on with Lakeside Clinic on Thursday at 16:00: it proposes the follow-up and asks with a card before saving, or saves it with a receipt.",
-          evidence: lastReply(snapshot),
+          evidence: saidSince(snapshot),
         },
       ],
       snapshot,
