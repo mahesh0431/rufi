@@ -589,6 +589,19 @@ describe("lab results by test", () => {
       ["crea-1", null],
       ["crea-old", null],
     ]);
+    // Its line, oldest first, with the test's numbers: the old µmol/L value
+    // at its converted number, labelled with it; the others as printed.
+    expect(
+      page?.line.map(({ value, number, measured }) => [
+        measured.date,
+        value,
+        number,
+      ]),
+    ).toEqual([
+      ["2023-01-10", "1.1", 1.1],
+      ["2026-03-01", "1.0", 1],
+      ["2026-09-01", "1.2", 1.2],
+    ]);
     expect(await views.test("asha", "tst-ldl")).toBeUndefined();
     expect(
       (await views.labResults("ravi")).sections.flatMap(({ tests }) =>
