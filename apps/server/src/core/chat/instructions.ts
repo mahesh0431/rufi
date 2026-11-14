@@ -80,7 +80,7 @@ const REPLY_STYLES: Record<ReplyStyle, string> = {
   balanced:
     "Mostly text, with a Markdown table or a visual where it really helps.",
   simple:
-    "Short, plain text. A visual only when the user asks for one.\n- When you ask something with a few clear answers, offer them as buttons.",
+    "Short, plain text. A visual only when the user asks for one, or for answer buttons.\n- When you ask something with a few clear answers, offer them as buttons.",
 };
 
 /** How the user likes Rufi AI's replies, as Settings › Chat keeps it. */
