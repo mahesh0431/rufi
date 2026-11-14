@@ -20,7 +20,7 @@ import { PROOF_HEADER } from "./api.ts";
 import { agentSetup, startCore, type Core } from "./core.ts";
 import type { Reach } from "./remote.ts";
 import { RouteProblem } from "./remote-route.ts";
-import type { Tailscale } from "./tailscale.ts";
+import type { ServeConfig, Tailscale } from "./tailscale.ts";
 
 const FAKE = join(import.meta.dirname, "../../tests/fake-codex.ts");
 const DOCUMENTS = join(import.meta.dirname, "../../tests/fixtures/documents");
@@ -34,13 +34,16 @@ const MAC = "Asha's MacBook Pro";
 
 let home: string;
 let scope: Scope.Closeable | undefined;
-/** What the stand-in Tailscale was asked: "serve <port>", "off <port>". */
+/** What the stand-in Tailscale was asked: "serve <port>", "off <port>", "funnel <public> <door>", "funnel off <public>". */
 let asked: string[];
+/** What the stand-in Tailscale serves, as `tailscale funnel status --json` says. */
+let config: ServeConfig;
 let logged: string[];
 
 beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), "rufi-remote-"));
   asked = [];
+  config = {};
   logged = [];
   const store = openWritable(databasePath(home));
   store.db.exec(`
@@ -106,17 +109,42 @@ const standIn = (more: Partial<Tailscale> = {}): Tailscale => ({
     asked.push(`off ${String(port)}`);
     return Promise.resolve();
   },
+  served: () => Promise.resolve(structuredClone(config)),
+  funnel: (publicPort, doorPort) => {
+    asked.push(`funnel ${String(publicPort)} ${String(doorPort)}`);
+    const at = `${NAME}:${String(publicPort)}`;
+    config.Web = {
+      ...config.Web,
+      [at]: {
+        Handlers: { "/": { Proxy: `http://127.0.0.1:${String(doorPort)}` } },
+      },
+    };
+    config.AllowFunnel = { ...config.AllowFunnel, [at]: true };
+    return Promise.resolve();
+  },
+  funnelOff: (publicPort) => {
+    asked.push(`funnel off ${String(publicPort)}`);
+    const at = `${NAME}:${String(publicPort)}`;
+    delete config.Web?.[at];
+    delete config.AllowFunnel?.[at];
+    return Promise.resolve();
+  },
   ...more,
 });
 
 /**
- * The door's check, as Serve passes it on: to the door's port on
- * 127.0.0.1, with the address's Host as it came.
+ * The door's check, as Serve or Funnel passes it on: to the door's port on
+ * 127.0.0.1 (Funnel's from its public port, Serve's the same), with the
+ * address's Host as it came.
  */
 const throughServe: Reach = async (url, init) => {
-  const { host, port, pathname } = new URL(url);
+  const { host, hostname, port, pathname } = new URL(url);
+  // Tailscale keys a port as "<name>:<port>", 443 too.
+  const proxy =
+    config.Web?.[port === "" ? `${hostname}:443` : host]?.Handlers?.["/"]
+      ?.Proxy;
   const answer = await call(
-    Number(port),
+    proxy === undefined ? Number(port) : Number(new URL(proxy).port),
     init.method ?? "GET",
     pathname,
     { host },
@@ -548,6 +576,185 @@ describe("the check through the route", () => {
     expect(Date.now() - began).toBeLessThan(2_000);
     expect((await api("GET", "/api/paired-apps")).body["pairing"]).toBeNull();
     expect(asked.at(-1)).toMatch(/^off \d+$/);
+  });
+});
+
+/** A request to the door through Funnel's public `address` ("<name>:<port>"), as Funnel passes it on. */
+const throughFunnel = (
+  address: string,
+  method: string,
+  path: string,
+  { key }: { key?: string } = {},
+  body?: unknown,
+) => {
+  const at = address.includes(":") ? address : `${address}:443`;
+  const proxy = config.Web?.[at]?.Handlers?.["/"]?.Proxy;
+  if (proxy === undefined)
+    throw new Error(`Funnel serves nothing at ${address}`);
+  return call(
+    Number(new URL(proxy).port),
+    method,
+    path,
+    {
+      host: address,
+      ...(key !== undefined && { authorization: `Bearer ${key}` }),
+    },
+    body,
+  );
+};
+
+/** Pairs an app through Funnel: its address and key. */
+async function pairedThroughFunnel(api: Awaited<ReturnType<typeof settings>>) {
+  const made = await api("POST", "/api/paired-apps/pairing", {
+    personId: "asha",
+  });
+  expect(made.status).toBe(200);
+  const link = new URL((made.body["pairing"] as { link: string }).link);
+  const code = new URLSearchParams(link.hash.slice(1)).get("code") ?? "";
+  const answer = await throughFunnel(
+    link.host,
+    "POST",
+    "/api/pair",
+    {},
+    {
+      code,
+      name: "Asha's iPhone",
+    },
+  );
+  expect(answer.status).toBe(200);
+  return { address: link.host, key: String(answer.body["key"]) };
+}
+
+describe("the route", () => {
+  it("can't change while an app is paired or a code is live, and asks Tailscale nothing then", async () => {
+    const core = await start();
+    const api = await settings(core);
+    await pairingLink(api);
+    const before = [...asked];
+
+    const refused = await api("PUT", "/api/remote/route", { kind: "funnel" });
+    expect(refused.status).toBe(409);
+    expect(refused.body["error"]).toBe("Unpair your iPhones first.");
+    expect(asked).toEqual(before);
+
+    await api("POST", "/api/paired-apps/pairing/cancel");
+    const chosen = await api("PUT", "/api/remote/route", { kind: "funnel" });
+    expect(chosen.status).toBe(200);
+    expect(chosen.body["route"]).toEqual({ kind: "funnel" });
+  });
+
+  it("pairs two phones through Funnel on one public port of Rufi's own; both keep working after a restart; the last unpair turns off only that port, and the next pairing takes it again", async () => {
+    const core = await start();
+    const api = await settings(core);
+    await api("PUT", "/api/remote/route", { kind: "funnel" });
+
+    const first = await pairedThroughFunnel(api);
+    const second = await pairedThroughFunnel(api);
+    expect(first.address).toBe(`${NAME}:8443`);
+    expect(second.address).toBe(first.address);
+    expect(asked.filter((step) => step.startsWith("funnel 8443"))).toHaveLength(
+      2,
+    );
+    expect(asked.some((step) => step.startsWith("serve"))).toBe(false);
+
+    await stop();
+    const again = await settings(await start());
+    for (const { address, key } of [first, second]) {
+      const me = await throughFunnel(address, "GET", "/api/me", { key });
+      expect(me.status).toBe(200);
+      expect(me.body["person"]).toEqual({ id: "asha", name: "Asha Fictional" });
+    }
+
+    const listed = (await again("GET", "/api/paired-apps")).body["apps"] as {
+      id: string;
+    }[];
+    for (const { id } of listed) {
+      await again("POST", `/api/paired-apps/${id}/unpair`);
+    }
+    expect(asked.at(-1)).toBe("funnel off 8443");
+    expect(asked.filter((step) => step.startsWith("funnel off"))).toHaveLength(
+      1,
+    );
+
+    const third = await pairedThroughFunnel(again);
+    expect(third.address).toBe(`${NAME}:8443`);
+  });
+
+  it("keeps Funnel chosen while Rufi can't turn it off, saying why, and switches once it can", async () => {
+    let connected = true;
+    const core = await start(
+      standIn({
+        name: () =>
+          connected
+            ? Promise.resolve(NAME)
+            : Promise.reject(
+                new RouteProblem("Tailscale isn't connected on this Mac."),
+              ),
+      }),
+    );
+    const api = await settings(core);
+    await api("PUT", "/api/remote/route", { kind: "funnel" });
+    await pairedThroughFunnel(api);
+    connected = false;
+    const [paired] = (await api("GET", "/api/paired-apps")).body["apps"] as {
+      id: string;
+    }[];
+    await api("POST", `/api/paired-apps/${paired?.id ?? ""}/unpair`);
+
+    const refused = await api("PUT", "/api/remote/route", {
+      kind: "tailscale",
+    });
+    expect(refused.status).toBe(409);
+    expect(refused.body["error"]).toBe(
+      "Tailscale isn't connected on this Mac.",
+    );
+    expect((await api("GET", "/api/paired-apps")).body["route"]).toMatchObject({
+      kind: "funnel",
+    });
+    expect(config.AllowFunnel?.[`${NAME}:8443`]).toBe(true);
+
+    connected = true;
+    const chosen = await api("PUT", "/api/remote/route", { kind: "tailscale" });
+    expect(chosen.status).toBe(200);
+    expect(chosen.body["route"]).toMatchObject({ kind: "tailscale" });
+    expect(config.AllowFunnel?.[`${NAME}:8443`]).toBeUndefined();
+    expect(asked.at(-1)).toBe("funnel off 8443");
+  });
+
+  it("takes no Funnel port something else holds, and with a phone paired never moves it: it says so instead", async () => {
+    // The person's own site on 8443, and something in the foreground on 10000.
+    config = {
+      Web: {
+        [`${NAME}:8443`]: {
+          Handlers: { "/": { Proxy: "http://127.0.0.1:3000" } },
+        },
+      },
+      Foreground: { "session-1": { TCP: { "10000": {} } } },
+    };
+    const core = await start();
+    const api = await settings(core);
+    await api("PUT", "/api/remote/route", { kind: "funnel" });
+
+    const first = await pairedThroughFunnel(api);
+    expect(first.address).toBe(NAME);
+
+    // Something else takes 443 while the phone is paired.
+    config.Web = {
+      ...config.Web,
+      [`${NAME}:443`]: {
+        Handlers: { "/": { Proxy: "http://127.0.0.1:4000" } },
+      },
+    };
+    const made = await api("POST", "/api/paired-apps/pairing", {
+      personId: "asha",
+    });
+    expect(made.status).toBe(409);
+    expect(made.body["error"]).toBe(
+      "Tailscale Funnel's port 443 is in use by something else on this Mac. Free it in Tailscale, then try again.",
+    );
+    expect(asked.filter((step) => step.startsWith("funnel"))).toEqual([
+      expect.stringMatching(/^funnel 443 \d+$/) as string,
+    ]);
   });
 });
 

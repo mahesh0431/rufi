@@ -26,6 +26,7 @@ import {
   type PairedApps as Listed,
   type Pairing,
   type PhoneMe,
+  type RouteKind,
 } from "@rufi/contracts/remote";
 import { Hono, type Context, type Next } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
@@ -110,6 +111,13 @@ export interface Remote {
   cancel: () => Promise<void>;
   /** Revokes the app; false when it isn't paired. */
   unpair: (appId: string) => Promise<boolean>;
+  /**
+   * Uses `kind` from now, after taking down what the old route set. Refused
+   * while an app is paired or a code is live or being used: their address
+   * would change under them; and when the old route can't be taken down,
+   * keeping it chosen.
+   */
+  choose: (kind: RouteKind) => Promise<void>;
   /** Closes the door, its connections too; a route that outlives Rufi stays. */
   close: () => Promise<void>;
 }
@@ -513,7 +521,7 @@ export function remote(deps: RemoteDeps): Remote {
   /** Takes down what the route set, and only that. */
   const unroute = async () => {
     try {
-      await (await route()).down();
+      await (await route()).down(await savedPort());
     } catch (error) {
       log("remote.failed", { error: errorCode(error) });
     }
@@ -621,6 +629,7 @@ export function remote(deps: RemoteDeps): Remote {
           }
         : null,
       trouble,
+      route: { kind: routeKind(await deps.setting(ROUTE_SETTING)) },
     }),
 
     pair: (personId) =>
@@ -632,8 +641,9 @@ export function remote(deps: RemoteDeps): Remote {
         }
         try {
           const using = await route();
+          const alone = (await apps.list()).length === 0 && pairing === 0;
           const at = await open(await savedPort());
-          host = await using.up(at);
+          host = await using.up(at, alone);
           await deps.saveSetting(HOST_SETTING, host);
           await reachSelf(`https://${host}`, using.label);
         } catch (error) {
@@ -679,6 +689,29 @@ export function remote(deps: RemoteDeps): Remote {
       await inTurn(() => settle(true));
       return revoked;
     },
+
+    choose: (kind) =>
+      inTurn(async () => {
+        if (!(await unneeded())) {
+          throw new HttpError(409, "Unpair your iPhones first.");
+        }
+        const using = await route();
+        if (using === deps.routes[kind]) return;
+        // The old route goes first: saved only once it has, so a public
+        // route never stays open under a choice that says otherwise.
+        try {
+          await using.down(await savedPort());
+        } catch (error) {
+          log("remote.failed", { error: errorCode(error) });
+          throw new HttpError(
+            409,
+            error instanceof RouteProblem
+              ? error.message
+              : `Rufi couldn't turn off ${using.label}. Try again.`,
+          );
+        }
+        await deps.saveSetting(ROUTE_SETTING, kind);
+      }),
 
     // Quitting: with an app paired, a route that outlives Rufi stays for
     // the next start, and the rest ends; with none, it goes.

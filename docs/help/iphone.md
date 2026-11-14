@@ -1,18 +1,28 @@
 # iPhone
 
-Rufi on your iPhone opens your own record from Rufi on your Mac, through Tailscale, and sends your heart data from Apple Health to it. You pair it once in [Settings › iPhone](rufi:/settings/iphone). This page says what pairing needs, how to pair, what the iPhone shows and keeps, how its medicine reminders work, how Rufi and its testing build Rufi Dev keep apart, how to unpair, and what to do when something fails.
+Rufi on your iPhone opens your own record from Rufi on your Mac, through Tailscale or Tailscale Funnel, and sends your heart data from Apple Health to it. You pair it once in [Settings › iPhone](rufi:/settings/iphone). This page says how your iPhone reaches your Mac, what pairing needs, how to pair, what the iPhone shows and keeps, how its medicine reminders work, how Rufi and its testing build Rufi Dev keep apart, how to unpair, and what to do when something fails.
+
+## Choose how your iPhone reaches your Mac
+
+At the top of [Settings › iPhone](rufi:/settings/iphone), **How your iPhone reaches this Mac** has one choice:
+
+- **Tailscale** (the start): your tailnet only. Your iPhone needs Tailscale on, signed in to the same tailnet as your Mac. Nothing else on the internet or your network can reach Rufi.
+- **Tailscale Funnel**: public. Your iPhone needs no VPN, so it works where Tailscale can't be on, such as a work iPhone. Settings says so under it: **Public: anyone with the address can reach this Mac. Only a paired iPhone can open your data.** Without a pairing code or a paired iPhone's key, Rufi lets nobody in. Rufi uses one of the ports Funnel allows (8443, 10000 or 443) that nothing else on your Mac uses, and keeps it for every iPhone you pair.
+
+You can change it only while no iPhone is paired and no code is waiting: **Unpair your iPhones to change this.** An iPhone keeps the address it paired at, so after you change it, pair your iPhones again.
 
 ## What pairing needs
 
-- **Tailscale** on your Mac and your iPhone, signed in to the same tailnet. Rufi reaches your Mac only through it: nothing else on the internet or your network can reach this door.
+- **Tailscale** on your Mac, signed in. With **Tailscale**, also on your iPhone, signed in to the same tailnet.
 - **HTTPS turned on** for your tailnet: in the Tailscale admin console, on the DNS page.
+- With **Tailscale Funnel**, Funnel allowed for your tailnet: the first time, Tailscale gives a link to allow it (see [When a step fails](#when-a-step-fails)).
 - **Your Mac awake, with Rufi running**, whenever you use Rufi on the iPhone.
 
 ## Pair an iPhone
 
 1. Open [Settings › iPhone](rufi:/settings/iphone) and click **Pair an iPhone**.
 2. With more than one person in this data folder, choose whose record the iPhone opens. Pair a phone for your own record only for now: Rufi AI on the phone can read every person's files in this folder.
-3. Rufi sets up Tailscale for it and checks that it can reach itself through Tailscale. Then it shows a QR code and **Copy link**.
+3. Rufi sets up Tailscale or Tailscale Funnel for it, as chosen, and checks that it can reach itself through it. Then it shows a QR code and **Copy link**.
 4. On the iPhone, open Rufi and tap **Scan Code** to scan it, or copy the link on the Mac and tap **Paste**. The code works once, for 10 minutes. When the phone has paired, Settings says **Paired: Asha's iPhone, for Asha**.
 5. The iPhone says which Mac it paired with and whose record it opens. Tap **Continue**.
 6. It offers **Lock Rufi** (below), then **Turn On Reminders** (you can log each dose from a reminder), which asks iOS to let Rufi send notifications. **Not Now** skips either; both are in **This iPhone** later.
@@ -98,7 +108,7 @@ Testing builds of the iPhone app are named **Rufi Dev**. Rufi and Rufi Dev are s
 
 ## When your Mac can't be reached
 
-If your Mac is asleep or off, Rufi isn't running there, Tailscale is off on either, or the iPhone has no network, a small pill just above the chat box says **Can't reach Rufi**, with a spinner: Rufi on the iPhone asks again by itself, at once when you open it or come back to it, then after a few seconds, then every 30 seconds while it is on screen. Tap it to ask at once. When Rufi answers, it says **Connected** for a moment and goes, and the page reads again.
+If your Mac is asleep or off, Rufi isn't running there, Tailscale is off on the Mac (or, with **Tailscale**, on the iPhone), or the iPhone has no network, a small pill just above the chat box says **Can't reach Rufi**, with a spinner: Rufi on the iPhone asks again by itself, at once when you open it or come back to it, then after a few seconds, then every 30 seconds while it is on screen. Tap it to ask at once. When Rufi answers, it says **Connected** for a moment and goes, and the page reads again.
 
 Meanwhile, everything that doesn't need your Mac works: the sidebar, **This iPhone**, and the reminders, which keep ringing. The page you were reading stays as it was. A page the iPhone draws shows what it last read since Rufi opened, also when you go back to it. A page that hasn't loaded shows only the dog, resting.
 
@@ -112,17 +122,22 @@ On the Mac: click **Unpair** on its line, then **Unpair** again. From then on it
 
 On the iPhone: in **This iPhone**, tap **Unpair This iPhone**, then confirm. A sync running stops first. The iPhone forgets its key and its Apple Health bookmarks, removes its reminders and any messages still waiting, and the Mac stops letting it in. Doses not on your Mac yet stay (see [Log a dose from a reminder](#log-a-dose-from-a-reminder)).
 
-When nothing is paired and no code is waiting, Rufi stops listening for phones and removes its Tailscale route.
+When nothing is paired and no code is waiting, Rufi stops listening for phones and removes its Tailscale or Funnel route (only its own: what else Tailscale serves stays).
 
 ## When a step fails
 
 Settings says what went wrong in one line, and shows no code:
 
-- **Rufi reaches your iPhone through Tailscale. Install it and sign in on this Mac and your iPhone, then try again.** Install Tailscale from tailscale.com.
+- **Rufi reaches your iPhone through Tailscale. Install it and sign in on this Mac, then try again.** Install Tailscale from tailscale.com. With **Tailscale** (not Funnel), your iPhone needs it too, signed in to the same tailnet.
 - **Tailscale isn't connected on this Mac.** Open Tailscale on the Mac and sign in.
 - **Turn on HTTPS in your Tailscale admin console (DNS page), then try again.**
 - **Tailscale couldn't serve Rufi: …** followed by Tailscale's own words. If it says Serve isn't enabled on your tailnet, open the link it gives and enable it, then try again.
-- **Rufi couldn't reach itself through Tailscale.** The first time can take a while, while Tailscale gets a certificate for your Mac. Try again in a minute.
+- **Tailscale couldn't open Funnel for Rufi: …** followed by Tailscale's own words. If it says Funnel isn't enabled on your tailnet, open the link it gives and allow it, then try again.
+- **Tailscale Funnel's ports (443, 8443 and 10000) are all in use on this Mac.** Something else on your Mac uses each of them through Tailscale. Free one in Tailscale, then try again.
+- **Tailscale Funnel's port … is in use by something else on this Mac.** With an iPhone paired, Rufi keeps its port, so your iPhones keep their address. Free that port in Tailscale, or unpair your iPhones and pair them again.
+- **Rufi couldn't reach itself through Tailscale** (or **Tailscale Funnel**). The first time can take a while, while Tailscale gets a certificate for your Mac. Try again in a minute.
+- **Unpair your iPhones first.** You changed how your iPhone reaches your Mac while one is paired or a code is waiting.
+- **Rufi couldn't turn off Tailscale Funnel. Try again.** (or Tailscale's own words, such as **Tailscale isn't connected on this Mac.**) You changed how your iPhone reaches your Mac, and Rufi couldn't remove its Funnel route first, so the choice stays as it was. Fix what it says, then choose again.
 - **Rufi can't open its iPhone port (…): another app is using it.** Quit that app and restart Rufi.
 
 ## After a restore
