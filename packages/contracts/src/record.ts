@@ -295,12 +295,33 @@ export const TestValue = Schema.Struct({
 });
 export type TestValue = typeof TestValue.Type;
 /**
+ * One value on a test's line (line.ts), as both screens draw it: where it
+ * goes (its numbers in the test's unit, its date) and what a chart says of
+ * it (its label and its date as kept).
+ */
+export const LineValue = Schema.Struct({
+  /** As printed, or the comparator with the test's numbers ("<0.5"). */
+  value: Schema.String,
+  /** In the test's unit. */
+  number: Schema.Number,
+  /** A two-value result's second number (blood pressure), in the test's unit. */
+  second_number: Schema.optionalKey(Schema.Number),
+  /** The lab's flag, as printed. */
+  flag: Text,
+  /** As printed, with its printed unit and its lab. */
+  range: Text,
+  measured: Dated,
+});
+export type LineValue = typeof LineValue.Type;
+/**
  * A test's page: the test, and its current values newest first, by sample
- * date, then the undated ones, the later saved first.
+ * date, then the undated ones, the later saved first; and its line, oldest
+ * first.
  */
 export const TestPage = Schema.Struct({
   test: ShownRow,
   values: Schema.Array(TestValue),
+  line: Schema.Array(LineValue),
 });
 export type TestPage = typeof TestPage.Type;
 /** Where a record came from. */
