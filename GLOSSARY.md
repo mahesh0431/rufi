@@ -200,7 +200,7 @@ Rufi AI's answer in the chat, in Markdown, shown while it is written as Settings
 _Avoid_: answer card, widget, generated UI
 
 **Visual (in a reply)**:
-A chart, comparison or process the AI draws in HTML and CSS, as a `rufi-visual` block in its reply's Markdown, in its place. Rufi shows it as a card in a locked frame, in Rufi's theme, that can't load or send anything or reach Rufi. A picture is a file the AI made; a visual is part of the reply's text.
+A chart, comparison or process the AI draws in HTML and CSS, as a `rufi-visual` block in its reply's Markdown, in its place. Rufi shows it as a card in a locked frame, in Rufi's theme, that can't load or send anything or reach Rufi, except a button's message, which goes into the chat as the person's own (ADR 0035). A picture is a file the AI made; a visual is part of the reply's text.
 _Avoid_: artifact, widget, embed, chart block
 
 **Picture (in a reply)**:
