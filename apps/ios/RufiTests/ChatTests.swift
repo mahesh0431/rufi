@@ -31,12 +31,21 @@ struct ChatTests {
             .day("ent-a1"), .entry("ent-a1"), .entry("ent-a4"), .activity("turn-a1"),
             .entry("ent-a5"), .entry("ent-a6"),
         ])
-        #expect(transcript.entries["ent-a5"]?.kind == "question")
-        #expect(transcript.entries["ent-a6"]?.refs?.map(\.ref) == [Pointer(type: "question", id: "ent-a5")])
+        #expect(transcript.entries["ent-a5"]?.question?.answers == ["Save", "Not now"])
+        #expect(transcript.entries["ent-a5"]?.answer == CardAnswer(message: "ent-a6", index: 0))
+        #expect(transcript.entries["ent-a6"]?.refs?.map(\.ref) == [Pointer(type: "question", id: "ent-a5", answer: 0)])
         #expect(transcript.steps(of: "turn-a1").map(\.id) == ["ent-a2", "ent-a3"])
         let reply = try #require(transcript.entries["ent-a4"])
         #expect(Visuals.scan(reply.text) == [Visuals.Block(html: "<p>6.8 %</p>", whole: true)])
         #expect(!transcript.streaming(reply))
+    }
+
+    /// A card of a kind the iPhone doesn't draw reads as its words: the
+    /// chat around it still reads.
+    @Test func aCardOfAKindTheIPhoneDoesntDrawShowsItsWords() throws {
+        let later = try Self.card(#"{"kind":"date","key":"Next scan","question":"Which day suits you?"}"#)
+        #expect(later.kind == "question" && later.question == nil)
+        #expect(later.text.hasPrefix("**Next visit**"))
     }
 
     @Test func aLateReadNeverUndoesANewerOne() throws {
@@ -225,6 +234,72 @@ struct ChatTests {
         current.end()
     }
 
+    /// A tap on a card's answer: kept on the iPhone with the card's quote and
+    /// the answer's place, through a reload of its file, once however often
+    /// it is tapped, and sent with them; the box keeps its words.
+    @Test func aCardsAnswerGoesThroughPendingWithItsPlaceOnce() async throws {
+        let file = PendingTests.file()
+        let pending = Pending(file: file)
+        let chat = ChatModel(door: Door(origin: URL(string: "https://chat.test")!, key: "a-key"), person: "asha",
+                             pending: pending)
+        ChatDoor.away = true
+        chat.open()
+        try await Self.until { chat.loaded }
+        chat.typed("And my ferritin")
+        let card = try Self.card(Self.visit)
+        chat.take(.update(revision: 1, entries: [card], turns: [], chat: nil))
+
+        chat.choose(0, on: card)
+        chat.choose(0, on: card)
+        chat.choose(1, on: card)
+        await chat.deliver()
+        #expect(chat.click(on: card) == .pending(0))
+        let kept = Pending(file: file).messages
+        #expect(kept.map(\.text) == ["Book"])
+        #expect(kept.first?.refs?.map(\.ref) == [Pointer(type: "question", id: "q-visit", answer: 0)])
+        #expect(kept.first?.refs?.map(\.label) == ["Next visit"])
+
+        ChatDoor.away = false
+        await chat.deliver()
+        #expect(ChatDoor.sent.map(\.text) == ["Book"])
+        #expect(ChatDoor.sent.first?.refs == ["q-visit"])
+        #expect(ChatDoor.sent.first?.answers == [0])
+        #expect(chat.click(on: card) == .sending(0))
+        #expect(chat.text == "And my ferritin")
+        chat.end()
+    }
+
+    /// A refused tap comes back to the box as its words with the card's
+    /// quote but not the answer's place: edited and sent, it's a reply, and
+    /// the card is open again.
+    @Test func aRefusedAnswerComesBackWithoutItsPlace() async throws {
+        let chat = ChatModel(door: Door(origin: URL(string: "https://chat.test")!, key: "a-key"), person: "asha",
+                             pending: Pending(file: PendingTests.file()))
+        chat.open()
+        try await Self.until { chat.loaded }
+        let card = try Self.card(Self.visit)
+        chat.take(.update(revision: 1, entries: [card], turns: [], chat: nil))
+        ChatDoor.refusing = true
+        chat.choose(1, on: card)
+        try await Self.until { chat.text == "Not now" }
+        #expect(chat.chips.map(\.ref) == [Pointer(type: "question", id: "q-visit")])
+        #expect(chat.line == "Sign in to Claude on your Mac.")
+        #expect(chat.click(on: card) == nil)
+        chat.end()
+    }
+
+    /// A card's answer is the pairing's own: a tap after its pairing ended
+    /// keeps nothing.
+    @Test func aCardsLateTapNeverGoesToTheNextPairing() async throws {
+        let pending = Pending(file: PendingTests.file())
+        let card = try Self.card(Self.visit)
+        let chat = ChatModel(door: Door(origin: URL(string: "https://chat.test")!, key: "a-key"), person: "asha",
+                             pending: pending)
+        pending.clear()
+        chat.choose(0, on: card)
+        #expect(pending.messages.isEmpty)
+    }
+
     /// A refused message's words go back in the box, and the message stays
     /// kept on the iPhone until a save of the box with its words is kept:
     /// a save that started before it doesn't count.
@@ -299,6 +374,14 @@ struct ChatTests {
         chat.end()
     }
 
+    static let visit = #"{"kind":"choice","key":"Next visit","details":"- Dr Rao, City Clinic\n- Tue 20 Oct, 10:00","question":"Book this visit?","answers":["Book","Not now"]}"#
+
+    /// A question entry with `card`, as the Mac's stream gives it.
+    static func card(_ card: String) throws -> Entry {
+        let json = #"{"id":"q-visit","seq":3,"turnId":null,"kind":"question","text":"**Next visit**\n\nBook this visit?","activity":null,"detail":null,"status":null,"createdAt":"2026-10-10T09:00:00Z","updatedAt":"2026-10-10T09:00:00Z","card":"# + card + #"}"#
+        return try JSONDecoder().decode(Entry.self, from: Data(json.utf8))
+    }
+
     /// Waits up to two seconds for `done`.
     static func until(_ done: () -> Bool) async throws {
         for _ in 0..<100 where !done() { try await Task.sleep(for: .milliseconds(20)) }
@@ -324,6 +407,8 @@ enum ChatDoor {
     struct Sent {
         let id: String
         let refs: [String]
+        /// Each ref's answer place: a question card's click.
+        var answers: [Int?] = []
         var text = ""
         var kind: String?
     }
@@ -390,7 +475,10 @@ enum ChatDoor {
             if away { return (502, "") }
             if refusing { return (400, #"{"error":"Sign in to Claude on your Mac."}"#) }
             struct Message: Decodable {
-                struct Ref: Decodable { let id: String }
+                struct Ref: Decodable {
+                    let id: String
+                    let answer: Int?
+                }
                 let id: String
                 let refs: [Ref]
                 let text: String
@@ -398,7 +486,8 @@ enum ChatDoor {
             }
             guard let message = try? JSONDecoder().decode(Message.self, from: body(request)) else { return (400, "") }
             if !sent.contains(where: { $0.id == message.id }) {
-                sent.append(Sent(id: message.id, refs: message.refs.map(\.id), text: message.text, kind: message.kind))
+                sent.append(Sent(id: message.id, refs: message.refs.map(\.id), answers: message.refs.map(\.answer),
+                                 text: message.text, kind: message.kind))
             }
             return (202, #"{"id":"\#(message.id)","draft":{"text":"","refs":[]}}"#)
         default:

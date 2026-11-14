@@ -89,6 +89,7 @@ struct ChatView: View {
             case .nothing: return .discarded
             }
         })
+        .environment(\.goToQuestion) { id in Task { await goTo(id) } }
         .sheet(item: $opened) { StepDetails(step: $0, shell: shell) }
         .sheet(item: $editing) { EditWaiting(item: $0, chat: chat) }
         .sheet(item: Binding { chat.openAgent } set: { chat.openAgent = $0 }) {
@@ -96,6 +97,20 @@ struct ChatView: View {
         }
         .environment(chat)
         .background(shell.theme.page)
+    }
+
+    /// To a question card: earlier pages load until it is there.
+    private func goTo(_ id: String) async {
+        while chat.transcript.entries[id] == nil, chat.transcript.before != nil, chat.older != .failed {
+            if chat.older == .loading {
+                try? await Task.sleep(for: .milliseconds(50))
+            } else {
+                await chat.loadOlder()
+            }
+        }
+        guard chat.transcript.entries[id] != nil else { return }
+        pinned = false
+        withAnimation { position.scrollTo(id: Transcript.Line.entry(id), anchor: .center) }
     }
 
     /// Above the oldest entry read: the page before it loads as it shows.
@@ -199,8 +214,12 @@ private struct EntryView: View {
         case "reply":
             ReplyView(entry: entry, streaming: chat.transcript.streaming(entry), chat: chat, origin: shell.pairing.origin)
         case "question":
-            // A question card, as its words until the iPhone draws the card.
-            ReplyView(entry: entry, streaming: false, chat: chat, origin: shell.pairing.origin)
+            if let card = entry.question {
+                QuestionCardView(entry: entry, card: card, chat: chat, shell: shell)
+            } else {
+                // A card of a kind the iPhone doesn't draw: its words.
+                ReplyView(entry: entry, streaming: false, chat: chat, origin: shell.pairing.origin)
+            }
         default:
             // A picture the AI made: its file is on the Mac only.
             if !(entry.activity == "picture" && entry.status == "done" && entry.detail != nil) {
@@ -222,10 +241,14 @@ struct MessageBubble: View {
     @Environment(Theme.self) private var theme
 
     var body: some View {
+        // An answer to a question card starts with the card's quote.
+        let quotes = chips.filter { $0.ref.type == "question" }
+        let added = chips.filter { $0.ref.type != "question" }
         VStack(alignment: .trailing, spacing: 4) {
             VStack(alignment: .leading, spacing: 6) {
-                if !chips.isEmpty {
-                    FlowChips(chips: chips)
+                ForEach(quotes.indices, id: \.self) { QuestionQuote(chip: quotes[$0]) }
+                if !added.isEmpty {
+                    FlowChips(chips: added)
                 }
                 if !text.isEmpty { Text(text).textSelection(.enabled) }
             }
@@ -281,6 +304,7 @@ struct ChipLabel: View {
         case "document": "doc.text"
         case "draft_item": "flask"
         case "record": "waveform.path.ecg"
+        case "question": "questionmark.bubble"
         default: "tablecells"
         }
     }
