@@ -6,7 +6,8 @@ import WebKit
 /// the visual's own page and gives it the block and the theme. That page is
 /// the one guard for what the AI wrote; the app adds only what is its own:
 /// nothing navigates, the card is the height the visual says (kept, so a
-/// card drawn again doesn't jump), and when WebKit ends its process the card
+/// card drawn again doesn't jump), a button's message goes into the chat as
+/// the person's own (ADR 0035), and when WebKit ends its process the card
 /// loads once more, then says it can't show the visual. A card whose page
 /// didn't load says so too, and loads again when Rufi is reached.
 struct VisualCard: View {
@@ -49,6 +50,8 @@ struct VisualCard: View {
                     chat.heights[key] = drawn
                 } broke: {
                     broken = true
+                } answered: {
+                    chat.answer($0)
                 } ended: {
                     failed = true
                 }
@@ -95,6 +98,7 @@ private struct CardView: UIViewRepresentable {
     let origin: URL
     let measured: (Double) -> Void
     let broke: () -> Void
+    let answered: (String) -> Void
     let ended: () -> Void
 
     private static let store = WKWebsiteDataStore.nonPersistent()
@@ -186,7 +190,7 @@ private struct CardView: UIViewRepresentable {
             }
         }
 
-        /// The card page's two messages, from the door's card page alone.
+        /// The card page's three messages, from the door's card page alone.
         func received(_ message: WKScriptMessage) {
             let from = message.frameInfo.securityOrigin
             guard message.frameInfo.isMainFrame, from.protocol == card.origin.scheme, from.host == card.origin.host(),
@@ -195,6 +199,7 @@ private struct CardView: UIViewRepresentable {
             switch type {
             case "rufi-visual-height": card.measured((body["height"] as? NSNumber)?.doubleValue ?? 0)
             case "rufi-visual-broken": card.broke()
+            case "rufi-visual-send": if let text = body["text"] as? String { card.answered(text) }
             default: break
             }
         }

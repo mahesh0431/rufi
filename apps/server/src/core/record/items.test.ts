@@ -441,6 +441,8 @@ describe("saving draft items", () => {
           test_number: 2.1,
         },
       ],
+      // The record has this report's TSH 2.1 on 12 Aug already.
+      save_anyway: true,
     });
     expect(saved.ok).toBe(true);
     expect(lines(saved.result.receipt)).toEqual([
@@ -528,6 +530,36 @@ describe("saving draft items", () => {
       { action: "add", source_entry_id: null },
       { action: "add", source_entry_id: null },
     ]);
+  });
+
+  it("warns of an item already in the record, read again, and saves nothing", async () => {
+    await read();
+    const { TSH = "" } = drafts();
+    await say("Save the TSH");
+    const warned = await call("save_changes", {
+      items: [
+        {
+          item: TSH,
+          version: 1,
+          as: "new",
+          category: "lab",
+          in_test: "tst-tsh",
+          test_number: 2.1,
+        },
+      ],
+    });
+    expect(warned.ok).toBe(false);
+    expect(warned.issues).toEqual([
+      expect.objectContaining({
+        path: "items.0",
+        fix: expect.stringMatching(
+          /Sunrise Labs August\.pdf page 2 \(result res-a4\).*another_source/,
+        ) as unknown,
+      }),
+    ]);
+    expect(one("SELECT status FROM draft_items WHERE id = ?", TSH)).toEqual({
+      status: "pending",
+    });
   });
 
   it("applies the user's fix and keeps the reader's value in the draft", async () => {

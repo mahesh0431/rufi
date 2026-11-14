@@ -163,6 +163,64 @@ struct ChatTests {
         chat.close()
     }
 
+    /// A visual's button: its message goes through Pending as the person's
+    /// own, as Enter would while a reply runs, and the box keeps its words.
+    @Test func aCardsAnswerGoesAsTheirMessageAndTheBoxKeepsItsWords() async throws {
+        let pending = Pending(file: PendingTests.file())
+        let chat = ChatModel(door: Door(origin: URL(string: "https://chat.test")!, key: "a-key"), person: "asha",
+                             pending: pending)
+        ChatDoor.whileReplying = "queue"
+        chat.open()
+        try await Self.until { chat.loaded && chat.whileReplying == "queue" }
+        chat.typed("And my ferritin")
+        #expect(chat.append("", [Chip(type: "document", id: "doc-asha-aug", label: "")]))
+
+        chat.answer("Yes, save metformin 500 mg, twice a day")
+        try await Self.until { ChatDoor.sent.count == 1 }
+        // A reply runs: the next goes as the Mac's setting says (Queue here).
+        chat.take(.update(revision: 1, entries: [], turns: [Self.running], chat: nil))
+        chat.answer("  Not now, don't save metformin  ")
+        chat.answer("   ")
+        try await Self.until { ChatDoor.sent.count == 2 }
+        try await Task.sleep(for: .milliseconds(100))
+
+        #expect(ChatDoor.sent.map(\.text) == ["Yes, save metformin 500 mg, twice a day", "Not now, don't save metformin"])
+        #expect(ChatDoor.sent.map(\.kind) == [nil, "queue"])
+        #expect(ChatDoor.sent.map(\.refs) == [[], []])
+        #expect(chat.text == "And my ferritin")
+        #expect(chat.chips.map(\.ref.id) == ["doc-asha-aug"])
+        #expect(pending.messages.isEmpty)
+        chat.end()
+    }
+
+    /// A card's answer is the pairing's own: one that comes after its
+    /// pairing ended is never kept, so the next pairing never sends it,
+    /// also when the chat hadn't yet heard that its pairing ended.
+    @Test func aCardsLateAnswerNeverGoesToTheNextPairing() async throws {
+        let pending = Pending(file: PendingTests.file())
+        let door = Door(origin: URL(string: "https://chat.test")!, key: "a-key")
+        // Unpaired, as AppModel does it: the chat ends, the messages go.
+        let ended = ChatModel(door: door, person: "asha", pending: pending)
+        ended.end()
+        pending.clear()
+        ended.answer("Yes, save metformin 500 mg, twice a day")
+        #expect(pending.messages.isEmpty)
+        // Unpaired again before this chat heard of it.
+        let unaware = ChatModel(door: door, person: "asha", pending: pending)
+        pending.clear()
+        unaware.answer("Not now, don't save metformin")
+        #expect(pending.messages.isEmpty)
+
+        // The pairing now: it sends its own answer, and only that.
+        let current = ChatModel(door: door, person: "asha", pending: pending)
+        current.open()
+        try await Self.until { current.loaded }
+        current.answer("Yes, add a follow-up for my HbA1c")
+        try await Self.until { pending.messages.isEmpty && !ChatDoor.sent.isEmpty }
+        #expect(ChatDoor.sent.map(\.text) == ["Yes, add a follow-up for my HbA1c"])
+        current.end()
+    }
+
     /// A refused message's words go back in the box, and the message stays
     /// kept on the iPhone until a save of the box with its words is kept:
     /// a save that started before it doesn't count.
@@ -243,6 +301,11 @@ struct ChatTests {
         try #require(done())
     }
 
+    /// A reply running on the Mac.
+    static let running = Turn(id: "turn-running", model: "gpt-6-astra", effort: nil, before: nil, status: "running",
+                              endReason: nil, endText: nil, resetsAt: nil, startedAt: "2026-10-05T08:00:00Z",
+                              endedAt: nil, stepsGone: nil)
+
     static let berlin = {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Europe/Berlin")!
@@ -257,6 +320,8 @@ enum ChatDoor {
     struct Sent {
         let id: String
         let refs: [String]
+        var text = ""
+        var kind: String?
     }
 
     nonisolated(unsafe) static var away = false
@@ -269,6 +334,9 @@ enum ChatDoor {
     nonisolated(unsafe) static var draftReads = 0
     /// Messages refused, as when the Mac needs a sign-in.
     nonisolated(unsafe) static var refusing = false
+    /// Settings › Chat › While a reply runs, as the Mac's settings answer it;
+    /// none: the settings aren't read.
+    nonisolated(unsafe) static var whileReplying: String?
     /// Draft saves can't reach the Mac.
     nonisolated(unsafe) static var savesAway = false
     /// A save whose words have this can't reach the Mac.
@@ -279,6 +347,7 @@ enum ChatDoor {
     static func reset() {
         (away, sent, draft, holds, draftReads, refusing, savesAway, awayFor, saves) =
             (false, [], #"{"text":"","refs":[]}"#, [:], 0, false, false, nil, [])
+        whileReplying = nil
     }
 
     /// The hold for this request, if the test holds it.
@@ -294,6 +363,9 @@ enum ChatDoor {
         switch (request.httpMethod ?? "GET", request.url?.path() ?? "") {
         case ("GET", "/api/people/asha/chat/draft"):
             return (200, draft)
+        case ("GET", "/api/settings"):
+            guard let whileReplying else { return (404, #"{"error":"Not found."}"#) }
+            return (200, #"{"activity":"folded","whileReplying":"\#(whileReplying)","replyFlow":"paragraphs"}"#)
         case ("PUT", "/api/people/asha/chat/draft"):
             // Kept as it came: its words come back.
             struct Saved: Decodable { let text: String }
@@ -317,10 +389,12 @@ enum ChatDoor {
                 struct Ref: Decodable { let id: String }
                 let id: String
                 let refs: [Ref]
+                let text: String
+                let kind: String?
             }
             guard let message = try? JSONDecoder().decode(Message.self, from: body(request)) else { return (400, "") }
             if !sent.contains(where: { $0.id == message.id }) {
-                sent.append(Sent(id: message.id, refs: message.refs.map(\.id)))
+                sent.append(Sent(id: message.id, refs: message.refs.map(\.id), text: message.text, kind: message.kind))
             }
             return (202, #"{"id":"\#(message.id)","draft":{"text":"","refs":[]}}"#)
         default:

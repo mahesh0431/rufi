@@ -172,9 +172,9 @@ const VISUAL_CARD_PATH = "/visual-card.html";
  * The card's own script, on the iPhone (ADR 0034, "For a screen of its
  * own"): the app gives it a visual and the theme (`rufiCard.show`), and it
  * sends them to the frame of the visual's page on every load of the frame,
- * and a new theme as it comes (`rufiCard.theme`). It passes the frame's two
- * messages, the height and that part didn't load, to the app, from that
- * frame alone.
+ * and a new theme as it comes (`rufiCard.theme`). It passes the frame's
+ * three messages, the height, that part didn't load and a button's message
+ * (ADR 0035), to the app, from that frame alone.
  */
 const CARD_HOST = `(() => {
   const frame = document.querySelector("iframe");
@@ -199,6 +199,8 @@ const CARD_HOST = `(() => {
     if (event.source !== frame.contentWindow || !data) return;
     if (data.type === "rufi-visual-height" || data.type === "rufi-visual-broken") {
       window.webkit?.messageHandlers?.card?.postMessage({ type: data.type, height: Number(data.height) || 0 });
+    } else if (data.type === "rufi-visual-send" && typeof data.text === "string") {
+      window.webkit?.messageHandlers?.card?.postMessage({ type: data.type, text: data.text });
     }
   });
 })();`;

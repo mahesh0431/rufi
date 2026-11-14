@@ -123,7 +123,7 @@ _Avoid_: origin, provenance, attachment
 ## Changes
 
 **Save**:
-One change to the record that the user agreed to in the chat, or entered themselves in their profile (in the welcome or in Settings): the AI's call or the form's sending, then every record it changed, each with its before and after, and its receipt, all together or none. The same call or sending again saves nothing new.
+One change to the record that the user agreed to in the chat, or entered themselves in their profile (in the welcome or in Settings): the AI's call or the form's sending, then every record it changed, each with its before and after, and its receipt, all together or none. The same call or sending again saves nothing new. A save that adds a result already in the record (the same test, day and value, and time when both have one) is held, and the AI is warned, unless it says to save it anyway.
 _Avoid_: change set, batch, transaction, commit
 
 **Receipt**:
@@ -300,7 +300,7 @@ An AI working in a conversation of its own, on a model and effort, with the tool
 _Avoid_: worker, thread (a conversation is the agent's, not the agent)
 
 **Sub-agent**:
-An agent another agent started for one task, with a title, such as checking a set of results. It sees its task and nothing of the chat, runs on the model and effort of the agent that started it, or another of Rufi's four models it was given, with the same tools, and goes on after the reply ends. What it saves to the record shows in the chat with Rufi's **receipt**, which names it by its title. When its turn ends, the agent that started it hears how it went (its **done message**), and Rufi AI says what it found. In the **Activity** of the reply that started it, it is one line. While one of Rufi AI's sub-agents works, it is a chip in the row above the message box; its line, its chip or its name on its message opens its pop-up: its own Activity, and Stop while it works. Its messages to Rufi AI show in the chat under its name.
+An agent another agent started for one task, with a title, such as checking a set of results. It sees its task and nothing of the chat, runs on the model and effort of the agent that started it, or another of Rufi's four models it was given, with the same tools, and goes on after the reply ends. What it saves to the record shows in the chat with Rufi's **receipt**, which names it by its title. When its turn ends, the agent that started it hears how it went (its **done message**), and Rufi AI says what it found. It is waiting while it waits for that agent's answer to its question, or for a sign-in to start; done only once it finished. In the **Activity** of the reply that started it, it is one line. While one of Rufi AI's sub-agents works, it is a chip in the row above the message box; its line, its chip or its name on its message opens its pop-up: its own Activity, and Stop while it works. Its messages to Rufi AI show in the chat under its name.
 _Avoid_: helper, child (in screens and help), delegate
 
 **Done message**:
