@@ -20,6 +20,9 @@ import { printedDate } from "../dates.ts";
 
 type Json = Record<string, unknown>;
 
+/** A chart's text size, in pixels, at the screens' default text size. */
+const DEFAULT_SIZE = 11;
+
 const isObject = (value: unknown): value is Json =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -73,6 +76,12 @@ function chartOn(canvas: HTMLCanvasElement, theme: ChartTheme): void {
   options["responsive"] = true;
   options["maintainAspectRatio"] = true;
   options["animation"] = false;
+  // A chart's shape (the AI's, else Chart.js's 2:1) at the default text
+  // size; a larger text makes it taller by as much, so its labels never
+  // squash the plot.
+  const shape =
+    typeof options["aspectRatio"] === "number" ? options["aspectRatio"] : 2;
+  options["aspectRatio"] = shape * Math.min(1, DEFAULT_SIZE / theme.size);
   const plugins = isObject(options["plugins"]) ? options["plugins"] : {};
   options["plugins"] = plugins;
   const legend = isObject(plugins["legend"]) ? plugins["legend"] : {};
