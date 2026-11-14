@@ -135,73 +135,73 @@ body {
   color: var(--muted);
 }
 
-/* The AI's replies, its thinking's summaries and its agents' words:
-   Markdown at the chat's size. */
+/* The AI's replies, its thinking's summaries, its agents' words and its
+   question cards' details: Markdown at the chat's size. */
 @layer base {
-  :is(.reply, .thought, .note, .agent-words) > :last-child {
+  :is(.reply, .thought, .note, .agent-words, .card-details) > :last-child {
     margin-bottom: 0;
   }
-  :is(.reply, .thought, .note, .agent-words) p,
-  :is(.reply, .thought, .note, .agent-words) ul,
-  :is(.reply, .thought, .note, .agent-words) ol,
-  :is(.reply, .thought, .note, .agent-words) table,
-  :is(.reply, .thought, .note, .agent-words) pre,
-  :is(.reply, .thought, .note, .agent-words) blockquote {
+  :is(.reply, .thought, .note, .agent-words, .card-details) p,
+  :is(.reply, .thought, .note, .agent-words, .card-details) ul,
+  :is(.reply, .thought, .note, .agent-words, .card-details) ol,
+  :is(.reply, .thought, .note, .agent-words, .card-details) table,
+  :is(.reply, .thought, .note, .agent-words, .card-details) pre,
+  :is(.reply, .thought, .note, .agent-words, .card-details) blockquote {
     margin: 0 0 8px;
   }
-  :is(.reply, .thought, .note, .agent-words) h1,
-  :is(.reply, .thought, .note, .agent-words) h2,
-  :is(.reply, .thought, .note, .agent-words) h3,
-  :is(.reply, .thought, .note, .agent-words) h4 {
+  :is(.reply, .thought, .note, .agent-words, .card-details) h1,
+  :is(.reply, .thought, .note, .agent-words, .card-details) h2,
+  :is(.reply, .thought, .note, .agent-words, .card-details) h3,
+  :is(.reply, .thought, .note, .agent-words, .card-details) h4 {
     font-size: 0.875rem;
     font-weight: 600;
     margin: 12px 0 4px;
   }
-  :is(.reply, .thought, .note, .agent-words) ul {
+  :is(.reply, .thought, .note, .agent-words, .card-details) ul {
     list-style: disc;
     padding-left: 20px;
   }
-  :is(.reply, .thought, .note, .agent-words) ol {
+  :is(.reply, .thought, .note, .agent-words, .card-details) ol {
     list-style: decimal;
     padding-left: 20px;
   }
-  :is(.reply, .thought, .note, .agent-words) a {
+  :is(.reply, .thought, .note, .agent-words, .card-details) a {
     color: var(--accent-ink);
     text-decoration: underline;
   }
-  :is(.reply, .thought, .note, .agent-words) code {
+  :is(.reply, .thought, .note, .agent-words, .card-details) code {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 0.75rem;
     background: var(--side);
     padding: 1px 4px;
     border-radius: 4px;
   }
-  :is(.reply, .thought, .note, .agent-words) pre {
+  :is(.reply, .thought, .note, .agent-words, .card-details) pre {
     overflow-x: auto;
     background: var(--side);
     padding: 8px 10px;
     border-radius: 8px;
   }
-  :is(.reply, .thought, .note, .agent-words) pre code {
+  :is(.reply, .thought, .note, .agent-words, .card-details) pre code {
     padding: 0;
   }
   /* A reply's visual (src/visual.tsx) spaces like a paragraph. */
   .reply .visual {
     margin: 0 0 8px;
   }
-  :is(.reply, .thought, .note, .agent-words) table {
+  :is(.reply, .thought, .note, .agent-words, .card-details) table {
     border-collapse: collapse;
     display: block;
     overflow-x: auto;
   }
-  :is(.reply, .thought, .note, .agent-words) th,
-  :is(.reply, .thought, .note, .agent-words) td {
+  :is(.reply, .thought, .note, .agent-words, .card-details) th,
+  :is(.reply, .thought, .note, .agent-words, .card-details) td {
     border-bottom: 1px solid var(--line);
     padding: 4px 8px;
     text-align: left;
     vertical-align: top;
   }
-  :is(.reply, .thought, .note, .agent-words) blockquote {
+  :is(.reply, .thought, .note, .agent-words, .card-details) blockquote {
     border-left: 3px solid var(--line);
     padding-left: 10px;
     color: var(--muted);

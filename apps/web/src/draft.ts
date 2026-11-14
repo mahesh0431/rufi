@@ -12,7 +12,9 @@
 // health data) are kept with its text: saved, sent and cleared with it.
 // Words that couldn't be saved stay in the tab's storage too, until a save
 // or a send takes them: a new page in the same tab, as when its session
-// ended while Rufi was away, shows them first and saves them.
+// ended while Rufi was away, shows them first and saves them. A click on a
+// question card's answer is a send of its own, kept here by card until the
+// chat shows it, so a card drawn again finds it (docs/adr/0036).
 import {
   type Chip,
   Draft,
@@ -95,6 +97,20 @@ const Unsaved = Kept.mapFields(({ text, refs }) => ({ text, refs }));
 const sameChips = (a: readonly BoxChip[], b: readonly BoxChip[]) =>
   JSON.stringify(pointers(a)) === JSON.stringify(pointers(b));
 
+/**
+ * A click on a question card's answer on its way, by card: sending, no
+ * answer yet; sent, the core took it, until the chat shows it; lost, no
+ * answer came, so Retry sends it again by the same id; refused, the core's
+ * words why, the card open again.
+ */
+export interface CardSend {
+  id: string;
+  index: number;
+  text: string;
+  status: "sending" | "sent" | "lost" | "refused";
+  why?: string;
+}
+
 export interface BoxState {
   text: string;
   /** The box's chips, in the order they were added. */
@@ -115,6 +131,8 @@ export interface BoxState {
   failed: boolean;
   /** What the person should know: why a read, save or send failed. */
   notice: string | null;
+  /** Clicks on question cards' answers on their way, by card. */
+  cards: Record<string, CardSend>;
 }
 
 export type DraftBox = ReturnType<typeof draftBox>;
@@ -163,6 +181,7 @@ export function draftBox(api: DraftApi) {
     unresolved: false,
     failed: false,
     notice: null,
+    cards: {},
   }));
   let timer: ReturnType<typeof setTimeout> | undefined;
   /** A send whose answer was lost: the same text again keeps its id. */
@@ -239,6 +258,39 @@ export function draftBox(api: DraftApi) {
   }
 
   void load();
+
+  const setCard = (card: string, send: CardSend) => {
+    store.setState((state) => ({ cards: { ...state.cards, [card]: send } }));
+  };
+
+  /** Sends a card's click; the chat follows it once the core took it. */
+  async function go(
+    card: string,
+    send: CardSend,
+    kind: WhileReplying,
+  ): Promise<void> {
+    setCard(card, send);
+    const { id, index, text } = send;
+    try {
+      await api.call("POST", "messages", {
+        id,
+        text,
+        refs: [{ type: "question", id: card, answer: index }],
+        kind,
+        draft: "keep",
+      });
+      setCard(card, { id, index, text, status: "sent" });
+      store.setState({ accepted: id });
+      counted();
+    } catch (error) {
+      setCard(
+        card,
+        answered(error)
+          ? { id, index, text, status: "refused", why: messageOf(error) }
+          : { id, index, text, status: "lost" },
+      );
+    }
+  }
 
   const later = () => {
     clearTimeout(timer);
@@ -317,6 +369,40 @@ export function draftBox(api: DraftApi) {
       await api.call("POST", "messages", { id, text, kind, draft: "keep" });
       store.setState({ accepted: id });
       counted();
+    },
+
+    /**
+     * A click on answer `index` (its words `text`) of question card `card`:
+     * the person's message, quoting the card with the answer it chose,
+     * under a new id, as Enter in the box would while a reply runs (`kind`).
+     * The box's text and draft stay. Nothing while the card's last click is
+     * on its way or unresolved.
+     */
+    choose(
+      card: string,
+      index: number,
+      text: string,
+      kind: WhileReplying,
+    ): Promise<void> {
+      const was = store.getState().cards[card];
+      if (was && was.status !== "refused") return Promise.resolve();
+      return go(card, { id: newId(), index, text, status: "sending" }, kind);
+    },
+
+    /** Sends a card's lost click again, by the same id with the same answer. */
+    retry(card: string, kind: WhileReplying): Promise<void> {
+      const was = store.getState().cards[card];
+      if (was?.status !== "lost") return Promise.resolve();
+      return go(card, { ...was, status: "sending" }, kind);
+    },
+
+    /** The chat shows a card's click (its waiting row or its answer). */
+    shown(card: string): void {
+      if (store.getState().cards[card]?.status !== "sent") return;
+      store.setState((state) => {
+        const { [card]: _, ...rest } = state.cards;
+        return { cards: rest };
+      });
     },
 
     /** Saves now what isn't saved yet: Retry, or the box leaves the screen. */

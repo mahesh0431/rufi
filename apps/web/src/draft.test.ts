@@ -481,3 +481,68 @@ describe("adding to the box from another page", () => {
     expect(sends()).toHaveLength(1);
   });
 });
+
+describe("a click on a question card's answer", () => {
+  /** A card's send as the box keeps it, by card. */
+  const cardOf = (box: ReturnType<typeof draftBox>, card: string) =>
+    box.store.getState().cards[card];
+
+  it("sends the answer as the person's message, quoting the card with the answer it chose, the box's words kept; a second click while it goes sends nothing", async () => {
+    const { api, sends } = core(editable("And my ferritin"));
+    const box = draftBox(api);
+    await settle();
+
+    void box.choose("card-1", 0, "Save", "queue");
+    void box.choose("card-1", 1, "Not now", "queue");
+    await settle();
+    expect(sends().map((send) => send.body)).toEqual([
+      {
+        id: "id-1",
+        text: "Save",
+        refs: [{ type: "question", id: "card-1", answer: 0 }],
+        kind: "queue",
+        draft: "keep",
+      },
+    ]);
+    expect(cardOf(box, "card-1")).toMatchObject({ status: "sending" });
+
+    sends()[0]?.answer({ id: "id-1" });
+    await settle();
+    // Taken: the card waits for the chat to show it.
+    expect(cardOf(box, "card-1")).toMatchObject({ status: "sent", index: 0 });
+    expect(box.store.getState().text).toBe("And my ferritin");
+    box.shown("card-1");
+    expect(cardOf(box, "card-1")).toBeUndefined();
+  });
+
+  it("keeps an answer that was lost, and sends it again by the same id with the same answer; a refusal leaves the card open with the core's words", async () => {
+    const { api, sends } = core(editable(""));
+    const box = draftBox(api);
+    await settle();
+
+    void box.choose("card-1", 0, "Save", "steer");
+    await settle();
+    sends()[0]?.fail(new Error("Rufi can't be reached."));
+    await settle();
+    expect(cardOf(box, "card-1")).toMatchObject({ status: "lost", index: 0 });
+    // Another answer can't take its place while it is unresolved.
+    void box.choose("card-1", 1, "Not now", "steer");
+    await settle();
+    expect(sends()).toHaveLength(1);
+
+    void box.retry("card-1", "steer");
+    await settle();
+    expect(sends()[1]?.body).toEqual(sends()[0]?.body);
+    sends()[1]?.fail(refusal("Sign in to Codex on your Mac."));
+    await settle();
+    expect(cardOf(box, "card-1")).toMatchObject({
+      status: "refused",
+      why: "Sign in to Codex on your Mac.",
+    });
+
+    // Open again: a new click is a new message.
+    void box.choose("card-1", 1, "Not now", "steer");
+    await settle();
+    expect(sends()[2]?.body).toMatchObject({ id: "id-2", text: "Not now" });
+  });
+});
