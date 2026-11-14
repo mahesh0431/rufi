@@ -247,6 +247,12 @@ export const SaveInput = Schema.Struct({
         "Draft items of the user's documents to save, as get_documents gave them.",
     }),
   ),
+  save_anyway: Schema.optionalKey(
+    Schema.Boolean.annotate({
+      description:
+        "true only after Rufi warned that a result of this save is already saved and you decided it is another reading, or a correction the user agreed to that goes back to a value saved before: saves it anyway. For this call only.",
+    }),
+  ),
 }).check(
   Schema.makeFilter((input: { changes?: unknown; items?: unknown }) =>
     input.changes === undefined && input.items === undefined
@@ -640,6 +646,7 @@ export async function saveChanges(
       kind,
       action: change.action,
       id: change.id,
+      at,
       source,
       cites,
       ...(change.ref !== undefined && { ref: change.ref }),
@@ -663,6 +670,14 @@ export async function saveChanges(
           input.items,
         );
   planned.push(...items.planned);
+  if (input.save_anyway !== true) {
+    for (const repeat of await repeatsOf(trx, where.personId, planned)) {
+      const index =
+        repeat.at ??
+        `items.${String((input.items ?? []).findIndex((i) => i.item === repeat.item))}`;
+      problem(index, repeat.adding, repeat.fix);
+    }
+  }
   if (problems.length > 0) {
     throw new SaveRefused(
       "Nothing was saved. Fix these and save again.",
@@ -860,6 +875,8 @@ export interface Planned {
   kind: Kind;
   action: Action;
   id: string | undefined;
+  /** Where a typed change is in the input ("changes.2"). */
+  at?: string;
   /** The user's message it rests on, when there is one. */
   source: Source | undefined;
   /** The document page it rests on, when there is one: a draft item's. */
@@ -908,6 +925,125 @@ async function recordOf(
       trx,
     );
   return rows[0];
+}
+
+/** A result a save adds that is already in the record, and what the AI can do. */
+interface Repeat {
+  /** The typed change's place in the input; none for a draft item. */
+  at: string | undefined;
+  /** The draft item it saves, when it is one. */
+  item: string | undefined;
+  adding: string;
+  fix: string;
+}
+
+/**
+ * The results this save adds whose test, day and value (with its unit, as
+ * stored) are already in the record, removed ones aside. Times are
+ * compared only when both have one; a result with no date, or in a test
+ * this save adds, has no match. The AI decides whether it is the same result read again or
+ * another reading: code only warns.
+ */
+async function repeatsOf(
+  trx: Transaction<Tables>,
+  personId: string,
+  planned: readonly Planned[],
+): Promise<Repeat[]> {
+  const repeats: Repeat[] = [];
+  for (const change of planned) {
+    if (change.kind.name !== "result" || change.action !== "add") continue;
+    const columns = change.columns;
+    const test = columns["test_id"];
+    const measured = columns["measured_at"];
+    const value = columns["value_text"];
+    if (
+      typeof test !== "string" ||
+      typeof measured !== "string" ||
+      typeof value !== "string"
+    ) {
+      continue;
+    }
+    const unit = columns["unit"];
+    const replaces = columns["replaces_id"];
+    const saved = await trx
+      .selectFrom("results")
+      .selectAll()
+      .where("person_id", "=", personId)
+      .where("removed", "=", 0)
+      .where("test_id", "=", test)
+      .where(
+        sql<string>`substr(measured_at, 1, 10)`,
+        "=",
+        measured.slice(0, 10),
+      )
+      .where("value_text", "=", value)
+      .where("unit", "is", typeof unit === "string" ? unit : null)
+      // When both have a time, the times must match too.
+      .$if(measured.length > 10, (query) =>
+        query.where((eb) =>
+          eb.or([
+            eb(sql<number>`length(measured_at)`, "<=", 10),
+            eb("measured_at", "=", measured),
+          ]),
+        ),
+      )
+      .$if(typeof replaces === "string", (query) =>
+        query.where("id", "!=", String(replaces)),
+      )
+      .orderBy("measured_at")
+      .orderBy("id")
+      .execute();
+    if (saved.length === 0) continue;
+    const named: string[] = [];
+    for (const result of saved) {
+      const from = await sourcesNamed(trx, personId, result.id);
+      named.push(
+        `${change.kind.label(result)} on ${shownDate(String(result.measured_at))}${from.length > 0 ? `, from ${from.join(", ")}` : ""} (result ${result.id})`,
+      );
+    }
+    repeats.push({
+      at: change.at,
+      item: change.item?.id,
+      adding: `${change.kind.label(columns)} on ${shownDate(measured)}`,
+      fix: `Already saved: ${named.join("; ")}. If this is the same result read again, leave it out${change.item ? ", or save the item as another_source of that result" : ""}. If it is another reading, or a correction the user agreed to that goes back to a value saved before, save again with save_anyway: true. Ask the user only when you can't tell.`,
+    });
+  }
+  return repeats;
+}
+
+/** A record's current sources, in a few words each. */
+async function sourcesNamed(
+  trx: Transaction<Tables>,
+  personId: string,
+  id: string,
+): Promise<string[]> {
+  const sources = await trx
+    .selectFrom("record_sources as s")
+    .leftJoin("document_pages as p", (join) =>
+      join
+        .onRef("p.person_id", "=", "s.person_id")
+        .onRef("p.document_id", "=", "s.document_id")
+        .onRef("p.position", "=", "s.page"),
+    )
+    .select(["s.type", "s.page", "p.file_name"])
+    .where("s.person_id", "=", personId)
+    .where("s.kind", "=", "result")
+    .where("s.record_id", "=", id)
+    .where("s.removed_by", "is", null)
+    .orderBy(sql`s.rowid`)
+    .execute();
+  return sources.map((source) => {
+    switch (source.type) {
+      case "document_page":
+        return `${source.file_name ?? "a document"} page ${String(source.page)}`;
+      case "message":
+        return "the user's message";
+      case "visit":
+        return "a visit";
+      default:
+        return "a form the user filled in";
+    }
+  });
 }
 
 /**
