@@ -14,7 +14,9 @@
 // or a send takes them: a new page in the same tab, as when its session
 // ended while Rufi was away, shows them first and saves them. A click on a
 // question card's answer is a send of its own, kept here by card until the
-// chat shows it, so a card drawn again finds it (docs/adr/0036).
+// chat shows it, so a card drawn again finds it (docs/adr/0036); one with
+// no answer yet is kept in the tab's storage too, so after a reload its
+// Retry has the same id and payload.
 import {
   type Chip,
   Draft,
@@ -22,7 +24,7 @@ import {
   MAX_REFS,
   Pointer,
   Sent,
-  type WhileReplying,
+  WhileReplying,
 } from "@rufi/contracts";
 import type { QueryClient } from "@tanstack/react-query";
 import { Schema } from "effect";
@@ -91,6 +93,17 @@ const Kept = Schema.Struct({
   ),
 });
 type Kept = typeof Kept.Type;
+
+/** Card clicks with no answer yet, kept in this tab by card: what Retry sends. */
+const KeptCards = Schema.Record(
+  Schema.String,
+  Schema.Struct({
+    id: Schema.String,
+    index: Schema.Number,
+    text: Schema.String,
+    kind: WhileReplying,
+  }),
+);
 
 /** Words that couldn't be saved, kept in this tab: the text and its chips. */
 const Unsaved = Kept.mapFields(({ text, refs }) => ({ text, refs }));
@@ -173,6 +186,23 @@ export function draftBox(api: DraftApi) {
   const newId = api.newId ?? (() => crypto.randomUUID());
   const sendKey = `rufi/send/${api.scope}`;
   const unsavedKey = `rufi/unsaved/${api.scope}`;
+  const cardsKey = `rufi/cards/${api.scope}`;
+  /** Card clicks the tab kept with no answer: lost until the chat shows them. */
+  const keptCards = (): Record<string, CardSend> => {
+    try {
+      const kept = api.storage?.getItem(cardsKey);
+      if (!kept) return {};
+      const cards = Schema.decodeUnknownSync(KeptCards)(JSON.parse(kept));
+      return Object.fromEntries(
+        Object.entries(cards).map(([card, send]) => [
+          card,
+          { ...send, status: "lost" as const },
+        ]),
+      );
+    } catch {
+      return {};
+    }
+  };
   const store = createStore<BoxState>(() => ({
     text: "",
     refs: [],
@@ -184,7 +214,7 @@ export function draftBox(api: DraftApi) {
     unresolved: false,
     failed: false,
     notice: null,
-    cards: {},
+    cards: keptCards(),
   }));
   let timer: ReturnType<typeof setTimeout> | undefined;
   /** A send whose answer was lost: the same text again keeps its id. */
@@ -262,8 +292,38 @@ export function draftBox(api: DraftApi) {
 
   void load();
 
-  const setCard = (card: string, send: CardSend) => {
+  /**
+   * Keeps the card clicks with no answer yet in this tab, as they went;
+   * false when the tab can't keep them.
+   */
+  function keepCards(): boolean {
+    const open = Object.entries(store.getState().cards).filter(
+      ([, send]) => send.status === "sending" || send.status === "lost",
+    );
+    try {
+      if (open.length === 0) api.storage?.removeItem(cardsKey);
+      else {
+        api.storage?.setItem(
+          cardsKey,
+          JSON.stringify(
+            Object.fromEntries(
+              open.map(([card, { id, index, text, kind }]) => [
+                card,
+                { id, index, text, kind },
+              ]),
+            ),
+          ),
+        );
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  const setCard = (card: string, send: CardSend): boolean => {
     store.setState((state) => ({ cards: { ...state.cards, [card]: send } }));
+    return keepCards();
   };
 
   /**
@@ -271,7 +331,11 @@ export function draftBox(api: DraftApi) {
    * send the chat already shows (settled) ignores its request's late end.
    */
   async function go(card: string, send: CardSend): Promise<void> {
-    setCard(card, send);
+    // Kept in the tab before it goes; if it can't be, it doesn't go.
+    if (!setCard(card, send)) {
+      setCard(card, { ...send, status: "refused", why: "" });
+      return;
+    }
     const { id, index, text, kind } = send;
     const current = () => store.getState().cards[card]?.id === id;
     try {
@@ -421,6 +485,7 @@ export function draftBox(api: DraftApi) {
           Object.entries(state.cards).filter(([card]) => !done.includes(card)),
         ),
       }));
+      keepCards();
     },
 
     /** Saves now what isn't saved yet: Retry, or the box leaves the screen. */
