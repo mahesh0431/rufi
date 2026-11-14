@@ -1,6 +1,7 @@
 // The iPhone app's fixtures: what the record's routes answer for a
-// fictional record, kept in apps/ios/RufiTests/Fixtures, which the app's
-// tests decode. A route that answers differently fails here until the files
+// fictional record, and the door's two pages a visual draws in, with their
+// headers, kept in apps/ios/RufiTests/Fixtures, which the app's tests
+// decode. A route that answers differently fails here until the files
 // are written again (`pnpm ios:fixtures`), so a change to what the screens
 // read can't leave the iPhone behind unseen.
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
@@ -8,12 +9,15 @@ import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect, Exit, Scope } from "effect";
+import { Hono } from "hono";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { codexAdapter } from "../agent/codex/adapter.ts";
 import { databasePath, openWritable } from "../core/store/database.ts";
 import { FAMILY } from "../../tests/fixtures/golden.ts";
 import { PROOF_HEADER } from "./api.ts";
 import { agentSetup, startCore, type Core } from "./core.ts";
+import type { App } from "./http.ts";
+import { visualCardRoute, visualFrameRoute } from "./visual-frame.ts";
 
 const FAKE = join(import.meta.dirname, "../../tests/fake-codex.ts");
 const MORE = join(import.meta.dirname, "../../tests/fixtures/record-pages.sql");
@@ -149,5 +153,27 @@ describe("the iPhone's fixtures", () => {
     expect(JSON.parse(await readFile(file, "utf8"))).toEqual(
       JSON.parse(answer.text),
     );
+  });
+});
+
+describe("the iPhone's fixture of the visual's pages", () => {
+  it("is what the door serves: each page with its headers", async () => {
+    const door: App = new Hono();
+    // A stand-in for the visual's own script (built with the screens):
+    // the iPhone's test sees it ran under the kept policy.
+    visualFrameRoute(door, "document.documentElement.dataset.kit = 'ran';");
+    visualCardRoute(door);
+    const pages: Record<string, unknown> = {};
+    for (const path of ["/visual-card.html", "/visual-frame.html"]) {
+      const answer = await door.request(path);
+      expect(answer.status).toBe(200);
+      pages[path] = {
+        headers: Object.fromEntries(answer.headers),
+        body: await answer.text(),
+      };
+    }
+    const file = join(FIXTURES, "visual-pages.json");
+    if (WRITE) await writeFile(file, JSON.stringify(pages));
+    expect(JSON.parse(await readFile(file, "utf8"))).toEqual(pages);
   });
 });
