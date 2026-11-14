@@ -907,6 +907,7 @@ function featureList() {
     plugins: false,
     apps: false,
     multi_agent_v2: false,
+    default_mode_request_user_input: false,
     ...scenario.features,
   };
   return Object.entries(reported).map(([name, enabled]) => ({

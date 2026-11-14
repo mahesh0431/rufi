@@ -15,13 +15,13 @@ export const AskInput = Schema.Struct({
   details: Schema.optionalKey(
     Schema.String.annotate({
       description:
-        "What the user approves, as a short line or list in Markdown: the values themselves when they are few, each as printed in its source, or a short summary of a long list (what, how many, from where, when). Leave it out for a question that needs none.",
+        "What the user decides on, as a short line or list in Markdown: the values themselves when they are few, each as printed in its source, or a short summary of a long list (what, how many, from where, when). Leave it out for a question that needs none.",
     }),
   ),
   question: Words.annotate({ description: "The question, in plain text." }),
   answers: Schema.Array(Words).check(Schema.isMinLength(1)).annotate({
     description:
-      "Each answer the user can choose, in a few words: every answer they would reasonably give, including a way to decline or wait.",
+      "Each answer the user can choose, in a few words: the answers they would reasonably give, including a way to decline or wait. Reply covers anything else.",
   }),
 });
 export type AskInput = typeof AskInput.Type;
@@ -36,7 +36,7 @@ export const askedResult = (asked: Asked) => ({
 export const ask = defineTool({
   name: "ask",
   description:
-    "Asks the user a question with a few clear answers, as a card in this chat: a key, details naming exactly what they approve, the question and its answers, in plain words. Rufi draws it; the user clicks an answer or replies in their own words. It returns at once with the card's id and link; the user's answer comes later as their message, quoting the card by that link. A card is not the user's yes: judge their answer as any message. Put your analysis (text, visuals) in your reply before asking, keep the card small and text only, and ask last. Only you, in Rufi's own chat, ask the user; a sub-agent sends its question to its parent with send_agent. The same call again returns the same card.",
+    "Asks the user a question, as a card in this chat: whenever you ask them to decide or answer something (a yes to changes you proposed, a choice between options, anything you need from them), ask with this; a question in passing inside an explanation stays in your text. The card has a key, details naming exactly what they decide on, the question and its answers, in plain words. Rufi draws it; the user clicks an answer or replies in their own words, which covers any answer you didn't offer, such as a date. It returns at once with the card's id and link; the user's answer comes later as their message, quoting the card by that link. A card is not the user's yes: judge their answer as any message. Put your analysis (text, visuals) in your reply before asking, keep the card small and text only, and ask last. Only you, in Rufi's own chat, ask the user; a sub-agent sends its question to its parent with send_agent. The same call again returns the same card.",
   input: AskInput,
   callers: "model",
   readOnly: false,
