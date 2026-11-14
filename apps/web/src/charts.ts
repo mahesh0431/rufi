@@ -10,7 +10,6 @@ import {
   BarElement,
   CategoryScale,
   Chart,
-  type ChartDataset,
   Filler,
   Legend,
   LinearScale,
@@ -98,7 +97,7 @@ export function seriesLook(
   index: number,
   type: string,
   theme: ChartTheme,
-): Partial<ChartDataset> {
+): Record<string, unknown> {
   const colour = [theme.ink, theme.accent, theme.muted][index % 3] ?? theme.ink;
   if (type === "bar") {
     const fill = [colour, theme.accentSoft, "transparent"][index % 3];
@@ -114,5 +113,5 @@ export function seriesLook(
     pointHoverRadius: 5,
     borderWidth: 1.5,
     ...(index >= 3 && { borderDash: [4, 3] }),
-  } as Partial<ChartDataset>;
+  };
 }
