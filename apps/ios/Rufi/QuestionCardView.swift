@@ -80,6 +80,9 @@ struct QuestionCardView: View {
         switch click {
         case let .answered(index):
             Label { Text(verbatim: words(index)) } icon: { Image(systemName: "checkmark").foregroundStyle(theme.accent) }
+                // The tick, in words: the answer Rufi AI has.
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Answered: \(words(index))")
         case let .waiting(index):
             Label("\(words(index)) · Waiting", systemImage: "hourglass").foregroundStyle(.secondary)
         case let .sending(index):
