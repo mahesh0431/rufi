@@ -4003,7 +4003,7 @@ describe("the chat, on the scripted Codex", () => {
     expect(claude.opened).toHaveLength(1);
   });
 
-  it("gives a sub-agent all of its parent's tools, and its own sub-agent too", async () => {
+  it("gives a sub-agent all of its parent's tools but ask, and its own sub-agent too", async () => {
     await startChat("fake", {
       scenario: {
         callsByText: {
@@ -4055,7 +4055,14 @@ describe("the chat, on the scripted Codex", () => {
       "Reader",
       "Helper",
     ]);
-    expect(new Set(agents.map((row) => row["tools"])).size).toBe(1);
+    // Only Rufi AI asks the person.
+    const [own, ...below] = agents.map(
+      (row) => JSON.parse(row["tools"] as string) as string[],
+    );
+    expect(own).toContain("ask");
+    for (const tools of below) {
+      expect(tools).toEqual(own?.filter((name) => name !== "ask"));
+    }
   });
 
   it("saves the calls of two agents of the chat that have the same id from their provider, each with its receipt", async () => {
