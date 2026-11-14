@@ -40,6 +40,38 @@ struct ChatTests {
         #expect(!transcript.streaming(reply))
     }
 
+    /// The words Rufi AI wrote just before a card: a progress note in the
+    /// reply's Activity while it runs, then, with the card, a reply by the
+    /// same id, shown above the card and gone from Activity.
+    @Test func theWordsBeforeACardShowAboveIt() throws {
+        let entry = { (id: String, seq: Double, kind: String, activity: String?, text: String, card: String?) throws -> Entry in
+            let fields: [String: Any?] = [
+                "id": id, "seq": seq, "turnId": Self.running.id, "kind": kind, "text": text,
+                "activity": activity, "detail": nil, "status": "done",
+                "createdAt": "2026-10-05T08:00:00Z", "updatedAt": "2026-10-05T08:00:00Z",
+                "card": try card.map { try JSONSerialization.jsonObject(with: Data($0.utf8)) },
+            ]
+            let json = try JSONSerialization.data(withJSONObject: fields.compactMapValues { $0 })
+            return try JSONDecoder().decode(Entry.self, from: json)
+        }
+        let card = try entry("q-visit", 4, "question", nil, "**Next visit**", Self.visit)
+        var transcript = Transcript()
+        transcript.apply(.update(revision: 1, entries: [
+            try entry("m-1", 1, "message", nil, "Where can I book my visit?", nil),
+            try entry("n-1", 1.000001, "activity", "note", "Dr Rao has two slots.", nil),
+        ], turns: [Self.running], chat: nil))
+        #expect(transcript.steps(of: Self.running.id).map(\.id) == ["n-1"])
+
+        transcript.apply(.update(revision: 2, entries: [
+            try entry("n-1", 3, "reply", nil, "Dr Rao has two slots.", nil), card,
+        ], turns: [], chat: nil))
+        #expect(transcript.steps(of: Self.running.id).isEmpty)
+        let lines = transcript.lines(calendar: Self.berlin)
+        let above = try #require(lines.firstIndex(of: .entry("n-1")))
+        let below = try #require(lines.firstIndex(of: .entry(card.id)))
+        #expect(above < below)
+    }
+
     /// A card of a kind the iPhone doesn't draw reads as its words: the
     /// chat around it still reads.
     @Test func aCardOfAKindTheIPhoneDoesntDrawShowsItsWords() throws {
