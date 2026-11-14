@@ -515,6 +515,44 @@ describe("a click on a question card's answer", () => {
     expect(cardOf(box, "card-1")).toBeUndefined();
   });
 
+  it("keeps an answer with no answer yet through a reload: the new page shows it Not sent, and Retry sends the same id and payload; once the chat has it, the tab forgets it", async () => {
+    const stored = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        stored.set(key, value);
+      },
+      removeItem: (key: string) => {
+        stored.delete(key);
+      },
+    };
+    const first = core(editable(""));
+    first.api.storage = storage;
+    const box = draftBox(first.api);
+    await settle();
+    void box.choose("card-1", 0, "Save", "queue");
+    await settle();
+    // The page reloads before any answer came.
+    const second = core(editable(""));
+    second.api.storage = storage;
+    const reloaded = draftBox(second.api);
+    await settle();
+    expect(cardOf(reloaded, "card-1")).toMatchObject({
+      status: "lost",
+      id: "id-1",
+      index: 0,
+    });
+    // Another answer can't take its place; Retry sends it as it went.
+    void reloaded.choose("card-1", 1, "Not now", "steer");
+    void reloaded.retry("card-1");
+    await settle();
+    expect(second.sends().map((send) => send.body)).toEqual([
+      first.sends()[0]?.body,
+    ]);
+    reloaded.settle((id) => id === "id-1");
+    expect(stored.has("rufi/cards/draft/test")).toBe(false);
+  });
+
   it("settles an answer once the chat has its message, whatever its request does: a lost one isn't Not sent, a late end changes nothing, and once its row is gone the card is open", async () => {
     const { api, sends } = core(editable(""));
     const box = draftBox(api);
