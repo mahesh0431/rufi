@@ -61,9 +61,11 @@ struct VisualPagesTests {
         try await card.until("its height") { card.heights.last == 120 }
 
         // An opaque origin: nothing of the card page, cookies or storage.
-        #expect(try await card.inFrame(Card.reach) as? [String: String] == [
-            "origin": "null", "parent": "refused", "cookie": "refused", "storage": "refused",
-        ])
+        // WebKit refuses the cookie on a card's first load, and on later
+        // ones reads none; either way the one it set never comes back.
+        let reach = try #require(try await card.inFrame(Card.reach) as? [String: String])
+        #expect(reach.filter { $0.key != "cookie" } == ["origin": "null", "parent": "refused", "storage": "refused"])
+        #expect(["refused", ""].contains(reach["cookie"]))
         let said = try await card.probe(Probe.allCases, outside: outside, own: Self.ownHash())
         #expect(said == ["ran": "no", "handler": "no"])
         #expect(outside.reached == Outside.Reached(connections: 0, paths: []))
@@ -161,7 +163,8 @@ private final class Card: NSObject, WKScriptMessageHandler {
     static let reach = """
         const tried = (what) => { try { return String(what()); } catch { return "refused"; } };
         return { origin: self.origin, parent: tried(() => window.parent.document.title),
-                 cookie: tried(() => document.cookie), storage: tried(() => localStorage.length) };
+                 cookie: tried(() => { document.cookie = "kept=hba1c"; return document.cookie; }),
+                 storage: tried(() => localStorage.length) };
         """
 
     private(set) var heights: [Double] = []
@@ -272,11 +275,16 @@ nonisolated private final class Outside: Sendable {
         var paths: [String] = []
     }
 
+    /// What reached it, shared with its handlers.
+    private final class Tally: Sendable {
+        let state = Mutex(Reached())
+    }
+
     private let listener: NWListener
-    private let state = Mutex(Reached())
+    private let tally = Tally()
     let address: String
 
-    var reached: Reached { state.withLock { $0 } }
+    var reached: Reached { tally.state.withLock { $0 } }
 
     init() async throws {
         let parameters = NWParameters.tcp
@@ -284,14 +292,14 @@ nonisolated private final class Outside: Sendable {
         let listener = try NWListener(using: parameters)
         self.listener = listener
         let queue = DispatchQueue(label: "outside")
-        let state = state
+        let tally = tally
         listener.newConnectionHandler = { connection in
-            state.withLock { $0.connections += 1 }
+            tally.state.withLock { $0.connections += 1 }
             connection.start(queue: queue)
             connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, _, _ in
                 let line = data.flatMap { String(data: $0, encoding: .utf8) }?.split(separator: "\r\n").first
                 if let path = line?.split(separator: " ").dropFirst().first {
-                    state.withLock { $0.paths.append(String(path)) }
+                    tally.state.withLock { $0.paths.append(String(path)) }
                 }
                 let answer = "HTTP/1.1 200 OK\r\nContent-Length: 3\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\nout"
                 connection.send(content: Data(answer.utf8), completion: .contentProcessed { _ in connection.cancel() })
