@@ -1624,8 +1624,9 @@ describe("the chat, on the scripted Codex", () => {
       },
       "signed_out",
     );
+    // Signed in again: as the core does, Rufi AI's queue lifts its hold.
     delete signIns["codex"];
-    await chat?.carryAll();
+    ai?.agents.signedIn();
     await wentOnce(c);
   });
 
