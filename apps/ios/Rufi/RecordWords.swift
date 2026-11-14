@@ -49,8 +49,11 @@ nonisolated enum Words {
 
     /// A record's date as a time on a chart: the start of its period, in
     /// this iPhone's time zone, as the Mac's charts place it ("2025-03" at
-    /// 1 March 2025, 00:00). Nil for other words.
-    static func placed(_ value: String, calendar: Calendar = .current) -> Date? {
+    /// 1 March 2025, 00:00). Its numbers are always Gregorian: the phone's
+    /// own calendar, Buddhist or any other, gives only its time zone. Nil
+    /// for other words.
+    static func placed(_ value: String, calendar phone: Calendar = .current) -> Date? {
+        let calendar = Calendar.phone(in: phone.timeZone)
         let pattern = /^(\d{4})(?:-(\d{2})(?:-(\d{2})(?:T(\d{2}):(\d{2}))?)?)?$/
         guard let match = value.wholeMatch(of: pattern) else { return nil }
         let part = { (digits: Substring?, start: Int) in digits.flatMap { Int($0) } ?? start }

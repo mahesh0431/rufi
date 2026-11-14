@@ -119,6 +119,12 @@ struct RecordTests {
         #expect(Words.placed("2025", calendar: india) == at(2025, 1, 1, 0, 0))
         #expect(Words.placed("2025-03", calendar: india) == at(2025, 3, 1, 0, 0))
         #expect(Words.placed("2025-03-04T08:30", calendar: india) == at(2025, 3, 4, 8, 30))
+        // An instant known on its own: 1 March 2025, 00:00 in India.
+        #expect(Words.placed("2025-03", calendar: india) == ISO8601DateFormatter().date(from: "2025-02-28T18:30:00Z"))
+        // A phone set to another calendar places the record's Gregorian date the same.
+        var buddhist = Calendar(identifier: .buddhist)
+        buddhist.timeZone = india.timeZone
+        #expect(Words.placed("2025-03", calendar: buddhist) == at(2025, 3, 1, 0, 0))
         #expect(Words.placed("2025-13", calendar: india) == nil)
         #expect(Words.placed("2026 (date unclear)", calendar: india) == nil)
     }

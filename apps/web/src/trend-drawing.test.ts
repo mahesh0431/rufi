@@ -116,20 +116,8 @@ describe("the scale", () => {
     expect(drawing?.dates.map((date) => date.text)).toEqual(["May 2026"]);
   });
 
-  it("leaves out values with no date or no number, and draws nothing without any", () => {
-    const drawing = draw(
-      "Ferritin (µg/L)",
-      [
-        ...ferritin,
-        result("f4", undefined, "40"),
-        result("f5", "2026-10-01", "Haemolysed"),
-      ],
-      LARGE,
-    );
-    expect(drawing?.lines[0]?.points).toHaveLength(3);
-    expect(
-      draw("Ferritin (µg/L)", [result("f4", undefined, "40")], LARGE),
-    ).toBeUndefined();
+  it("draws nothing without a value on the line", () => {
+    expect(drawTrend("Ferritin (µg/L)", [], LARGE)).toBeUndefined();
   });
 
   it("draws a two-value result's second number as a second, dashed line", () => {

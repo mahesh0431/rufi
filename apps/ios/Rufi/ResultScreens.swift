@@ -147,6 +147,18 @@ private struct TestChart: View {
                     }
                 }
             }
+            .chartXAxis {
+                // Swift Charts chooses the dates; each says its year on the
+                // first, and on every one when the line spans years.
+                let years = Set(points.map { Calendar.phone().component(.year, from: $0.at) }).count > 1
+                AxisMarks(values: .automatic) { value in
+                    AxisGridLine()
+                    AxisTick()
+                    AxisValueLabel(format: years || value.index == 0
+                        ? .dateTime.month(.abbreviated).year()
+                        : .dateTime.month(.abbreviated))
+                }
+            }
             .chartYScale(domain: .automatic(includesZero: false))
             .frame(height: 150)
         }
