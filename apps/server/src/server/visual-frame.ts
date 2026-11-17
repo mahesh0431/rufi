@@ -113,7 +113,9 @@ const inScript = (value: unknown) =>
  * takes out what REFUSED names, and unwraps every link. It writes in a
  * document with the theme as data, the card script, Rufi's Tailwind theme
  * and the visual's own script (`kit`), which keep this page's policy, and
- * then puts the visual in its body as parsed, never parsing it a second time.
+ * then puts the visual in its body as parsed, never parsing it a second time,
+ * and has the visual's own script draw its charts. A chart's JSON block
+ * becomes a canvas holding the JSON as text before any script is taken out.
  */
 const hostOf = (kit: string) => `(() => {
   const parent = window.parent;
@@ -126,6 +128,20 @@ const hostOf = (kit: string) => `(() => {
     removeEventListener("message", take);
     const inert = document.createElement("template");
     inert.innerHTML = data.html;
+    // A chart's JSON (ADR 0037): a canvas in its place, holding the JSON as
+    // text, before every script is taken out; it is never parsed as HTML.
+    for (const block of inert.content.querySelectorAll("script[data-rufi-chart]")) {
+      if ((block.getAttribute("type") || "").toLowerCase() !== "application/json") continue;
+      const box = document.createElement("div");
+      box.style.position = "relative";
+      const canvas = document.createElement("canvas");
+      canvas.setAttribute("role", "img");
+      const label = block.getAttribute("aria-label");
+      if (label) canvas.setAttribute("aria-label", label);
+      canvas.setAttribute("data-rufi-chart", block.textContent);
+      box.append(canvas);
+      block.replaceWith(box);
+    }
     for (const element of inert.content.querySelectorAll(${JSON.stringify(REFUSED)})) element.remove();
     for (const link of inert.content.querySelectorAll("a")) link.replaceWith(...link.childNodes);
     const theme = JSON.stringify(data.theme ?? null).replace(/</g, "\\\\u003c");
@@ -133,6 +149,8 @@ const hostOf = (kit: string) => `(() => {
     document.write('<!doctype html><html><head><meta charset="utf-8"><script type="application/json" id="${THEME_ID}">' + theme + '</' + 'script><script>' + card + '</' + 'script><style type="text/tailwindcss">${TAILWIND}</style><script>' + kit + '</' + 'script></head><body></body></html>');
     document.close();
     document.body.append(inert.content);
+    // Rufi's charts, now the visual is in.
+    if (window.rufiVisual) window.rufiVisual.draw();
   };
   addEventListener("message", take);
 })();`;
