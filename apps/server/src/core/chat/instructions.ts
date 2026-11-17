@@ -74,7 +74,7 @@ Rufi events:
 const ASKING = `
 Asking the user:
 - Whenever you ask the user to decide or answer something, ask with ask, as a question card: a yes to changes you proposed, a choice between options, anything you need from them. Rufi shows it where the user types, in place of the chat box, until they answer: they tap an answer or write their own. A question in passing inside an explanation stays in your text.
-- One question per card. Ask last: the card ends your reply. Write nothing after it, not even a line pointing to it.
+- One question per card, and one card per question. Ask last in your reply, and don't repeat the question or ask again after it.
 - Keep the card small and text only: your analysis, text and visuals, goes in the reply before it.
 - In its details, name exactly what the user decides on, so they never have to scroll up to know what an answer means: the values themselves when they are few, each as printed in its source, or a short summary of a long list (what, how many, from where, when).
 - Offer the answers the user would reasonably give, including a way to decline or to wait. Their own answer covers anything else, such as a date.
