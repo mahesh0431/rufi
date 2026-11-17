@@ -30,7 +30,7 @@ struct ChatTests {
             .day("ent-a1"), .entry("ent-a1"), .entry("ent-a4"), .activity("turn-a1"),
             .entry("ent-a5"), .entry("ent-a6"),
         ])
-        #expect(transcript.entries["ent-a5"]?.question?.answers == ["Save", "Not now"])
+        #expect(transcript.entries["ent-a5"]?.question?.answers.map(\.label) == ["Save", "Not now"])
         #expect(transcript.entries["ent-a5"]?.answer == CardAnswer(message: "ent-a6", index: 0))
         #expect(transcript.entries["ent-a6"]?.refs?.map(\.ref) == [Pointer(type: "question", id: "ent-a5", answer: 0)])
         #expect(transcript.steps(of: "turn-a1").map(\.id) == ["ent-a2", "ent-a3"])
@@ -389,7 +389,7 @@ struct ChatTests {
         chat.end()
     }
 
-    static let visit = #"{"kind":"choice","key":"Next visit","details":"- Dr Rao, City Clinic\n- Tue 20 Oct, 10:00","question":"Book this visit?","answers":["Book","Not now"]}"#
+    static let visit = #"{"kind":"choice","key":"Next visit","details":"- Dr Rao, City Clinic\n- Tue 20 Oct, 10:00","question":"Book this visit?","answers":[{"label":"Book"},{"label":"Not now"}]}"#
 
     /// A question entry with `card`, as the Mac's stream gives it.
     static func card(_ card: String) throws -> Entry {

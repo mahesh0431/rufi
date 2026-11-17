@@ -4,11 +4,21 @@
 // once that message went to Rufi AI. These are the card's words as text:
 // the card for a screen that can't draw it, and the quote Rufi AI reads
 // wherever it reads a message, so an answer always names its card.
-import type { Chip, QuestionCard } from "@rufi/contracts";
+import type { Chip, QuestionAnswer, QuestionCard } from "@rufi/contracts";
 import { literal } from "../record/kinds.ts";
 
 /** Where Rufi AI finds a card again: read_chat with its id. */
 export const questionLink = (id: string) => `rufi:/chat/questions/${id}`;
+
+/** An answer as a line of text: its label, whether recommended, its description. */
+const answerText = ({ label, description, recommended }: QuestionAnswer) =>
+  [
+    literal(label),
+    recommended === true ? " (recommended)" : "",
+    description !== undefined && description.trim() !== ""
+      ? `: ${literal(description)}`
+      : "",
+  ].join("");
 
 /**
  * The card as Markdown: its key, details, question and answers. Rufi AI's
@@ -20,7 +30,7 @@ export function cardText(card: QuestionCard): string {
     `**${literal(card.key)}**`,
     card.details,
     literal(card.question),
-    card.answers.map((answer) => `- ${literal(answer)}`).join("\n"),
+    card.answers.map((answer) => `- ${answerText(answer)}`).join("\n"),
   ]
     .filter((part) => part !== undefined && part.trim() !== "")
     .join("\n\n");
@@ -50,7 +60,7 @@ export function cardForAi(
   card: QuestionCard,
   answer: { message: string; index: number } | undefined,
 ): string {
-  const chosen = answer && card.answers[answer.index];
+  const chosen = answer && card.answers[answer.index]?.label;
   return [
     `Your question card ${questionLink(id)}:`,
     cardText(card),

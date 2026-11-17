@@ -590,7 +590,7 @@ final class ChatModel {
                          detail: "Rufi AI's question")
         let kind = transcript.running == nil ? nil : whileReplying
         do {
-            try pending.add(question.answers[index], refs: [quote], kind: kind)
+            try pending.add(question.answers[index].label, refs: [quote], kind: kind)
         } catch {
             notice = "Rufi couldn't keep that. Try again."
             return

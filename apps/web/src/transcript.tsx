@@ -3,10 +3,11 @@
 // show (files.tsx), each picture the AI generated, and under each
 // answer its Activity; Rufi's receipt for
 // each save to the record, Rufi's own event lines (never your words), the
-// line of each visit brief, which opens it, each question card Rufi AI asked
-// with (question.tsx), and how a reply ended when it didn't finish. A message
-// that answers a card starts with its quote, which goes back to the card,
-// loading earlier pages until it is there. A line between days, and a quiet line where a new AI thread
+// line of each visit brief, which opens it, and how a reply ended when it
+// didn't finish. Rufi AI's question cards aren't drawn here: the open one is
+// the question panel in the box's place (question.tsx). A message that
+// answers a card starts with its quote, Rufi's dog and the card's key, which
+// opens the whole question (QuestionSheet). A line between days, and a quiet line where a new AI thread
 // started, and where Codex compacts or compacted the chat history. Activity is what the AI's agent reported,
 // in order: its progress notes in full, its thinking headings and its steps,
 // each step opening to all the agent gave about it (activity.tsx). From the
@@ -31,7 +32,6 @@ import {
   FileText,
   Hourglass,
   LoaderCircle,
-  MessageCircleQuestionMark,
   RotateCw,
   Square,
   X,
@@ -75,8 +75,8 @@ import { fileIn, NativePicture, Picture } from "./files.tsx";
 import { rehypeVisuals, visualHtml } from "./visual-blocks.ts";
 import { finishedBlocks, useWordByWord } from "./reply-flow.ts";
 import { KeepPlace, Visual, VisualWaiting } from "./visual.tsx";
-import { cardOf, QuestionCard, useCardSends } from "./question.tsx";
-import { loadOlder } from "./live.ts";
+import { ApricotDog } from "./dog.tsx";
+import { cardOf, openQuestion } from "./question-card.ts";
 import { dayLine, dayOf, printedTime } from "./dates.ts";
 import {
   openAgent,
@@ -395,7 +395,6 @@ export function TranscriptView({
   const before = useStore(live, (state) => state.before);
   const older = useStore(live, (state) => state.older);
   const clock = useWorkingClock(live, personId);
-  useCardSends(live, personId);
   const going = useStore(live, useShallow(goingNow));
   const opening = useStore(live, (state) => state.window);
   const now = useToday();
@@ -467,27 +466,6 @@ export function TranscriptView({
       seen.disconnect();
     };
   }, [before, older, onOlder]);
-
-  // A quote goes to its question card: earlier pages load until it is
-  // there, then the chat shows it and it takes the focus.
-  const goTo = async (id: string) => {
-    for (;;) {
-      const card = log.current?.querySelector(
-        `[data-entry="${CSS.escape(id)}"]`,
-      );
-      if (card instanceof HTMLElement) {
-        pinned.current = false;
-        card.scrollIntoView({ block: "center" });
-        card.focus({ preventScroll: true });
-        if (scroller.current) seen.current = viewOf(scroller.current);
-        return;
-      }
-      const state = live.getState();
-      if (state.before === null || state.older === "failed") return;
-      await loadOlder(personId);
-      await new Promise((drawn) => requestAnimationFrame(drawn));
-    }
-  };
 
   // A visual that starts above what you read and changes height moves the
   // view with it, so what you read stays still; at the end, the chat follows
@@ -589,27 +567,27 @@ export function TranscriptView({
               </div>
             )}
             <KeepPlace value={keepPlace}>
-              <GoTo value={(id) => void goTo(id)}>
-                <Whose value={personId}>
-                  <Today value={now}>
-                    <WorkingClock value={clock}>
-                      {shown.map((line) => (
-                        <Line key={line} live={live} line={line} />
-                      ))}
-                    </WorkingClock>
-                  </Today>
-                </Whose>
-              </GoTo>
+              <Whose value={personId}>
+                <Today value={now}>
+                  <WorkingClock value={clock}>
+                    {shown.map((line) => (
+                      <Line key={line} live={live} line={line} />
+                    ))}
+                  </WorkingClock>
+                </Today>
+              </Whose>
             </KeepPlace>
             {/* Being given to the AI: sent, before the chat has it. */}
-            {going.map((item) => (
-              <MessageView
-                key={item.id}
-                id={item.id}
-                text={item.text}
-                refs={item.refs}
-              />
-            ))}
+            <Whose value={personId}>
+              {going.map((item) => (
+                <MessageView
+                  key={item.id}
+                  id={item.id}
+                  text={item.text}
+                  refs={item.refs}
+                />
+              ))}
+            </Whose>
             {/* Before the reply runs: under your message. */}
             {status === "open" && clock?.key === "starting" && (
               <ThinkingLine since={clock.since} />
@@ -787,9 +765,6 @@ const modelLine = (
 ) =>
   `Model changed: ${ranOn(from.model, from.effort)} → ${ranOn(to.model, to.effort)}`;
 
-/** Goes to a question card in the chat, by its entry. */
-const GoTo = createContext<(id: string) => void>(() => undefined);
-
 /**
  * Your message in the chat, with what you added to it; an answer to a
  * question card starts with the card's quote, which goes back to it.
@@ -803,7 +778,7 @@ function MessageView({
   text: string;
   refs: readonly Chip[] | undefined;
 }) {
-  const goTo = use(GoTo);
+  const personId = use(Whose);
   const quotes = refs?.filter(({ ref }) => ref.type === "question") ?? [];
   const added = refs?.filter(({ ref }) => ref.type !== "question") ?? [];
   return (
@@ -815,17 +790,15 @@ function MessageView({
         <button
           key={ref.id}
           type="button"
-          title="Go to the question"
+          title="Show the question"
           onClick={() => {
-            goTo(ref.id);
+            if (ref.type === "question") {
+              openQuestion(personId, ref.id, ref.answer);
+            }
           }}
-          className="mb-1 flex max-w-full cursor-pointer items-center gap-1.5 border-l-2 border-line pl-2 text-left text-xs text-muted hover:text-ink"
+          className="mb-1.5 flex w-full max-w-full cursor-pointer items-center gap-1.5 border-b border-line pb-1.5 text-left text-xs text-muted hover:text-ink"
         >
-          <MessageCircleQuestionMark
-            size={13}
-            className="shrink-0"
-            aria-hidden
-          />
+          <ApricotDog size={16} />
           <span className="min-w-0 truncate">{label}</span>
         </button>
       ))}
@@ -849,7 +822,6 @@ function MessageView({
 function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
   const entry = useStore(live, (state) => state.entries[id]);
   const turn = useStore(live, (state) => state.turns[entry?.turnId ?? ""]);
-  const personId = use(Whose);
   // A reply the AI gave whole is judged as finished, though its turn runs.
   const streaming =
     turn?.status === "running" &&
@@ -889,15 +861,8 @@ function EntryView({ live, id }: { live: StoreApi<Live>; id: string }) {
     <BriefLine id={id} text={entry.text} />
   ) : entry.kind === "agent" ? (
     <AgentMessage entry={entry} />
-  ) : card ? (
-    <QuestionCard
-      entry={entry}
-      card={card}
-      live={live}
-      personId={personId}
-      details={card.details !== undefined && <Marked text={card.details} />}
-    />
-  ) : entry.kind === "activity" &&
+  ) : card ? null /* The open card is the question panel; a quote opens any. */ : entry.kind ===
+      "activity" &&
     entry.activity === "picture" &&
     entry.status === "done" &&
     entry.detail !== null ? (

@@ -94,3 +94,28 @@ export function LiveDog({
     </span>
   );
 }
+
+/**
+ * Rufi beside its own question, apricot in light and dark (the question
+ * panel, a quote of it): decorative, as its words name it.
+ */
+const apricot = new Map<number, string>();
+export function ApricotDog({ size }: { size: number }) {
+  let made = apricot.get(size);
+  if (made === undefined) {
+    made = svg({
+      palette: "onApricot",
+      expression: "calm",
+      size,
+      ground: "circle",
+    });
+    apricot.set(size, made);
+  }
+  return (
+    <span
+      aria-hidden
+      className="flex shrink-0"
+      dangerouslySetInnerHTML={{ __html: made }}
+    />
+  );
+}

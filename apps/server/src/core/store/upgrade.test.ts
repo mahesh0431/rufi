@@ -1761,3 +1761,56 @@ it("upgrades a record of version 35 so Rufi AI can ask with a question card: eve
   }
   expect(lines().at(-1)).toMatchObject({ kind: "question", answer: null });
 });
+
+it("upgrades a record of version 36 so a question card's answers are objects: each answer keeps its words, in order, as its label, and nothing else changes", async () => {
+  const path = databasePath(home);
+  migrate(path, MIGRATIONS.slice(0, 36));
+  const old = new DatabaseSync(path);
+  try {
+    old.exec(`
+      INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, card, answer, revision, created_at, updated_at)
+        SELECT 'line-card', person_id, id, 1000, 'question', '**August results**', '{"kind":"choice","key":"August results","details":"6 results","question":"Save these 6 results?","answers":["Save","Not now","Only the HbA1c"]}', '{"message":"line-answer","index":1}', 0, '2026-11-10T09:02:00Z', '2026-11-10T09:02:00Z'
+        FROM chats WHERE person_id = 'asha';
+      INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, revision, created_at, updated_at)
+        SELECT 'line-reply', person_id, id, 1001, 'reply', 'I read 6 results.', 0, '2026-11-10T09:01:00Z', '2026-11-10T09:01:00Z'
+        FROM chats WHERE person_id = 'asha';
+    `);
+  } finally {
+    old.close();
+  }
+  const lines = () => {
+    const db = new DatabaseSync(path, { readOnly: true });
+    try {
+      return db
+        .prepare("SELECT * FROM transcript_entries ORDER BY seq")
+        .all()
+        .map((row) => ({ ...row }));
+    } finally {
+      db.close();
+    }
+  };
+  const before = lines();
+
+  (await openRecord(home)).close();
+
+  expect(lines()).toEqual(
+    before.map((line) =>
+      line["id"] === "line-card"
+        ? {
+            ...line,
+            card: JSON.stringify({
+              kind: "choice",
+              key: "August results",
+              details: "6 results",
+              question: "Save these 6 results?",
+              answers: [
+                { label: "Save" },
+                { label: "Not now" },
+                { label: "Only the HbA1c" },
+              ],
+            }),
+          }
+        : line,
+    ),
+  );
+});

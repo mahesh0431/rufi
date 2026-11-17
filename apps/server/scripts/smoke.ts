@@ -298,7 +298,7 @@ function chat(api: Api) {
       const before = await idle();
       await api("POST", `${path}/messages`, {
         id: randomUUID(),
-        text: card.answers[answer],
+        text: card.answers[answer]?.label,
         refs: [{ type: "question", id: entry.id, answer }],
       });
       await ended(before + 1);
@@ -330,10 +330,10 @@ const cardsOf = (snapshot: Snapshot): Asked[] =>
  * card, and clicks nothing. A person checks the click in the transcript.
  */
 function answerTo(card: QuestionCard, match: RegExp): number {
-  const index = card.answers.findIndex((answer) => match.test(answer.trim()));
+  const index = card.answers.findIndex(({ label }) => match.test(label.trim()));
   if (index < 0)
     throw new Error(
-      `couldn't tell which answer of "${card.key}" to click: ${card.answers.join(" | ")}`,
+      `couldn't tell which answer of "${card.key}" to click: ${card.answers.map(({ label }) => label).join(" | ")}`,
     );
   return index;
 }
@@ -360,6 +360,25 @@ const saidSince = (snapshot: Snapshot) => {
 /** The answer a click gave the card, as the chat shows it now. */
 const answerOf = (snapshot: Snapshot, asked: Asked | undefined) =>
   snapshot.entries.find((entry) => entry.id === asked?.entry.id)?.answer?.index;
+
+/** Each reply asked with one card at most: Rufi AI never asked twice. */
+const oneCardPerReply = (snapshot: Snapshot) => {
+  const cards = snapshot.entries.filter((entry) => entry.kind === "question");
+  return new Set(cards.map((entry) => entry.turnId)).size === cards.length;
+};
+
+/** What Rufi AI wrote after the card, in the card's reply. */
+const afterCard = (snapshot: Snapshot, asked: Asked | undefined) =>
+  snapshot.entries
+    .filter(
+      (entry) =>
+        asked !== undefined &&
+        entry.kind === "reply" &&
+        entry.turnId === asked.entry.turnId &&
+        entry.seq > asked.entry.seq,
+    )
+    .map((entry) => entry.text)
+    .join("\n\n") || "(nothing)";
 
 /** A card's words, for a person to judge. */
 const cardWords = (asked: Asked | undefined) =>
@@ -1330,14 +1349,15 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         magnesium_current:
           medicine(home, "Magnesium")?.["status"] === "current",
         card_answered: yes !== undefined && answerOf(snapshot, asked) === yes,
+        one_card_per_reply: oneCardPerReply(snapshot),
         rests_on_the_facts_message: restsOn(home, snapshot, MAGNESIUM),
       },
       verdicts: [
         {
           check: "card_names_what_is_saved",
           criterion:
-            "The card's details name what a yes saves: magnesium 200 mg at night. Its answers include a yes and a way to decline or wait, and the reply doesn't repeat the question after the card.",
-          evidence: cardWords(asked),
+            "The card's details name what a yes saves: magnesium 200 mg at night. Its answers include a yes and a way to decline or wait. An answer marked recommended is one the reply gives a reason for; a description, where there is one, says what choosing that answer means. Nothing Rufi AI writes after the card repeats its question, and its reply doesn't say where the question is (such as above or below).",
+          evidence: `${cardWords(asked)}\n\nWritten after the card:\n\n${afterCard(offered, asked)}`,
         },
       ],
       snapshot,
@@ -1365,6 +1385,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         asked_again_with_a_card:
           second !== undefined && second.entry.id !== first?.entry.id,
         nothing_saved: nothingSaved(home, snapshot),
+        one_card_per_reply: oneCardPerReply(snapshot),
       },
       verdicts: [
         {
@@ -1396,6 +1417,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         asked_with_a_card: asked !== undefined,
         saved_on_the_first: once === 1,
         nothing_more: record(home).saves === 1 && receipts(snapshot) === 1,
+        one_card_per_reply: oneCardPerReply(snapshot),
       },
       verdicts: [
         {
@@ -1429,13 +1451,14 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         nothing_saved_before_the_choice: before,
         card_answered:
           lakeside !== undefined && answerOf(snapshot, asked) === lakeside,
+        one_card_per_reply: oneCardPerReply(snapshot),
       },
       verdicts: [
         {
           check: "asks_which_clinic",
           criterion:
-            "The card asks which clinic, with City Clinic and Lakeside Clinic among its answers.",
-          evidence: cardWords(asked),
+            "The card asks which clinic, with City Clinic and Lakeside Clinic among its answers. Neither clinic is marked recommended: the person gave no reason to prefer one. Nothing Rufi AI writes after the card repeats its question, and its reply doesn't say where the question is (such as above or below).",
+          evidence: `${cardWords(asked)}\n\nWritten after the card:\n\n${afterCard(offered, asked)}`,
         },
         {
           check: "goes_on_with_lakeside",
