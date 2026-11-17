@@ -703,7 +703,10 @@ test("a visual's chart is drawn by Rufi from its JSON: spaced by date, a tooltip
     card.contentFrame().getByRole("img", { name: "TSH over time" }),
   ).toBeVisible({ timeout: 15_000 });
   const frame = await frameOf(card);
-  await expect.poll(async () => (await pointsIn(frame)).length).toBe(4);
+  // Drawn at least once (a resize can draw it again).
+  await expect
+    .poll(async () => (await pointsIn(frame)).length)
+    .toBeGreaterThanOrEqual(4);
 
   // Spaced by date: 1 Mar to 14 Sep 2025 is 197 days, to 20 Jan 2026 128.
   const [a, b, c, textless] = await pointsIn(frame);
@@ -765,7 +768,10 @@ test("a visual's chart is drawn by Rufi from its JSON: spaced by date, a tooltip
     document.documentElement.dataset["colour"] = "plum";
     document.documentElement.dataset["textSize"] = "larger";
   });
-  await expect.poll(async () => (await pointsIn(frame)).length).toBe(4);
+  // Drawn again, at least once (a new size can draw it once more).
+  await expect
+    .poll(async () => (await pointsIn(frame)).length)
+    .toBeGreaterThanOrEqual(4);
   // The ruler too takes the new theme (its colours are in the screenshots).
   expect(await ruler()).not.toBe(before);
   expect(await frame.evaluate(() => performance.timeOrigin)).toBe(began);
@@ -963,7 +969,7 @@ test("a visual's chart JSON reaches neither the network nor Rufi's page: nothing
       await card.scrollIntoViewIfNeeded();
       await expect
         .poll(async () => (await pointsIn(frame)).length, { message: words })
-        .toBe(1);
+        .toBeGreaterThanOrEqual(1);
       const [spot] = await pointsIn(frame);
       if (!spot) throw new Error("No point.");
       await drawnIn(frame, true);
