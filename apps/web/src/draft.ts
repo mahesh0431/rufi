@@ -17,7 +17,9 @@
 // in the question panel) is a send of its own, kept here by card until the
 // chat shows it, so a panel drawn again finds it (docs/adr/0036); one with
 // no answer yet is kept in the tab's storage too, so after a reload its
-// Retry has the same id and payload.
+// Retry has the same id and payload. Words typed as the panel's own answer
+// are kept here by card too, and in the tab's storage, until they are sent:
+// minimised, away to sign in or reloaded, the panel finds them again.
 import {
   type Chip,
   Draft,
@@ -151,6 +153,8 @@ export interface BoxState {
   notice: string | null;
   /** Answers to question cards on their way, by card. */
   cards: Record<string, CardSend>;
+  /** The question panel's own answer, as typed, by card, until it is sent. */
+  own: Record<string, string>;
 }
 
 export type DraftBox = ReturnType<typeof draftBox>;
@@ -189,6 +193,20 @@ export function draftBox(api: DraftApi) {
   const sendKey = `rufi/send/${api.scope}`;
   const unsavedKey = `rufi/unsaved/${api.scope}`;
   const cardsKey = `rufi/cards/${api.scope}`;
+  const ownKey = `rufi/own/${api.scope}`;
+  /** Own answers the tab kept, by card. */
+  const keptOwn = (): Record<string, string> => {
+    try {
+      const kept = api.storage?.getItem(ownKey);
+      return kept
+        ? Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.String))(
+            JSON.parse(kept),
+          )
+        : {};
+    } catch {
+      return {};
+    }
+  };
   /** Card clicks the tab kept with no answer: lost until the chat shows them. */
   const keptCards = (): Record<string, CardSend> => {
     try {
@@ -217,6 +235,7 @@ export function draftBox(api: DraftApi) {
     failed: false,
     notice: null,
     cards: keptCards(),
+    own: keptOwn(),
   }));
   let timer: ReturnType<typeof setTimeout> | undefined;
   /** A send whose answer was lost: the same text again keeps its id. */
@@ -323,6 +342,29 @@ export function draftBox(api: DraftApi) {
     }
   }
 
+  /**
+   * Keeps the own answer for `card` (none: forgets it), here and in the
+   * tab; false when the tab can't keep it (this page still has it).
+   */
+  function setOwn(card: string, text: string | undefined): boolean {
+    store.setState((state) => ({
+      own: {
+        ...Object.fromEntries(
+          Object.entries(state.own).filter(([key]) => key !== card),
+        ),
+        ...(text !== undefined && text !== "" && { [card]: text }),
+      },
+    }));
+    try {
+      const { own } = store.getState();
+      if (Object.keys(own).length === 0) api.storage?.removeItem(ownKey);
+      else api.storage?.setItem(ownKey, JSON.stringify(own));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   const setCard = (card: string, send: CardSend): boolean => {
     store.setState((state) => ({ cards: { ...state.cards, [card]: send } }));
     return keepCards();
@@ -356,6 +398,8 @@ export function draftBox(api: DraftApi) {
       });
       if (!current()) return;
       setCard(card, { ...send, status: "sent" });
+      // The own answer went: its words are the message now.
+      if (index === undefined) void setOwn(card, undefined);
       store.setState({ accepted: id });
       counted();
     } catch (error) {
@@ -488,6 +532,11 @@ export function draftBox(api: DraftApi) {
         ),
       }));
       keepCards();
+    },
+
+    /** The person typed in the question panel's own answer for `card`. */
+    typeOwn(card: string, text: string): void {
+      void setOwn(card, text);
     },
 
     /** Saves now what isn't saved yet: Retry, or the box leaves the screen. */

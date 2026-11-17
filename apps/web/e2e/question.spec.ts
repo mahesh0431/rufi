@@ -245,7 +245,7 @@ test("Asha's own answer goes as her message quoting the card, with no answer cho
   await expect(sheet).not.toContainText("Your answer");
 });
 
-test("Minimise folds the panel to a line and the chat can be read; the line opens it again unchanged; in the bar, the line opens the chat", async ({
+test("Minimise folds the panel to a line and the chat can be read; the line opens it again with the own answer as typed, kept through a reload; in the bar, the line opens the chat", async ({
   page,
   rufi,
 }) => {
@@ -261,7 +261,10 @@ test("Minimise folds the panel to a line and the chat can be read; the line open
   await expect(box(page)).toHaveCount(0);
   await line.click();
   await expect(lipids).toContainText("Save these 2 results");
-  await expect(ownAnswer(page)).toHaveValue("");
+  // What Asha typed is still there, also after a reload.
+  await expect(ownAnswer(page)).toHaveValue("Save the LDL");
+  await page.reload();
+  await expect(ownAnswer(page)).toHaveValue("Save the LDL");
 
   // On a reading page, the bar is the line, and it opens the chat.
   await page
@@ -375,7 +378,7 @@ test("an answer whose response is lost says Not sent; Retry sends it by the same
   expect(ids[2]).toBe(ids[1]);
 });
 
-test("signed out, an answer says so on the panel, with Sign in", async ({
+test("signed out, an answer says so on the panel, with Sign in; back from signing in, Asha's own answer is still there", async ({
   page,
   rufi,
 }) => {
@@ -387,8 +390,11 @@ test("signed out, an answer says so on the panel, with Sign in", async ({
     `${SIGNED_OUT_WORDS}Sign in`,
   );
   await expect(lipids.getByRole("button", { name: "Save" })).toBeVisible();
+  await ownAnswer(page).fill("Only the LDL");
   await lipids.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/sign-in/);
+  await page.goBack();
+  await expect(ownAnswer(page)).toHaveValue("Only the LDL");
 });
 
 test("a quote opens the whole question with the chosen answer marked, loading earlier pages; a card of a kind Rufi doesn't draw shows its text", async ({

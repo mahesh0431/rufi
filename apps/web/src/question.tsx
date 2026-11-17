@@ -129,7 +129,11 @@ function Open({
   const kind = useSettings().data?.whileReplying ?? "steer";
   const navigate = useNavigate();
   const name = useId();
-  const [own, setOwn] = useState("");
+  // Kept by the box, so it is there again after Minimise or a reload.
+  const own = useStore(box.store, (state) => state.own[id] ?? "");
+  const setOwn = (text: string) => {
+    box.typeOwn(id, text);
+  };
   const words = own.trim();
   const canSend = words !== "" && own.length <= MAX_MESSAGE_CHARS;
   const answer = (index: number | undefined, text: string) => {
