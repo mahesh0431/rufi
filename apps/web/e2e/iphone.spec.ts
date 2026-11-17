@@ -1,18 +1,22 @@
-// Settings → iPhone: pairing a phone for one person's record, as the phone
-// uses the code, and unpairing it, which asks first. Tailscale is stood in
-// for (rufi.ts); the phone is a request to the door, as Serve passes it on.
+// Settings → iPhone: how the iPhone reaches the Mac, pairing a phone for one
+// person's record, as the phone uses the code, and unpairing it, which asks
+// first. Tailscale is stood in for (rufi.ts); the phone is a request to the
+// door, as Serve or Funnel passes it on.
 import { request } from "node:http";
 import { expect, openSettings, TAILNET_NAME, test } from "./rufi.ts";
 
-/** The phone posting the code from the link, by the Mac's tailnet name. */
-function phonePairs(link: string): Promise<number> {
+/**
+ * The phone posting the code from the link, by the link's address, to the
+ * door on `door` (Serve's port is the link's own).
+ */
+function phonePairs(link: string, door?: number): Promise<number> {
   const url = new URL(link);
   const code = new URLSearchParams(url.hash.slice(1)).get("code");
   return new Promise((resolve, reject) => {
     const sent = request(
       {
         host: "127.0.0.1",
-        port: Number(url.port),
+        port: door ?? Number(url.port),
         method: "POST",
         path: "/api/pair",
         headers: {
@@ -110,7 +114,7 @@ test("waits for a slow Tailscale check, and never shows a code another window re
   // The first certificate takes a while: past the 15 s other requests get.
   await page.clock.runFor(20_000);
   await expect(
-    section.getByRole("button", { name: "Setting up Tailscale…" }),
+    section.getByRole("button", { name: "Connecting…" }),
   ).toBeVisible();
   await expect(page.getByText("Rufi can't be reached.")).toHaveCount(0);
   slow.resolve(undefined);
@@ -156,4 +160,56 @@ test("waits for a slow Tailscale check, and never shows a code another window re
   await expect(
     second.getByRole("img", { name: /The pairing code/ }),
   ).toBeVisible();
+});
+
+test("chooses Tailscale Funnel while nothing is paired, pairs through Funnel's own port, and keeps the choice while an iPhone is paired", async ({
+  page,
+  context,
+  rufi,
+}) => {
+  await rufi.family();
+  await rufi.start();
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto(rufi.link());
+  const settings = await openSettings(page, "iPhone");
+  const routes = settings.getByRole("radiogroup", {
+    name: "How your iPhone reaches this Mac",
+  });
+  const section = settings.getByRole("region", { name: "Paired iPhones" });
+  await expect(
+    routes.getByRole("radio", { name: "Tailscale", exact: true }),
+  ).toBeChecked();
+  await expect(section).toContainText(
+    "Through Tailscale, on this Mac and the iPhone.",
+  );
+
+  await routes.getByRole("radio", { name: "Tailscale Funnel" }).check();
+  await expect(section).toContainText(
+    "Through Tailscale Funnel; the iPhone needs no VPN.",
+  );
+
+  await section.getByRole("button", { name: "Pair an iPhone" }).click();
+  await section
+    .getByRole("radiogroup", { name: "Whose record does this iPhone open?" })
+    .getByRole("radio", { name: "Asha Fictional" })
+    .check();
+  await section.getByRole("button", { name: "Pair" }).click();
+  const pairing = page.getByRole("dialog", {
+    name: "Pair an iPhone for Asha Fictional",
+  });
+  await pairing.getByRole("button", { name: "Copy link" }).click();
+  const link = await page.evaluate(() => navigator.clipboard.readText());
+  expect(link).toMatch(
+    new RegExp(
+      `^https://${TAILNET_NAME.replaceAll(".", "\\.")}:8443/pair#code=`,
+    ),
+  );
+  expect(rufi.tailscale.filter((step) => step.startsWith("serve"))).toEqual([]);
+
+  expect(await phonePairs(link, rufi.doorPortAt(8443))).toBe(200);
+  await pairing.getByRole("button", { name: "Done" }).click();
+  await expect(
+    routes.getByRole("radio", { name: "Tailscale", exact: true }),
+  ).toBeDisabled();
+  await expect(settings).toContainText("Unpair your iPhones to change this.");
 });

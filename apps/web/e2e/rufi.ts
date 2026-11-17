@@ -191,18 +191,56 @@ export class Rufi {
         this.tailscale.push(`off ${String(port)}`);
         return Promise.resolve();
       },
+      served: () =>
+        Promise.resolve({
+          Web: Object.fromEntries(
+            [...this.#funnelled].map(([at, door]) => [
+              `${TAILNET_NAME}:${String(at)}`,
+              {
+                Handlers: {
+                  "/": { Proxy: `http://127.0.0.1:${String(door)}` },
+                },
+              },
+            ]),
+          ),
+          AllowFunnel: Object.fromEntries(
+            [...this.#funnelled.keys()].map((at) => [
+              `${TAILNET_NAME}:${String(at)}`,
+              true,
+            ]),
+          ),
+        }),
+      funnel: (publicPort, doorPort) => {
+        this.tailscale.push(`funnel ${String(publicPort)} ${String(doorPort)}`);
+        this.#funnelled.set(publicPort, doorPort);
+        return Promise.resolve();
+      },
+      funnelOff: (publicPort) => {
+        this.tailscale.push(`funnel off ${String(publicPort)}`);
+        this.#funnelled.delete(publicPort);
+        return Promise.resolve();
+      },
     };
   }
 
-  /** The door's check, as Serve passes it on, with the address's Host. */
+  /** Funnel's public ports, each to the door's port. */
+  readonly #funnelled = new Map<number, number>();
+
+  /** The door's port behind `at`: Funnel's public port, or Serve's own. */
+  doorPortAt(at: number): number {
+    return this.#funnelled.get(at) ?? at;
+  }
+
+  /** The door's check, as Serve or Funnel passes it on, with the address's Host. */
   async #throughServe(url: string, init: RequestInit) {
     await this.holdCheck;
-    const { host, port } = new URL(url);
+    const { host, port: at } = new URL(url);
+    const port = this.#funnelled.get(Number(at || 443)) ?? Number(at);
     return new Promise<Response>((resolve, reject) => {
       const sent = request(
         {
           host: "127.0.0.1",
-          port: Number(port),
+          port,
           method: "POST",
           path: "/api/pair",
           headers: { host, "content-type": "application/json" },

@@ -27,7 +27,7 @@ import {
   type Instructions,
 } from "@rufi/contracts/instructions";
 import { KeepValues, type DeviceData } from "@rufi/contracts/devices";
-import { StartPairing, type Me } from "@rufi/contracts/remote";
+import { ChooseRoute, StartPairing, type Me } from "@rufi/contracts/remote";
 import { createReadStream } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { Readable } from "node:stream";
@@ -86,7 +86,7 @@ export interface ApiDeps extends PersonDeps {
   /** The pictures and pages the AI made, that replies show. */
   files: AiFiles;
   /** The remote door: paired apps and pairing (Settings › iPhone). */
-  remote: Pick<Remote, "state" | "pair" | "cancel" | "unpair">;
+  remote: Pick<Remote, "state" | "pair" | "cancel" | "unpair" | "choose">;
   /** The secret `pnpm start` shows to get a fresh link while Rufi runs. */
   launcher: string;
   /** A fresh single-use link that opens Rufi. */
@@ -359,6 +359,12 @@ export function api(deps: ApiDeps): App {
   app.post("/api/paired-apps/pairing", async (c) => {
     const { personId } = await body(c, StartPairing);
     await deps.remote.pair(personId);
+    return c.json(await deps.remote.state());
+  });
+  // The route paired apps reach the door by: only while none is paired.
+  app.put("/api/remote/route", async (c) => {
+    const { kind } = await body(c, ChooseRoute);
+    await deps.remote.choose(kind);
     return c.json(await deps.remote.state());
   });
   app.post("/api/paired-apps/pairing/cancel", async (c) => {
