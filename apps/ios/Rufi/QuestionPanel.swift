@@ -294,10 +294,13 @@ struct QuestionSheet: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
             }
-            .navigationTitle(card.map { "Rufi asked · \($0.key)" } ?? "Rufi asked")
+            // The card's key alone, so it fits; the dog beside it says who asked.
+            .navigationTitle(card?.key ?? "")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) { ApricotDog(size: 26) }
+                ToolbarItem(placement: .topBarLeading) {
+                    ApricotDog(size: 26)
+                }
                 ToolbarItem(placement: .topBarTrailing) { Button("Close", systemImage: "xmark") { dismiss() } }
             }
         }
