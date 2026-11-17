@@ -91,7 +91,13 @@ jobs:
       # simslim switches off the background services the tests don't need.
       # Health, Photos and Search stay on: the app uses HealthKit, the photo
       # picker and the Files picker.
-      - run: brew install mobai-app/tap/simslim
+      # simslim 0.15.0, its release archive checked against this hash.
+      - run: |
+          cd "$RUNNER_TEMP"
+          curl -fsSL -o simslim.tar.gz https://github.com/MobAI-App/simslim/releases/download/v0.15.0/simslim-v0.15.0-macos-arm64.tar.gz
+          echo "8db2d7b9c41f7cbc925c883a2907a2941e8b8bf8d6fc8cc4ce7343a830d61a31  simslim.tar.gz" | shasum -a 256 -c
+          mkdir simslim && tar -xzf simslim.tar.gz -C simslim
+          echo "$RUNNER_TEMP/simslim" >> "$GITHUB_PATH"
       - id: simulator
         run: |
           udid=$(xcrun simctl list devices --json | jq -r '.devices["com.apple.CoreSimulator.SimRuntime.iOS-27-0"][] | select(.name == "iPhone 17") | .udid')
