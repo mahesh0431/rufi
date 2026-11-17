@@ -335,6 +335,33 @@ struct ChatTests {
         again.end()
     }
 
+    /// An own answer typed and not sent yet is back in the panel after a
+    /// restart, and never sent by itself; sent, it leaves the iPhone.
+    @Test func anUnsentOwnAnswerIsKeptThroughARestart() async throws {
+        let file = PendingTests.file()
+        let door = Door(origin: URL(string: "https://chat.test")!, key: "a-key")
+        let chat = ChatModel(door: door, person: "asha", pending: Pending(file: file))
+        chat.open()
+        try await Self.until { chat.loaded }
+        let card = try Self.card(Self.visit)
+        chat.take(.snapshot(try page([card])))
+        chat.typeOwn("Book, but not on Tuesday", for: "q-visit")
+        chat.end()
+
+        let again = ChatModel(door: door, person: "asha", pending: Pending(file: file))
+        again.open()
+        try await Self.until { again.loaded }
+        again.take(.snapshot(try page([card])))
+        #expect(again.ownAnswer(for: "q-visit") == "Book, but not on Tuesday")
+        await again.deliver()
+        #expect(ChatDoor.sent.isEmpty)
+        again.answer(nil, own: again.ownAnswer(for: "q-visit"), on: card)
+        try await Self.until { ChatDoor.sent.count == 1 }
+        #expect(ChatDoor.sent.first?.text == "Book, but not on Tuesday")
+        #expect(Pending(file: file).own == nil)
+        again.end()
+    }
+
     /// A refused answer whose question a later message closed goes to the
     /// box, with its quote and why, as any refused message does.
     @Test func aRefusedAnswerToAClosedQuestionGoesToTheBox() async throws {

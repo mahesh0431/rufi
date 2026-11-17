@@ -573,7 +573,8 @@ final class ChatModel {
         return nil
     }
 
-    /// The question panel's own answer as typed, by card, until it is sent.
+    /// The question panel's own answer as typed, by card, until it is sent;
+    /// also when it couldn't be kept in its file.
     private var ownAnswers: [String: String] = [:]
     /// Why an answer to a card couldn't be kept, by card: until it is sent again.
     private var answerProblem: [String: String] = [:]
@@ -592,21 +593,23 @@ final class ChatModel {
         message.refs?.first { $0.ref.type == "question" }?.ref.id
     }
 
-    /// The question panel's own answer for `card`: a refused answer's words,
-    /// else what was typed.
+    /// The question panel's own answer for `card`: what was typed, else a
+    /// refused answer's words, else what was kept before a restart.
     func ownAnswer(for card: String) -> String {
-        refusedAnswer(to: card)?.text ?? ownAnswers[card] ?? ""
+        ownAnswers[card] ?? refusedAnswer(to: card)?.text ?? (pending.own?.card == card ? pending.own?.text : nil) ?? ""
     }
 
-    /// The person typed in the panel's own answer: a refused answer keeps
-    /// its new words on the iPhone, in its file.
+    /// The person typed in the panel's own answer: it is kept on the
+    /// iPhone, in its file, also through a restart; a refused answer's in
+    /// the refused message itself.
     func typeOwn(_ text: String, for card: String) {
-        guard let refused = refusedAnswer(to: card) else {
-            ownAnswers[card] = text
-            return
-        }
+        ownAnswers[card] = text
         do {
-            try pending.reword(refused.id, text)
+            if let refused = refusedAnswer(to: card) {
+                try pending.reword(refused.id, text)
+            } else {
+                try pending.keep(own: text, for: card)
+            }
         } catch {
             answerProblem[card] = "Rufi couldn't keep that. Try again."
         }
@@ -658,6 +661,7 @@ final class ChatModel {
         // A refused answer to it, its words in the panel, has gone again.
         if let refused = refusedAnswer(to: card.id) { pending.remove([refused.id]) }
         ownAnswers[card.id] = nil
+        if pending.own?.card == card.id { try? pending.keep(own: "", for: card.id) }
         answerProblem[card.id] = nil
         sends += 1
         settle()
