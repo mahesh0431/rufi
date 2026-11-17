@@ -552,49 +552,65 @@ final class ChatModel {
         Task { await deliver() }
     }
 
-    /// A question card's answer on its way, or the one Rufi AI has, by its place.
-    enum Click: Equatable {
-        /// Kept on the iPhone until the Mac takes it.
-        case pending(Int)
-        /// The Mac took it, or gives it to the AI now.
-        case sending(Int)
-        /// In the Mac's queue, until the reply ends.
-        case waiting(Int)
-        /// Rufi AI has it.
-        case answered(Int)
-    }
+    // MARK: - The question panel
 
-    /// Where `card`'s answer is: the stored answer first, then a click on
-    /// its way (in the queue, taken, kept), else none and the card is open.
-    func click(on card: Entry) -> Click? {
-        if let answer = card.answer { return .answered(answer.index) }
-        func chosen(_ refs: [Chip]?) -> Int? {
-            refs?.first { $0.ref.type == "question" && $0.ref.id == card.id }?.ref.answer
-        }
-        if let index = queue.lazy.compactMap({ chosen($0.refs) }).first { return .waiting(index) }
-        if let index = accepted.lazy.compactMap({ chosen($0.refs) }).first { return .sending(index) }
-        if let index = pending.messages.lazy.filter({ !self.restoring.contains($0.id) }).compactMap({ chosen($0.refs) }).first {
-            return .pending(index)
+    /// Rufi AI's open question (docs/adr/0036): the newest card in the chat,
+    /// when it is one the iPhone draws, no message of the person's came after
+    /// it, and none on its way quotes it (kept here, taken, or waiting on the
+    /// Mac). It shows as the question panel in the box's place.
+    var openQuestion: Entry? {
+        for id in transcript.order.reversed() {
+            guard let entry = transcript.entries[id] else { continue }
+            if entry.kind == "message" || entry.kind == "steer" { return nil }
+            guard entry.kind == "question" else { continue }
+            guard entry.question != nil else { return nil }
+            let quotes = { (refs: [Chip]?) in refs?.contains { $0.ref.type == "question" && $0.ref.id == id } ?? false }
+            let going = queue.contains { quotes($0.refs) } || accepted.contains { quotes($0.refs) }
+                || pending.messages.contains { !restoring.contains($0.id) && $0.refused == nil && quotes($0.refs) }
+            return going ? nil : entry
         }
         return nil
     }
 
-    /// An answer on a question card (docs/adr/0036): the person's message,
-    /// quoting the card with the answer's place, kept on the iPhone first as
-    /// a send from the box is, while the box keeps its words and chips. Once
-    /// per card while one is on its way; only for this chat's pairing.
-    func choose(_ index: Int, on card: Entry) {
+    /// The question panel's own answer, by card: what was typed there, or
+    /// a refused answer's words back.
+    var ownAnswers: [String: String] = [:]
+    /// Why an answer to a card came back, by card: until it is answered again.
+    private(set) var answerSaid: [String: String] = [:]
+
+    /// An answer to the open question (docs/adr/0036): a tap on its answer
+    /// `index`, or with no index the person's own words. It is the person's
+    /// message, quoting the card (with the answer a tap chose), kept on the
+    /// iPhone first as a send from the box is; the box keeps its words and
+    /// chips. Once, while the card is open; only for this chat's pairing.
+    func answer(_ index: Int?, own: String = "", on card: Entry) {
         guard !ended, pairing == pending.generation, let question = card.question,
-              question.answers.indices.contains(index), click(on: card) == nil else { return }
+              openQuestion?.id == card.id else { return }
+        let words: String
+        if let index {
+            guard question.answers.indices.contains(index) else { return }
+            words = question.answers[index].label
+        } else {
+            words = own.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !words.isEmpty, words.count <= Self.maxText else { return }
+        }
         let quote = Chip(ref: Pointer(type: "question", id: card.id, answer: index), label: question.key,
                          detail: "Rufi AI's question")
         let kind = transcript.running == nil ? nil : whileReplying
         do {
-            try pending.add(question.answers[index].label, refs: [quote], kind: kind)
+            try pending.add(words, refs: [quote], kind: kind)
         } catch {
-            notice = "Rufi couldn't keep that. Try again."
+            answerSaid[card.id] = "Rufi couldn't keep that. Try again."
             return
         }
+        // A refused answer to it whose words were back in the panel has gone again.
+        let back = Set(pending.messages.filter { message in
+            restoring.contains(message.id) && message.refs?.contains { $0.ref.type == "question" && $0.ref.id == card.id } == true
+        }.map(\.id))
+        pending.remove(back)
+        restoring.subtract(back)
+        ownAnswers[card.id] = nil
+        answerSaid[card.id] = nil
         sends += 1
         settle()
         Task { await deliver() }
@@ -628,8 +644,14 @@ final class ChatModel {
     /// the Mac's line; it stays on the iPhone until the draft holds it.
     private func giveBack(_ message: PendingMessage, refused: String) {
         guard restoring.insert(message.id).inserted else { return }
+        // An answer to a question card: its words back in the question
+        // panel, kept on the iPhone until the card is answered again.
+        if let card = message.refs?.first(where: { $0.ref.type == "question" })?.ref.id {
+            ownAnswers[card] = message.text
+            answerSaid[card] = refused
+            return
+        }
         text = text.isEmpty ? message.text : text + "\n\n" + message.text
-        // Kept as refused, a card's quote has no answer: its words can change now.
         merge(message.refs ?? [])
         said = refused
         save(keepingNotice: true)

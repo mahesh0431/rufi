@@ -136,6 +136,15 @@ struct AskBar: View {
     @State private var lit = false
 
     var body: some View {
+        // While Rufi AI's question is open, the bar is its line.
+        if let card = chat.openQuestion?.question {
+            QuestionLine(key: card.key, open: ask).padding(.horizontal)
+        } else {
+            bar
+        }
+    }
+
+    private var bar: some View {
         VStack(spacing: 4) {
             // The box's line, as the box shows it.
             if !away { BoxLine(chat: chat) }

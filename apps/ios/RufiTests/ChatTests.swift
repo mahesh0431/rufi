@@ -195,10 +195,27 @@ struct ChatTests {
         chat.close()
     }
 
-    /// A tap on a card's answer: kept on the iPhone with the card's quote and
-    /// the answer's place, through a reload of its file, once however often
-    /// it is tapped, and sent with them; the box keeps its words.
-    @Test func aCardsAnswerGoesThroughPendingWithItsPlaceOnce() async throws {
+    /// The open question is the newest card the iPhone draws, while no
+    /// message of the person's came after it: then the box is back.
+    @Test func theOpenQuestionIsTheNewestCardNoMessageCameAfter() async throws {
+        let chat = ChatModel(door: Door(origin: URL(string: "https://chat.test")!, key: "a-key"), person: "asha",
+                             pending: Pending(file: PendingTests.file()))
+        let card = try Self.card(Self.visit)
+        chat.take(.update(revision: 1, entries: [card], turns: [], chat: nil))
+        #expect(chat.openQuestion?.id == "q-visit")
+        let later = try Self.card(#"{"kind":"date","key":"Next scan","question":"Which day?"}"#, id: "q-later", seq: 4)
+        chat.take(.update(revision: 2, entries: [later], turns: [], chat: nil))
+        #expect(chat.openQuestion == nil)
+        let message = try Self.message("m-after", seq: 5)
+        chat.take(.update(revision: 3, entries: [message], turns: [], chat: nil))
+        #expect(chat.openQuestion == nil)
+    }
+
+    /// A tap on an answer of the open question: kept on the iPhone with the
+    /// card's quote and the answer's place, through a reload of its file,
+    /// once however often it is tapped, and sent with them; the panel goes
+    /// and the box keeps its words.
+    @Test func anAnswerGoesThroughPendingWithItsPlaceOnce() async throws {
         let file = PendingTests.file()
         let pending = Pending(file: file)
         let chat = ChatModel(door: Door(origin: URL(string: "https://chat.test")!, key: "a-key"), person: "asha",
@@ -209,12 +226,14 @@ struct ChatTests {
         chat.typed("And my ferritin")
         let card = try Self.card(Self.visit)
         chat.take(.update(revision: 1, entries: [card], turns: [], chat: nil))
+        #expect(chat.openQuestion?.id == "q-visit")
 
-        chat.choose(0, on: card)
-        chat.choose(0, on: card)
-        chat.choose(1, on: card)
+        chat.answer(0, on: card)
+        chat.answer(0, on: card)
+        chat.answer(1, on: card)
         await chat.deliver()
-        #expect(chat.click(on: card) == .pending(0))
+        #expect(chat.openQuestion == nil)
+        #expect(chat.outgoing.map(\.text) == ["Book"])
         let kept = Pending(file: file).messages
         #expect(kept.map(\.text) == ["Book"])
         #expect(kept.first?.refs?.map(\.ref) == [Pointer(type: "question", id: "q-visit", answer: 0)])
@@ -225,14 +244,14 @@ struct ChatTests {
         #expect(ChatDoor.sent.map(\.text) == ["Book"])
         #expect(ChatDoor.sent.first?.refs == ["q-visit"])
         #expect(ChatDoor.sent.first?.answers == [0])
-        #expect(chat.click(on: card) == .sending(0))
+        #expect(chat.openQuestion == nil)
         #expect(chat.text == "And my ferritin")
         chat.end()
     }
 
     /// A tap while a reply runs goes as the Mac's setting says (Queue here),
     /// as Enter in the box would.
-    @Test func aCardsTapWhileAReplyRunsGoesAsTheMacsSettingSays() async throws {
+    @Test func anAnswerWhileAReplyRunsGoesAsTheMacsSettingSays() async throws {
         let chat = ChatModel(door: Door(origin: URL(string: "https://chat.test")!, key: "a-key"), person: "asha",
                              pending: Pending(file: PendingTests.file()))
         ChatDoor.whileReplying = "queue"
@@ -240,16 +259,15 @@ struct ChatTests {
         try await Self.until { chat.loaded && chat.whileReplying == "queue" }
         let card = try Self.card(Self.visit)
         chat.take(.update(revision: 1, entries: [card], turns: [Self.running], chat: nil))
-        chat.choose(0, on: card)
+        chat.answer(0, on: card)
         try await Self.until { ChatDoor.sent.count == 1 }
         #expect(ChatDoor.sent.map(\.kind) == ["queue"])
         chat.end()
     }
 
-    /// A refused tap comes back to the box as its words with the card's
-    /// quote but not the answer's place: edited and sent, it's a reply, and
-    /// the card is open again.
-    @Test func aRefusedAnswerComesBackWithoutItsPlace() async throws {
+    /// A refused answer comes back to the question panel, with why, and the
+    /// question is open again; the box keeps its own words.
+    @Test func aRefusedAnswerComesBackToThePanel() async throws {
         let chat = ChatModel(door: Door(origin: URL(string: "https://chat.test")!, key: "a-key"), person: "asha",
                              pending: Pending(file: PendingTests.file()))
         chat.open()
@@ -257,19 +275,20 @@ struct ChatTests {
         let card = try Self.card(Self.visit)
         chat.take(.update(revision: 1, entries: [card], turns: [], chat: nil))
         ChatDoor.refusing = true
-        chat.choose(1, on: card)
-        try await Self.until { chat.text == "Not now" }
-        #expect(chat.chips.map(\.ref) == [Pointer(type: "question", id: "q-visit")])
-        #expect(chat.line == "Sign in to Claude on your Mac.")
-        #expect(chat.click(on: card) == nil)
+        chat.answer(1, on: card)
+        try await Self.until { chat.ownAnswers["q-visit"] == "Not now" }
+        #expect(chat.answerSaid["q-visit"] == "Sign in to Claude on your Mac.")
+        #expect(chat.openQuestion?.id == "q-visit")
+        #expect(chat.text.isEmpty)
+        #expect(chat.chips.isEmpty)
         chat.end()
     }
 
-    /// A refused tap is kept as refused on the iPhone, without the answer's
-    /// place, before its words come back: edited while the Mac can't keep
-    /// the draft, then after a restart, it waits in the box and is never
-    /// sent by itself; sent, it is a reply, with no answer.
-    @Test func aRefusedAnswerEditedThenRestartedGoesAsAReply() async throws {
+    /// A refused answer is kept as refused on the iPhone, without the
+    /// answer's place: after a restart its words are back in the panel and
+    /// never sent by themselves; the person's own answer then goes once,
+    /// with no answer chosen, and the refused one leaves the iPhone.
+    @Test func aRefusedAnswerRestartedGoesAsTheOwnAnswer() async throws {
         let file = PendingTests.file()
         let door = Door(origin: URL(string: "https://chat.test")!, key: "a-key")
         let chat = ChatModel(door: door, person: "asha", pending: Pending(file: file))
@@ -278,40 +297,41 @@ struct ChatTests {
         let card = try Self.card(Self.visit)
         chat.take(.update(revision: 1, entries: [card], turns: [], chat: nil))
         ChatDoor.refusing = true
-        ChatDoor.savesAway = true
-        chat.choose(0, on: card)
-        try await Self.until { chat.text == "Book" }
-        chat.typed("Book, but not on Tuesday")
+        chat.answer(0, on: card)
+        try await Self.until { chat.ownAnswers["q-visit"] == "Book" }
         let kept = Pending(file: file).messages
         #expect(kept.first?.refs?.map(\.ref) == [Pointer(type: "question", id: "q-visit")])
         #expect(kept.first?.refused == "Sign in to Claude on your Mac.")
         chat.end()
 
-        // Rufi restarts with the Mac back and signed in.
-        (ChatDoor.refusing, ChatDoor.savesAway) = (false, false)
+        // Rufi restarts with the Mac signed in.
+        ChatDoor.refusing = false
         let again = ChatModel(door: door, person: "asha", pending: Pending(file: file))
         again.open()
-        try await Self.until { again.loaded && again.text == "Book" }
+        try await Self.until { again.loaded && again.ownAnswers["q-visit"] == "Book" }
+        again.take(.update(revision: 1, entries: [card], turns: [], chat: nil))
         await again.deliver()
         #expect(ChatDoor.sent.isEmpty)
-        again.typed("Book, but not on Tuesday")
-        again.send()
+        #expect(again.openQuestion?.id == "q-visit")
+        again.answer(nil, own: "Book, but not on Tuesday", on: card)
         try await Self.until { ChatDoor.sent.count == 1 }
         #expect(ChatDoor.sent.first?.text == "Book, but not on Tuesday")
         #expect(ChatDoor.sent.first?.refs == ["q-visit"])
         #expect(ChatDoor.sent.first?.answers == [nil])
+        #expect(Pending(file: file).messages.allSatisfy { $0.text != "Book" })
         again.end()
     }
 
-    /// A card's answer is the pairing's own: a tap after its pairing ended
-    /// keeps nothing.
-    @Test func aCardsLateTapNeverGoesToTheNextPairing() async throws {
+    /// An answer is the pairing's own: a tap after its pairing ended keeps
+    /// nothing.
+    @Test func aLateAnswerNeverGoesToTheNextPairing() async throws {
         let pending = Pending(file: PendingTests.file())
         let card = try Self.card(Self.visit)
         let chat = ChatModel(door: Door(origin: URL(string: "https://chat.test")!, key: "a-key"), person: "asha",
                              pending: pending)
+        chat.take(.update(revision: 1, entries: [card], turns: [], chat: nil))
         pending.clear()
-        chat.choose(0, on: card)
+        chat.answer(0, on: card)
         #expect(pending.messages.isEmpty)
     }
 
@@ -392,8 +412,14 @@ struct ChatTests {
     static let visit = #"{"kind":"choice","key":"Next visit","details":"- Dr Rao, City Clinic\n- Tue 20 Oct, 10:00","question":"Book this visit?","answers":[{"label":"Book"},{"label":"Not now"}]}"#
 
     /// A question entry with `card`, as the Mac's stream gives it.
-    static func card(_ card: String) throws -> Entry {
-        let json = #"{"id":"q-visit","seq":3,"turnId":null,"kind":"question","text":"**Next visit**\n\nBook this visit?","activity":null,"detail":null,"status":null,"createdAt":"2026-10-10T09:00:00Z","updatedAt":"2026-10-10T09:00:00Z","card":"# + card + #"}"#
+    static func card(_ card: String, id: String = "q-visit", seq: Int = 3) throws -> Entry {
+        let json = #"{"id":""# + id + #"","seq":"# + String(seq) + #","turnId":null,"kind":"question","text":"**Next visit**\n\nBook this visit?","activity":null,"detail":null,"status":null,"createdAt":"2026-10-10T09:00:00Z","updatedAt":"2026-10-10T09:00:00Z","card":"# + card + #"}"#
+        return try JSONDecoder().decode(Entry.self, from: Data(json.utf8))
+    }
+
+    /// A message of the person's, as the Mac's stream gives it.
+    static func message(_ id: String, seq: Int) throws -> Entry {
+        let json = #"{"id":""# + id + #"","seq":"# + String(seq) + #","turnId":null,"kind":"message","text":"Thanks","activity":null,"detail":null,"status":null,"createdAt":"2026-10-10T09:01:00Z","updatedAt":"2026-10-10T09:01:00Z"}"#
         return try JSONDecoder().decode(Entry.self, from: Data(json.utf8))
     }
 

@@ -230,7 +230,7 @@ private struct ChipView: View {
 
 /// Under the chat: a reminder to check what the AI says. One line, a little
 /// smaller where needed; two lines at the largest text sizes.
-private struct Disclaimer: View {
+struct Disclaimer: View {
     private let words = "AI can make mistakes. Check important health decisions with your doctor."
     @ScaledMetric(relativeTo: .caption2) private var size: CGFloat = 11
 
