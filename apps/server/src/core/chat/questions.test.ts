@@ -138,7 +138,7 @@ describe("ask", () => {
     const asked = await call("ask", CARD, "call-ask");
     expect(asked.ok).toBe(true);
     const id = asked.body.result["id"] as string;
-    expect(asked.body.result).toMatchObject({
+    expect(asked.body.result).toEqual({
       id,
       link: `rufi:/chat/questions/${id}`,
     });
