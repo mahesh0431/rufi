@@ -1356,7 +1356,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         {
           check: "card_names_what_is_saved",
           criterion:
-            "The card's details name what a yes saves: magnesium 200 mg at night. Its answers include a yes and a way to decline or wait. An answer marked recommended is one the reply gives a reason for; a description, where there is one, says what choosing that answer means. Nothing Rufi AI writes after the card repeats its question.",
+            "The card's details name what a yes saves: magnesium 200 mg at night. Its answers include a yes and a way to decline or wait. An answer marked recommended is one the reply gives a reason for; a description, where there is one, says what choosing that answer means. Nothing Rufi AI writes after the card repeats its question, and its reply doesn't say where the question is (such as above or below).",
           evidence: `${cardWords(asked)}\n\nWritten after the card:\n\n${afterCard(offered, asked)}`,
         },
       ],
@@ -1457,7 +1457,7 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         {
           check: "asks_which_clinic",
           criterion:
-            "The card asks which clinic, with City Clinic and Lakeside Clinic among its answers. Neither clinic is marked recommended: the person gave no reason to prefer one. Nothing Rufi AI writes after the card repeats its question.",
+            "The card asks which clinic, with City Clinic and Lakeside Clinic among its answers. Neither clinic is marked recommended: the person gave no reason to prefer one. Nothing Rufi AI writes after the card repeats its question, and its reply doesn't say where the question is (such as above or below).",
           evidence: `${cardWords(asked)}\n\nWritten after the card:\n\n${afterCard(offered, asked)}`,
         },
         {
