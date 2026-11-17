@@ -19,6 +19,12 @@ struct ChatTests {
         return try JSONDecoder().decode(Answer.self, from: Data(contentsOf: file))
     }
 
+    /// The chat's first page from the Mac, with these entries.
+    private func page(_ entries: [Entry]) throws -> ChatPage {
+        let fixture: ChatPage = try read("chat")
+        return ChatPage(revision: 1, chat: fixture.chat, entries: entries, turns: [], before: nil)
+    }
+
     @Test func aPageFromTheMacShowsInItsOrder() throws {
         var transcript = Transcript()
         transcript.apply(.snapshot(try read("chat")))
@@ -273,33 +279,40 @@ struct ChatTests {
         chat.open()
         try await Self.until { chat.loaded }
         let card = try Self.card(Self.visit)
-        chat.take(.update(revision: 1, entries: [card], turns: [], chat: nil))
+        chat.take(.snapshot(try page([card])))
         ChatDoor.refusing = true
         chat.answer(1, on: card)
-        try await Self.until { chat.ownAnswers["q-visit"] == "Not now" }
-        #expect(chat.answerSaid["q-visit"] == "Sign in to Claude on your Mac.")
+        try await Self.until { chat.ownAnswer(for: "q-visit") == "Not now" }
+        #expect(chat.answerLine(for: "q-visit") == "Sign in to Claude on your Mac.")
         #expect(chat.openQuestion?.id == "q-visit")
         #expect(chat.text.isEmpty)
         #expect(chat.chips.isEmpty)
         chat.end()
     }
 
-    /// A refused answer is kept as refused on the iPhone, without the
-    /// answer's place: after a restart its words are back in the panel and
-    /// never sent by themselves; the person's own answer then goes once,
-    /// with no answer chosen, and the refused one leaves the iPhone.
-    @Test func aRefusedAnswerRestartedGoesAsTheOwnAnswer() async throws {
+    /// A refused answer stays kept on the iPhone, without the answer's
+    /// place, with the words the person changed it to: a save of the box
+    /// meanwhile leaves it, and after a restart its latest words are back
+    /// in the panel and never sent by themselves; sent, it goes once, with
+    /// no answer chosen, and leaves the iPhone.
+    @Test func aRefusedAnswerKeepsItsNewWordsThroughASaveAndARestart() async throws {
         let file = PendingTests.file()
         let door = Door(origin: URL(string: "https://chat.test")!, key: "a-key")
         let chat = ChatModel(door: door, person: "asha", pending: Pending(file: file))
         chat.open()
         try await Self.until { chat.loaded }
         let card = try Self.card(Self.visit)
-        chat.take(.update(revision: 1, entries: [card], turns: [], chat: nil))
+        chat.take(.snapshot(try page([card])))
         ChatDoor.refusing = true
         chat.answer(0, on: card)
-        try await Self.until { chat.ownAnswers["q-visit"] == "Book" }
+        try await Self.until { chat.ownAnswer(for: "q-visit") == "Book" }
+        chat.typeOwn("Book, but not on Tuesday", for: "q-visit")
+        // Ask Rufi on a page puts something in the box, which is saved.
+        chat.typed("Unrelated words for later")
+        chat.save()
+        try await Self.until { ChatDoor.saves.last == "Unrelated words for later" }
         let kept = Pending(file: file).messages
+        #expect(kept.map(\.text) == ["Book, but not on Tuesday"])
         #expect(kept.first?.refs?.map(\.ref) == [Pointer(type: "question", id: "q-visit")])
         #expect(kept.first?.refused == "Sign in to Claude on your Mac.")
         chat.end()
@@ -308,18 +321,39 @@ struct ChatTests {
         ChatDoor.refusing = false
         let again = ChatModel(door: door, person: "asha", pending: Pending(file: file))
         again.open()
-        try await Self.until { again.loaded && again.ownAnswers["q-visit"] == "Book" }
-        again.take(.update(revision: 1, entries: [card], turns: [], chat: nil))
+        try await Self.until { again.loaded }
+        again.take(.snapshot(try page([card])))
+        #expect(again.ownAnswer(for: "q-visit") == "Book, but not on Tuesday")
         await again.deliver()
         #expect(ChatDoor.sent.isEmpty)
-        #expect(again.openQuestion?.id == "q-visit")
-        again.answer(nil, own: "Book, but not on Tuesday", on: card)
+        again.answer(nil, own: again.ownAnswer(for: "q-visit"), on: card)
         try await Self.until { ChatDoor.sent.count == 1 }
         #expect(ChatDoor.sent.first?.text == "Book, but not on Tuesday")
         #expect(ChatDoor.sent.first?.refs == ["q-visit"])
         #expect(ChatDoor.sent.first?.answers == [nil])
-        #expect(Pending(file: file).messages.allSatisfy { $0.text != "Book" })
+        #expect(Pending(file: file).messages.isEmpty)
         again.end()
+    }
+
+    /// A refused answer whose question a later message closed goes to the
+    /// box, with its quote and why, as any refused message does.
+    @Test func aRefusedAnswerToAClosedQuestionGoesToTheBox() async throws {
+        let chat = ChatModel(door: Door(origin: URL(string: "https://chat.test")!, key: "a-key"), person: "asha",
+                             pending: Pending(file: PendingTests.file()))
+        chat.open()
+        try await Self.until { chat.loaded }
+        let card = try Self.card(Self.visit)
+        chat.take(.snapshot(try page([card])))
+        ChatDoor.refusing = true
+        chat.answer(1, on: card)
+        try await Self.until { chat.ownAnswer(for: "q-visit") == "Not now" }
+        // An answer from the Mac closes the question.
+        chat.take(.update(revision: 2, entries: [try Self.message("m-mac", seq: 5)], turns: [], chat: nil))
+        #expect(chat.openQuestion == nil)
+        #expect(chat.text == "Not now")
+        #expect(chat.chips.map(\.ref) == [Pointer(type: "question", id: "q-visit")])
+        #expect(chat.line == "Sign in to Claude on your Mac.")
+        chat.end()
     }
 
     /// An answer is the pairing's own: a tap after its pairing ended keeps

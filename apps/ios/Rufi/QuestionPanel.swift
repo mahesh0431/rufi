@@ -95,7 +95,7 @@ struct QuestionPanelView: View {
                 AnswerButton(answer: answer) { chat.answer(index, on: entry) }
             }
             own
-            if let said = chat.answerSaid[entry.id] {
+            if let said = chat.answerLine(for: entry.id) {
                 Text(said).font(.footnote).foregroundStyle(.secondary).padding(.horizontal, 4)
             }
         }
@@ -111,11 +111,11 @@ struct QuestionPanelView: View {
 
     /// The person's own answer: what the buttons don't offer.
     private var own: some View {
-        let words = chat.ownAnswers[entry.id] ?? ""
+        let words = chat.ownAnswer(for: entry.id)
         let can = !words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && words.count <= ChatModel.maxText
         return HStack(alignment: .bottom, spacing: 8) {
             Image(systemName: "pencil").foregroundStyle(.secondary).padding(.bottom, 12)
-            TextField("Your own answer…", text: Binding { words } set: { chat.ownAnswers[entry.id] = $0 },
+            TextField("Your own answer…", text: Binding { words } set: { chat.typeOwn($0, for: entry.id) },
                       axis: .vertical)
                 .lineLimit(1...5)
                 .focused($typing)

@@ -118,6 +118,20 @@ final class Pending {
         return refusals
     }
 
+    /// A refused one's words, changed by the person (a question's own
+    /// answer): kept in the file before this returns; on a failure, nothing
+    /// changes.
+    func reword(_ id: String, _ text: String) throws {
+        let now = messages.map { message in
+            message.id == id
+                ? PendingMessage(id: message.id, text: text, refs: message.refs, kind: message.kind,
+                                 refused: message.refused)
+                : message
+        }
+        try write(now)
+        messages = now
+    }
+
     /// Refused ones whose words the box now has: they leave the list. A
     /// write that fails keeps them, to come back again.
     func remove(_ ids: Set<String>) {

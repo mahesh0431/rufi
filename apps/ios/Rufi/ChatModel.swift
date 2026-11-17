@@ -392,6 +392,7 @@ final class ChatModel {
     /// A message taken drops out of `accepted` once the chat or the queue
     /// has it; the working clock follows.
     private func settle() {
+        placeRefusedAnswers()
         let known = Set(transcript.entries.keys).union(queue.map(\.id))
         if accepted.contains(where: { known.contains($0.id) }) { accepted.removeAll { known.contains($0.id) } }
         let key: String?
@@ -572,11 +573,62 @@ final class ChatModel {
         return nil
     }
 
-    /// The question panel's own answer, by card: what was typed there, or
-    /// a refused answer's words back.
-    var ownAnswers: [String: String] = [:]
-    /// Why an answer to a card came back, by card: until it is answered again.
-    private(set) var answerSaid: [String: String] = [:]
+    /// The question panel's own answer as typed, by card, until it is sent.
+    private var ownAnswers: [String: String] = [:]
+    /// Why an answer to a card couldn't be kept, by card: until it is sent again.
+    private var answerProblem: [String: String] = [:]
+
+    /// A refused answer to `card`, kept on the iPhone while its question is
+    /// open: its words are the panel's own answer, and it is never sent by
+    /// itself. Once the question has closed, it goes to the box.
+    private func refusedAnswer(to card: String) -> PendingMessage? {
+        pending.messages.first { message in
+            message.refused != nil && !restoring.contains(message.id) && Self.quoted(message) == card
+        }
+    }
+
+    /// The card a message's quote names, if it answers one.
+    private static func quoted(_ message: PendingMessage) -> String? {
+        message.refs?.first { $0.ref.type == "question" }?.ref.id
+    }
+
+    /// The question panel's own answer for `card`: a refused answer's words,
+    /// else what was typed.
+    func ownAnswer(for card: String) -> String {
+        refusedAnswer(to: card)?.text ?? ownAnswers[card] ?? ""
+    }
+
+    /// The person typed in the panel's own answer: a refused answer keeps
+    /// its new words on the iPhone, in its file.
+    func typeOwn(_ text: String, for card: String) {
+        guard let refused = refusedAnswer(to: card) else {
+            ownAnswers[card] = text
+            return
+        }
+        do {
+            try pending.reword(refused.id, text)
+        } catch {
+            answerProblem[card] = "Rufi couldn't keep that. Try again."
+        }
+    }
+
+    /// The panel's line: why its answer came back, or couldn't be kept.
+    func answerLine(for card: String) -> String? {
+        answerProblem[card] ?? refusedAnswer(to: card)?.refused
+    }
+
+    /// Refused answers whose question isn't open any more go to the box,
+    /// with their quote, as any refused message does: their words can be
+    /// changed and sent there. Only once the chat and the draft are read.
+    private func placeRefusedAnswers() {
+        guard status == .open, loaded else { return }
+        let open = openQuestion?.id
+        for message in pending.messages where message.refused != nil && !restoring.contains(message.id) {
+            if let card = Self.quoted(message), card != open, let refused = message.refused {
+                toBox(message, refused: refused)
+            }
+        }
+    }
 
     /// An answer to the open question (docs/adr/0036): a tap on its answer
     /// `index`, or with no index the person's own words. It is the person's
@@ -600,17 +652,13 @@ final class ChatModel {
         do {
             try pending.add(words, refs: [quote], kind: kind)
         } catch {
-            answerSaid[card.id] = "Rufi couldn't keep that. Try again."
+            answerProblem[card.id] = "Rufi couldn't keep that. Try again."
             return
         }
-        // A refused answer to it whose words were back in the panel has gone again.
-        let back = Set(pending.messages.filter { message in
-            restoring.contains(message.id) && message.refs?.contains { $0.ref.type == "question" && $0.ref.id == card.id } == true
-        }.map(\.id))
-        pending.remove(back)
-        restoring.subtract(back)
+        // A refused answer to it, its words in the panel, has gone again.
+        if let refused = refusedAnswer(to: card.id) { pending.remove([refused.id]) }
         ownAnswers[card.id] = nil
-        answerSaid[card.id] = nil
+        answerProblem[card.id] = nil
         sends += 1
         settle()
         Task { await deliver() }
@@ -643,14 +691,18 @@ final class ChatModel {
     /// A message the Mac refused: its words and chips back in the box, with
     /// the Mac's line; it stays on the iPhone until the draft holds it.
     private func giveBack(_ message: PendingMessage, refused: String) {
-        guard restoring.insert(message.id).inserted else { return }
-        // An answer to a question card: its words back in the question
-        // panel, kept on the iPhone until the card is answered again.
-        if let card = message.refs?.first(where: { $0.ref.type == "question" })?.ref.id {
-            ownAnswers[card] = message.text
-            answerSaid[card] = refused
+        // An answer to a question card stays kept on the iPhone, its words
+        // the panel's own answer while its question is open; else the box's.
+        if Self.quoted(message) != nil {
+            placeRefusedAnswers()
             return
         }
+        toBox(message, refused: refused)
+    }
+
+    /// A refused message's words and chips into the box, with the Mac's line.
+    private func toBox(_ message: PendingMessage, refused: String) {
+        guard restoring.insert(message.id).inserted else { return }
         text = text.isEmpty ? message.text : text + "\n\n" + message.text
         merge(message.refs ?? [])
         said = refused
