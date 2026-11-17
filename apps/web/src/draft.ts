@@ -12,9 +12,10 @@
 // health data) are kept with its text: saved, sent and cleared with it.
 // Words that couldn't be saved stay in the tab's storage too, until a save
 // or a send takes them: a new page in the same tab, as when its session
-// ended while Rufi was away, shows them first and saves them. A click on a
-// question card's answer is a send of its own, kept here by card until the
-// chat shows it, so a card drawn again finds it (docs/adr/0036); one with
+// ended while Rufi was away, shows them first and saves them. An answer to
+// a question card (a click on one of its answers, or the person's own words
+// in the question panel) is a send of its own, kept here by card until the
+// chat shows it, so a panel drawn again finds it (docs/adr/0036); one with
 // no answer yet is kept in the tab's storage too, so after a reload its
 // Retry has the same id and payload.
 import {
@@ -99,7 +100,7 @@ const KeptCards = Schema.Record(
   Schema.String,
   Schema.Struct({
     id: Schema.String,
-    index: Schema.Number,
+    index: Schema.optionalKey(Schema.Number),
     text: Schema.String,
     kind: WhileReplying,
   }),
@@ -111,15 +112,16 @@ const sameChips = (a: readonly BoxChip[], b: readonly BoxChip[]) =>
   JSON.stringify(pointers(a)) === JSON.stringify(pointers(b));
 
 /**
- * A click on a question card's answer on its way, by card: sending, no
- * answer yet; sent, the core took it, until the chat shows it; lost, no
- * answer came, so Retry sends it again by the same id and payload; refused,
- * the core's words why, the card open again. Once the chat shows its
- * message (`settle`), the card follows the chat, whatever the request did.
+ * An answer to a question card on its way, by card: sending, no answer
+ * yet; sent, the core took it, until the chat shows it; lost, no answer
+ * came, so Retry sends it again by the same id and payload; refused, the
+ * core's words why, the card open again. Once the chat shows its message
+ * (`settle`), the card follows the chat, whatever the request did.
  */
 export interface CardSend {
   id: string;
-  index: number;
+  /** The answer a click chose; none for the person's own words. */
+  index?: number;
   text: string;
   /** As the click went while a reply ran: kept for Retry. */
   kind: WhileReplying;
@@ -147,7 +149,7 @@ export interface BoxState {
   failed: boolean;
   /** What the person should know: why a read, save or send failed. */
   notice: string | null;
-  /** Clicks on question cards' answers on their way, by card. */
+  /** Answers to question cards on their way, by card. */
   cards: Record<string, CardSend>;
 }
 
@@ -309,7 +311,7 @@ export function draftBox(api: DraftApi) {
             Object.fromEntries(
               open.map(([card, { id, index, text, kind }]) => [
                 card,
-                { id, index, text, kind },
+                { id, ...(index !== undefined && { index }), text, kind },
               ]),
             ),
           ),
@@ -342,7 +344,13 @@ export function draftBox(api: DraftApi) {
       await api.call("POST", "messages", {
         id,
         text,
-        refs: [{ type: "question", id: card, answer: index }],
+        refs: [
+          {
+            type: "question",
+            id: card,
+            ...(index !== undefined && { answer: index }),
+          },
+        ],
         kind,
         draft: "keep",
       });
@@ -428,21 +436,28 @@ export function draftBox(api: DraftApi) {
     sent: counted,
 
     /**
-     * A click on answer `index` (its words `text`) of question card `card`:
-     * the person's message, quoting the card with the answer it chose,
-     * under a new id, as Enter in the box would while a reply runs (`kind`).
-     * The box's text and draft stay. Nothing while the card's last click is
-     * on its way or unresolved.
+     * An answer to question card `card`: a click on its answer `index`,
+     * whose words are `text`, or with no index the person's own words. It is
+     * the person's message, quoting the card (with the answer a click
+     * chose), under a new id, as Enter in the box would while a reply runs
+     * (`kind`). The box's text and draft stay. Nothing while the card's last
+     * answer is on its way or unresolved.
      */
     choose(
       card: string,
-      index: number,
+      index: number | undefined,
       text: string,
       kind: WhileReplying,
     ): Promise<void> {
       const was = store.getState().cards[card];
       if (was && was.status !== "refused") return Promise.resolve();
-      return go(card, { id: newId(), index, text, kind, status: "sending" });
+      return go(card, {
+        id: newId(),
+        ...(index !== undefined && { index }),
+        text,
+        kind,
+        status: "sending",
+      });
     },
 
     /**

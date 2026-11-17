@@ -36,6 +36,7 @@ import { useAppearance } from "./appearance.tsx";
 import { CHAT_TITLE, ChatDock, PhoneChat } from "./chat.tsx";
 import { ReadingSheet } from "./reading.tsx";
 import { AgentSheet } from "./agents.tsx";
+import { QuestionSheet } from "./question.tsx";
 import { FirstRun } from "./first-run.tsx";
 import { retain } from "./live.ts";
 import { resetPanel } from "./panel.ts";
@@ -264,6 +265,7 @@ export function Frame() {
       <SettingsDialog />
       <ReadingSheet />
       <AgentSheet />
+      <QuestionSheet />
     </div>
   );
 }
@@ -414,6 +416,7 @@ function PhoneFrame({
       )}
       <ReadingSheet />
       <AgentSheet />
+      <QuestionSheet />
     </>
   );
 }

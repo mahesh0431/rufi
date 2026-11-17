@@ -7,11 +7,13 @@
 // in the sidebar. A small window opens the page instead of the panel. On a
 // phone the bar spans the bottom, and the panel rises from it to under the
 // app's title bar, with the keyboard; the arrow down, or a swipe down on
-// its top, steps back to the bar.
+// its top, steps back to the bar. While Rufi AI's question is open, the
+// question panel takes the box's place (question.tsx): in the bar, its one
+// line, which opens the chat.
 import type { Person } from "@rufi/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronDown, Maximize2, Minus } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { type RefObject, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { AgentsAtWork } from "./agents.tsx";
 import { FileDrop } from "./attach.tsx";
@@ -21,6 +23,8 @@ import { Menus } from "./model-menu.tsx";
 import { chatPage, isSmall, openPanel, usePanel } from "./panel.ts";
 import { onPhone } from "./phone.ts";
 import { PhoneBox } from "./phone-box.tsx";
+import { QuestionPanel, useOpenCard } from "./question.tsx";
+import { useCardSends } from "./question-card.ts";
 import { TranscriptView } from "./transcript.tsx";
 import { IconButton } from "./ui.tsx";
 import { FloatingWaiting } from "./waiting.tsx";
@@ -227,7 +231,7 @@ export function ChatDock({ person }: { person: Person }) {
               )}
               {open && <AgentsAtWork personId={person.id} />}
               {!onPhone && (
-                <Box
+                <BoxPlace
                   person={person}
                   live={live}
                   size={open ? "panel" : "bar"}
@@ -323,7 +327,12 @@ export function ChatPage({ person }: { person: Person }) {
             {/* On a phone the app draws the box and the words under it. */}
             {!onPhone && (
               <>
-                <Box person={person} live={live} size="page" inputRef={field} />
+                <BoxPlace
+                  person={person}
+                  live={live}
+                  size="page"
+                  inputRef={field}
+                />
                 <AiCanMakeMistakes />
               </>
             )}
@@ -331,6 +340,42 @@ export function ChatPage({ person }: { person: Person }) {
         </div>
       </Menus>
     </FileDrop>
+  );
+}
+
+/** The box, or Rufi AI's open question in its place. */
+function BoxPlace({
+  person,
+  live,
+  size,
+  inputRef,
+  onOpen,
+}: {
+  person: Person;
+  live: ReturnType<typeof liveStore>;
+  size: "bar" | "panel" | "page";
+  inputRef: RefObject<HTMLElement | null>;
+  onOpen?: () => void;
+}) {
+  const card = useOpenCard(live);
+  useCardSends(live, person.id);
+  return card === undefined ? (
+    <Box
+      person={person}
+      live={live}
+      size={size}
+      inputRef={inputRef}
+      {...(onOpen && { onOpen })}
+    />
+  ) : (
+    <QuestionPanel
+      key={card}
+      live={live}
+      personId={person.id}
+      card={card}
+      inputRef={inputRef}
+      {...(size === "bar" && onOpen && { onOpen })}
+    />
   );
 }
 

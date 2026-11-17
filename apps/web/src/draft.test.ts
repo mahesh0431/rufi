@@ -515,6 +515,45 @@ describe("a click on a question card's answer", () => {
     expect(cardOf(box, "card-1")).toBeUndefined();
   });
 
+  it("sends the person's own words in the panel as their message, quoting the card with no answer chosen; kept through a reload, Retry sends them as they went", async () => {
+    const stored = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        stored.set(key, value);
+      },
+      removeItem: (key: string) => {
+        stored.delete(key);
+      },
+    };
+    const first = core(editable("And my ferritin"));
+    first.api.storage = storage;
+    const box = draftBox(first.api);
+    await settle();
+    void box.choose("card-1", undefined, "Creatine 5 g daily", "steer");
+    await settle();
+    expect(first.sends().map((send) => send.body)).toEqual([
+      {
+        id: "id-1",
+        text: "Creatine 5 g daily",
+        refs: [{ type: "question", id: "card-1" }],
+        kind: "steer",
+        draft: "keep",
+      },
+    ]);
+    expect(box.store.getState().text).toBe("And my ferritin");
+
+    const second = core(editable("And my ferritin"));
+    second.api.storage = storage;
+    const reloaded = draftBox(second.api);
+    await settle();
+    void reloaded.retry("card-1");
+    await settle();
+    expect(second.sends().map((send) => send.body)).toEqual([
+      first.sends()[0]?.body,
+    ]);
+  });
+
   it("keeps an answer with no answer yet through a reload: the new page shows it Not sent, and Retry sends the same id and payload; once the chat has it, the tab forgets it", async () => {
     const stored = new Map<string, string>();
     const storage = {
