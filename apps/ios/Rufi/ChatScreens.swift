@@ -19,6 +19,8 @@ struct ChatView: View {
     /// A waiting message opened to edit: here, so it stays open if the
     /// list goes while its words aren't saved yet.
     @State private var editing: QueueItem?
+    /// A message's quote opened: its card.
+    @State private var quoted: Chip?
 
     var body: some View {
         let transcript = chat.transcript
@@ -36,8 +38,6 @@ struct ChatView: View {
                 }
                 if chat.clock?.key == "starting" { ThinkingLine(since: chat.clock?.since ?? .now) }
             }
-            // Each line a target: a quote scrolls to its card by its line.
-            .scrollTargetLayout()
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
@@ -74,7 +74,12 @@ struct ChatView: View {
                 AgentsAtWork(chat: chat)
                 WaitingList(chat: chat) { editing = $0 }
                 ReachPill(shell: shell)
-                ChatBoxView(shell: shell, chat: chat)
+                // Rufi AI's open question takes the box's place.
+                if let entry = chat.openQuestion, let card = entry.question {
+                    QuestionPanelView(shell: shell, chat: chat, entry: entry, card: card).id(entry.id)
+                } else {
+                    ChatBoxView(shell: shell, chat: chat)
+                }
             }
             .padding(.top, 4)
         }
@@ -91,7 +96,10 @@ struct ChatView: View {
             case .nothing: return .discarded
             }
         })
-        .environment(\.goToQuestion) { id in Task { await goTo(id) } }
+        .environment(\.openQuestion) { quoted = $0 }
+        .sheet(isPresented: Binding { quoted != nil } set: { if !$0 { quoted = nil } }) {
+            if let quoted { QuestionSheet(quote: quoted, chat: chat) }
+        }
         .sheet(item: $opened) { StepDetails(step: $0, shell: shell) }
         .sheet(item: $editing) { EditWaiting(item: $0, chat: chat) }
         .sheet(item: Binding { chat.openAgent } set: { chat.openAgent = $0 }) {
@@ -99,20 +107,6 @@ struct ChatView: View {
         }
         .environment(chat)
         .background(shell.theme.page)
-    }
-
-    /// To a question card: earlier pages load until it is there.
-    private func goTo(_ id: String) async {
-        while chat.transcript.entries[id] == nil, chat.transcript.before != nil, chat.older != .failed {
-            if chat.older == .loading {
-                try? await Task.sleep(for: .milliseconds(50))
-            } else {
-                await chat.loadOlder()
-            }
-        }
-        guard chat.transcript.entries[id] != nil else { return }
-        pinned = false
-        withAnimation { position.scrollTo(id: Transcript.Line.entry(id), anchor: .center) }
     }
 
     /// Above the oldest entry read: the page before it loads as it shows.
@@ -216,10 +210,9 @@ private struct EntryView: View {
         case "reply":
             ReplyView(entry: entry, streaming: chat.transcript.streaming(entry), chat: chat)
         case "question":
-            if let card = entry.question {
-                QuestionCardView(entry: entry, card: card, chat: chat, shell: shell)
-            } else {
-                // A card of a kind the iPhone doesn't draw: its words.
+            // The open card is the question panel; a quote opens any. A card
+            // of a kind the iPhone doesn't draw shows its words.
+            if entry.question == nil {
                 ReplyView(entry: entry, streaming: false, chat: chat)
             }
         default:

@@ -29,15 +29,25 @@ nonisolated struct PendingMessage: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+/// The question panel's own answer as typed, before it is sent: one, for
+/// the open question.
+nonisolated struct OwnAnswer: Codable, Equatable, Sendable {
+    let card: String
+    let text: String
+}
+
 /// The messages waiting to go, and the one file they are kept in, beside the
 /// dose logs not on the Mac yet: out of the iPhone's backups, readable after
-/// the first unlock. Unpairing is a fresh start: they all go.
+/// the first unlock. The question panel's own answer, not sent yet, is kept
+/// in a file beside it. Unpairing is a fresh start: they all go.
 @Observable
 final class Pending {
     static let file = URL.applicationSupportDirectory.appending(path: "Outbox/pending-messages.json")
 
     private(set) var messages: [PendingMessage]
+    private(set) var own: OwnAnswer?
     private let file: URL
+    private let ownFile: URL
     private var sending = false
     /// Goes up at each unpairing: a send started before it stops there, and
     /// one for a pairing before it never starts.
@@ -45,8 +55,18 @@ final class Pending {
 
     init(file: URL = Pending.file) {
         self.file = file
+        ownFile = file.deletingLastPathComponent().appending(path: "own-answer.json")
         messages = (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode([PendingMessage].self, from: $0) }
             ?? []
+        own = (try? Data(contentsOf: ownFile)).flatMap { try? JSONDecoder().decode(OwnAnswer.self, from: $0) }
+    }
+
+    /// The open question's own answer as typed, kept in its file before this
+    /// returns; no words: none. On a failure, nothing changes.
+    func keep(own text: String, for card: String) throws {
+        let now = text.isEmpty ? nil : OwnAnswer(card: card, text: text)
+        try write(now, to: ownFile)
+        own = now
     }
 
     /// Keeps `text` and `refs` to send, in the file before this returns; on
@@ -65,7 +85,9 @@ final class Pending {
         generation += 1
         sending = false
         messages = []
+        own = nil
         if (try? FileManager.default.removeItem(at: file)) == nil { try? write([]) }
+        if (try? FileManager.default.removeItem(at: ownFile)) == nil { try? write(OwnAnswer?.none, to: ownFile) }
     }
 
     /// Sends them in order, one at a time, each under its own id, but those
@@ -118,6 +140,20 @@ final class Pending {
         return refusals
     }
 
+    /// A refused one's words, changed by the person (a question's own
+    /// answer): kept in the file before this returns; on a failure, nothing
+    /// changes.
+    func reword(_ id: String, _ text: String) throws {
+        let now = messages.map { message in
+            message.id == id
+                ? PendingMessage(id: message.id, text: text, refs: message.refs, kind: message.kind,
+                                 refused: message.refused)
+                : message
+        }
+        try write(now)
+        messages = now
+    }
+
     /// Refused ones whose words the box now has: they leave the list. A
     /// write that fails keeps them, to come back again.
     func remove(_ ids: Set<String>) {
@@ -127,12 +163,16 @@ final class Pending {
     }
 
     private func write(_ messages: [PendingMessage]) throws {
+        try write(messages, to: file)
+    }
+
+    private func write(_ value: some Encodable, to file: URL) throws {
         var folder = file.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         var away = URLResourceValues()
         away.isExcludedFromBackup = true
         try folder.setResourceValues(away)
-        try JSONEncoder().encode(messages)
+        try JSONEncoder().encode(value)
             .write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 }
