@@ -756,9 +756,9 @@ test("a visual's chart is drawn by Rufi from its JSON: spaced by date, a tooltip
   // drawn again in it, without reloading.
   const began = await frame.evaluate(() => performance.timeOrigin);
   await page.mouse.move(0, 0);
-  // The ruler's words before: a number on the y axis.
+  // The ruler's words as last drawn: a number on the y axis.
   const ruler = async () =>
-    (await drawnIn(frame)).text.find(({ text }) => /^[\d.]+$/.test(text))
+    (await drawnIn(frame)).text.findLast(({ text }) => /^[\d.]+$/.test(text))
       ?.colour;
   const before = await ruler();
   expect(before).toBeDefined();
@@ -768,12 +768,10 @@ test("a visual's chart is drawn by Rufi from its JSON: spaced by date, a tooltip
     document.documentElement.dataset["colour"] = "plum";
     document.documentElement.dataset["textSize"] = "larger";
   });
-  // Drawn again, at least once (a new size can draw it once more).
-  await expect
-    .poll(async () => (await pointsIn(frame)).length)
-    .toBeGreaterThanOrEqual(4);
-  // The ruler too takes the new theme (its colours are in the screenshots).
-  expect(await ruler()).not.toBe(before);
+  // Drawn again in it, the ruler too (its colours are in the screenshots),
+  // with all its points.
+  await expect.poll(ruler).not.toBe(before);
+  expect((await pointsIn(frame)).length).toBeGreaterThanOrEqual(4);
   expect(await frame.evaluate(() => performance.timeOrigin)).toBe(began);
   await expect(
     log(page).getByText("Part of this visual didn't load"),
