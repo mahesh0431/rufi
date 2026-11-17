@@ -298,7 +298,7 @@ function chat(api: Api) {
       const before = await idle();
       await api("POST", `${path}/messages`, {
         id: randomUUID(),
-        text: card.answers[answer],
+        text: card.answers[answer]?.label,
         refs: [{ type: "question", id: entry.id, answer }],
       });
       await ended(before + 1);
@@ -330,10 +330,10 @@ const cardsOf = (snapshot: Snapshot): Asked[] =>
  * card, and clicks nothing. A person checks the click in the transcript.
  */
 function answerTo(card: QuestionCard, match: RegExp): number {
-  const index = card.answers.findIndex((answer) => match.test(answer.trim()));
+  const index = card.answers.findIndex(({ label }) => match.test(label.trim()));
   if (index < 0)
     throw new Error(
-      `couldn't tell which answer of "${card.key}" to click: ${card.answers.join(" | ")}`,
+      `couldn't tell which answer of "${card.key}" to click: ${card.answers.map(({ label }) => label).join(" | ")}`,
     );
   return index;
 }
@@ -360,6 +360,20 @@ const saidSince = (snapshot: Snapshot) => {
 /** The answer a click gave the card, as the chat shows it now. */
 const answerOf = (snapshot: Snapshot, asked: Asked | undefined) =>
   snapshot.entries.find((entry) => entry.id === asked?.entry.id)?.answer?.index;
+
+/**
+ * Rufi AI asked last: in the card's reply, nothing of its words comes after
+ * the card. Its steps and Rufi's own lines don't count.
+ */
+const nothingAfter = (snapshot: Snapshot, asked: Asked | undefined) =>
+  asked !== undefined &&
+  !snapshot.entries.some(
+    (entry) =>
+      entry.turnId === asked.entry.turnId &&
+      entry.seq > asked.entry.seq &&
+      (entry.kind === "reply" || entry.kind === "question") &&
+      entry.text.trim() !== "",
+  );
 
 /** A card's words, for a person to judge. */
 const cardWords = (asked: Asked | undefined) =>
@@ -1330,13 +1344,14 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         magnesium_current:
           medicine(home, "Magnesium")?.["status"] === "current",
         card_answered: yes !== undefined && answerOf(snapshot, asked) === yes,
+        nothing_after_the_card: nothingAfter(offered, asked),
         rests_on_the_facts_message: restsOn(home, snapshot, MAGNESIUM),
       },
       verdicts: [
         {
           check: "card_names_what_is_saved",
           criterion:
-            "The card's details name what a yes saves: magnesium 200 mg at night. Its answers include a yes and a way to decline or wait, and the reply doesn't repeat the question after the card.",
+            "The card's details name what a yes saves: magnesium 200 mg at night. Its answers include a yes and a way to decline or wait. An answer marked recommended is one the reply gives a reason for; a description, where there is one, says what choosing that answer means.",
           evidence: cardWords(asked),
         },
       ],
@@ -1429,12 +1444,13 @@ const CASES: Record<string, (api: Api, home: string) => Promise<Outcome>> = {
         nothing_saved_before_the_choice: before,
         card_answered:
           lakeside !== undefined && answerOf(snapshot, asked) === lakeside,
+        nothing_after_the_card: nothingAfter(offered, asked),
       },
       verdicts: [
         {
           check: "asks_which_clinic",
           criterion:
-            "The card asks which clinic, with City Clinic and Lakeside Clinic among its answers.",
+            "The card asks which clinic, with City Clinic and Lakeside Clinic among its answers. Neither clinic is marked recommended: the person gave no reason to prefer one.",
           evidence: cardWords(asked),
         },
         {

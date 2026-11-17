@@ -175,15 +175,27 @@ export const AgentAbout = Schema.Literals([
 export type AgentAbout = typeof AgentAbout.Type;
 
 /**
+ * One answer of a question card: its label, a short description when the
+ * label alone isn't enough, and whether Rufi AI recommends it.
+ */
+export const QuestionAnswer = Schema.Struct({
+  label: Schema.String,
+  description: Schema.optionalKey(Schema.String),
+  recommended: Schema.optionalKey(Schema.Boolean),
+});
+export type QuestionAnswer = typeof QuestionAnswer.Type;
+
+/**
  * A question card as Rufi AI gave it with ask: words only, which Rufi draws
- * (docs/adr/0036). The details name what the person approves.
+ * as the question panel in the box's place (docs/adr/0036). The details
+ * name what the person approves.
  */
 export const QuestionCard = Schema.Struct({
   kind: Schema.Literal("choice"),
   key: Schema.String,
   details: Schema.optionalKey(Schema.String),
   question: Schema.String,
-  answers: Schema.Array(Schema.String),
+  answers: Schema.Array(QuestionAnswer),
 });
 export type QuestionCard = typeof QuestionCard.Type;
 

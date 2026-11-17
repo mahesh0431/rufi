@@ -1184,7 +1184,7 @@ describe("the chat, on the scripted Codex", () => {
     store.db.exec(`
       INSERT INTO transcript_entries (id, person_id, chat_id, seq, kind, text, card, revision, created_at, updated_at)
         SELECT 'q-1', 'asha', '${c.id}', COALESCE(MAX(seq), 0) + 1, 'question', '**Lipid panel, 12 Aug 2026**',
-          '{"kind":"choice","key":"Lipid panel, 12 Aug 2026","question":"Save these 2 results?","answers":["Save","Not now"]}',
+          '{"kind":"choice","key":"Lipid panel, 12 Aug 2026","question":"Save these 2 results?","answers":[{"label":"Save"},{"label":"Not now"}]}',
           0, '2026-11-10T09:00:00Z', '2026-11-10T09:00:00Z'
         FROM transcript_entries WHERE chat_id = '${c.id}';
     `);

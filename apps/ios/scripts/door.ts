@@ -226,7 +226,7 @@ const OPEN_CARD = `
 Save these 2 results to your health record?
 
 - Save
-- Not now', '{"kind":"choice","key":"Lipid panel, 12 Aug 2026","details":"- LDL 138 mg/dL\\n- HDL 41 mg/dL","question":"Save these 2 results to your health record?","answers":["Save","Not now"]}', 7, '2026-10-05T08:01:00Z', '2026-10-05T08:01:00Z');
+- Not now', '{"kind":"choice","key":"Lipid panel, 12 Aug 2026","details":"- LDL 138 mg/dL\\n- HDL 41 mg/dL","question":"Save these 2 results to your health record?","answers":[{"label":"Save"},{"label":"Not now"}]}', 7, '2026-10-05T08:01:00Z', '2026-10-05T08:01:00Z');
   UPDATE chats SET revision = 7 WHERE id = 'c-asha';`;
 
 // The family, with a row of each kind the iPhone's own pages show.

@@ -69,7 +69,7 @@ struct QuestionCardView: View {
             Button {
                 chat.choose(index, on: entry)
             } label: {
-                Text(verbatim: card.answers[index])
+                Text(verbatim: card.answers[index].label)
             }
             .buttonStyle(.bordered)
         }
@@ -105,7 +105,7 @@ struct QuestionCardView: View {
     }
 
     private func words(_ index: Int) -> String {
-        card.answers.indices.contains(index) ? card.answers[index] : ""
+        card.answers.indices.contains(index) ? card.answers[index].label : ""
     }
 }
 

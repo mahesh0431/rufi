@@ -138,7 +138,7 @@ HbA1c 6.8 %
 Save this result to your health record?
 
 - Save
-- Not now', '{"kind":"choice","key":"HbA1c, 12 Aug 2026","details":"HbA1c 6.8 %","question":"Save this result to your health record?","answers":["Save","Not now"]}', '{"message":"ent-a6","index":0}', 6, '2026-10-05T08:00:12Z', '2026-10-05T08:00:20Z');
+- Not now', '{"kind":"choice","key":"HbA1c, 12 Aug 2026","details":"HbA1c 6.8 %","question":"Save this result to your health record?","answers":[{"label":"Save"},{"label":"Not now"}]}', '{"message":"ent-a6","index":0}', 6, '2026-10-05T08:00:12Z', '2026-10-05T08:00:20Z');
 INSERT INTO transcript_entries (id, person_id, chat_id, seq, turn_id, kind, text, refs, revision, created_at, updated_at) VALUES
   ('ent-a6', 'asha', 'c-asha', 6, NULL, 'message', 'Save', '[{"ref":{"type":"question","id":"ent-a5","answer":0},"label":"HbA1c, 12 Aug 2026","detail":"Rufi AI''s question"}]', 6, '2026-10-05T08:00:20Z', '2026-10-05T08:00:20Z');
 UPDATE chats SET revision = 6 WHERE id = 'c-asha';

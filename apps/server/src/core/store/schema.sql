@@ -546,7 +546,7 @@ CREATE TABLE transcript_entries (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   questions TEXT CHECK (questions IS NULL OR kind = 'reply'), -- a reply's questions, as the AI gave them (JSON), kept apart from its answer; null: none
-  card TEXT,                   -- a question card as Rufi AI gave it with ask: {"kind": "choice", "key", "details"?, "question", "answers"} (JSON); only a question has one, and always
+  card TEXT,                   -- a question card as Rufi AI gave it with ask: {"kind": "choice", "key", "details"?, "question", "answers": [{"label", "description"?, "recommended"?}]} (JSON); only a question has one, and always
   answer TEXT,                 -- a question card's answer: the message whose click went to Rufi AI first and the answer it chose, {"message", "index"} (JSON); null: none yet
   UNIQUE (person_id, id),
   UNIQUE (chat_id, seq),
@@ -887,4 +887,4 @@ CREATE TABLE agent_cursor (
 ) STRICT;
 
 -- The version this file makes: the number of migrations (./migrations.ts).
-PRAGMA user_version = 36;
+PRAGMA user_version = 37;

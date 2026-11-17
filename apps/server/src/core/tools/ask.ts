@@ -1,6 +1,7 @@
 // ask: Rufi AI asks the person with a question card (docs/adr/0036), in its
-// own chat. It gives words only; Rufi draws the card, and the answer comes
-// later as the person's message, quoting the card.
+// own chat. It gives words only; Rufi draws the card as the question panel,
+// in the chat box's place, and the answer comes later as the person's
+// message, quoting the card.
 import { Schema } from "effect";
 import type { Asked } from "../chat/transcript.ts";
 import { questionLink } from "../chat/questions.ts";
@@ -19,10 +20,30 @@ export const AskInput = Schema.Struct({
     }),
   ),
   question: Words.annotate({ description: "The question, in plain text." }),
-  answers: Schema.Array(Words).check(Schema.isMinLength(1)).annotate({
-    description:
-      "Each answer the user can choose, in a few words: the answers they would reasonably give, including a way to decline or wait. Reply covers anything else.",
-  }),
+  answers: Schema.Array(
+    Schema.Struct({
+      label: Words.annotate({
+        description: "The answer, in a few words: what the user taps.",
+      }),
+      description: Schema.optionalKey(
+        Schema.String.annotate({
+          description:
+            "A short line under the label, only when the label alone doesn't say what choosing it means.",
+        }),
+      ),
+      recommended: Schema.optionalKey(
+        Schema.Boolean.annotate({
+          description:
+            "true only when you truly recommend this answer; leave it out otherwise.",
+        }),
+      ),
+    }),
+  )
+    .check(Schema.isMinLength(1))
+    .annotate({
+      description:
+        "Each answer the user can choose: the answers they would reasonably give, including a way to decline or wait. Their own answer covers anything else.",
+    }),
 });
 export type AskInput = typeof AskInput.Type;
 
@@ -30,13 +51,14 @@ export type AskInput = typeof AskInput.Type;
 export const askedResult = (asked: Asked) => ({
   id: asked.id,
   link: questionLink(asked.id),
+  next: "The user sees the card now. End your reply here: write nothing after it.",
   ...(!asked.fresh && { note: "This call already asked this card." }),
 });
 
 export const ask = defineTool({
   name: "ask",
   description:
-    "Asks the user a question, as a card in this chat: whenever you ask them to decide or answer something (a yes to changes you proposed, a choice between options, anything you need from them), ask with this; a question in passing inside an explanation stays in your text. The card has a key, details naming exactly what they decide on, the question and its answers, in plain words. Rufi draws it; the user clicks an answer or replies in their own words, which covers any answer you didn't offer, such as a date. It returns at once with the card's id and link; the user's answer comes later as their message, quoting the card by that link. A card is not the user's yes: judge their answer as any message. Put your analysis (text, visuals) in your reply before asking, keep the card small and text only, and ask last. Only you, in Rufi's own chat, ask the user; a sub-agent sends its question to its parent with send_agent. The same call again returns the same card.",
+    "Asks the user a question, as a card in this chat: whenever you ask them to decide or answer something (a yes to changes you proposed, a choice between options, anything you need from them), ask with this; a question in passing inside an explanation stays in your text. The card has a key, details naming exactly what they decide on, the question and its answers, in plain words. Rufi shows it where the user types, in place of the chat box, until they answer: they tap an answer or write their own, which covers any answer you didn't offer, such as a date. It returns at once with the card's id and link; the user's answer comes later as their message, quoting the card by that link. A card is not the user's yes: judge their answer as any message. Put your analysis (text, visuals) in your reply before asking, keep the card small and text only, and ask last: write nothing after the card, not even a line pointing to it. Only you, in Rufi's own chat, ask the user; a sub-agent sends its question to its parent with send_agent. The same call again returns the same card.",
   input: AskInput,
   callers: "model",
   readOnly: false,
@@ -46,7 +68,7 @@ export const ask = defineTool({
       key: "Lipid panel, 12 Aug 2026",
       details: "- Total cholesterol 212 mg/dL\n- LDL 138 mg/dL\n- HDL 41 mg/dL",
       question: "Save these 3 results to your health record?",
-      answers: ["Save", "Not now"],
+      answers: [{ label: "Save" }, { label: "Not now" }],
     },
   ],
   run: async (input, { ask: write, callId }) => {

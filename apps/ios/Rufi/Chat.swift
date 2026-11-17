@@ -69,7 +69,15 @@ nonisolated struct QuestionCard: Decodable, Equatable, Sendable {
     /// What the person approves, in Markdown.
     let details: String?
     let question: String
-    let answers: [String]
+    let answers: [Answer]
+
+    /// One answer: what the person taps, a short line under it when the
+    /// label alone isn't enough, and whether Rufi AI recommends it.
+    nonisolated struct Answer: Decodable, Equatable, Sendable {
+        let label: String
+        let description: String?
+        let recommended: Bool?
+    }
 }
 
 /// An entry's card as it came: one of a kind the iPhone draws, else none,

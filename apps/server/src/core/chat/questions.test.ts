@@ -34,7 +34,14 @@ const CARD = {
   key: "Lipid panel, 12 Aug 2026",
   details: "- LDL 138 mg/dL\n- HDL 41 mg/dL",
   question: "Save these 2 results to your health record?",
-  answers: ["Save", "Not now"],
+  answers: [
+    {
+      label: "Save",
+      description: "Adds them to your health record",
+      recommended: true,
+    },
+    { label: "Not now" },
+  ],
 };
 
 let store: Store;
@@ -131,14 +138,14 @@ describe("ask", () => {
     const asked = await call("ask", CARD, "call-ask");
     expect(asked.ok).toBe(true);
     const id = asked.body.result["id"] as string;
-    expect(asked.body.result).toEqual({
+    expect(asked.body.result).toMatchObject({
       id,
       link: `rufi:/chat/questions/${id}`,
     });
     expect((await entries()).find((entry) => entry.id === id)).toMatchObject({
       kind: "question",
       card: { kind: "choice", ...CARD },
-      text: "**Lipid panel, 12 Aug 2026**\n\n- LDL 138 mg/dL\n- HDL 41 mg/dL\n\nSave these 2 results to your health record?\n\n- Save\n- Not now",
+      text: "**Lipid panel, 12 Aug 2026**\n\n- LDL 138 mg/dL\n- HDL 41 mg/dL\n\nSave these 2 results to your health record?\n\n- Save (recommended): Adds them to your health record\n- Not now",
     });
   });
 
@@ -219,7 +226,7 @@ describe("ask", () => {
         ...CARD,
         key: "Next visit",
         question: "Book it?",
-        answers: ["Book", "Not now"],
+        answers: [{ label: "Book" }, { label: "Not now" }],
       },
       "call-ask-2",
     );

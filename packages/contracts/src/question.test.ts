@@ -43,7 +43,7 @@ describe("a question card on the wire", () => {
       kind: "choice",
       key: "Next visit",
       question: "Book Tuesday?",
-      answers: ["Book", "Not now"],
+      answers: [{ label: "Book", recommended: true }, { label: "Not now" }],
     };
     const known = Schema.decodeUnknownSync(StreamLine)(line(choice));
     expect(
