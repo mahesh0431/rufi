@@ -88,7 +88,7 @@ When you delete a document (see [Documents](documents.md#delete-a-document)), it
 
 Activity shows what the AI did for a reply, as the AI's agent reported it. Rufi doesn't put it in other words.
 
-- **The AI's notes**, in full, such as "I'll check your fasting glucose and HbA1c first." The AI writes these while it works. They are part of Activity, not answers. When the AI then asks you with a question card, the notes it wrote just before asking are its answer: they show above the card, not in Activity.
+- **The AI's notes**, in full, such as "I'll check your fasting glucose and HbA1c first." The AI writes these while it works. They are part of Activity, not answers. When the AI then asks you with a question card, the notes it wrote just before asking are its answer: they show in the chat, not in Activity.
 - **The AI's thinking**, as the headings the AI service sends, such as "Comparing the reports", in their place among the steps. Click a heading to read the AI's whole summary, also when the line is cut on a narrow screen. On Codex and on Claude, the summary shows as the AI writes it, and once it's whole it shows as the AI finished it. If you stop the reply while the AI thinks, what showed stays. When the AI service sends nothing, there is no line.
 - **The steps**, each as it was reported: a command the AI ran, with its exit code; one of Rufi's tools, such as `rufi.get_records`, with what the AI asked for; the files the AI changed; a web search. A long step is cut in the middle, so the start and the file name show. A tick means it was done. Other signs mean it is running, it failed, or it stopped.
 
@@ -120,13 +120,15 @@ The AI's reply shows while it writes it, as you chose (see [While Rufi writes](#
 
 ### A question card
 
-When Rufi AI asks you to decide or answer something, such as whether to save results or which of two clinics to book, it asks last in its reply, with a small card Rufi draws the same way every time: what it is about, such as "Lipid panel, 12 Aug 2026", a short line or list of exactly what you decide on, the question, and a button for each answer, such as **Save** and **Not now**.
+When Rufi AI asks you to decide or answer something, such as whether to save results or which of two clinics to book, it asks last in its reply, with a question card. The card shows where you type, in place of the chat box, until you answer, with Rufi's dog at its top: "Rufi asks" and what it is about, such as "Lipid panel, 12 Aug 2026", a short line or list of exactly what you decide on, the question, a button for each answer, such as **Save** and **Not now**, and **Your own answer…**.
 
-- **Click an answer**, or go to it with Tab and press Enter. It is your message, starting with the card's quote, and the AI answers it as it would your words; a save still shows Rufi's receipt. The words you were typing in the box stay. While the AI is still replying, a click goes as Enter in the box would (see [While the AI replies](#while-the-ai-replies)).
-- The card then shows your answer on its way, and once the AI has it, the answer you chose, with a tick and no buttons. While your answer waits until the reply ends, the card says **Waiting**; remove it from the [waiting messages](#waiting-messages) and the card's buttons are back. If your answer couldn't reach Rufi, the card says **Not sent**: click **Retry**. If Rufi can't take it, the card says **Can't send**; signed out, it says so, with **Sign in**.
-- **Reply** puts the card's quote in the box, for an answer in your own words, such as a date the card doesn't offer. It doesn't answer the card: its buttons stay.
-- To change your mind once you answered, type it. The card keeps your first answer, and the AI sees each of your messages.
-- The quote at the top of your answer goes back to its card, also when the card is further up the chat.
+- **Click an answer**, or go to it with Tab and press Enter. It is your message, starting with the card's quote, and the AI answers it as it would your words; a save still shows Rufi's receipt. While the AI is still replying, it goes as Enter in the box would (see [While the AI replies](#while-the-ai-replies)).
+- An answer can have a short line under it, when its name alone doesn't say what it means. **Recommended** marks the answer Rufi AI recommends, when it recommends one.
+- **Your own answer…** answers in your own words, such as a date the buttons don't offer: type, then press Enter or click **Send**. It is your message, with the card's quote, like a click.
+- Once you answered, the chat box is back, with the words you were typing before. While your answer waits until the reply ends, it shows in the [waiting messages](#waiting-messages); remove it there and the card is back. If your answer couldn't reach Rufi, the card says **Not sent**: click **Retry**. If Rufi can't take it, the card says **Can't send**; signed out, it says so, with **Sign in**.
+- **Minimise** (the arrow down) folds the card to one line, so you can scroll and read the chat; click the line to open it again. On the pages where you read your health, the chat's bar is that line: click it to open the chat.
+- The card doesn't stay in the chat. The quote at the top of your answer, Rufi's dog and what the card was about, opens the whole question, with the answer you chose marked.
+- To change your mind once you answered, type it. The AI sees each of your messages.
 
 ### While Rufi writes
 

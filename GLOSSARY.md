@@ -204,11 +204,11 @@ A chart, comparison or process the AI draws in HTML, styled with Tailwind classe
 _Avoid_: artifact, widget, embed, chart block
 
 **Question card**:
-A small card Rufi draws in the chat whenever Rufi AI asks the person to decide or answer something, from Rufi AI's words: a key naming what it is about, optional details naming exactly what the person decides on, the question and its answers. A click on an answer is the person's message, quoting the card; the card keeps the first answer that reached Rufi AI. Reply quotes the card in the box without answering it (ADR 0036).
+What Rufi draws whenever Rufi AI asks the person to decide or answer something, from Rufi AI's words: a key naming what it is about, optional details naming exactly what the person decides on, the question and its answers (each with an optional description, and a recommended mark when Rufi AI recommends it). The open one shows as the **question panel**, in place of the chat box until the person answers; it isn't drawn in the chat. A click on an answer, or the person's own answer typed in the panel, is their message quoting the card; the card keeps the first click that reached Rufi AI (ADR 0036).
 _Avoid_: prompt, form, poll, choice widget
 
 **Quote (of a question card)**:
-The line at the top of a message that answers a question card, naming the card by its key and linking to it (`rufi:/chat/questions/<id>`); Rufi AI reads it as `> [key](link)`.
+The line at the top of a message that answers a question card, naming the card by its key and linking to it (`rufi:/chat/questions/<id>`); it opens the whole card. Rufi AI reads it as `> [key](link)`.
 _Avoid_: reply-to, reference
 
 **Picture (in a reply)**:
